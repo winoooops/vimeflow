@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-06-27
-ref_count: 39
+last_updated: 2026-07-04
+ref_count: 41
 ---
 
 # Testing Gaps
@@ -835,3 +835,21 @@ filesystem scope restrictions).
 - **Finding:** The new-session button path had coverage that a click appended a session, but no replacement assertion for the removed `onCreated` callback contract that terminal focus is claimed after creating the session. A future regression could call `createSession` without returning focus to the terminal.
 - **Fix:** Extended the switcher-row New session integration test to assert that the terminal zone receives focus after the button creates the new session, pinning the composed create-and-claim behavior.
 - **Commit:** same commit as this entry
+
+### 86. Split-side toggle test used selectors shared by both CSS branches
+
+- **Source:** github-claude | PR #633 round 1 | 2026-06-29
+- **Severity:** LOW
+- **File:** `src/features/diff/components/DiffPanelContent.test.tsx`
+- **Finding:** The `h` and `l` split-side toggle assertions checked selectors and `display: none` strings that appear in both hide-origin and hide-new CSS blocks, so swapping the two constants would still pass.
+- **Fix:** Added unique border-adjustment assertions for each branch: `border-left: 0` after hiding origin and `border-right: 0` after hiding the new side.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 87. Palette-close focus restore lacked follow-up dialog coverage
+
+- **Source:** github-claude | PR #652 round 1 | 2026-07-04
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.command-palette.test.tsx`
+- **Finding:** The command-palette close focus-restore behavior had no test for commands that both close the palette and open another modal, leaving the dialog-focus regression uncovered.
+- **Fix:** Extended the dirty `:open-file` command-palette test so it opens `UnsavedChangesDialog` and asserts the terminal focus handoff is not requested while that follow-up dialog is active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

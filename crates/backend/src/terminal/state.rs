@@ -260,10 +260,7 @@ impl PtyState {
     /// `kill_pty` is waiting for the child to exit. Capturing these paths
     /// before signalling the child lets `kill_pty` clean the bridge directory
     /// even if the reader wins that race and `remove` later returns `None`.
-    pub fn bridge_cleanup_paths(
-        &self,
-        session_id: &SessionId,
-    ) -> Option<(String, Option<String>)> {
+    pub fn bridge_cleanup_paths(&self, session_id: &SessionId) -> Option<(String, Option<String>)> {
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         let session = sessions.get(session_id)?;
         session

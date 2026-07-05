@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::agent::types::{
-    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplaySummaryEvent,
+    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplaySummaryEvent, AgentReplyEvent,
     AgentSessionTitleEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::{serialize_event, EventSink};
@@ -34,6 +34,13 @@ pub(crate) fn emit_agent_turn(
     payload: &AgentTurnEvent,
 ) -> Result<(), String> {
     events.emit_json("agent-turn", serialize_event(payload)?)
+}
+
+pub(crate) fn emit_agent_reply(
+    events: &dyn EventSink,
+    payload: &AgentReplyEvent,
+) -> Result<(), String> {
+    events.emit_json("agent-reply", serialize_event(payload)?)
 }
 
 pub(crate) fn emit_agent_cwd(

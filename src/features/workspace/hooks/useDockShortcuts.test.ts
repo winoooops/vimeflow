@@ -282,4 +282,69 @@ describe('useDockShortcuts', () => {
 
     document.body.removeChild(cmEditor)
   })
+
+  test('Cmd+g fires openDock("diff") from within the terminal zone (macOS jump-to-diff)', () => {
+    // macOS terminals drive vim/readline with Ctrl, so Cmd+g never collides — it
+    // must reach the diff dock even when xterm has focus (VIM-277).
+    const props = makeProps({ modKey: '⌘' })
+
+    const terminalZone = document.createElement('div')
+    terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
+    const xtermTextarea = document.createElement('textarea')
+    xtermTextarea.className = 'xterm-helper-textarea'
+    terminalZone.appendChild(xtermTextarea)
+    document.body.appendChild(terminalZone)
+    xtermTextarea.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('g', { metaKey: true })
+
+    expect(props.openDock).toHaveBeenCalledWith('diff')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+    document.body.removeChild(terminalZone)
+  })
+
+  test('Cmd+e fires openDock("editor") from within the terminal zone (macOS jump-to-editor)', () => {
+    const props = makeProps({ modKey: '⌘' })
+
+    const terminalZone = document.createElement('div')
+    terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
+    const xtermTextarea = document.createElement('textarea')
+    xtermTextarea.className = 'xterm-helper-textarea'
+    terminalZone.appendChild(xtermTextarea)
+    document.body.appendChild(terminalZone)
+    xtermTextarea.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('e', { metaKey: true })
+
+    expect(props.openDock).toHaveBeenCalledWith('editor')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+    document.body.removeChild(terminalZone)
+  })
+
+  test('Cmd+g does not fire when CodeMirror has focus (find-next preserved)', () => {
+    // CodeMirror binds Cmd/Ctrl+g to find-next; the guard must still hold there
+    // even though it now lets Cmd+g out of the terminal zone (VIM-277).
+    const props = makeProps({ modKey: '⌘' })
+
+    const cmEditor = document.createElement('div')
+    cmEditor.className = 'cm-editor'
+    const cmContent = document.createElement('div')
+    cmContent.setAttribute('contenteditable', 'true')
+    cmContent.className = 'cm-content'
+    cmEditor.appendChild(cmContent)
+    document.body.appendChild(cmEditor)
+    cmContent.focus()
+
+    renderHook(() => useDockShortcuts(props))
+    const event = fire('g', { metaKey: true })
+
+    expect(props.openDock).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(cmEditor)
+  })
 })

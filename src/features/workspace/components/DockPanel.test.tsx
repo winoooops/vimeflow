@@ -7,20 +7,14 @@ import {
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import {
-  createRef,
-  forwardRef,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react'
+import { createRef, forwardRef, useState, type ReactElement } from 'react'
 import DockPanel, { type DockPanelHandle } from './DockPanel'
 import * as useCodeMirrorModule from '../../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../../editor/hooks/useVimMode'
 import * as languageServiceModule from '../../editor/services/languageService'
 import * as useGitStatusModule from '../../diff/hooks/useGitStatus'
 import * as useFileDiffModule from '../../diff/hooks/useFileDiff'
-import { useFeedbackBatch } from '../../diff/hooks/useFeedbackBatch'
+import { useFeedbackBatchStore } from '../../diff/hooks/useFeedbackBatch'
 import type { UseFileDiffReturn } from '../../diff/hooks/useFileDiff'
 import type { ChangedFile, SelectedDiffFile } from '../../diff/types'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
@@ -143,8 +137,8 @@ const SharedFeedbackDockHarness = ({
   cwd?: string
   feedbackDispatch?: FeedbackDispatchTarget
 }): ReactElement => {
-  const feedbackBatch = useFeedbackBatch()
-  const feedbackRepoRootRef = useRef('')
+  const { feedbackBatch, feedbackDraft, feedbackRepoRootRef } =
+    useFeedbackBatchStore('session-a:p0', cwd)
   const isResizing = false
 
   if (!open) {
@@ -188,6 +182,7 @@ const SharedFeedbackDockHarness = ({
       }}
       onSelectedDiffFileChange={vi.fn()}
       feedbackBatch={feedbackBatch}
+      feedbackDraft={feedbackDraft}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
     />
@@ -277,6 +272,22 @@ const addInlineComment = async (
   await user.keyboard('{Enter}')
 
   await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+}
+
+const openInlineCommentDraft = async (
+  user: ReturnType<typeof userEvent.setup>,
+  text: string
+): Promise<void> => {
+  const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+  await user.click(
+    within(gutterSlot).getByRole('button', {
+      name: 'Add comment on this line',
+    })
+  )
+
+  const dialog = screen.getByRole('dialog', { name: /Comment on line/ })
+  await user.type(within(dialog).getByPlaceholderText('Request change'), text)
 }
 
 const renderDockPanel = (
@@ -370,7 +381,9 @@ describe('DockPanel', () => {
       diff: null,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
   })
 
@@ -1006,6 +1019,167 @@ describe('DockPanel', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('diff header switches between multiple unfinished terminal-bound reviews', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p0',
+          label: 'Agent A',
+          commentCount: 2,
+          fileCount: 1,
+        },
+        {
+          key: 'session-b:p0',
+          label: 'Agent B',
+          commentCount: 1,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-b:p0',
+      onPendingFeedbackReviewSelect,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Reviews 2' }))
+
+    const reviewItems = screen.getAllByRole('menuitem')
+    expect(reviewItems).toHaveLength(2)
+    expect(within(reviewItems[0]).getByText('Agent A')).toBeInTheDocument()
+    expect(within(reviewItems[0]).getByText('p0')).toBeInTheDocument()
+    expect(within(reviewItems[0]).queryByText('Active')).not.toBeInTheDocument()
+    expect(reviewItems[0]).not.toHaveClass('bg-primary-container/15')
+    expect(
+      within(reviewItems[0]).getByText('2 comments · 1 file')
+    ).toBeInTheDocument()
+    expect(within(reviewItems[1]).getByText('Agent B')).toBeInTheDocument()
+    expect(within(reviewItems[1]).queryByText('Active')).not.toBeInTheDocument()
+    expect(reviewItems[1]).toHaveAttribute('aria-current', 'true')
+    expect(reviewItems[1]).toHaveClass('bg-primary-container/15')
+    expect(
+      within(reviewItems[1]).getByText('1 comment · 1 file')
+    ).toBeInTheDocument()
+
+    await user.click(within(reviewItems[1]).getByText('Agent B'))
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-b:p0')
+  })
+
+  test('diff header renders one unfinished terminal-bound review as a pane chip', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p1',
+          label: 'Agent A',
+          commentCount: 2,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-a:p1',
+      onPendingFeedbackReviewSelect,
+    })
+
+    expect(
+      screen.queryByRole('button', { name: 'Reviews 1' })
+    ).not.toBeInTheDocument()
+
+    const reviewChip = screen.getByRole('button', { name: 'p1' })
+    expect(reviewChip).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(reviewChip)
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p1')
+  })
+
+  test('diff header lists draft-only unfinished reviews', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p1',
+          label: 'Agent A',
+          commentCount: 0,
+          draftCount: 1,
+          fileCount: 1,
+        },
+        {
+          key: 'session-b:p0',
+          label: 'Agent B',
+          commentCount: 1,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-b:p0',
+      onPendingFeedbackReviewSelect,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Reviews 2' }))
+
+    const reviewItems = screen.getAllByRole('menuitem')
+    expect(within(reviewItems[0]).getByText('Agent A')).toBeInTheDocument()
+    expect(
+      within(reviewItems[0]).getByText('1 draft · 1 file')
+    ).toBeInTheDocument()
+
+    await user.click(within(reviewItems[0]).getByText('Agent A'))
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p1')
+  })
+
+  test('narrow diff dock lists unfinished reviews in compact actions menu', async () => {
+    const user = userEvent.setup()
+    const onPendingFeedbackReviewSelect = vi.fn()
+
+    renderDockPanel({
+      tab: 'diff',
+      position: 'left',
+      horizontalSize: 360,
+      pendingFeedbackReviews: [
+        {
+          key: 'session-a:p0',
+          label: 'Agent A',
+          commentCount: 2,
+          fileCount: 1,
+        },
+        {
+          key: 'session-b:p0',
+          label: 'Agent B',
+          commentCount: 1,
+          fileCount: 1,
+        },
+      ],
+      activeFeedbackReviewKey: 'session-b:p0',
+      onPendingFeedbackReviewSelect,
+    })
+
+    await user.click(screen.getByRole('button', { name: /more dock actions/i }))
+
+    const menu = screen.getByTestId('dock-actions-menu')
+    expect(within(menu).getByText('Unfinished reviews · 2')).toBeInTheDocument()
+    expect(within(menu).getByText('Agent A')).toBeInTheDocument()
+    expect(within(menu).getByText('1 comment · 1 file')).toBeInTheDocument()
+
+    const reviewButtons = within(menu).getAllByRole('button')
+    expect(reviewButtons[1]).toHaveAttribute('aria-current', 'true')
+    expect(reviewButtons[1]).toHaveClass('bg-primary-container/15')
+    expect(
+      within(reviewButtons[1]).queryByText('Active')
+    ).not.toBeInTheDocument()
+
+    await user.click(within(menu).getByText('Agent A'))
+
+    expect(onPendingFeedbackReviewSelect).toHaveBeenCalledWith('session-a:p0')
+  })
+
   test('renders controlled active tab', () => {
     renderDockPanel({ tab: 'diff' })
 
@@ -1141,7 +1315,7 @@ describe('DockPanel', () => {
     expect(onPositionChange).toHaveBeenCalledWith('right')
   })
 
-  test('forwards selectedDiffFile to DiffPanelContent', () => {
+  test('forwards selectedDiffFile to Panel', () => {
     const selectedDiffFile = {
       path: 'src/test.ts',
       staged: false,
@@ -1165,7 +1339,8 @@ describe('DockPanel', () => {
       'src/second.ts',
       false,
       '/repo',
-      false
+      false,
+      '/repo:0:src/second.ts:unstaged'
     )
 
     const closed = false
@@ -1179,18 +1354,18 @@ describe('DockPanel', () => {
       'src/second.ts',
       false,
       '/repo',
-      false
+      false,
+      '/repo:0:src/second.ts:unstaged'
     )
 
-    const selectedButton = screen
-      .getAllByText('second.ts')
-      // eslint-disable-next-line testing-library/no-node-access -- find selected file-list row
-      .map((label) => label.closest('button'))
-      .find((button): button is HTMLButtonElement => button !== null)
-    expect(selectedButton).toHaveClass('bg-surface-container-highest/40')
+    fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+    expect(
+      screen.getByRole('button', { name: /second\.ts/i, current: 'page' })
+    ).toHaveAttribute('aria-current', 'page')
   })
 
-  test('forwards parent-provided gitStatus to DiffPanelContent on the unselected-file render branch', () => {
+  test('forwards parent-provided gitStatus to Panel on the unselected-file render branch', () => {
     vi.mocked(useGitStatusModule.useGitStatus).mockClear()
 
     const sharedGitStatus = {
@@ -1210,7 +1385,7 @@ describe('DockPanel', () => {
     )
   })
 
-  test('forwards parent-provided gitStatus to DiffPanelContent on the selected-file render branch', () => {
+  test('forwards parent-provided gitStatus to Panel on the selected-file render branch', () => {
     vi.mocked(useGitStatusModule.useGitStatus).mockClear()
 
     const sharedGitStatus = {
@@ -1246,7 +1421,9 @@ describe('DockPanel', () => {
       diff: inlineDiffResponse.fileDiff,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
 
     const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
@@ -1265,6 +1442,33 @@ describe('DockPanel', () => {
     expect(screen.getByText('Survives tab switch')).toBeInTheDocument()
   })
 
+  test('keeps open inline comment draft across Editor and Diff tab switches when parent-owned', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: inlineDiffResponse,
+      diff: inlineDiffResponse.fileDiff,
+      loading: false,
+      error: null,
+      latestDiffStatus: null,
+      refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
+    })
+
+    const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
+
+    await openInlineCommentDraft(user, 'Draft survives tab switch')
+
+    rerender(<SharedFeedbackDockHarness tab="editor" open />)
+
+    expect(screen.queryByTestId('diff-panel')).not.toBeInTheDocument()
+
+    rerender(<SharedFeedbackDockHarness tab="diff" open />)
+
+    expect(await screen.findByPlaceholderText('Request change')).toHaveValue(
+      'Draft survives tab switch'
+    )
+  })
+
   test('keeps pending inline feedback after the dock unmounts and reopens when parent-owned', async () => {
     const user = userEvent.setup()
     vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
@@ -1272,7 +1476,9 @@ describe('DockPanel', () => {
       diff: inlineDiffResponse.fileDiff,
       loading: false,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     })
 
     const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
@@ -1292,6 +1498,34 @@ describe('DockPanel', () => {
     expect(screen.getByText('Survives dock reopen')).toBeInTheDocument()
   })
 
+  test('keeps open inline comment draft after the dock unmounts and reopens when parent-owned', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue({
+      response: inlineDiffResponse,
+      diff: inlineDiffResponse.fileDiff,
+      loading: false,
+      error: null,
+      latestDiffStatus: null,
+      refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
+    })
+
+    const { rerender } = render(<SharedFeedbackDockHarness tab="diff" open />)
+
+    await openInlineCommentDraft(user, 'Draft survives dock reopen')
+
+    const closed = false
+    rerender(<SharedFeedbackDockHarness tab="diff" open={closed} />)
+
+    expect(screen.getByTestId('dock-closed')).toBeInTheDocument()
+
+    rerender(<SharedFeedbackDockHarness tab="diff" open />)
+
+    expect(await screen.findByPlaceholderText('Request change')).toHaveValue(
+      'Draft survives dock reopen'
+    )
+  })
+
   test('keeps absolute feedback paths after dock reopen while the diff reloads', async () => {
     const user = userEvent.setup()
     let diffLoaded = true
@@ -1301,7 +1535,9 @@ describe('DockPanel', () => {
       diff: diffLoaded ? inlineDiffResponse.fileDiff : null,
       loading: !diffLoaded,
       error: null,
+      latestDiffStatus: null,
       refetch: vi.fn(),
+      acceptLatestDiff: vi.fn(),
     }))
 
     const writePty = vi.fn().mockResolvedValue(undefined)
@@ -1356,7 +1592,9 @@ describe('DockPanel', () => {
     const popover = await screen.findByRole('dialog', {
       name: 'Finish feedback',
     })
-    await user.click(within(popover).getByRole('button', { name: 'Confirm' }))
+    await user.click(
+      within(popover).getByRole('button', { name: 'Confirm (Y)' })
+    )
 
     await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
 

@@ -2,7 +2,7 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ref_count: 16
 ---
 
@@ -326,4 +326,17 @@ test case for the state that triggers the collision.
 - **Fix:** Made the sync-pill branch own the compact sizing and select the
   active amber tint versus idle primary tint inside that branch. Added a
   regression test covering the active, open, out-of-sync state.
+
+### 27. Unified diff range bars missed normalized removed rows
+
+- **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/rangeBar/diffRangeBars.ts`
+- **Finding:** The range-bar DOM pass treated unified gutter cells as deletion
+  rows only when `data-line-type="change-deletion"`. Unified diffs can also
+  expose removed rows as `data-line-type="removed"`, which made deletion-side
+  range comments fail to paint their persistent gutter bar on those rows.
+- **Fix:** Mirrored the review-navigation side resolver by classifying both
+  `change-deletion` and `removed` as deletions, and expanded the co-located
+  range-bar test to cover both unified deletion row spellings.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -209,10 +209,7 @@ mod tests {
         assert_eq!(agent_type_for_binary("codex"), Some(AgentType::Codex));
         assert_eq!(agent_type_for_binary("kimi"), Some(AgentType::Kimi));
         assert_eq!(agent_type_for_binary("kimi-code"), Some(AgentType::Kimi));
-        assert_eq!(
-            agent_type_for_binary("opencode"),
-            Some(AgentType::Opencode)
-        );
+        assert_eq!(agent_type_for_binary("opencode"), Some(AgentType::Opencode));
         assert_eq!(agent_type_for_binary("aider"), Some(AgentType::Aider));
     }
 

@@ -1,6 +1,9 @@
 import { test, expect, vi } from 'vitest'
 import type { DiffLineAnnotation } from '@pierre/diffs'
-import type { ReviewComment } from '../hooks/useFeedbackBatch'
+import type {
+  ReviewComment,
+  ReviewCommentCategory,
+} from '../hooks/useFeedbackBatch'
 import {
   formatFeedbackPayload,
   dispatchFeedbackBatch,
@@ -10,7 +13,8 @@ import {
 const makeAnnotation = (
   lineNumber: number,
   side: 'additions' | 'deletions',
-  text: string
+  text: string,
+  category?: ReviewCommentCategory
 ): DiffLineAnnotation<ReviewComment> => ({
   lineNumber,
   side,
@@ -19,10 +23,25 @@ const makeAnnotation = (
     text,
     author: 'self',
     createdAt: Date.now(),
+    ...(category === undefined ? {} : { category }),
   },
 })
 
-test('1 comment across 1 file -> header contains singular wording', () => {
+const makeFileAnnotation = (
+  text: string
+): DiffLineAnnotation<ReviewComment> => ({
+  lineNumber: 0,
+  side: 'additions',
+  metadata: {
+    id: 'file-comment',
+    text,
+    author: 'self',
+    createdAt: Date.now(),
+    target: { scope: 'file' },
+  },
+})
+
+test('1 item -> header uses singular wording', () => {
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
@@ -30,12 +49,12 @@ test('1 comment across 1 file -> header contains singular wording', () => {
       annotations: [makeAnnotation(5, 'additions', 'Nice work')],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
-  expect(payload).toContain('1 comment across 1 file')
+  expect(payload).toContain('Inline review — 1 item.')
 })
 
-test('3 comments across 2 files -> header says plural counts and body has 3 entry lines', () => {
+test('3 items -> header says plural count and body tags each target', () => {
   const entries: DispatchEntry[] = [
     {
       filePath: 'src/App.tsx',
@@ -51,12 +70,12 @@ test('3 comments across 2 files -> header says plural counts and body has 3 entr
       annotations: [makeAnnotation(3, 'additions', 'Consider renaming')],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
-  expect(payload).toContain('3 comments across 2 files')
-  expect(payload).toContain('> src/App.tsx:5 (additions)')
-  expect(payload).toContain('> src/App.tsx:10 (deletions)')
-  expect(payload).toContain('> src/main.tsx:3 (additions)')
+  expect(payload).toContain('Inline review — 3 items.')
+  expect(payload).toContain('[#1 · Change request] src/App.tsx:5 (additions)')
+  expect(payload).toContain('[#2 · Change request] src/App.tsx:10 (deletions)')
+  expect(payload).toContain('[#3 · Change request] src/main.tsx:3 (additions)')
 })
 
 test('multi-line comment prefixes every line', () => {
@@ -69,25 +88,51 @@ test('multi-line comment prefixes every line', () => {
       ],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
-  expect(payload).toContain('> src/App.tsx:5 (additions)')
+  expect(payload).toContain('src/App.tsx:5 (additions)')
   expect(payload).toContain('> ─ Line one')
   expect(payload).toContain('> ─ Line two')
   expect(payload).toContain('> ─ Line three')
 })
 
-test('repo-relative file path is emitted directly without joining', () => {
-  const entries: DispatchEntry[] = [
-    {
-      filePath: 'src/App.tsx',
-      staged: false,
-      annotations: [makeAnnotation(5, 'additions', 'Nice work')],
-    },
-  ]
-  const payload = formatFeedbackPayload(entries)
+test('category drives the tag and the intent instruction (VIM-253)', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [
+          makeAnnotation(5, 'additions', 'Why capped at 3?', 'question'),
+          makeAnnotation(8, 'additions', 'Off by one', 'bug'),
+        ],
+      },
+    ],
+    'n0nce'
+  )
 
-  expect(payload).toContain('> src/App.tsx:5 (additions)')
+  expect(payload).toContain('[#1 · Question] src/App.tsx:5 (additions)')
+  expect(payload).toContain(
+    '> → Answer inline in your reply. Do not edit files.'
+  )
+  expect(payload).toContain('[#2 · Bug] src/App.tsx:8 (additions)')
+  expect(payload).toContain('> → Fix this.')
+})
+
+test('an untagged comment defaults to a change request', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [makeAnnotation(5, 'additions', 'Nice work')],
+      },
+    ],
+    'n0nce'
+  )
+
+  expect(payload).toContain('[#1 · Change request]')
+  expect(payload).toContain('> → Make this change.')
 })
 
 test('each entry line is labelled with its staged/unstaged diff view', () => {
@@ -103,12 +148,77 @@ test('each entry line is labelled with its staged/unstaged diff view', () => {
       annotations: [makeAnnotation(8, 'additions', 'unstaged side')],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
   // An MM file produces two same-path entries whose line numbers refer to
   // different comparisons — the [staged]/[unstaged] tag keeps them distinct.
-  expect(payload).toContain('> src/App.tsx:5 (additions) [staged]')
-  expect(payload).toContain('> src/App.tsx:8 (additions) [unstaged]')
+  expect(payload).toContain('src/App.tsx:5 (additions) [staged]')
+  expect(payload).toContain('src/App.tsx:8 (additions) [unstaged]')
+})
+
+test('file-level comments emit an explicit file target instead of a line target', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [makeFileAnnotation('Review the module boundary')],
+      },
+    ],
+    'n0nce'
+  )
+
+  expect(payload).toContain('src/App.tsx (file) [unstaged]')
+  expect(payload).not.toContain('src/App.tsx:0')
+})
+
+test('range comments emit start and end line targets', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [
+          {
+            lineNumber: 4,
+            side: 'additions',
+            metadata: {
+              id: 'range-comment',
+              text: 'Review this block',
+              author: 'self',
+              createdAt: Date.now(),
+              target: {
+                scope: 'range',
+                side: 'additions',
+                startLine: 4,
+                endLine: 6,
+              },
+            },
+          },
+        ],
+      },
+    ],
+    'n0nce'
+  )
+
+  expect(payload).toContain('src/App.tsx:4-6 (additions) [unstaged]')
+})
+
+test('the footer instructs the agent to emit the reply block with the nonce', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/a.ts',
+        staged: false,
+        annotations: [makeAnnotation(5, 'additions', 'Why?', 'question')],
+      },
+    ],
+    'n0nc3'
+  )
+
+  expect(payload).toContain('<<<VIMEFLOW_REPLY')
+  expect(payload).toContain('"nonce":"n0nc3"')
+  expect(payload).toContain('VIMEFLOW_REPLY>>>')
 })
 
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {
@@ -122,7 +232,7 @@ test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', a
     },
   ]
 
-  await dispatchFeedbackBatch('pane-1', 'pty-1', entries, writePty)
+  await dispatchFeedbackBatch('pane-1', 'pty-1', entries, 'n0nce', writePty)
 
   expect(writePty).toHaveBeenCalledTimes(1)
   const sent = writePty.mock.calls[0][1] as string
@@ -141,7 +251,7 @@ test('strips terminal control characters so a crafted path/comment cannot break 
       ],
     },
   ]
-  const body = formatFeedbackPayload(entries)
+  const body = formatFeedbackPayload(entries, 'n0nce')
 
   // No ESC or CR survives the format step — the dangerous bytes that form the
   // bracketed-paste sentinel / inject prompt lines are gone (the harmless

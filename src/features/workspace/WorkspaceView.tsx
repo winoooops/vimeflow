@@ -89,13 +89,15 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
-import { useFeedbackBatch } from '../diff/hooks/useFeedbackBatch'
+import { useFeedbackBatchStore } from '../diff/hooks/useFeedbackBatch'
+import { useAgentReply } from '../diff/hooks/useAgentReply'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
 import { selectVisiblePanes } from '../terminal/components/SplitView'
 import {
+  canSelectLayoutOverCapacity,
   getPaneLayoutCapacity,
   type PaneLayoutDefinition,
 } from '../terminal/layout-registry'
@@ -147,6 +149,62 @@ const rateLimitPercentage = (
   }
 
   return Math.round(limit.usedPercentage)
+}
+
+const UNBOUND_FEEDBACK_OWNER_KEY = 'workspace:unbound-feedback'
+
+const makeFeedbackOwnerKey = (sessionId: string, paneId: string): string =>
+  `${sessionId}:${paneId}`
+
+// Unique id for each attached agent-reply annotation (VIM-249).
+let agentReplyCommentSeq = 0
+
+const nextAgentReplyCommentId = (): string =>
+  `agent-reply-${(agentReplyCommentSeq += 1)}`
+
+const sameSelectedDiffFile = (
+  left: SelectedDiffFile | null,
+  right: SelectedDiffFile | null
+): boolean =>
+  left === right ||
+  (left !== null &&
+    right !== null &&
+    left.path === right.path &&
+    left.staged === right.staged &&
+    left.cwd === right.cwd)
+
+export const updateSelectedDiffFilesByOwner = (
+  previous: Map<string, SelectedDiffFile>,
+  ownerKey: string,
+  nextSelection: SelectedDiffFile | null
+): Map<string, SelectedDiffFile> => {
+  const current = previous.get(ownerKey) ?? null
+  if (sameSelectedDiffFile(current, nextSelection)) {
+    return previous
+  }
+
+  const next = new Map(previous)
+  if (nextSelection === null) {
+    next.delete(ownerKey)
+  } else {
+    next.set(ownerKey, nextSelection)
+  }
+
+  return next
+}
+
+interface PendingFeedbackReview {
+  key: string
+  label: string
+  commentCount: number
+  fileCount: number
+  draftCount: number
+}
+
+interface FeedbackOwnerTarget {
+  sessionId: string
+  paneId: string
+  label: string
 }
 
 const formatStatusDuration = (durationMs: number): string | undefined => {
@@ -543,7 +601,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
     return layoutRegistry.layouts
       .filter((layout) => {
-        if (layout.id === 'single') {
+        if (canSelectLayoutOverCapacity(layout.id)) {
           return true
         }
 
@@ -563,6 +621,7 @@ const WorkspaceViewContent = (): ReactElement => {
         : layoutRegistry.layouts
             .filter(
               (layout) =>
+                !canSelectLayoutOverCapacity(layout.id) &&
                 layout.id !== activeSession.layout &&
                 activeSession.panes.length > layout.capacity
             )
@@ -1409,7 +1468,10 @@ const WorkspaceViewContent = (): ReactElement => {
         return false
       }
 
-      if (activeSession.panes.length > layoutRegistry.capacityFor(layoutId)) {
+      if (
+        !canSelectLayoutOverCapacity(layoutId) &&
+        activeSession.panes.length > layoutRegistry.capacityFor(layoutId)
+      ) {
         return false
       }
 
@@ -1792,6 +1854,37 @@ const WorkspaceViewContent = (): ReactElement => {
     enabled: !showUnsavedDialog && !newSessionDialog.open,
   })
 
+  // The palette owns focus while open (its Dialog focus-trap), and restoring to
+  // whatever happened to be focused when it opened is unreliable — a theme
+  // command even remounts the diff underneath it. On close, deterministically
+  // return focus to whichever surface is active — terminal pane or dock
+  // (diff/editor) — so keyboard flow survives any palette command. Runs after
+  // the Dialog's own restore (child effects fire before this parent effect), so
+  // this wins.
+  const wasCommandPaletteOpenRef = useRef(commandPalette.state.isOpen)
+  useEffect(() => {
+    const wasOpen = wasCommandPaletteOpenRef.current
+    wasCommandPaletteOpenRef.current = commandPalette.state.isOpen
+
+    if (
+      wasOpen &&
+      !commandPalette.state.isOpen &&
+      !showUnsavedDialog &&
+      !newSessionDialog.open
+    ) {
+      requestFocus(
+        activeContainerId === TERMINAL_CONTAINER_ID ? 'terminal' : dockTab
+      )
+    }
+  }, [
+    commandPalette.state.isOpen,
+    activeContainerId,
+    dockTab,
+    requestFocus,
+    showUnsavedDialog,
+    newSessionDialog.open,
+  ])
+
   usePaneShortcuts({
     sessions,
     activeSessionId,
@@ -1841,21 +1934,123 @@ const WorkspaceViewContent = (): ReactElement => {
     invert: dockPosition === 'right',
   })
 
-  const [selectedDiffFile, setSelectedDiffFile] =
-    useState<SelectedDiffFile | null>(null)
+  const activeFeedbackOwnerKey =
+    activeSessionId !== null && activePtyBackedPaneId !== undefined
+      ? makeFeedbackOwnerKey(activeSessionId, activePtyBackedPaneId)
+      : UNBOUND_FEEDBACK_OWNER_KEY
 
-  const feedbackBatch = useFeedbackBatch()
-  const feedbackRepoRootRef = useRef('')
-  const { clearBatch: clearFeedbackBatch } = feedbackBatch
-  const previousFeedbackCwdRef = useRef(activeCwd)
+  const [selectedDiffFilesByOwner, setSelectedDiffFilesByOwner] = useState<
+    Map<string, SelectedDiffFile>
+  >(() => new Map())
 
-  useEffect(() => {
-    if (previousFeedbackCwdRef.current !== activeCwd) {
-      previousFeedbackCwdRef.current = activeCwd
-      feedbackRepoRootRef.current = ''
-      clearFeedbackBatch()
+  const selectedDiffFile =
+    selectedDiffFilesByOwner.get(activeFeedbackOwnerKey) ?? null
+
+  const setSelectedDiffFile = useCallback(
+    (nextSelection: SelectedDiffFile | null): void => {
+      setSelectedDiffFilesByOwner((previous) =>
+        updateSelectedDiffFilesByOwner(
+          previous,
+          activeFeedbackOwnerKey,
+          nextSelection
+        )
+      )
+    },
+    [activeFeedbackOwnerKey]
+  )
+
+  const {
+    feedbackBatch,
+    feedbackRepoRootRef,
+    feedbackDraft,
+    summaries: feedbackSummaries,
+    pruneOwners: pruneFeedbackOwners,
+  } = useFeedbackBatchStore(activeFeedbackOwnerKey, activeCwd)
+
+  useLayoutEffect(() => {
+    pruneFeedbackOwners(livePaneKeys)
+  }, [livePaneKeys, pruneFeedbackOwners])
+
+  // Capture agent replies (VIM-249): the single subscription point, mounted
+  // where every feedback owner is reachable so a reply attaches onto the owner
+  // that dispatched it — even after the user switches panes.
+  useAgentReply({
+    addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
+    nextCommentId: nextAgentReplyCommentId,
+  })
+
+  useLayoutEffect(() => {
+    setSelectedDiffFilesByOwner((previous) => {
+      const next = new Map(
+        [...previous.entries()].filter(
+          ([ownerKey]) =>
+            ownerKey === UNBOUND_FEEDBACK_OWNER_KEY ||
+            livePaneKeys.has(ownerKey)
+        )
+      )
+
+      return next.size === previous.size ? previous : next
+    })
+  }, [livePaneKeys])
+
+  const feedbackOwnerTargets = useMemo(() => {
+    const targets = new Map<string, FeedbackOwnerTarget>()
+
+    for (const session of sessions) {
+      for (const pane of session.panes) {
+        const label =
+          pane.userLabel ??
+          pane.agentTitle ??
+          (session.panes.length > 1
+            ? `${session.name} · ${pane.id}`
+            : session.name)
+
+        targets.set(makeFeedbackOwnerKey(session.id, pane.id), {
+          sessionId: session.id,
+          paneId: pane.id,
+          label,
+        })
+      }
     }
-  }, [activeCwd, clearFeedbackBatch])
+
+    return targets
+  }, [sessions])
+
+  const pendingFeedbackReviews = useMemo<PendingFeedbackReview[]>(
+    () =>
+      feedbackSummaries.flatMap((summary) => {
+        const target = feedbackOwnerTargets.get(summary.ownerKey)
+
+        return target
+          ? [
+              {
+                key: summary.ownerKey,
+                label: target.label,
+                commentCount: summary.commentCount,
+                fileCount: summary.fileCount,
+                draftCount: summary.draftCount,
+              },
+            ]
+          : []
+      }),
+    [feedbackOwnerTargets, feedbackSummaries]
+  )
+
+  // Called by the diff dock's unfinished-review selector when the user picks a
+  // pending review owned by another terminal pane.
+  const handlePendingFeedbackReviewSelect = useCallback(
+    (key: string): void => {
+      const target = feedbackOwnerTargets.get(key)
+      if (!target) {
+        return
+      }
+
+      setActiveSessionId(target.sessionId)
+      setSessionActivePane(target.sessionId, target.paneId)
+      openDock('diff')
+    },
+    [feedbackOwnerTargets, openDock, setActiveSessionId, setSessionActivePane]
+  )
 
   const editorGitStatusCwd = parentPathForGitStatus(editorBuffer.filePath)
   const editorFileLookupCwd = parentPathForFileLookup(editorBuffer.filePath)
@@ -2192,6 +2387,7 @@ const WorkspaceViewContent = (): ReactElement => {
       gitStatus.filesCwd,
       gitStatus.repoRoot,
       openDock,
+      setSelectedDiffFile,
     ]
   )
 
@@ -2295,6 +2491,8 @@ const WorkspaceViewContent = (): ReactElement => {
     }
 
     if (currentPendingPath) {
+      setDockTab('editor')
+      setIsDockOpen(true)
       try {
         await editorBuffer.openFile(currentPendingPath)
         setFileError(null)
@@ -2350,6 +2548,8 @@ const WorkspaceViewContent = (): ReactElement => {
     }
 
     try {
+      setDockTab('editor')
+      setIsDockOpen(true)
       await editorBuffer.openFile(target)
       setFileError(null)
     } catch (error: unknown) {
@@ -2411,13 +2611,8 @@ const WorkspaceViewContent = (): ReactElement => {
       })
       openDock('diff')
     },
-    [activeCwd, openDock]
+    [activeCwd, openDock, setSelectedDiffFile]
   )
-
-  // Belt-and-suspenders: clear selection on cwd change
-  useEffect(() => {
-    setSelectedDiffFile(null)
-  }, [activeCwd])
 
   const dockCanvasFlexDirection: CSSProperties['flexDirection'] =
     dockPosition === 'top' || dockPosition === 'bottom' ? 'column' : 'row'
@@ -2479,6 +2674,9 @@ const WorkspaceViewContent = (): ReactElement => {
       writePty: async (ptyId: string, data: string): Promise<void> => {
         await terminalService.write({ sessionId: ptyId, data })
       },
+      focusTerminal: (): void => {
+        setTimeout(() => claimTerminal(), 0)
+      },
     }
   }, [
     activePtyBackedPane,
@@ -2488,6 +2686,7 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatus.isActive,
     agentStatus.agentExited,
     agentStatus.sessionId,
+    claimTerminal,
     terminalService,
   ])
 
@@ -2530,8 +2729,12 @@ const WorkspaceViewContent = (): ReactElement => {
         setActiveContainerId(DOCK_CONTAINER_ID)
       }}
       feedbackBatch={feedbackBatch}
+      feedbackDraft={feedbackDraft}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
+      pendingFeedbackReviews={pendingFeedbackReviews}
+      activeFeedbackReviewKey={activeFeedbackOwnerKey}
+      onPendingFeedbackReviewSelect={handlePendingFeedbackReviewSelect}
     />
   ) : // Closed dock renders nothing — the bottom action bar's dock toggle is
   // the single reopen affordance (the old "show panel" peek bar is gone).
@@ -2833,6 +3036,7 @@ const WorkspaceViewContent = (): ReactElement => {
               layouts={layoutRegistry.layouts}
               blockedLayoutIds={blockedLayoutIds}
               onPick={handlePickLayout}
+              labelSingleAsFocusAction
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}

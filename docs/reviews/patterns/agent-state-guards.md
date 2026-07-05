@@ -2,8 +2,8 @@
 id: agent-state-guards
 category: correctness
 created: 2026-06-15
-last_updated: 2026-06-28
-ref_count: 9
+last_updated: 2026-07-05
+ref_count: 10
 ---
 
 # Agent-State Guards
@@ -139,3 +139,12 @@ UI state that tracks an active agent session must validate the agent's identity 
 - **Finding:** The backend emits retained replay running calls before `agent-replay-summary`, so the frontend had already restored `toolCalls.active` when the summary arrived. The summary reducer hard-coded `active: null`, immediately making the panel appear idle during resume even though a Bash/test/edit tool was still running.
 - **Fix:** Preserved `prev.toolCalls.active` when applying replay summary totals, cwd, and recent completed calls. Added a hook regression test that emits a running tool event followed by a replay summary and verifies the active call remains visible.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Codex task-complete replies bypassed the replay/live gate
+
+- **Source:** github-codex-connector | PR #664 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex `task_complete` processing forwarded `replay_done` to sibling tool-call flush logic, but the new `agent-reply` sentinel helper emitted unconditionally. Historical transcript lines processed during resume or reattach could therefore escape as live `agent-reply` events before the watcher reached the replay boundary.
+- **Fix:** Threaded `replay_done` into `emit_reply_if_present` and returned early until replay has caught up. Added a regression test that processes a sentinel-bearing `task_complete` line with `replay_done=false` and asserts no `agent-reply` event is emitted.
+- **Commit:** same commit as this entry

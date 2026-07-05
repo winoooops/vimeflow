@@ -8,6 +8,10 @@ import {
 import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
 import { isMacPlatform } from '../../command-palette/shortcutConfig'
+import {
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
+} from '../../terminal/layout-registry'
 import { themeService } from '../../../theme'
 
 vi.mock('../../command-palette/shortcutConfig', async (importActual) => {
@@ -1633,7 +1637,7 @@ describe('buildWorkspaceCommands - layout and dock-position namespaces', () => {
       ...baseDeps(),
       pickLayout,
       availableLayouts: [
-        { id: 'single', title: 'Single' },
+        { id: SINGLE_PANE_FOCUS_LAYOUT_ID, title: 'Single' },
         { id: 'vsplit', title: 'Vertical Split' },
       ],
     })
@@ -1641,7 +1645,7 @@ describe('buildWorkspaceCommands - layout and dock-position namespaces', () => {
     const layout = commands.find((c) => c.id === 'layout')
     expect(layout?.label).toBe(':layout')
     expect(layout?.children?.map((c) => c.label)).toEqual([
-      'Single',
+      SINGLE_PANE_FOCUS_LABEL,
       'Vertical Split',
     ])
 
@@ -1657,15 +1661,45 @@ describe('buildWorkspaceCommands - layout and dock-position namespaces', () => {
       ...baseDeps(),
       notifyInfo,
       pickLayout,
-      availableLayouts: [{ id: 'single', title: 'Single' }],
+      availableLayouts: [{ id: SINGLE_PANE_FOCUS_LAYOUT_ID, title: 'Single' }],
     })
+
+    const singleLayoutCommandId = `layout-${SINGLE_PANE_FOCUS_LAYOUT_ID}`
 
     commands
       .find((c) => c.id === 'layout')
-      ?.children?.find((c) => c.id === 'layout-single')
+      ?.children?.find((c) => c.id === singleLayoutCommandId)
       ?.execute?.('')
 
     expect(notifyInfo).toHaveBeenCalledWith("Layout 'Single' needs fewer panes")
+  })
+
+  test(':layout single child advertises the active-pane focus shortcut', () => {
+    vi.mocked(isMacPlatform).mockReturnValue(false)
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      pickLayout: vi.fn(() => true),
+      availableLayouts: [
+        { id: SINGLE_PANE_FOCUS_LAYOUT_ID, title: 'Single' },
+        { id: 'vsplit', title: 'Vertical Split' },
+      ],
+    })
+
+    const layout = commands.find((c) => c.id === 'layout')
+    const singleLayoutCommandId = `layout-${SINGLE_PANE_FOCUS_LAYOUT_ID}`
+
+    expect(
+      layout?.children?.find((c) => c.id === singleLayoutCommandId)?.shortcut
+    ).toEqual(['Ctrl', 'Z'])
+
+    expect(
+      layout?.children?.find((c) => c.id === singleLayoutCommandId)?.description
+    ).toBe('Toggle active-pane focus')
+
+    expect(
+      layout?.children?.find((c) => c.id === 'layout-vsplit')?.shortcut
+    ).toBeUndefined()
   })
 
   test(':dock-position children move the dock and mark the current edge', () => {

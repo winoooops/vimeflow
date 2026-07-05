@@ -271,9 +271,72 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `tests/e2e/shared/actions.ts`, `tests/e2e/core/specs/navigation.spec.ts`
 - **Finding:** `clickLayoutButton` queried `button[aria-label="<layout>"]` globally. Hidden-layout menu checkboxes share those labels with the real layout switcher pills, so an open configuration menu could absorb the follow-up click and leave the split layout unchanged. The navigation smoke test also asserted dock content before opening the now-closed-by-default dock.
 - **Fix:** Scoped layout-button clicks to `[data-testid="layout-switcher"]` so menu items cannot match, and made the navigation smoke open the dock via the real status-bar toggle before asserting the default Diff tab.
+
+### 26. Electron WDIO suites need capability-level worker caps
+
+- **Source:** local-codex | PR #637 CI failure | 2026-06-30
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** The Electron core suite still planned all five spec files as workers even though the root config set `maxInstances: 1`. In CI this let multiple Electron sessions contend for the same desktop-app resources and produced deterministic startup selector failures such as missing layout buttons, `FILES`, and `editor-panel`.
+- **Fix:** Added `'wdio:maxInstances': 1` to each Electron capability block so WDIO serializes the spec files at the capability level. A local WDIO run without Xvfb confirmed worker `0-1` starts only after `0-0` exits.
 - **Commit:** same commit as this entry
 
-### 29. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
+### 27. Core E2E specs assumed visible controls that moved behind adaptive UI
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`,
+  `tests/e2e/core/specs/files-to-editor.spec.ts`,
+  `tests/e2e/core/specs/ipc-roundtrip.spec.ts`,
+  `tests/e2e/core/specs/navigation.spec.ts`
+- **Finding:** The core smoke suite still clicked layout buttons and sidebar
+  tabs by visible labels that are no longer always present. Hidden split
+  layouts now require the layout configurator before their toolbar buttons
+  appear, the file tab can render as an icon-only control with an aria-label,
+  and the editor panel is behind the dock toggle by default.
+- **Fix:** Teach the browser-pane layout helper to expose hidden layouts through
+  the configurator before selecting them, use the stable `aria-label="FILES"`
+  selector for file-tab navigation, and explicitly open the dock plus select the
+  Editor tab before waiting for the editor panel.
+- **Commit:** same commit as this entry
+
+### 28. Terminal E2E new-session selector matched the sidebar dialog trigger
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`
+- **Finding:** Terminal smoke specs clicked the first
+  `button[aria-label="New session"]` in the document. The workspace now has both
+  a sidebar New session button, which opens the dialog, and a tab-strip plus
+  button, which immediately creates a terminal session. The ambiguous selector
+  could hit the sidebar control, leaving the test waiting forever for a second
+  terminal pane that was never requested.
+- **Fix:** Scope terminal-session creation clicks to
+  `[data-testid="session-tabs"] button[aria-label="New session"]` so the specs
+  target the tab-strip plus control.
+- **Commit:** same commit as this entry
+
+### 29. Terminal E2E must complete the new-session dialog flow
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/shared/actions.ts`,
+  `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`,
+  `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The terminal and agent smoke specs still treated "New session" as
+  a one-click session creation action. After the workspace moved creation
+  behind `NewSessionDialog`, the first click only opened the dialog, so tests
+  waited for a second PTY or bridge-enabled session that was never spawned.
+- **Fix:** Centralize E2E session creation in `createNewSessionWithDefaults`,
+  which clicks the sidebar trigger and then the visible "Create session"
+  confirmation. Updated affected specs to use the helper, and closed the
+  lifecycle test's spawned active session via the command palette `:close`
+  command before asserting the PTY count decrements.
+- **Commit:** same commit as this entry
+
+### 30. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
 
 - **Source:** deterministic CI failure | PR #647 round 7 | 2026-07-03
 - **Severity:** HIGH
@@ -288,7 +351,7 @@ completely different root causes. The generic fast-failure modes:
   traces that can exhaust the hosted runner's disk.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 30. Final E2E suite should free bulky build intermediates before post-job cleanup
+### 31. Final E2E suite should free bulky build intermediates before post-job cleanup
 
 - **Source:** deterministic CI failure | PR #647 round 8 | 2026-07-03
 - **Severity:** HIGH
@@ -305,7 +368,7 @@ completely different root causes. The generic fast-failure modes:
   while post-job steps have materially more disk headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 31. Final E2E suite may need disk cleanup before running specs
+### 32. Final E2E suite may need disk cleanup before running specs
 
 - **Source:** deterministic CI failure | PR #647 round 12 | 2026-07-03
 - **Severity:** HIGH
@@ -319,7 +382,7 @@ completely different root causes. The generic fast-failure modes:
   headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 32. E2E Codex watcher seed must tolerate retried partial SQLite setup
+### 33. E2E Codex watcher seed must tolerate retried partial SQLite setup
 
 - **Source:** deterministic CI failure | PR #660 round 1 | 2026-07-05
 - **Severity:** HIGH

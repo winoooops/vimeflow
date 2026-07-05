@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-03
-ref_count: 87
+last_updated: 2026-07-05
+ref_count: 88
 ---
 
 # Accessibility
@@ -398,7 +398,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** In the compact branch of `handleToggleSidebar`, unconditionally set `shouldRestoreSidebarToggleFocusRef.current = true` for all user-triggered compact toggles (both open and close). This aligns with the Escape and scrim dismissal paths. Also fixed `useSidebarShortcut` to not bail on the compact sidebar drawer itself (which carries `role="dialog"` for a11y) while preserving the existing bailout for real dialogs such as the command palette. Added a regression test that opens the drawer, focuses the Command Palette button inside it, fires the sidebar shortcut, and asserts focus lands back on the tabs toggle.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 26. Idle-but-live shell state removed from `aria-label` — assistive tech cannot distinguish "no shell" from "shell idle"
+### 43. Idle-but-live shell state removed from `aria-label` — assistive tech cannot distinguish "no shell" from "shell idle"
 
 - **Source:** github-claude | PR #367 | 2026-06-06
 - **Severity:** MEDIUM
@@ -407,7 +407,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a new `burnerShellExists` boolean prop to `HeaderActions` (threaded through `Header` → `TerminalPane` → `SplitView` → `TerminalZone` → `WorkspaceView` from the existing `runningBurnerPaneKeys` set computed by `useBurnerTerminals`). The `aria-label` now has three honest states: `open burner terminal (running)` when active, `open burner terminal (live)` when the shell exists but is idle, and `open burner terminal` when no shell exists. Visual styling (amber tint vs. gray) remains driven solely by `burnerActive` — no visual change for the idle-but-live case. Added a regression test asserting the button resolves with the `(live)` accessible name when `burnerShellExists` is true and `burnerActive` is false.
 - **Commit:** _(see git log for the cycle-1 fix commit on PR #367)_
 
-### 27. Closing a modal dialog can leave DOM focus inside the hidden subtree
+### 44. Closing a modal dialog can leave DOM focus inside the hidden subtree
 
 - **Source:** github-claude | PR #389 round 2 | 2026-06-08
 - **Severity:** MEDIUM
@@ -416,7 +416,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added an `else` branch to the focus effect: `(document.activeElement as HTMLElement | null)?.blur()`. This removes focus from any element inside the hidden popup without needing a return-focus ref to the opener. Added a regression test asserting that after hiding, the previously-focused backdrop button no longer has focus.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_
 
-### 28. `role="dialog"` container missing `aria-modal`
+### 45. `role="dialog"` container missing `aria-modal`
 
 - **Source:** github-claude | PR #389 round 2 | 2026-06-08
 - **Severity:** MEDIUM
@@ -425,7 +425,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `aria-modal={open}` to the outer `role="dialog"` div so the modal containment signal is present only while the popup is visible. Added a regression test asserting `aria-modal="true"` when open and `"false"` when hidden.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_
 
-### 29. Full-screen backdrop dismiss button participates in sequential keyboard navigation
+### 46. Full-screen backdrop dismiss button participates in sequential keyboard navigation
 
 - **Source:** github-claude | PR #389 round 2 | 2026-06-08
 - **Severity:** LOW
@@ -434,7 +434,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `tabIndex={-1}` to the backdrop button. Pointer users still dismiss by clicking the backdrop; keyboard users dismiss via the existing Escape capture listener. Added a regression test asserting `tabIndex="-1"`.
 - **Commit:** _(see git log for the cycle-2 fix commit on PR #389)_
 
-### 30. Modal dialog with aria-modal lacks Tab focus trap
+### 47. Modal dialog with aria-modal lacks Tab focus trap
 
 - **Source:** github-codex-connector | PR #389 round 3 | 2026-06-08
 - **Severity:** HIGH
@@ -443,7 +443,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Extended the existing capture-phase `keydown` listener on `overlayRef` to handle `Tab` and `Shift+Tab`. When focus is inside the terminal body, Tab moves to the first header button and Shift+Tab moves to the last. When focus is on a button, Tab cycles forward and Shift+Tab cycles backward, wrapping from the last button back to the terminal via `bodyRef.current?.focusTerminal()`. The trap respects the optional align button (omitted when `onAlignCwd` is absent) and the disabled state (skipped when `alignBusy` is true). Added regression tests for forward/backward cycling with and without the align button.
 - **Commit:** _(see git log for the cycle-3 fix commit on PR #389)_
 
-### 31. Focus trap leaks focus when the focused element becomes disabled mid-focus
+### 48. Focus trap leaks focus when the focused element becomes disabled mid-focus
 
 - **Source:** github-codex-connector | PR #389 round 5 | 2026-06-08
 - **Severity:** MEDIUM
@@ -452,7 +452,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** In the `currentIndex === -1` branch, call `event.preventDefault()` and `event.stopPropagation()`, then move focus to the first focusable element (or the last when `shiftKey` is true). If no focusable elements remain, fall back to `bodyRef.current?.focusTerminal()`. Added regression tests for both `Tab` and `Shift+Tab` from a disabled align button.
 - **Commit:** _(see git log for the cycle-5 fix commit on PR #389)_
 
-### 32. Modal popup blur discards return focus — keyboard users lose their workspace focus after every close
+### 49. Modal popup blur discards return focus — keyboard users lose their workspace focus after every close
 
 - **Source:** github-claude | PR #389 round 7 | 2026-06-08
 - **Severity:** MEDIUM
@@ -461,7 +461,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `priorFocusRef` to capture `document.activeElement` on the `false→true` open transition, then call `.focus()` on that saved element during the `true→false` close transition and clear the ref. This is the standard modal focus-restore pattern already used in `UnsavedChangesDialog` (#11).
 - **Commit:** _(see git log for the cycle-7 fix commit on PR #389)_
 
-### 33. Tooltip-wrapped stat cell reverts prior dl/dt/dd fix to bare spans — a11y regression
+### 50. Tooltip-wrapped stat cell reverts prior dl/dt/dd fix to bare spans — a11y regression
 
 - **Source:** github-claude | PR #395 round 1 | 2026-06-08
 - **Severity:** LOW
@@ -470,7 +470,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Restored the outer metric grid as `<dl>` and changed each `StatCell` inner markup to `<dd>` (value) + `<dt>` (label) while keeping the `Tooltip` wrapper and all Tailwind classes unchanged. The `<div>` wrapper inside `<dl>` around each `<dd>`/`<dt>` pair remains valid HTML5 per the living standard (added in 2015) and preserves the existing grid layout. Zero visual change, full semantic restoration.
 - **Commit:** _(PR #395 round 1)_
 
-### 43. RateLimitBar aria-valuenow can exceed aria-valuemax
+### 51. RateLimitBar aria-valuenow can exceed aria-valuemax
 
 - **Source:** github-codex-connector | PR #421 round 1 | 2026-06-11
 - **Severity:** MEDIUM
@@ -479,7 +479,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Clamped `aria-valuenow` to the same 0-100 range as the visual fill using `Math.min(Math.max(Math.round(percentage), 0), 100)`, while leaving the visible text free to show the raw rounded percentage. Added co-located regression tests for overflow and negative values.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 44. aria-haspopup="menu" without role="menu" on popup — ARIA contract broken
+### 52. aria-haspopup="menu" without role="menu" on popup — ARIA contract broken
 
 - **Source:** github-claude | PR #421 round 2 | 2026-06-11
 - **Severity:** MEDIUM
@@ -488,7 +488,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `role="menu"` to the popup `<div>` and `role="menuitem"` to the `<button>` inside `MenuRow`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 45. Menu roles without keyboard contract mislead assistive technology
+### 53. Menu roles without keyboard contract mislead assistive technology
 
 - **Source:** github-claude | PR #421 round 3 | 2026-06-11
 - **Severity:** MEDIUM
@@ -497,7 +497,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Downgraded to generic popup semantics by removing `role="menu"` and `role="menuitem"`, changing `aria-haspopup="menu"` to `aria-haspopup="true"`, and keeping `aria-expanded` for open/closed state disclosure. The popup remains a simple two-item button group.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 46. Popup menu stays open on pointer clicks outside the container
+### 54. Popup menu stays open on pointer clicks outside the container
 
 - **Source:** github-claude | PR #421 round 3 | 2026-06-11
 - **Severity:** MEDIUM
@@ -506,7 +506,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a document-level `mousedown` listener active while `menuOpen === true` that calls `setMenuOpen(false)` when the event target is outside the kebab/menu container. The listener is registered in a `useEffect` with cleanup on unmount or menu close.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 47. Inert layout config button remains focusable and hover-styled
+### 55. Inert layout config button remains focusable and hover-styled
 
 - **Source:** github-claude | PR #433 round 1 | 2026-06-12
 - **Severity:** MEDIUM
@@ -515,7 +515,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `disabled`, `aria-disabled="true"`, and `tabIndex={-1}` and muted opacity so the element is clearly non-interactive until the feature lands.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 48. Root-anchored sidebar toggle rendered last in DOM — focus order regression
+### 56. Root-anchored sidebar toggle rendered last in DOM — focus order regression
 
 - **Source:** github-claude | PR #433 round 2 | 2026-06-12
 - **Severity:** MEDIUM
@@ -524,7 +524,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Moved the same root-anchored, absolutely positioned toggle wrapper earlier in the DOM (right after the compact scrim and before the sidebar shell) so sequential focus order matches the visual layout. Preserved `z-40` and the existing left/top absolute coordinates. Updated co-located tests that asserted on `workspace.children[1]` to query `screen.getByTestId('workspace-main')` directly, since the DOM reordering changed sibling indices.
 - **Commit:** _(see git blame / git log on this line)_
 
-### 49. FileExplorer rename/delete uses native blocking dialogs
+### 57. FileExplorer rename/delete uses native blocking dialogs
 
 - **Source:** github-claude | PR #444 round 1 | 2026-06-13
 - **Severity:** MEDIUM
@@ -533,7 +533,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Replaced native dialogs with an inline rename input and a delete-confirmation strip styled with design tokens; kept actions non-blocking.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 50. Pointer-leave handler schedules drift under reduced-motion and when already at rest
+### 58. Pointer-leave handler schedules drift under reduced-motion and when already at rest
 
 - **Source:** github-claude + github-codex-connector | PR #457 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
@@ -542,7 +542,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Mirrored the `onEnter` guard (`mql.matches || refsRef.current === null`) and added an at-rest guard (`rafId === null && intensity < REST_EPSILON`) before calling `ensureLoop()`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 51. Meter reports unknown context usage as 0%
+### 59. Meter reports unknown context usage as 0%
 
 - **Source:** github-codex-connector | PR #462 round 1 | 2026-06-15
 - **Severity:** P2 / MEDIUM
@@ -551,7 +551,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Set `aria-valuenow` to `undefined` when `pct === null` so the attribute is omitted, while known percentages still report `Math.round(pct)`. Added a co-located regression test asserting the meter has no `aria-valuenow` in the unknown state.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 52. Disclosure button receives both `aria-pressed` and `aria-expanded`
+### 60. Disclosure button receives both `aria-pressed` and `aria-expanded`
 
 - **Source:** github-claude | PR #454 round 2 | 2026-06-15
 - **Severity:** HIGH
@@ -560,7 +560,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Removed `pressed={open}`. The ghost variant's `aria-expanded:bg-primary/10` CSS already provides the same active tint from `aria-expanded` alone.
 - **Commit:** same commit as this entry
 
-### 53. SegmentedControl unmatched value is visually coerced to the first option
+### 61. SegmentedControl unmatched value is visually coerced to the first option
 
 - **Source:** github-codex-connector | PR #461 round 2 | 2026-06-15
 - **Severity:** LOW
@@ -569,7 +569,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Preserved the raw `findIndex` result as `activeIndex`, added a separate `focusIndex = Math.max(0, activeIndex)` used only for keyboard entry (`tabIndex`), and guarded thumb rendering with `activeIndex >= 0` so no thumb appears when no option is semantically selected. Added a regression test verifying the thumb is absent, the first option remains tabbable, and both options report `aria-pressed="false"` for an unmatched value.
 - **Commit:** same commit as this entry
 
-### 54. Reduced-motion media query leaves animated element visible at rest
+### 62. Reduced-motion media query leaves animated element visible at rest
 
 - **Source:** github-claude | PR #464 round 1 | 2026-06-15
 - **Severity:** MEDIUM
@@ -578,7 +578,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `transform: translateX(-100%)` as a base style on `.vf-activity-refresh-comet` so the rest position is off-screen regardless of animation state.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 55. `aria-live` region announces completion on every refresh cycle
+### 63. `aria-live` region announces completion on every refresh cycle
 
 - **Source:** github-claude | PR #464 round 1 | 2026-06-15
 - **Severity:** LOW
@@ -587,7 +587,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Changed the idle branch to an empty string so only the refresh-start state is announced; the visual header affordance communicates completion.
 - **Commit:** see `git blame` / `git log` on this line
 
-### 56. Segmented ProgressBar exposes `role="progressbar"` without a value
+### 64. Segmented ProgressBar exposes `role="progressbar"` without a value
 
 - **Source:** github-codex-connector | PR #509 round 1 | 2026-06-17
 - **Severity:** MEDIUM
@@ -596,7 +596,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Derived an effective decorative state whenever `segments` is present (`const isDecorative = decorative || segments !== undefined`) so segmented bars are always `aria-hidden` and never emit progressbar semantics. Added a `trackTestId` prop to let tests query the track directly, and rewrote the segmented-bar test to assert `aria-hidden="true"` and the absence of a `progressbar` role.
 - **Commit:** same commit as this entry
 
-### 57. Gruvbox Dark elevated surfaces fall below contrast threshold against text-on-surface
+### 65. Gruvbox Dark elevated surfaces fall below contrast threshold against text-on-surface
 
 - **Source:** github-codex-connector | PR #532 round 2 | 2026-06-18
 - **Severity:** P2 / MEDIUM
@@ -605,7 +605,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Moved both tokens down the darker `bg` ramp while preserving elevation order: `surface-container-highest` → `dark.bg2` (#504945, ~6.4:1) and `surface-bright` → `dark.bg3` (#665c54, ~4.75:1).
 - **Commit:** same commit as this entry
 
-### 58. Gruvbox Dark `surface-container-highest` inverted elevation hierarchy
+### 66. Gruvbox Dark `surface-container-highest` inverted elevation hierarchy
 
 - **Source:** github-claude | PR #532 round 3 | 2026-06-18
 - **Severity:** MEDIUM
@@ -614,7 +614,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Restored monotonic elevation order by mapping `surface-container-highest` → `dark.bg4` (#7c6f64). The `surface-bright` token already moved to `dark.bg3` in round 2, so the bg0 < bg1 < bg2 < bg3 < bg4 ramp is preserved across all surface tiers.
 - **Commit:** same commit as this entry
 
-### 59. Layout display trigger is missing the required shared Tooltip hover label
+### 67. Layout display trigger is missing the required shared Tooltip hover label
 
 - **Source:** github-codex-connector | PR #535 round 1 | 2026-06-18
 - **Severity:** MEDIUM
@@ -623,7 +623,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `tooltip` and `tooltipPlacement` props to the `Menu` primitive so it can wrap its cloned trigger with the shared `Tooltip`. `LayoutDisplayMenu` now passes `tooltip="Configure displayed layouts"` to `Menu`; `Tooltip` composes its hover/focus handlers with `Menu`'s trigger reference props so keyboard and click behavior are preserved.
 - **Commit:** same commit as this entry
 
-### 60. Layout creator modal lacks focus trap and focus restoration
+### 68. Layout creator modal lacks focus trap and focus restoration
 
 - **Source:** github-codex-connector (P2 / MEDIUM) | PR #569 round 1 | 2026-06-20
 - **Severity:** P2 / MEDIUM
@@ -632,7 +632,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a `panelRef` and `previousFocusRef`, captured focus before open to focus the name input, restored focus on close, and added a document keydown handler that cycles Tab/Shift+Tab among the modal panel's focusable elements.
 - **Commit:** same commit as this entry
 
-### 61. Programmatic menu close unmounts the focused row
+### 69. Programmatic menu close unmounts the focused row
 
 - **Source:** github-codex-connector | PR #569 round 4 | 2026-06-20
 - **Severity:** MEDIUM
@@ -641,7 +641,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a `closeSignal` prop to the shared `Menu` primitive so callers can request an internal close without remounting the trigger. `LayoutDisplayMenu` focuses its trigger before sending the close signal, and custom pick/edit/delete/create actions all route through that path.
 - **Commit:** same commit as this entry
 
-### 62. Custom multi-action menu rows bypass roving keyboard navigation
+### 70. Custom multi-action menu rows bypass roving keyboard navigation
 
 - **Source:** github-claude | PR #569 round 5 | 2026-06-20
 - **Severity:** MEDIUM
@@ -650,7 +650,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a `Menu.Row` primitive that registers arbitrary row content with the shared menu roving-focus model. Custom layout rows now use `Menu.Row`, expose an explicit row label, and have regression coverage proving arrow keys can reach the custom section.
 - **Commit:** same commit as this entry
 
-### 63. Layout creator empty grid cells ignored keyboard activation
+### 71. Layout creator empty grid cells ignored keyboard activation
 
 - **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
 - **Severity:** HIGH
@@ -659,7 +659,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added a keyboard/synthetic click path for paintable cells that commits the same 1x1 slot as pointer single-cell painting, while ignoring pointer-generated clicks to avoid double-adds after pointerup. Added regression coverage for Enter on an empty grid cell.
 - **Commit:** same commit as this entry
 
-### 64. Nested action button arrow keys leaked into Menu.Row navigation
+### 72. Nested action button arrow keys leaked into Menu.Row navigation
 
 - **Source:** github-codex-connector | PR #569 round 6 | 2026-06-20
 - **Severity:** MEDIUM
@@ -668,7 +668,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Stopped ArrowUp/ArrowDown propagation when the key event originates from a descendant rather than the row itself. Added regression coverage that a nested row button keeps focus on ArrowDown.
 - **Commit:** same commit as this entry
 
-### 65. Menu.Row intercepted nested button activation keys
+### 73. Menu.Row intercepted nested button activation keys
 
 - **Source:** github-claude | PR #569 round 7 | 2026-06-20
 - **Severity:** HIGH
@@ -677,7 +677,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Returned early for descendant keydown events so only the focused row handles Enter/Space, stopped descendant ArrowUp/ArrowDown during capture before roving focus sees them, and ignored clicks that bubble from nested interactive controls. Added regression coverage for descendant Enter activation.
 - **Commit:** same commit as this entry
 
-### 66. Tokyo Night muted text falls below contrast threshold
+### 74. Tokyo Night muted text falls below contrast threshold
 
 - **Source:** github-codex-connector | PR #557 round 1 | 2026-06-19
 - **Severity:** P2 / MEDIUM
@@ -686,7 +686,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Changed `on-surface-muted` to `#7f88b3`, raising contrast to ~4.94:1 on the theme surface while preserving the muted hierarchy below `on-surface-variant`.
 - **Commit:** same commit as this entry
 
-### 67. Dialog focus trap misses contenteditable elements
+### 75. Dialog focus trap misses contenteditable elements
 
 - **Source:** github-claude | PR #548 round 1 | 2026-06-19
 - **Severity:** MEDIUM
@@ -695,7 +695,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added the contenteditable selector to `FOCUSABLE_SELECTOR` and updated `getFocusableElements` filter to treat contenteditable surfaces as focusable even when `tabIndex` is implicitly `-1`. Added a co-located test that tabs through a contenteditable element inside a Dialog and asserts focus stays trapped.
 - **Commit:** same commit as this entry
 
-### 68. Dialog focus collection includes CSS-hidden elements
+### 76. Dialog focus collection includes CSS-hidden elements
 
 - **Source:** github-codex-connector | PR #548 round 3 | 2026-06-19
 - **Severity:** MEDIUM
@@ -704,7 +704,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `isVisibleFocusableElement`, which walks from the element up through its ancestors and checks `window.getComputedStyle` for `display: none` and `visibility: hidden`. Applied the guard to both `getFocusableElements` and the `initialFocusRef` branch in `focusInitialElement`. Added co-located tests asserting that `display:none`, `visibility:hidden`, and hidden-ancestor elements are skipped when choosing initial focus.
 - **Commit:** same commit as this entry
 
-### 69. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
+### 77. Dialog visibility check excludes visible descendants of visibility:hidden ancestors
 
 - **Source:** github-codex-connector | PR #548 round 4 | 2026-06-19
 - **Severity:** MEDIUM
@@ -713,7 +713,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Checked `visibility` only on the focusable element itself and limited the ancestor walk to `display: none`. Added a co-located regression test asserting that a visible button inside a `visibility:hidden` ancestor receives initial focus.
 - **Commit:** same commit as this entry
 
-### 70. Interactive tooltip trigger rendered as a non-focusable chip
+### 78. Interactive tooltip trigger rendered as a non-focusable chip
 
 - **Source:** github-codex-connector | PR #575 round 1 | 2026-06-20
 - **Severity:** P2 / MEDIUM
@@ -728,7 +728,7 @@ handlers must not trap focus without implementing the promised behavior.
   observes the copy buttons in the mounted dialog.
 - **Commit:** same commit as this entry
 
-### 71. Visual token count diverged from meter aria-valuetext
+### 79. Visual token count diverged from meter aria-valuetext
 
 - **Source:** github-claude | PR #603 round 3 | 2026-06-22
 - **Severity:** MEDIUM
@@ -737,7 +737,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Removed the second formatter path and rendered the visible unknown-window token count with `formatTokenCount`, matching the meter's accessible value. Updated the existing unknown-window regression test to assert the shared formatting.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 72. Draggable handle carried a label without an interactive role
+### 80. Draggable handle carried a label without an interactive role
 
 - **Source:** github-claude | PR #610 round 3 | 2026-06-22
 - **Severity:** LOW
@@ -746,7 +746,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Added `role="button"` and `tabIndex={0}` to make the labelled drag handle discoverable while keyboard-driven pane reorder remains a deferred follow-up.
 - **Commit:** same commit as this entry
 
-### 73. Draggable handle claimed button semantics without activation
+### 81. Draggable handle claimed button semantics without activation
 
 - **Source:** github-codex-connector | PR #610 round 4 | 2026-06-22
 - **Severity:** P2 / MEDIUM
@@ -755,7 +755,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Removed the button role and tab stop from the browser-pane drag handle until keyboard-driven pane reorder exists. Added regression coverage that the handle remains draggable but is not exposed as a keyboard-focusable button.
 - **Commit:** same commit as this entry
 
-### 74. Native overlay menu opened without keyboard focus
+### 82. Native overlay menu opened without keyboard focus
 
 - **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
 - **Severity:** P2 / MEDIUM
@@ -764,7 +764,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Focused the overlay `webContents` immediately after showing the overlay window, preserving the existing owner-focus restoration in `closeSurface`. Electron controller tests now assert the overlay receives focus on open.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 75. Native overlay menu window was non-focusable
+### 83. Native overlay menu window was non-focusable
 
 - **Source:** github-codex-connector | PR #638 round 1 | 2026-06-30
 - **Severity:** P2 / MEDIUM
@@ -773,7 +773,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Removed the non-focusable window option and focused the overlay `webContents` immediately after `showInactive()`, preserving owner-focus restoration on close. Electron controller tests now assert the overlay is not created with `focusable: false` and receives focus after being shown.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 76. Focus auto-open was disabled in local native-overlay fallback mode
+### 84. Focus auto-open was disabled in local native-overlay fallback mode
 
 - **Source:** github-claude | PR #638 round 2 | 2026-06-30
 - **Severity:** HIGH
@@ -782,7 +782,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Reused the floating transport selector for the focus guard so focus auto-open is suppressed only when the native overlay transport is actually active. Added a regression test covering `nativeOverlay={true}` with the default local fallback.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 77. Browser panes lost pane-focus shortcut discoverability
+### 85. Browser panes lost pane-focus shortcut discoverability
 
 - **Source:** github-codex-connector | PR #646 round 1 | 2026-07-02
 - **Severity:** MEDIUM
@@ -791,16 +791,75 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Threaded the same slot-ordered shortcut hint into `BrowserPane`, rendered the compact badge in browser tab chrome, and added regression coverage for both direct browser-pane rendering and `SplitView` browser-pane prop forwarding.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 78. Rename validation error was hidden from sighted users
+### 86. Rename validation error was hidden from sighted users
 
 - **Source:** github-claude | PR #646 round 2 | 2026-07-02
 - **Severity:** MEDIUM
 - **File:** `src/features/terminal/components/PaneRenameInput.tsx`
 - **Finding:** Rename validation and backend error text rendered only inside `sr-only`, so sighted users received only color and border feedback when a pane rename failed.
 - **Fix:** Rendered a compact visible `role="alert"` message in `text-error` while preserving `aria-describedby`; updated regression coverage to assert the alert is not `sr-only`.
+
+### 87. Generic layout picker announced workspace-only focus action
+
+- **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx`
+- **Finding:** `LayoutSwitcher` reused the “Focus active pane” accessible name and tooltip for every `single` layout option, including the New Session dialog where the control selects a “Single” template rather than focusing an active pane.
+- **Fix:** Made the focus-action label and shortcut chip opt-in via `labelSingleAsFocusAction`, enabled it only in workspace chrome, and kept generic pickers on the plain “Single” label.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 80. Dracula highest surface fell below small-label contrast
+### 88. Popover action buttons suppressed keyboard focus indication
+
+- **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Cancel and Confirm buttons removed the browser focus ring with `focus:outline-none focus-visible:outline-none` without replacing it, so keyboard users could not tell which action was focused before activating it.
+- **Fix:** Added the shared button focus-ring treatment (`focus-visible:ring-1 focus-visible:ring-primary`) to the popover action class and updated co-located tests to assert the visible focus styles.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Multi-agent send choices had no visible Tab focus
+
+- **Source:** github-claude | PR #633 round 1 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** The multi-agent finish-feedback branch suppressed `focus-visible` outlines on each Send button even though those choices have no shortcut fallback, making Tab navigation through the agent list ambiguous.
+- **Fix:** Routed the Send buttons through the same explicit popover action focus class and added a regression assertion that multi-agent Send buttons include the visible focus ring.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Confirm popover buttons suppressed the shared focus ring
+
+- **Source:** github-codex-connector + github-claude | PR #633 round 2 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The hunk/file keyboard-confirm popover passed `className="focus-visible:ring-0"` to both `Button` actions, overriding the shared primitive's only visible keyboard focus indicator.
+- **Fix:** Removed the local ring suppression so the shared `Button` focus styles apply, and added co-located regression assertions for the `No (n)` and `Yes (y)` actions.
+- **Commit:** same commit as this entry
+
+### 91. Primary finish-feedback actions relied on brightness-only focus
+
+- **Source:** github-claude | PR #633 round 3 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Confirm and multi-agent Send buttons suppressed
+  outlines and rings while using only `focus-visible:brightness-110` as the
+  keyboard focus cue. The saturated primary fill made that cue too weak for
+  keyboard-only and low-vision users, especially in the multi-agent list where
+  Tab is the selection path.
+- **Fix:** Replaced the brightness-only primary focus class with a visible
+  token-backed focus ring and updated co-located tests to reject the old
+  brightness/ring-0 treatment.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 92. Focus-opened floating panel lacked focus-out dismissal
+
+- **Source:** github-claude | PR #645 round 1 | 2026-07-02
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The unpinned changed-files edge hint opened the floating panel on keyboard focus, but only mouse leave scheduled dismissal. Tabbing to the hint could leave the absolute panel mounted over the diff until the user manually toggled it or happened to hover and leave.
+- **Fix:** Wrapped the unpinned hint and panel in a focus boundary that schedules hide when focus leaves the surface while preserving tab movement into the panel controls. Added regression coverage for tabbing through the hint, pin button, file row, file-comment button, and then out of the surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 93. Dracula highest surface fell below small-label contrast
 
 - **Source:** github-codex-connector | PR #647 round 1 | 2026-07-03
 - **Severity:** P2 / MEDIUM
@@ -809,7 +868,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Mapped both elevated Dracula surface tokens to `#5f6588`, a darker surface step that preserves the highest/bright pairing while restoring small-label contrast, and added theme assertions for the reviewed tokens.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 81. Theme top-rung surfaces regressed compact-label contrast
+### 94. Theme top-rung surfaces regressed compact-label contrast
 
 - **Source:** github-claude | PR #647 round 2 | 2026-07-03
 - **Severity:** HIGH
@@ -818,7 +877,7 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Chose accessible top-rung surface values for the three affected themes and added a shared contrast regression test for `surface-container-highest`/`surface-bright` against `on-surface-variant`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 82. Theme mid-tier surfaces regressed compact-label contrast
+### 95. Theme mid-tier surfaces regressed compact-label contrast
 
 - **Source:** github-claude | PR #647 round 3 | 2026-07-03
 - **Severity:** HIGH
@@ -827,11 +886,29 @@ handlers must not trap focus without implementing the promised behavior.
 - **Fix:** Chose darker accessible mid-tier surface values for Gruvbox Dark and Tokyo Night, corrected the same compact-surface contrast gap exposed by the widened test in Gruvbox Light, and expanded the shared contrast regression test to cover `surface-container` and `surface-container-high` alongside the top rungs.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 83. Gruvbox surface ladders inverted elevation ordering
+### 96. Gruvbox surface ladders inverted elevation ordering
 
 - **Source:** github-claude | PR #647 round 6 | 2026-07-03
 - **Severity:** MEDIUM
 - **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`
 - **Finding:** The final Gruvbox token choices preserved compact-label contrast but left the dark theme with `surface-container` and `surface-bright` duplicated, and both Gruvbox themes with elevated rungs that moved opposite the theme-kind elevation direction. Nested panels and hover states could therefore render flat or visually inverted.
 - **Fix:** Re-picked nearby Gruvbox surface values so the dark ladder increases in luminance, the light ladder decreases in luminance, and all compact surface rungs still meet the existing AA contrast guard. Added a Gruvbox-specific regression test that checks the full surface ladder ordering by theme kind.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 97. Diff remount focus restore stole focus from editable descendants
+
+- **Source:** github-codex-connector | PR #652 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The render-key focus restoration for theme and line-style remounts treated any active element inside the diff root as safe to replace with root focus. Diff-owned text inputs such as search and review-comment editors could regain focus after a workspace theme command, then immediately lose it to the bare diff root.
+- **Fix:** Added a shared diff native-focus predicate and skipped the render-key root restore when `document.activeElement` is an input, textarea, contenteditable element, or `role="textbox"`. Added a regression test that keeps the diff search textbox focused across a workspace theme change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 98. Palette-close surface focus restore ignored follow-up dialogs
+
+- **Source:** github-claude + github-codex-connector | PR #652 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The command-palette close effect always restored focus to the active terminal or dock surface, even when the command itself opened a follow-up modal such as `UnsavedChangesDialog`. That could move keyboard focus behind an active `aria-modal` dialog.
+- **Fix:** Guarded the palette-close focus restore while `showUnsavedDialog` or `newSessionDialog.open` is true, preserving the follow-up dialog's focus ownership.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

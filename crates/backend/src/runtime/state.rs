@@ -554,8 +554,7 @@ impl BackendState {
 
         std::fs::create_dir_all(&sessions_dir)
             .map_err(|e| format!("create codex sessions dir: {e}"))?;
-        std::fs::write(&rollout_path, b"")
-            .map_err(|e| format!("create empty rollout: {e}"))?;
+        std::fs::write(&rollout_path, b"").map_err(|e| format!("create empty rollout: {e}"))?;
 
         let since_epoch = pty_start
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -664,9 +663,7 @@ impl BackendState {
             .map_err(|e| format!("create kimi wire dirs: {e}"))?;
         std::fs::write(
             &wire_path,
-            format!(
-                "{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"
-            ),
+            format!("{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"),
         )
         .map_err(|e| format!("create kimi wire: {e}"))?;
 
@@ -684,9 +681,7 @@ impl BackendState {
         )
         .map_err(|e| format!("create kimi index: {e}"))?;
 
-        let result = self
-            .start_agent_watcher(session_id, Some(home_dir))
-            .await;
+        let result = self.start_agent_watcher(session_id, Some(home_dir)).await;
         result?;
 
         Ok(wire_path)

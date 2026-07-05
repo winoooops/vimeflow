@@ -215,6 +215,24 @@ const waitForPaneKinds = async (
 
 const switchToLayout = async (layout: LayoutShape): Promise<void> => {
   await waitForActiveSplitView()
+
+  const alreadyActive = await browser.execute((layoutId: PaneLayoutId) => {
+    const splitViews = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="split-view"]')
+    )
+    const splitView = splitViews.find((candidate) => {
+      const rect = candidate.getBoundingClientRect()
+
+      return rect.width > 0 && rect.height > 0
+    })
+
+    return splitView?.dataset.layout === layoutId
+  }, layout.id)
+
+  if (alreadyActive) {
+    return
+  }
+
   await clickLayoutButton(layout.name)
 
   await browser.waitUntil(

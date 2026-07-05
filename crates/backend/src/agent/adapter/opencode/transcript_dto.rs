@@ -116,10 +116,8 @@ impl OpencodeLineDto {
     /// Classify the raw `kind` string. Missing / unknown maps to `Unknown`.
     pub(crate) fn kind(&self) -> OpencodeKind {
         match self.kind.as_deref() {
-            Some(raw) => {
-                serde_json::from_value(Value::String(raw.to_string()))
-                    .unwrap_or(OpencodeKind::Unknown)
-            }
+            Some(raw) => serde_json::from_value(Value::String(raw.to_string()))
+                .unwrap_or(OpencodeKind::Unknown),
             None => OpencodeKind::Unknown,
         }
     }
@@ -257,11 +255,18 @@ mod tests {
             kinds.push(dto.kind());
             if dto.kind() == OpencodeKind::Event {
                 let et = dto.event_type();
-                assert_ne!(et, OpencodeEventType::Other, "fixture event type unknown: {line}");
+                assert_ne!(
+                    et,
+                    OpencodeEventType::Other,
+                    "fixture event type unknown: {line}"
+                );
                 event_types.push(et);
             } else {
                 // Tool lines must carry a session id + tool name.
-                assert!(dto.session_id.is_some(), "tool line missing sessionID: {line}");
+                assert!(
+                    dto.session_id.is_some(),
+                    "tool line missing sessionID: {line}"
+                );
                 assert!(dto.tool.is_some(), "tool line missing tool: {line}");
             }
         }
@@ -288,7 +293,10 @@ mod tests {
             }
             let row: OpencodeIndexRowDto = serde_json::from_str(line)
                 .unwrap_or_else(|e| panic!("index line failed to parse: {line}\n{e}"));
-            assert!(row.session_id.is_some(), "index row missing sessionID: {line}");
+            assert!(
+                row.session_id.is_some(),
+                "index row missing sessionID: {line}"
+            );
             assert!(row.pid.is_some(), "index row missing pid: {line}");
             rows += 1;
         }
