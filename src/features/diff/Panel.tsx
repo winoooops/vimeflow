@@ -786,9 +786,9 @@ export const Panel = ({
           cwd: entryCwd,
           filePath: relPath,
           staged,
-          commentId: annotation.metadata.id,
           lineNumber: annotation.lineNumber,
           side: annotation.side,
+          target: annotation.metadata.target,
         })
       }
     }

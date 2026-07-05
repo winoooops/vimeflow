@@ -1,4 +1,5 @@
 import type { AnnotationSide } from '@pierre/diffs'
+import type { ReviewComment } from '../hooks/useFeedbackBatch'
 
 /**
  * Where a dispatched `[#n]` handle points: the comment it addressed, keyed by
@@ -11,9 +12,14 @@ export interface PendingReviewHandle {
   cwd: string
   filePath: string
   staged: boolean
-  commentId: string
   lineNumber: number
   side: AnnotationSide
+  /**
+   * The original comment's scope target, carried so the agent reply inherits it
+   * — a file-level comment's reply stays file-scoped (renders in the file panel,
+   * not as a line-0 annotation); a range comment's reply keeps its span.
+   */
+  target: ReviewComment['target']
 }
 
 export interface PendingReview {

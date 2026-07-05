@@ -55,9 +55,9 @@ const handle = (
   cwd: '/repo',
   filePath: 'a.ts',
   staged: false,
-  commentId: 'c1',
   lineNumber: 5,
   side: 'additions',
+  target: undefined,
   ...overrides,
 })
 
@@ -162,8 +162,8 @@ describe('useAgentReply', () => {
     setPendingReview(
       pending(
         new Map([
-          [2, handle({ commentId: 'c2', lineNumber: 8 })],
-          [3, handle({ commentId: 'c3', lineNumber: 9 })],
+          [2, handle({ lineNumber: 8 })],
+          [3, handle({ lineNumber: 9 })],
         ])
       )
     )
@@ -220,6 +220,20 @@ describe('useAgentReply', () => {
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
     expect(addAnnotationForOwner.mock.calls[1][4].metadata.text).toBe('B')
+  })
+
+  test('a file-scope reply inherits the file target (not a line-0 annotation)', async () => {
+    setPendingReview(
+      pending(
+        new Map([[1, handle({ lineNumber: 0, target: { scope: 'file' } })]])
+      )
+    )
+    mount()
+    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
+
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.target).toEqual({
+      scope: 'file',
+    })
   })
 
   test('a replayed event after handles are consumed is a no-op', async () => {
