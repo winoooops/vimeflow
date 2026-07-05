@@ -409,7 +409,7 @@ fn process_line(
     match dto.line_type.as_deref().unwrap_or("") {
         "assistant" => {
             process_assistant_message(&dto, session_id, cwd, events, in_flight, replay_done);
-            emit_reply_if_present(&dto, session_id, events);
+            emit_reply_if_present(&dto, session_id, events, replay_done);
         }
         "user" => {
             process_user_message(
@@ -522,7 +522,12 @@ fn emit_reply_if_present(
     dto: &ClaudeTranscriptLineDto,
     session_id: &str,
     events: &Arc<dyn EventSink>,
+    replay_done: bool,
 ) {
+    if !replay_done {
+        return;
+    }
+
     let ended = matches!(
         dto.message.as_ref().and_then(|m| m.stop_reason.as_deref()),
         Some("end_turn" | "stop_sequence" | "max_tokens")
@@ -1793,7 +1798,7 @@ mod tests {
         assert!(in_flight.is_empty(), "matched tool_use should be removed");
     }
 
-    fn drive_assistant_line(concrete: &Arc<FakeEventSink>, line: &str) {
+    fn drive_assistant_line(concrete: &Arc<FakeEventSink>, line: &str, replay_done: bool) {
         let events: Arc<dyn EventSink> = concrete.clone();
         let mut emitter = TestRunEmitter::new(events.clone());
         let mut in_flight: InFlightToolCalls = HashMap::new();
@@ -1814,7 +1819,7 @@ mod tests {
             &mut last_title_memo,
             &mut None,
             &mut None,
-            true,
+            replay_done,
         );
     }
 
@@ -1822,7 +1827,7 @@ mod tests {
     fn assistant_end_turn_with_reply_block_emits_agent_reply() {
         let concrete = Arc::new(FakeEventSink::new());
         let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"because latency\"}]}\nVIMEFLOW_REPLY>>>"}],"stop_reason":"end_turn"}}"#;
-        drive_assistant_line(&concrete, line);
+        drive_assistant_line(&concrete, line, true);
 
         let replies: Vec<_> = concrete
             .recorded()
@@ -1839,7 +1844,19 @@ mod tests {
     fn assistant_end_turn_without_sentinel_emits_no_reply() {
         let concrete = Arc::new(FakeEventSink::new());
         let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"just done"}],"stop_reason":"end_turn"}}"#;
-        drive_assistant_line(&concrete, line);
+        drive_assistant_line(&concrete, line, true);
+
+        assert!(concrete
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-reply"));
+    }
+
+    #[test]
+    fn assistant_replay_with_reply_block_emits_no_reply() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"stale\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"old answer\"}]}\nVIMEFLOW_REPLY>>>"}],"stop_reason":"end_turn"}}"#;
+        drive_assistant_line(&concrete, line, false);
 
         assert!(concrete
             .recorded()
