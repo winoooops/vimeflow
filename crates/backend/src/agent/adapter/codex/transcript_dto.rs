@@ -78,6 +78,9 @@ pub(super) struct CodexPayloadDto {
     pub name: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub message: Option<String>,
+    /// The completed agent reply on a `task_complete` event_msg (VIM-283).
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub last_agent_message: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub cwd: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]

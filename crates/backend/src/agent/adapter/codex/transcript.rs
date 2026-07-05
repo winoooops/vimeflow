@@ -19,9 +19,11 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change,
-    record_lifecycle,
+    emit_agent_cwd, emit_agent_reply, emit_agent_tool_call, emit_agent_turn,
+    emit_lifecycle_on_change, record_lifecycle,
 };
+use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
+use crate::agent::types::AgentReplyEvent;
 use crate::agent::types::{
     AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
@@ -466,8 +468,47 @@ fn process_event_msg(
                 ToolCallStatus::Done,
                 &timestamp,
             );
+            emit_reply_if_present(payload, session_id, events);
         }
         _ => {}
+    }
+}
+
+/// If the completed reply on a `task_complete` carries the VIM-283 sentinel
+/// block, extract it and emit `agent-reply`. No sentinel → no event.
+fn emit_reply_if_present(
+    payload: &CodexPayloadDto,
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+) {
+    let Some(outcome) = payload
+        .last_agent_message
+        .as_deref()
+        .and_then(extract_agent_reply)
+    else {
+        return;
+    };
+
+    let (raw_text, nonce, replies) = match outcome {
+        AgentReplyOutcome::Structured {
+            raw,
+            nonce,
+            replies,
+        } => (raw, Some(nonce), Some(replies)),
+        // Malformed carries a best-effort nonce (Some when the block parsed as an
+        // object) so the frontend can still nonce-gate the degrade.
+        AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
+    };
+
+    let event = AgentReplyEvent {
+        session_id: session_id.to_string(),
+        nonce,
+        raw_text,
+        replies,
+    };
+
+    if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-reply event: {}", e);
     }
 }
 
@@ -1539,6 +1580,71 @@ mod tests {
         assert_eq!(cwd_events.len(), 1);
         assert_eq!(cwd_events[0].1["cwd"], "/workspace/A");
         assert_eq!(last_cwd.as_deref(), Some("/workspace/A"));
+    }
+
+    #[test]
+    fn process_line_task_complete_with_reply_block_emits_agent_reply() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+
+        // last_agent_message carries the sentinel block (escaped JSON string).
+        let line = r#"{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","duration_ms":5,"last_agent_message":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"because latency\"}]}\nVIMEFLOW_REPLY>>>"}}"#;
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut None,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        let replies: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-reply")
+            .collect();
+        assert_eq!(replies.len(), 1);
+        let payload = &replies[0].1;
+        assert_eq!(payload["sessionId"], "pty-1");
+        assert_eq!(payload["nonce"], "abc");
+        assert_eq!(payload["replies"][0]["id"], 1);
+        assert_eq!(payload["replies"][0]["status"], "answered");
+    }
+
+    #[test]
+    fn process_line_task_complete_without_sentinel_emits_no_reply() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+
+        let line = r#"{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","duration_ms":5,"last_agent_message":"just done"}}"#;
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut None,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            true,
+        );
+
+        assert!(sink.recorded().iter().all(|(name, _)| name != "agent-reply"));
     }
 
     #[test]
