@@ -90,6 +90,7 @@ import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
 import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatchStore } from '../diff/hooks/useFeedbackBatch'
+import { useAgentReply } from '../diff/hooks/useAgentReply'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
@@ -154,6 +155,12 @@ const UNBOUND_FEEDBACK_OWNER_KEY = 'workspace:unbound-feedback'
 
 const makeFeedbackOwnerKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
+
+// Unique id for each attached agent-reply annotation (VIM-249).
+let agentReplyCommentSeq = 0
+
+const nextAgentReplyCommentId = (): string =>
+  `agent-reply-${(agentReplyCommentSeq += 1)}`
 
 const sameSelectedDiffFile = (
   left: SelectedDiffFile | null,
@@ -1866,6 +1873,14 @@ const WorkspaceViewContent = (): ReactElement => {
   useLayoutEffect(() => {
     pruneFeedbackOwners(livePaneKeys)
   }, [livePaneKeys, pruneFeedbackOwners])
+
+  // Capture agent replies (VIM-249): the single subscription point, mounted
+  // where every feedback owner is reachable so a reply attaches onto the owner
+  // that dispatched it — even after the user switches panes.
+  useAgentReply({
+    addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
+    nextCommentId: nextAgentReplyCommentId,
+  })
 
   useLayoutEffect(() => {
     setSelectedDiffFilesByOwner((previous) => {
