@@ -44,6 +44,7 @@ import { useDiffRangeBars } from './hooks/useDiffRangeBars'
 import {
   dispatchFeedbackBatch,
   formatFeedbackPayload,
+  makeDispatchNonce,
   type DispatchEntry,
 } from './services/feedbackDispatch'
 import { writeClipboardText } from '@/lib/clipboard'
@@ -773,6 +774,9 @@ export const Panel = ({
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
         const entries = buildFeedbackEntries()
+        // Per-dispatch correlation token the agent echoes in its reply block
+        // (VIM-249). Task 10 records it so a reply can be matched to this send.
+        const nonce = makeDispatchNonce()
 
         try {
           if (feedbackDispatch) {
@@ -780,6 +784,7 @@ export const Panel = ({
               pane.paneId,
               pane.ptyId,
               entries,
+              nonce,
               feedbackDispatch.writePty
             )
           }
@@ -824,7 +829,11 @@ export const Panel = ({
     setFinishOpen(false)
 
     void (async (): Promise<void> => {
-      const copied = await writeClipboardText(formatFeedbackPayload(entries))
+      // Clipboard copy has no agent to reply, so the nonce is a throwaway that
+      // just satisfies the payload signature.
+      const copied = await writeClipboardText(
+        formatFeedbackPayload(entries, makeDispatchNonce())
+      )
       notifyInfo(
         copied
           ? `Copied ${count} comment${count === 1 ? '' : 's'} to the clipboard.`

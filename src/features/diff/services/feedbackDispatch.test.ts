@@ -49,7 +49,7 @@ test('1 item -> header uses singular wording', () => {
       annotations: [makeAnnotation(5, 'additions', 'Nice work')],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
   expect(payload).toContain('Inline review — 1 item.')
 })
@@ -70,7 +70,7 @@ test('3 items -> header says plural count and body tags each target', () => {
       annotations: [makeAnnotation(3, 'additions', 'Consider renaming')],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
   expect(payload).toContain('Inline review — 3 items.')
   expect(payload).toContain('[#1 · Change request] src/App.tsx:5 (additions)')
@@ -88,7 +88,7 @@ test('multi-line comment prefixes every line', () => {
       ],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
   expect(payload).toContain('src/App.tsx:5 (additions)')
   expect(payload).toContain('> ─ Line one')
@@ -97,16 +97,19 @@ test('multi-line comment prefixes every line', () => {
 })
 
 test('category drives the tag and the intent instruction (VIM-253)', () => {
-  const payload = formatFeedbackPayload([
-    {
-      filePath: 'src/App.tsx',
-      staged: false,
-      annotations: [
-        makeAnnotation(5, 'additions', 'Why capped at 3?', 'question'),
-        makeAnnotation(8, 'additions', 'Off by one', 'bug'),
-      ],
-    },
-  ])
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [
+          makeAnnotation(5, 'additions', 'Why capped at 3?', 'question'),
+          makeAnnotation(8, 'additions', 'Off by one', 'bug'),
+        ],
+      },
+    ],
+    'n0nce'
+  )
 
   expect(payload).toContain('[#1 · Question] src/App.tsx:5 (additions)')
   expect(payload).toContain(
@@ -117,13 +120,16 @@ test('category drives the tag and the intent instruction (VIM-253)', () => {
 })
 
 test('an untagged comment defaults to a change request', () => {
-  const payload = formatFeedbackPayload([
-    {
-      filePath: 'src/App.tsx',
-      staged: false,
-      annotations: [makeAnnotation(5, 'additions', 'Nice work')],
-    },
-  ])
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [makeAnnotation(5, 'additions', 'Nice work')],
+      },
+    ],
+    'n0nce'
+  )
 
   expect(payload).toContain('[#1 · Change request]')
   expect(payload).toContain('> → Make this change.')
@@ -142,7 +148,7 @@ test('each entry line is labelled with its staged/unstaged diff view', () => {
       annotations: [makeAnnotation(8, 'additions', 'unstaged side')],
     },
   ]
-  const payload = formatFeedbackPayload(entries)
+  const payload = formatFeedbackPayload(entries, 'n0nce')
 
   // An MM file produces two same-path entries whose line numbers refer to
   // different comparisons — the [staged]/[unstaged] tag keeps them distinct.
@@ -151,45 +157,68 @@ test('each entry line is labelled with its staged/unstaged diff view', () => {
 })
 
 test('file-level comments emit an explicit file target instead of a line target', () => {
-  const payload = formatFeedbackPayload([
-    {
-      filePath: 'src/App.tsx',
-      staged: false,
-      annotations: [makeFileAnnotation('Review the module boundary')],
-    },
-  ])
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [makeFileAnnotation('Review the module boundary')],
+      },
+    ],
+    'n0nce'
+  )
 
   expect(payload).toContain('src/App.tsx (file) [unstaged]')
   expect(payload).not.toContain('src/App.tsx:0')
 })
 
 test('range comments emit start and end line targets', () => {
-  const payload = formatFeedbackPayload([
-    {
-      filePath: 'src/App.tsx',
-      staged: false,
-      annotations: [
-        {
-          lineNumber: 4,
-          side: 'additions',
-          metadata: {
-            id: 'range-comment',
-            text: 'Review this block',
-            author: 'self',
-            createdAt: Date.now(),
-            target: {
-              scope: 'range',
-              side: 'additions',
-              startLine: 4,
-              endLine: 6,
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/App.tsx',
+        staged: false,
+        annotations: [
+          {
+            lineNumber: 4,
+            side: 'additions',
+            metadata: {
+              id: 'range-comment',
+              text: 'Review this block',
+              author: 'self',
+              createdAt: Date.now(),
+              target: {
+                scope: 'range',
+                side: 'additions',
+                startLine: 4,
+                endLine: 6,
+              },
             },
           },
-        },
-      ],
-    },
-  ])
+        ],
+      },
+    ],
+    'n0nce'
+  )
 
   expect(payload).toContain('src/App.tsx:4-6 (additions) [unstaged]')
+})
+
+test('the footer instructs the agent to emit the reply block with the nonce', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/a.ts',
+        staged: false,
+        annotations: [makeAnnotation(5, 'additions', 'Why?', 'question')],
+      },
+    ],
+    'n0nc3'
+  )
+
+  expect(payload).toContain('<<<VIMEFLOW_REPLY')
+  expect(payload).toContain('"nonce":"n0nc3"')
+  expect(payload).toContain('VIMEFLOW_REPLY>>>')
 })
 
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {
@@ -203,7 +232,7 @@ test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', a
     },
   ]
 
-  await dispatchFeedbackBatch('pane-1', 'pty-1', entries, writePty)
+  await dispatchFeedbackBatch('pane-1', 'pty-1', entries, 'n0nce', writePty)
 
   expect(writePty).toHaveBeenCalledTimes(1)
   const sent = writePty.mock.calls[0][1] as string
@@ -222,7 +251,7 @@ test('strips terminal control characters so a crafted path/comment cannot break 
       ],
     },
   ]
-  const body = formatFeedbackPayload(entries)
+  const body = formatFeedbackPayload(entries, 'n0nce')
 
   // No ESC or CR survives the format step — the dangerous bytes that form the
   // bracketed-paste sentinel / inject prompt lines are gone (the harmless
