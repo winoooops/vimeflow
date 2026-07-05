@@ -3,7 +3,7 @@ id: ipc-sender-validation
 category: security
 created: 2026-06-30
 last_updated: 2026-06-30
-ref_count: 0
+ref_count: 1
 ---
 
 # IPC Sender Validation

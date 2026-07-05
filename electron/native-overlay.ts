@@ -1,6 +1,7 @@
 import {
   BrowserWindow,
   ipcMain,
+  shell,
   type Event as ElectronEvent,
   type IpcMain,
   type IpcMainInvokeEvent,
@@ -22,6 +23,7 @@ import {
   NATIVE_OVERLAY_RESUME,
 } from './native-overlay-channels'
 import { dispatchCommandPaletteShortcutForWindow } from './command-palette-shortcut'
+import { installNavigationGuard } from './navigation-guard'
 
 // cspell:ignore AppKit Ghostty minimizable maximizable fullscreenable NSView
 
@@ -981,7 +983,9 @@ export class NativeOverlayController {
     })
 
     overlayWindow.setIgnoreMouseEvents(true)
-    overlayWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    installNavigationGuard(overlayWindow, (externalUrl) => {
+      void shell.openExternal(externalUrl)
+    })
     void overlayWindow.loadURL(url)
 
     return { window: overlayWindow, ready }

@@ -308,7 +308,7 @@ const DialogRoot = ({
   canAttemptNativeRef.current = canAttemptNative
 
   const hideLocalForNative =
-    nativeAttempt === 'pending' || nativeAttempt === 'active'
+    canAttemptNative && nativeAttempt !== 'failed'
 
   useEffect(() => {
     if (

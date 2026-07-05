@@ -1785,6 +1785,7 @@ const MenuContextMenu = ({
   const listRef = useRef<(HTMLElement | null)[]>([])
   const labelsRef = useRef<(string | null)[]>([])
   const closingRef = useRef(false)
+  const nativeLifecycleActiveRef = useRef(false)
 
   const { disabledIndices, itemCount, setRowDisabled, clearRow } =
     useMenuDisabledIndices()
@@ -1890,6 +1891,21 @@ const MenuContextMenu = ({
 
   useEffect(() => {
     if (!canAttemptNative) {
+      nativeLifecycleActiveRef.current = false
+
+      return
+    }
+
+    nativeLifecycleActiveRef.current = true
+
+    return (): void => {
+      nativeLifecycleActiveRef.current = false
+      closeNativeOverlay(surfaceId)
+    }
+  }, [canAttemptNative, surfaceId])
+
+  useEffect(() => {
+    if (!canAttemptNative) {
       return
     }
 
@@ -1918,7 +1934,9 @@ const MenuContextMenu = ({
       )
 
       if (cancelled.current) {
-        closeNativeOverlay(surfaceId)
+        if (!nativeLifecycleActiveRef.current) {
+          closeNativeOverlay(surfaceId)
+        }
 
         return
       }
@@ -1928,7 +1946,6 @@ const MenuContextMenu = ({
 
     return (): void => {
       cancelled.current = true
-      closeNativeOverlay(surfaceId)
     }
   }, [
     canAttemptNative,

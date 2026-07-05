@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-05
-ref_count: 79
+ref_count: 80
 ---
 
 # Async Race Conditions
@@ -920,4 +920,18 @@ prevent showing previous data.
   native surface detached from its React anchor.
 - **Fix:** Added window resize and trigger ResizeObserver refresh paths that
   resend the same native surface id with the current anchor rect.
+- **Commit:** same commit as this entry
+
+### 86. Deferred tool-call flush survived local reset
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `agent-tool-call` events were batched through
+  `requestAnimationFrame`, but a reset between enqueue and flush could not clear
+  the closure-local pending queue, letting stale tool calls reappear after the
+  reset state was applied.
+- **Fix:** Clear pending tool-call batches from the reset-generation path,
+  cancel any scheduled animation frame, and re-check the reset guard at flush
+  time before applying batched events.
 - **Commit:** same commit as this entry

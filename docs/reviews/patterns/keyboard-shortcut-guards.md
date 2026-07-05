@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-05
-ref_count: 7
+ref_count: 8
 ---
 
 # Keyboard Shortcut Guards
@@ -423,4 +423,18 @@ against three classes of false-fire:
   and TypeScript shortcut payload, then set `KeyboardEventInit.repeat` on the
   synthetic event. Added regression coverage that forwarded KeyN includes
   `repeat: true`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Native command-palette shortcut path dropped auto-repeat state
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty command-palette shortcut path received the
+  native repeat bit but omitted `isAutoRepeat` when calling the shared main
+  process shortcut dispatcher, so held palette chords were treated as fresh
+  presses.
+- **Fix:** Forwarded `isAutoRepeat: repeat` into
+  `dispatchCommandPaletteShortcutForWindow`, matching the renderer shortcut
+  payload contract.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

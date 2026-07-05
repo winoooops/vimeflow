@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-05
-ref_count: 16
+ref_count: 17
 ---
 
 # UI Visual Regression

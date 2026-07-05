@@ -246,6 +246,7 @@ export const useAgentStatus = (
   // Detection can start the backend watcher, whose replay events must not
   // fire before the event listeners below are attached.
   const listenersReadyRef = useRef(false)
+  const clearPendingToolCallsRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
     if (prevResetGenerationRef.current === resetGeneration) {
@@ -257,6 +258,7 @@ export const useAgentStatus = (
       clearTimeout(collapseTimeoutRef.current)
       collapseTimeoutRef.current = null
     }
+    clearPendingToolCallsRef.current()
 
     setStatus((prev) => {
       if (prev.agentSessionId !== null) {
@@ -563,9 +565,27 @@ export const useAgentStatus = (
       }
     }
 
+    const clearPendingToolCalls = (): void => {
+      pendingToolCalls = []
+      pendingSeenToolUseIds.clear()
+      toolCallFlushScheduled = false
+      if (toolCallFrame !== null) {
+        cancelAnimationFrame(toolCallFrame)
+        toolCallFrame = null
+      }
+    }
+
+    clearPendingToolCallsRef.current = clearPendingToolCalls
+
     const flushToolCalls = (): void => {
       toolCallFlushScheduled = false
       toolCallFrame = null
+      if (locallyResetRunScopedEventsRef.current) {
+        pendingToolCalls = []
+        pendingSeenToolUseIds.clear()
+
+        return
+      }
       if (pendingToolCalls.length === 0) {
         return
       }
@@ -942,6 +962,7 @@ export const useAgentStatus = (
         cancelAnimationFrame(toolCallFrame)
         toolCallFrame = null
       }
+      clearPendingToolCallsRef.current = (): void => undefined
 
       for (const unlisten of unlistenFns) {
         unlisten()

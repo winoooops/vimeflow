@@ -934,6 +934,9 @@ napi_value RemoveSecondary(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 1) {
+    return Throw(env, "removeSecondary(surface) expected");
+  }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
   if (surface != nullptr && surface->swift_surface != nullptr) {
@@ -973,6 +976,10 @@ napi_value FocusSecondary(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 1) {
+    return Throw(env, "focusSecondary(surface) expected");
+  }
+
   SurfaceHandle *surface = GetSurface(env, args[0]);
   if (surface != nullptr && surface->swift_surface != nullptr) {
     bridge.focus_secondary(surface->swift_surface);
@@ -985,6 +992,10 @@ napi_value Focus(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 1) {
+    return Throw(env, "focus(surface) expected");
+  }
+
   SurfaceHandle *surface = GetSurface(env, args[0]);
   if (surface != nullptr && surface->swift_surface != nullptr) {
     bridge.focus(surface->swift_surface);
@@ -997,6 +1008,10 @@ napi_value Destroy(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 1) {
+    return Throw(env, "destroy(surface) expected");
+  }
+
   SurfaceHandle *surface = GetSurface(env, args[0]);
   if (surface != nullptr && surface->swift_surface != nullptr) {
     bridge.destroy(surface->swift_surface);

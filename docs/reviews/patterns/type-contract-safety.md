@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-07-04
-ref_count: 9
+last_updated: 2026-07-05
+ref_count: 10
 ---
 
 # Type Contract Safety
@@ -186,4 +186,16 @@ expands.
   `VITE_GHOSTTY_NATIVE_MACOS_PARENT`, while keeping base native Ghostty methods
   available for both helper and parent modes. Added focused preload tests for
   parent-mode exposure and legacy helper omission.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Native N-API one-argument methods skipped argc validation
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `removeSecondary`, `focusSecondary`, `focus`, and `destroy`
+  read `args[0]` without first checking `argc >= 1`, so a bad JS call could
+  pass uninitialized stack memory into N-API and crash the main process.
+- **Fix:** Added one-argument guards matching the existing `SetFrame` and
+  `WriteSecondary` style before each `GetSurface(env, args[0])` access.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

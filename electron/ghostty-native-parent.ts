@@ -870,6 +870,7 @@ export class GhosttyNativeParentController {
             meta,
             alt,
             shift,
+            isAutoRepeat: repeat,
           })
         ) {
           return

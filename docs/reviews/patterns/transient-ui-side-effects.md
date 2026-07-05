@@ -3,7 +3,7 @@ id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
 last_updated: 2026-07-05
-ref_count: 7
+ref_count: 8
 ---
 
 # Transient UI Side Effects
@@ -194,4 +194,29 @@ to persistent state through a separate, explicit path.
   whether focus moved into the dock. Ghostty is refocused only when the same
   pane remains active and the dock did not take focus, so no-op dock shortcuts
   recover terminal focus without stealing it from successful dock opens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Native dialog fallback visibility lagged first paint
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** Native-overlay dialogs hid the local DOM fallback only after the
+  async native attempt state changed from `idle`, letting the DOM dialog flash
+  for one paint before the native surface took over.
+- **Fix:** Derived local hiding synchronously from `canAttemptNative` unless the
+  native attempt has failed, preserving fallback while eliminating first-paint
+  flicker.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Context-menu native payload updates shared close cleanup
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `MenuContextMenu` tied payload and position refreshes to an
+  effect whose cleanup always closed the native overlay, so live content
+  updates tore down and recreated the native window.
+- **Fix:** Split native context-menu lifetime cleanup from payload refreshes and
+  close the surface only when the menu can no longer use the native transport.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
