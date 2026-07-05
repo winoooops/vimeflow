@@ -19,6 +19,7 @@ Merges without a live effect: no agent emits the sentinel until PR-2 adds the di
 ### Task 1: Reply event types (`types.rs`)
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/types.rs` (add after `AgentTurnEvent`, ~line 313)
 
 - [ ] **Step 1: Add the event types**
@@ -79,6 +80,7 @@ git commit -m "feat(agent): add AgentReplyEvent types (VIM-283)"
 ### Task 2: The extraction + validation helper (`reply.rs`)
 
 **Files:**
+
 - Create: `crates/backend/src/agent/reply.rs`
 - Modify: `crates/backend/src/agent/mod.rs` (add `mod reply;`)
 
@@ -296,6 +298,7 @@ git commit -m "feat(agent): extract + validate structured reply block (VIM-283)"
 ### Task 3: The emitter (`events.rs`)
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/events.rs` (add after `emit_agent_turn`, ~line 32)
 
 - [ ] **Step 1: Add the emitter**
@@ -326,6 +329,7 @@ git commit -m "feat(agent): add emit_agent_reply (VIM-283)"
 ### Task 4: Decode `last_agent_message` on `task_complete` (`transcript_dto.rs`)
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/adapter/codex/transcript_dto.rs` (`CodexPayloadDto`, ~line 94, beside `message`)
 
 - [ ] **Step 1: Add the field**
@@ -352,6 +356,7 @@ git commit -m "feat(agent): decode last_agent_message on codex task_complete (VI
 ### Task 5: Wire the Codex decoder to emit `agent-reply`
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/adapter/codex/transcript.rs` (`process_event_msg` TaskComplete arm, ~line 461; test module below)
 
 - [ ] **Step 1: Write the failing test**
@@ -434,6 +439,7 @@ git commit -m "feat(agent): emit agent-reply from codex task_complete (VIM-283)"
 ### Task 6: Regenerate bindings + full backend test
 
 **Files:**
+
 - Generated: `src/bindings/AgentReplyEvent.ts`, `src/bindings/AgentReply.ts`, `src/bindings/AgentReplyStatus.ts`, `src/bindings/index.ts`
 
 - [ ] **Step 1: Generate bindings**
@@ -464,6 +470,7 @@ Depends on PR-1's `AgentReplyEvent` binding being on `main`.
 ### Task 7: Dispatch nonce + reply instruction (`feedbackDispatch.ts`)
 
 **Files:**
+
 - Modify: `src/features/diff/services/feedbackDispatch.ts` (`formatFeedbackPayload` footer ~line 112; `dispatchFeedbackBatch` ~line 116)
 - Test: `src/features/diff/services/feedbackDispatch.test.ts`
 
@@ -472,7 +479,13 @@ Depends on PR-1's `AgentReplyEvent` binding being on `main`.
 ```ts
 test('the footer instructs the agent to emit the reply block with the nonce', () => {
   const payload = formatFeedbackPayload(
-    [{ filePath: 'src/a.ts', staged: false, annotations: [makeAnnotation(5, 'additions', 'Why?', 'question')] }],
+    [
+      {
+        filePath: 'src/a.ts',
+        staged: false,
+        annotations: [makeAnnotation(5, 'additions', 'Why?', 'question')],
+      },
+    ],
     'n0nc3'
   )
   expect(payload).toContain('<<<VIMEFLOW_REPLY')
@@ -511,7 +524,8 @@ export const formatFeedbackPayload = (
 ```
 
 The sample uses a single valid literal (`"answered"`); the line above enumerates the choices in prose, so an agent copying the block verbatim never produces the invalid `answered|changed|skipped`.
-```
+
+````
 
 Thread the nonce through `dispatchFeedbackBatch`:
 
@@ -527,7 +541,7 @@ export const dispatchFeedbackBatch = async (
   const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
   await writePty(ptyId, payload)
 }
-```
+````
 
 - [ ] **Step 4: Update the callers in the SAME task (or the app won't compile)**
 
@@ -535,11 +549,20 @@ Both `formatFeedbackPayload` and `dispatchFeedbackBatch` now require `nonce`. Up
 
 - **Send path** (`handleSendFeedback`, ~line 779): generate a nonce and pass it (Task 10 will reuse the same `nonce` for the pending record — for this task, a local `const nonce = Math.random().toString(36).slice(2, 8)` inline is enough):
   ```ts
-  await dispatchFeedbackBatch(pane.paneId, pane.ptyId, entries, nonce, feedbackDispatch.writePty)
+  await dispatchFeedbackBatch(
+    pane.paneId,
+    pane.ptyId,
+    entries,
+    nonce,
+    feedbackDispatch.writePty
+  )
   ```
 - **Copy path** (`handleCopyFeedback`, ~line 817): the clipboard copy has no agent to reply, so pass a fresh throwaway nonce purely to satisfy the signature:
   ```ts
-  const text = formatFeedbackPayload(entries, Math.random().toString(36).slice(2, 8))
+  const text = formatFeedbackPayload(
+    entries,
+    Math.random().toString(36).slice(2, 8)
+  )
   ```
 
 Also update the existing `feedbackDispatch.test.ts` and any `Panel.test.tsx` dispatch assertions to the new arity.
@@ -559,6 +582,7 @@ git commit -m "feat(diff): dispatch reply-block instruction with a per-dispatch 
 ### Task 8: The pending-review store (`pendingReviews.ts`)
 
 **Files:**
+
 - Create: `src/features/diff/services/pendingReviews.ts`
 - Test: `src/features/diff/services/pendingReviews.test.ts`
 
@@ -566,14 +590,30 @@ git commit -m "feat(diff): dispatch reply-block instruction with a per-dispatch 
 
 ```ts
 import { describe, expect, test } from 'vitest'
-import { setPendingReview, getPendingReview, clearPendingReview } from './pendingReviews'
+import {
+  setPendingReview,
+  getPendingReview,
+  clearPendingReview,
+} from './pendingReviews'
 
 const record = {
   ptyId: 'pty-1',
   ownerKey: 'sess:pane',
   nonce: 'abc',
   dispatchedAt: 1,
-  byHandle: new Map([[1, { cwd: '/r', filePath: 'a.ts', staged: false, commentId: 'c1', lineNumber: 5, side: 'additions' as const }]]),
+  byHandle: new Map([
+    [
+      1,
+      {
+        cwd: '/r',
+        filePath: 'a.ts',
+        staged: false,
+        commentId: 'c1',
+        lineNumber: 5,
+        side: 'additions' as const,
+      },
+    ],
+  ]),
 }
 
 describe('pendingReviews', () => {
@@ -655,6 +695,7 @@ git commit -m "feat(diff): pending-review correlation store (VIM-249)"
 ### Task 9: Owner-addressed `addAnnotation` (`useFeedbackBatch.ts`)
 
 **Files:**
+
 - Modify: `src/features/diff/hooks/useFeedbackBatch.ts` (`useFeedbackBatchStore` — add an owner-addressed variant)
 - Test: `src/features/diff/hooks/useFeedbackBatch.test.ts`
 
@@ -669,11 +710,19 @@ test('addAnnotationForOwner targets a specific owner, not the active one', () =>
     { initialProps: { ownerKey: 'sess:p0', cwd: '/repo' } }
   )
   act(() => {
-    result.current.feedbackBatch.addAnnotationForOwner('sess:p0', '/repo', 'a.ts', false, makeAnnotation('reply-1'))
+    result.current.feedbackBatch.addAnnotationForOwner(
+      'sess:p0',
+      '/repo',
+      'a.ts',
+      false,
+      makeAnnotation('reply-1')
+    )
   })
   rerender({ ownerKey: 'sess:p1', cwd: '/repo' }) // switch active owner
   rerender({ ownerKey: 'sess:p0', cwd: '/repo' }) // back
-  expect(result.current.feedbackBatch.annotationsForFile('/repo', 'a.ts', false)).toHaveLength(1)
+  expect(
+    result.current.feedbackBatch.annotationsForFile('/repo', 'a.ts', false)
+  ).toHaveLength(1)
 })
 ```
 
@@ -729,6 +778,7 @@ git commit -m "feat(diff): owner-addressed addAnnotation for agent replies (VIM-
 ### Task 10: Record the pending review at dispatch (`Panel.tsx`)
 
 **Files:**
+
 - Modify: `src/features/diff/Panel.tsx` (`buildFeedbackEntries` ~732, `handleSendFeedback` ~768)
 - Test: `src/features/diff/Panel.test.tsx`
 
@@ -759,7 +809,13 @@ First, **add a `feedbackOwnerKey: string` prop to `Panel`** (thread it here, not
 const nonce = Math.random().toString(36).slice(2, 8) // ponytail: 6-char correlation token, not a secret
 const { entries, handles } = buildFeedbackEntries()
 // ...
-await dispatchFeedbackBatch(pane.paneId, pane.ptyId, entries, nonce, feedbackDispatch.writePty)
+await dispatchFeedbackBatch(
+  pane.paneId,
+  pane.ptyId,
+  entries,
+  nonce,
+  feedbackDispatch.writePty
+)
 feedback.markDispatched(Date.now())
 setPendingReview({
   ptyId: pane.ptyId,
@@ -787,6 +843,7 @@ git commit -m "feat(diff): record the pending review at dispatch (VIM-249)"
 ### Task 11: The capture hook (`useAgentReply.ts`)
 
 **Files:**
+
 - Create: `src/features/diff/hooks/useAgentReply.ts`
 - Test: `src/features/diff/hooks/useAgentReply.test.ts`
 
@@ -803,10 +860,18 @@ test('attaches a matched reply to the dispatching owner by [#n]', async () => {
   // expect addAnnotationForOwner('o', cwd, file, staged, author:'agent' text:'A')
 })
 
-test('ignores an event whose nonce does not match (superseded dispatch)', async () => { /* ... */ })
-test('ignores an event with no pending record for the session', async () => { /* ... */ })
-test('degrades a malformed marker (replies:null) to one rawText note and clears the record', async () => { /* ... */ })
-test('degrades when no reply id matches, anchored to the lowest pending handle', async () => { /* ... */ })
+test('ignores an event whose nonce does not match (superseded dispatch)', async () => {
+  /* ... */
+})
+test('ignores an event with no pending record for the session', async () => {
+  /* ... */
+})
+test('degrades a malformed marker (replies:null) to one rawText note and clears the record', async () => {
+  /* ... */
+})
+test('degrades when no reply id matches, anchored to the lowest pending handle', async () => {
+  /* ... */
+})
 
 // The two cases that prove byHandle is consumed without over-clearing:
 test('mixed reply attaches valid handles and drops an unknown id', async () => {
@@ -816,7 +881,9 @@ test('partial reply leaves the unanswered handles pending', async () => {
   // byHandle has {1,2}; reply ids [1] → attach #1, record still has {2}; a later reply for #2 attaches then clears.
 })
 
-test('a replayed event after handles are consumed is a no-op', async () => { /* ... */ })
+test('a replayed event after handles are consumed is a no-op', async () => {
+  /* ... */
+})
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -830,17 +897,31 @@ Expected: FAIL — module not found.
 import { useEffect } from 'react'
 import { listen } from '@/lib/backend'
 import type { AgentReplyEvent } from '@/bindings'
-import { getPendingReview, setPendingReview, clearPendingReview } from '../services/pendingReviews'
+import {
+  getPendingReview,
+  setPendingReview,
+  clearPendingReview,
+} from '../services/pendingReviews'
 
 interface UseAgentReplyArgs {
   addAnnotationForOwner: (
-    ownerKey: string, cwd: string, filePath: string, staged: boolean,
-    annotation: { side: AnnotationSide; lineNumber: number; metadata: ReviewComment }
+    ownerKey: string,
+    cwd: string,
+    filePath: string,
+    staged: boolean,
+    annotation: {
+      side: AnnotationSide
+      lineNumber: number
+      metadata: ReviewComment
+    }
   ) => void
   nextCommentId: () => string
 }
 
-export const useAgentReply = ({ addAnnotationForOwner, nextCommentId }: UseAgentReplyArgs): void => {
+export const useAgentReply = ({
+  addAnnotationForOwner,
+  nextCommentId,
+}: UseAgentReplyArgs): void => {
   useEffect(() => {
     let unlisten: (() => void) | undefined
     void listen<AgentReplyEvent>('agent-reply', (event) => {
@@ -853,10 +934,17 @@ export const useAgentReply = ({ addAnnotationForOwner, nextCommentId }: UseAgent
         addAnnotationForOwner(pending.ownerKey, h.cwd, h.filePath, h.staged, {
           side: h.side,
           lineNumber: h.lineNumber,
-          metadata: { id: nextCommentId(), text, author: 'agent', createdAt: Date.now() },
+          metadata: {
+            id: nextCommentId(),
+            text,
+            author: 'agent',
+            createdAt: Date.now(),
+          },
         })
 
-      const matched = (event.replies ?? []).filter((r) => pending.byHandle.has(r.id))
+      const matched = (event.replies ?? []).filter((r) =>
+        pending.byHandle.has(r.id)
+      )
 
       if (event.replies && matched.length > 0) {
         for (const reply of matched) {
@@ -874,7 +962,9 @@ export const useAgentReply = ({ addAnnotationForOwner, nextCommentId }: UseAgent
       const anchor = pending.byHandle.get(lowestId)
       if (anchor) attachAgentNote(anchor, event.rawText)
       clearPendingReview(event.sessionId)
-    }).then((fn) => { unlisten = fn })
+    }).then((fn) => {
+      unlisten = fn
+    })
 
     return () => unlisten?.()
   }, [addAnnotationForOwner, nextCommentId])
@@ -898,6 +988,7 @@ git commit -m "feat(diff): useAgentReply — capture, correlate, degrade (VIM-24
 The owner-key prop was already threaded in Task 10; this task only wires the capture hook into the one place the feedback store lives.
 
 **Files:**
+
 - Modify: `src/features/workspace/WorkspaceView.tsx` (mount `useAgentReply` beside `useFeedbackBatchStore`, ~line 1862)
 
 - [ ] **Step 1: Mount the hook**
@@ -926,6 +1017,7 @@ git commit -m "feat(diff): mount useAgentReply and route replies to the dispatch
 No new render code — an `author:'agent'` annotation already renders "Agent reply" (distinct, read-only) via `ReviewCommentRow` (VIM-256). This task confirms it and closes the round-trip.
 
 **Files:**
+
 - Create: `src/features/diff/agentReplyThread.integration.test.tsx`
 
 - [ ] **Step 1: Write the integration test at the store layer**
@@ -939,7 +1031,13 @@ const Harness = (): ReactElement => {
     addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
     nextCommentId: () => `agent-${Date.now()}`,
   })
-  return <Panel cwd="/repo" feedbackBatch={store.feedbackBatch} feedbackDraft={store.feedbackDraft} /* + selectedFile on src/foo.ts */ />
+  return (
+    <Panel
+      cwd="/repo"
+      feedbackBatch={store.feedbackBatch}
+      feedbackDraft={store.feedbackDraft} /* + selectedFile on src/foo.ts */
+    />
+  )
 }
 
 test('an agent reply renders in the thread under the dispatched comment', async () => {

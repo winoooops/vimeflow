@@ -18,7 +18,7 @@ Turn the one-way review dispatch into a two-way thread. A user comment is alread
 
 **Non-goal (from VIM-249):** do not build a second comment renderer. Reuse the existing inline annotation primitives — an `author: 'agent'` annotation already renders distinctly and read-only (VIM-256).
 
-## Section 1 — The reply contract *(shared: PR-1 validates schema, PR-2 correlates + decides fallback)*
+## Section 1 — The reply contract _(shared: PR-1 validates schema, PR-2 correlates + decides fallback)_
 
 The dispatch footer (today: `> When done, reply referencing each [#n].`) is extended to instruct the agent to **end its reply with a sentinel-wrapped JSON block**:
 
@@ -28,7 +28,7 @@ The dispatch footer (today: `> When done, reply referencing each [#n].`) is exte
 VIMEFLOW_REPLY>>>
 ```
 
-The dispatched block carries a per-dispatch **`nonce`** the agent is told to echo back verbatim. Because `[#n]` handles restart at `1` on every dispatch, the nonce is the only thing distinguishing a reply to *this* dispatch from a late reply to a superseded one on the same pty — without it, an old reply's `#1` would match the new dispatch's `#1` and misroute.
+The dispatched block carries a per-dispatch **`nonce`** the agent is told to echo back verbatim. Because `[#n]` handles restart at `1` on every dispatch, the nonce is the only thing distinguishing a reply to _this_ dispatch from a late reply to a superseded one on the same pty — without it, an old reply's `#1` would match the new dispatch's `#1` and misroute.
 
 ### Ownership — which PR decides what
 
@@ -79,7 +79,7 @@ The frontend acts on an `agent-reply` event **only while it has a dispatched rev
 - JSON gives typed fields the ts-rs binding carries cleanly across the Rust→TS boundary.
 - The `v` field lets the two PRs and future adapters evolve the shape without silent breakage.
 
-## Section 2 — Backend capture *(PR-1 = VIM-283)*
+## Section 2 — Backend capture _(PR-1 = VIM-283)_
 
 In the Codex rollout JSONL, the completed agent prose arrives as an `event_msg` record with `payload.type == "task_complete"`, in the **`last_agent_message`** field. The decoder today routes `event_msg` lifecycle/user records and `response_item` tool records but drops that prose. PR-1 adds a return path from `last_agent_message`.
 
@@ -161,7 +161,7 @@ Rust unit tests over `extract_agent_reply` + the emit path:
 
 Until PR-2 adds the dispatch instruction, no agent emits the sentinel, so `agent-reply` never fires in normal use. The Rust unit tests are PR-1's coverage; the live round-trip is exercised in PR-2.
 
-## Section 3 — Frontend correlation + ingestion *(PR-2 = VIM-249)*
+## Section 3 — Frontend correlation + ingestion _(PR-2 = VIM-249)_
 
 ### Dispatch instruction
 
@@ -169,25 +169,32 @@ At dispatch, generate a short per-dispatch `nonce` and extend `feedbackDispatch`
 
 ### Pending-review record — the gate + the `[#n]`↔comment map
 
-At dispatch, record the correlation state — keyed by `ptyId`, carrying the **feedback owner** (so a reply lands on the *dispatched* review even after a pane switch) and the **nonce** (so a superseded dispatch's reply is rejected):
+At dispatch, record the correlation state — keyed by `ptyId`, carrying the **feedback owner** (so a reply lands on the _dispatched_ review even after a pane switch) and the **nonce** (so a superseded dispatch's reply is rejected):
 
 ```ts
 interface PendingReview {
   ptyId: string
-  ownerKey: string     // the feedback owner (sessionId:paneId) at dispatch time
-  nonce: string        // the dispatched token the agent must echo
+  ownerKey: string // the feedback owner (sessionId:paneId) at dispatch time
+  nonce: string // the dispatched token the agent must echo
   dispatchedAt: number
   // [#n] → the comment it addressed, in the order buildFeedbackEntries numbered them.
   // The path fields are the annotation BATCH KEY — the original (cwd, repo-relative
   // filePath, staged), NOT the resolved absolute agent-facing path used in the prompt.
   byHandle: Map<
     number,
-    { cwd: string; filePath: string; staged: boolean; commentId: string; lineNumber: number; side: AnnotationSide }
+    {
+      cwd: string
+      filePath: string
+      staged: boolean
+      commentId: string
+      lineNumber: number
+      side: AnnotationSide
+    }
   >
 }
 ```
 
-**Batch-key vs. prompt path (finding).** `buildFeedbackEntries` resolves each path to an absolute *agent-facing* path for the prompt, but the feedback store keys annotations by the original `(cwd, repo-relative filePath, staged)` batch key. The pending record therefore stores the **annotation's own** `(cwd, filePath, staged)` — taken from the source annotation, not the `DispatchEntry` — so a reply's `addAnnotation` targets the same batch the comment lives in and renders co-located. `byHandle` is built from the **same ordered iteration** `buildFeedbackEntries` uses to assign `[#n]`. Stored in module store `pendingReviewsByPty` (keyed by `ptyId`), replaced on the next dispatch to that pty. Correlation state, not persisted review data — the comments persist via VIM-282.
+**Batch-key vs. prompt path (finding).** `buildFeedbackEntries` resolves each path to an absolute _agent-facing_ path for the prompt, but the feedback store keys annotations by the original `(cwd, repo-relative filePath, staged)` batch key. The pending record therefore stores the **annotation's own** `(cwd, filePath, staged)` — taken from the source annotation, not the `DispatchEntry` — so a reply's `addAnnotation` targets the same batch the comment lives in and renders co-located. `byHandle` is built from the **same ordered iteration** `buildFeedbackEntries` uses to assign `[#n]`. Stored in module store `pendingReviewsByPty` (keyed by `ptyId`), replaced on the next dispatch to that pty. Correlation state, not persisted review data — the comments persist via VIM-282.
 
 ### Capture hook
 
@@ -215,7 +222,7 @@ An attached reply is an ordinary annotation — it persists like any comment (VI
 - **correlation:** an `agent-reply` for a pending `ptyId` with a matching nonce attaches replies to the right comments by `[#n]`;
 - **gate (session):** an event whose `sessionId` has no pending record is ignored;
 - **gate (nonce / superseded):** an event whose nonce ≠ the current record's (a reply to a superseded dispatch) is ignored, even though its `#1` collides with the new dispatch's `#1`;
-- **owner-routed:** a reply attaches to the *dispatching* owner's review even after the active pane changed;
+- **owner-routed:** a reply attaches to the _dispatching_ owner's review even after the active pane changed;
 - **batch-key path:** a reply renders co-located with the comment (attached under the annotation's repo-relative key, not the prompt's absolute path);
 - **degrade (all-unmatched):** a reply whose ids match no pending handle attaches `rawText` to the lowest pending handle's comment and clears the record;
 - **unmatched (mixed):** a reply with some valid handles plus one unknown id attaches the valid ones and drops the unknown;
@@ -223,7 +230,7 @@ An attached reply is an ordinary annotation — it persists like any comment (VI
 - **partial:** a reply covering a subset of handles attaches those, leaves the rest waiting;
 - **idempotent:** a replayed `agent-reply` after its handles are consumed (or after a terminal degrade) is a no-op.
 
-## Section 4 — Rollout, scope, and risks *(both PRs)*
+## Section 4 — Rollout, scope, and risks _(both PRs)_
 
 ### PR sequencing
 
