@@ -847,6 +847,10 @@ napi_value Write(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
+  if (data.size() > static_cast<size_t>(INT_MAX)) {
+    return Throw(env, "write data too large");
+  }
+
   bridge.write(surface->swift_surface,
                reinterpret_cast<const unsigned char *>(data.data()),
                static_cast<int>(data.size()));
@@ -963,6 +967,10 @@ napi_value WriteSecondary(napi_env env, napi_callback_info info) {
   std::string data;
   if (!GetString(env, args[1], &data)) {
     return nullptr;
+  }
+
+  if (data.size() > static_cast<size_t>(INT_MAX)) {
+    return Throw(env, "writeSecondary data too large");
   }
 
   bridge.write_secondary(surface->swift_surface,

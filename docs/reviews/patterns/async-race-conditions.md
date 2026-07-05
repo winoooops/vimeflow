@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-05
-ref_count: 82
+ref_count: 83
 ---
 
 # Async Race Conditions
@@ -975,3 +975,12 @@ prevent showing previous data.
   on rejection, guarded against late state updates after cleanup. Added a menu
   regression test that rejects the second native open and expects the local menu.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Native overlay resize reopens survived dismissal
+
+- **Source:** github-claude | PR #667 round 8 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`, `src/components/Tooltip.tsx`
+- **Finding:** Native-overlay Menu and Tooltip resize effects could resolve an accepted `openNativeOverlay` request after the surface was dismissed, leaving stale native sessions alive after renderer cleanup.
+- **Fix:** Mirror the initial-open cancellation guard in resize resync effects: when the effect has been disposed and the pending request is accepted, close the native overlay by `surfaceId` and skip state updates. Added regression tests for menu and tooltip stale resize requests.
+- **Commit:** same commit as this entry

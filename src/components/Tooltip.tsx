@@ -284,6 +284,7 @@ export const Tooltip = ({
     }
 
     let frameId: number | null = null
+    let disposed = false
 
     const sendLatestRect = (): void => {
       if (frameId !== null) {
@@ -295,6 +296,14 @@ export const Tooltip = ({
 
         void (async (): Promise<void> => {
           const accepted = await sendNativeTooltipRequest()
+          if (disposed) {
+            if (accepted) {
+              closeNativeOverlay(nativeSurfaceId)
+            }
+
+            return
+          }
+
           if (!accepted) {
             warnNativeOverlayFallback('tooltip native overlay was rejected')
             setNativeFailed(true)
@@ -317,6 +326,7 @@ export const Tooltip = ({
     window.addEventListener('resize', sendLatestRect)
 
     return (): void => {
+      disposed = true
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId)
       }
@@ -327,6 +337,7 @@ export const Tooltip = ({
   }, [
     canUseNativeOverlay,
     nativeFailed,
+    nativeSurfaceId,
     nativeTooltipText,
     refs.reference,
     sendNativeTooltipRequest,

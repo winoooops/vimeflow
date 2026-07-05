@@ -2,8 +2,8 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 4
+last_updated: 2026-07-05
+ref_count: 5
 ---
 
 # Terminal Input Handling
@@ -96,4 +96,13 @@ double execution, and paste failures.
 - **File:** `electron/ghostty-native-helper.ts`
 - **Finding:** The Swift helper path forwarded raw terminal input by iterating every Electron `BrowserWindow`. Renderer-side pane filtering prevented command tracking from acting on unrelated panes, but sensitive keystrokes were still delivered to unrelated renderer processes.
 - **Fix:** Store the owning `BrowserWindow` from the validated update IPC event and send helper input only to that live window. Added regression tests for multi-window fan-out and destroyed-window behavior.
+- **Commit:** same commit as this entry
+
+### 10. Native Ghostty input/write lengths crossed bridge bounds unchecked
+
+- **Source:** github-claude | PR #667 round 8 | 2026-07-05
+- **Severity:** MEDIUM / LOW
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`, `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** Native Ghostty input and write paths crossed Swift/C++ bridge APIs with `Int32`/`int` length parameters but did not guard oversized byte buffers before conversion.
+- **Fix:** Drop input buffers larger than `Int32.max` before the Swift callback conversion and throw JS-visible errors before narrowing primary or secondary write strings beyond `INT_MAX`.
 - **Commit:** same commit as this entry

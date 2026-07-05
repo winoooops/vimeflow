@@ -545,7 +545,15 @@ const MenuRoot = ({
             }
           )
 
-          if (!accepted && !disposed) {
+          if (disposed) {
+            if (accepted) {
+              closeNativeOverlay(surfaceId)
+            }
+
+            return
+          }
+
+          if (!accepted) {
             setNativeAttempt('failed')
           }
         })()

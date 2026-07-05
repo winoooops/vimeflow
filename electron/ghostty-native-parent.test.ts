@@ -1368,7 +1368,9 @@ describe('ghostty native parent', () => {
       ) => void
     } = {}
     const surface = { id: 'surface-1' }
-    let resolveDispatch: ((value: unknown) => void) | null = null
+    let resolveDispatch: (value: unknown) => void = () => {
+      throw new Error('Shortcut dispatch resolver was not initialized')
+    }
 
     const pendingDispatch = new Promise<unknown>((resolve) => {
       resolveDispatch = resolve
@@ -1427,7 +1429,7 @@ describe('ghostty native parent', () => {
       setTimeout(resolve, 0)
     })
 
-    resolveDispatch?.({ activeGhosttyPane: true, dockHasFocus: false })
+    resolveDispatch({ activeGhosttyPane: true, dockHasFocus: false })
     await pendingDispatch
     await new Promise((resolve) => {
       setTimeout(resolve, 0)

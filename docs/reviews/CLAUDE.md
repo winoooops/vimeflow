@@ -57,11 +57,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 87       | 41   | 2026-07-04   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 10       | 5    | 2026-07-05   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 99       | 88   | 2026-07-05   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 89       | 82   | 2026-07-05   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 90       | 83   | 2026-07-05   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
@@ -69,7 +69,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 5        | 3    | 2026-07-05   |
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 4        | 4    | 2026-06-21   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 6        | 1    | 2026-07-05   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 8        | 2    | 2026-07-05   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |

@@ -1072,6 +1072,50 @@ describe('Menu.Context', () => {
     expect(await screen.findByRole('menu')).toBeInTheDocument()
   })
 
+  test('closes accepted native reposition requests after unmount', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const pending = deferredNativeOpen()
+    nativeBridge.open
+      .mockResolvedValueOnce({ accepted: true })
+      .mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+
+    const { unmount } = render(
+      <Menu trigger={<button type="button">Open actions</button>} nativeOverlay>
+        <Menu.Section label="Clipboard">
+          <Menu.Row label="Copy" onSelect={vi.fn()}>
+            <span>Copy</span>
+          </Menu.Row>
+        </Menu.Section>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open actions' }))
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeMenuRequestAt(nativeBridge.open)
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    unmount()
+    const closeCountAfterUnmount = nativeBridge.close.mock.calls.length
+
+    await act(async () => {
+      pending.resolve({ accepted: true })
+      await pending.promise
+    })
+
+    expect(nativeBridge.close).toHaveBeenCalledTimes(closeCountAfterUnmount + 1)
+    expect(nativeBridge.close).toHaveBeenLastCalledWith({
+      surfaceId: request.surfaceId,
+      reason: 'renderer',
+    })
+  })
+
   test('serializes context menu detail rows with anchor-width matching', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')

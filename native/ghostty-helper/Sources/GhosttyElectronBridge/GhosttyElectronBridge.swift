@@ -205,6 +205,10 @@ private final class CallbackBox: @unchecked Sendable {
     }
 
     func sendInput(_ data: Data) {
+        guard data.count <= Int(Int32.max) else {
+            return
+        }
+
         data.withUnsafeBytes { buffer in
             let pointer = buffer.bindMemory(to: UInt8.self).baseAddress
             inputCallback?(callbackContext, pointer, Int32(buffer.count))

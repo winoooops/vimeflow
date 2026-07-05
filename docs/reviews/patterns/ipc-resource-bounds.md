@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-07-05
-ref_count: 1
+ref_count: 2
 ---
 
 # IPC Resource Bounds
@@ -101,4 +101,22 @@ not become repeated unhandled main-process failures.
 - **Fix:** Added the same nonblocking `invokeSidecar` wrapper used by the
   native parent controller and routed legacy helper input/resize invokes through
   it. Added regression coverage for rejected input and resize invokes.
+- **Commit:** same commit as this entry
+
+### 7. Swift Ghostty input length conversion could trap
+
+- **Source:** github-claude | PR #667 round 8 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`
+- **Finding:** Native Ghostty input converted `Data.count` to `Int32` with a trapping initializer. A single oversized input buffer could crash the Electron main process instead of failing gracefully.
+- **Fix:** Guard `data.count <= Int(Int32.max)` before entering the C callback path.
+- **Commit:** same commit as this entry
+
+### 8. Native Ghostty writes narrowed byte lengths without bounds
+
+- **Source:** github-claude | PR #667 round 8 | 2026-07-05
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `Write` and `WriteSecondary` cast JS string byte lengths from `size_t` to `int` without checking `INT_MAX`, allowing oversized writes to wrap and be dropped with no visible error.
+- **Fix:** Reject oversized primary and secondary writes with JS-visible errors before passing lengths to the Swift bridge.
 - **Commit:** same commit as this entry

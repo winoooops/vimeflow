@@ -1,5 +1,5 @@
 import { createRef } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { __resetNativeOverlayForTest } from '@/components/base/floating/nativeOverlay'
@@ -72,6 +72,24 @@ const rect = ({
     bottom: y + height,
     toJSON: () => ({}),
   }) as DOMRect
+
+const deferredNativeOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+} => {
+  let resolvePromise: ((value: { accepted: boolean }) => void) | null = null
+
+  const promise = new Promise<{ accepted: boolean }>((resolve) => {
+    resolvePromise = resolve
+  })
+
+  return {
+    promise,
+    resolve: (value): void => {
+      resolvePromise?.(value)
+    },
+  }
+}
 
 afterEach(() => {
   restorePlatform?.()
@@ -418,6 +436,51 @@ describe('Tooltip', () => {
     })
 
     rectSpy.mockRestore()
+  })
+
+  test('closes accepted native tooltip resize requests after dismissal', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const pending = deferredNativeOpen()
+    nativeBridge.open
+      .mockResolvedValueOnce({ accepted: true })
+      .mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip content="collapse status" delayMs={0} nativeOverlay>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(
+      rect({ x: 50, y: 60, width: 70, height: 18 })
+    )
+
+    await user.hover(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeBridge.open.mock.calls[0][0] as { surfaceId: string }
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    await user.unhover(trigger)
+    const closeCountAfterDismiss = nativeBridge.close.mock.calls.length
+
+    await act(async () => {
+      pending.resolve({ accepted: true })
+      await pending.promise
+    })
+
+    expect(nativeBridge.close).toHaveBeenCalledTimes(closeCountAfterDismiss + 1)
+    expect(nativeBridge.close).toHaveBeenLastCalledWith({
+      surfaceId: request.surfaceId,
+      reason: 'renderer',
+    })
   })
 
   test('falls back locally when native tooltip overlay is rejected', async () => {
