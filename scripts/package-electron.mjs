@@ -93,9 +93,23 @@ export function resolveTarget(target, host) {
 }
 
 export function buildCommands(target) {
+  const rendererBuildCommand =
+    target === 'mac-arm64'
+      ? [
+          'cross-env',
+          [
+            'VITE_GHOSTTY_NATIVE_MACOS_PARENT=1',
+            'VITE_NATIVE_OVERLAY=1',
+            'vite',
+            'build',
+            '--mode',
+            'electron',
+          ],
+        ]
+      : ['vite', ['build', '--mode', 'electron']]
   const commands = [
     ['npm', ['run', 'type-check']],
-    ['vite', ['build', '--mode', 'electron']],
+    rendererBuildCommand,
     ['npm', ['run', 'backend:build:release']],
   ]
 

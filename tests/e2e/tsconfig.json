@@ -20,5 +20,9 @@
       "@wdio/electron-service"
     ]
   },
-  "include": ["**/*.ts", "../../src/types/e2e.d.ts"]
+  "include": [
+    "**/*.ts",
+    "../../src/types/e2e.d.ts",
+    "../../src/types/vimeflow.d.ts"
+  ]
 }

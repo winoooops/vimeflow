@@ -87,7 +87,7 @@ describe('ghostty native parent', () => {
     webContentsSend.mockClear()
   })
 
-  test('enables only on macOS with the parent feature flag', () => {
+  test('enables on macOS when packaged or when the parent feature flag is set', () => {
     expect(
       isGhosttyNativeParentEnabled('darwin', {
         VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1',
@@ -99,6 +99,8 @@ describe('ghostty native parent', () => {
         VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1',
       })
     ).toBe(false)
+    expect(isGhosttyNativeParentEnabled('darwin', {}, true)).toBe(true)
+    expect(isGhosttyNativeParentEnabled('linux', {}, true)).toBe(false)
     expect(isGhosttyNativeParentEnabled('darwin', {})).toBe(false)
   })
 
