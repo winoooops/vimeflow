@@ -1,5 +1,5 @@
 import { clickLayoutButton, createNewSession } from '../../shared/actions.js'
-import type { LayoutId, PaneKind } from '@/features/sessions/types'
+import type { PaneKind, PaneLayoutId } from '@/features/sessions/types'
 import {
   LAYOUTS,
   type LayoutShape,
@@ -219,7 +219,7 @@ const switchToLayout = async (layout: LayoutShape): Promise<void> => {
 
   await browser.waitUntil(
     async () =>
-      await browser.execute((layoutId: LayoutId) => {
+      await browser.execute((layoutId: PaneLayoutId) => {
         const splitViews = Array.from(
           document.querySelectorAll<HTMLElement>('[data-testid="split-view"]')
         )

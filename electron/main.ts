@@ -442,7 +442,8 @@ const setupApp = async (): Promise<void> => {
 
   const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
     process.platform,
-    process.env
+    process.env,
+    app.isPackaged
   )
 
   const ghosttyNativeHelperEnabled = isGhosttyNativeEnabled(
@@ -451,6 +452,10 @@ const setupApp = async (): Promise<void> => {
     app.isPackaged
   )
   if (ghosttyNativeParentEnabled) {
+    // Preload checks process.env before exposing window.vimeflow.ghosttyNative.
+    // Set it here for packaged macOS so main, preload, and renderer agree on
+    // the shipped Ghostty runtime without requiring users to launch with env.
+    process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'
     ghosttyNativeController = setupGhosttyNativeParent({
       sidecar: spawnedSidecar,
       packaged: app.isPackaged,

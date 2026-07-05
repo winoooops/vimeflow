@@ -132,12 +132,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const MAX_PENDING_CHUNKS = 64
 
-// Packaging changes where artifacts are loaded from, not whether the feature is enabled.
+// Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in with
+// VITE_GHOSTTY_NATIVE_MACOS_PARENT so ordinary local runs can keep the fallback.
 export const isGhosttyNativeParentEnabled = (
   platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  packaged = false
 ): boolean =>
-  platform === 'darwin' && env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+  platform === 'darwin' &&
+  (packaged || env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1')
 
 const nativeParentDir = (packaged = false, resourcesPath = ''): string => {
   if (packaged) {

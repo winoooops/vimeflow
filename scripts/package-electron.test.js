@@ -113,6 +113,18 @@ describe('package-electron script', () => {
     ])
 
     expect(buildCommands('mac-arm64')).toContainEqual([
+      'cross-env',
+      [
+        'VITE_GHOSTTY_NATIVE_MACOS_PARENT=1',
+        'VITE_NATIVE_OVERLAY=1',
+        'vite',
+        'build',
+        '--mode',
+        'electron',
+      ],
+    ])
+
+    expect(buildCommands('mac-arm64')).toContainEqual([
       'npm',
       ['run', 'ghostty:native-parent:build'],
     ])
