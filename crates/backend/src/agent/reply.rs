@@ -3,6 +3,7 @@
 //! text; the sentinel scan, JSON parse, and schema live here once.
 
 use serde::Deserialize;
+use std::borrow::Cow;
 
 use crate::agent::types::{AgentReply, AgentReplyStatus};
 
@@ -45,17 +46,18 @@ pub(crate) fn extract_agent_reply(reply_text: &str) -> Option<AgentReplyOutcome>
     let open_at = reply_text.find(OPEN)?;
     let after_open = open_at + OPEN.len();
     let Some(close_rel) = reply_text[after_open..].find(CLOSE) else {
+        let json = normalize_reply_json(reply_text[after_open..].trim());
         // open sentinel, no close → truncated
         return Some(AgentReplyOutcome::Malformed {
             raw: reply_text[open_at..].to_string(),
-            nonce: None,
+            nonce: best_effort_nonce(&json),
         });
     };
     let close_at = after_open + close_rel;
     let raw = reply_text[open_at..close_at + CLOSE.len()].to_string();
-    let json = reply_text[after_open..close_at].trim();
+    let json = normalize_reply_json(reply_text[after_open..close_at].trim());
 
-    match validate(json) {
+    match validate(&json) {
         Some((nonce, replies)) => Some(AgentReplyOutcome::Structured {
             raw,
             nonce,
@@ -65,9 +67,27 @@ pub(crate) fn extract_agent_reply(reply_text: &str) -> Option<AgentReplyOutcome>
         // nonce-gated by the frontend degrade path.
         None => Some(AgentReplyOutcome::Malformed {
             raw,
-            nonce: best_effort_nonce(json),
+            nonce: best_effort_nonce(&json),
         }),
     }
+}
+
+fn normalize_reply_json(json: &str) -> Cow<'_, str> {
+    if !json.lines().any(|line| line.trim_start().starts_with("> ")) {
+        return Cow::Borrowed(json);
+    }
+
+    Cow::Owned(
+        json.lines()
+            .map(|line| {
+                line.trim_start()
+                    .strip_prefix("> ")
+                    .or_else(|| line.trim_start().strip_prefix('>'))
+                    .unwrap_or(line)
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 /// A non-empty string `nonce` from an otherwise-invalid block; None if the JSON
@@ -192,6 +212,27 @@ mod tests {
         assert!(matches!(
             extract_agent_reply(&text),
             Some(AgentReplyOutcome::Malformed { nonce: Some(n), .. }) if n == "keep"
+        ));
+    }
+
+    #[test]
+    fn truncated_block_keeps_parseable_nonce() {
+        let text = format!("{OPEN}\n{{\"v\":1,\"nonce\":\"keep\",\"replies\":[]}}");
+        assert!(matches!(
+            extract_agent_reply(&text),
+            Some(AgentReplyOutcome::Malformed { nonce: Some(n), .. }) if n == "keep"
+        ));
+    }
+
+    #[test]
+    fn quoted_payload_is_normalized_before_validation() {
+        let text = format!(
+            "prose before\n{OPEN}\n> {{\"v\":1,\"nonce\":\"abc\",\"replies\":[{{\"id\":1,\"status\":\"answered\",\"text\":\"hi\"}}]}}\n> \n{CLOSE}\nprose after"
+        );
+        assert!(matches!(
+            extract_agent_reply(&text),
+            Some(AgentReplyOutcome::Structured { nonce, replies, .. })
+                if nonce == "abc" && replies.len() == 1
         ));
     }
 
