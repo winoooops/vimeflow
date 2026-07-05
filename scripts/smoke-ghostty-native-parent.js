@@ -1,4 +1,4 @@
-// cspell:ignore codesign dylib ghostty otool
+// cspell:ignore codesign dylib dyld ghostty otool
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -29,6 +29,10 @@ const requireFile = (file) => {
     throw new Error(`missing native Ghostty artifact: ${file}`)
   }
 }
+
+const isMacosSystemDependency = (dependencyPath) =>
+  dependencyPath.startsWith('/usr/lib/') ||
+  dependencyPath.startsWith('/System/Library/')
 
 const smokeRequireAddon = () => {
   const addon = require(addonPath)
@@ -62,7 +66,11 @@ const smokeOtool = (file) => {
       throw new Error(`${file} has repo-local dependency: ${dependency}`)
     }
 
-    if (dependencyPath.startsWith('/') && !existsSync(dependencyPath)) {
+    if (
+      dependencyPath.startsWith('/') &&
+      !isMacosSystemDependency(dependencyPath) &&
+      !existsSync(dependencyPath)
+    ) {
       throw new Error(`${file} has missing dependency: ${dependency}`)
     }
   }
