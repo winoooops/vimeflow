@@ -184,6 +184,7 @@ export interface DiffChipToolbarProps {
   feedbackCount?: number
   onFinishFeedback?: () => void
   onDiscardFeedback?: () => void
+  onRefreshActiveFile?: () => void
 }
 
 // Composed chip toolbar. Pure controlled component — all state lives in the
@@ -234,6 +235,7 @@ export const DiffChipToolbar = ({
   feedbackCount = 0,
   onFinishFeedback = undefined,
   onDiscardFeedback = undefined,
+  onRefreshActiveFile = undefined,
 }: DiffChipToolbarProps): ReactElement => {
   // Discard All confirmation popover state. The trigger is the discard-all
   // button inside the tool-well; the confirm card renders on the shared Popover
@@ -278,7 +280,11 @@ export const DiffChipToolbar = ({
   // the popover is open so the two floating layers never co-exist.
   const discardAllSlot =
     onDiscardAll !== undefined ? (
-      <Tooltip content="Discard all changes" disabled={discardAllOpen}>
+      <Tooltip
+        content="Discard all changes"
+        shortcut="D"
+        disabled={discardAllOpen}
+      >
         <span>
           <IconButton
             ref={setDiscardAllAnchor}
@@ -348,6 +354,7 @@ export const DiffChipToolbar = ({
       options={['split', 'unified'] as const}
       onChange={onDiffStyleChange}
       icons={{ split: 'vertical_split', unified: 'view_headline' }}
+      shortcuts={{ split: 't', unified: 't' }}
     />,
     // hairline between the view-mode control and the navigation cluster.
     <ToolbarSeparator key="sep-nav" />,
@@ -457,6 +464,7 @@ export const DiffChipToolbar = ({
   const showActions = feedbackCount > 0
   const canDiscardFeedback = onDiscardFeedback !== undefined
   const canFinishFeedback = onFinishFeedback !== undefined
+  const showPinnedActions = onRefreshActiveFile !== undefined || showActions
 
   return (
     <div
@@ -471,40 +479,71 @@ export const DiffChipToolbar = ({
         >
           {chips}
         </PriorityPlus>
-        {showActions ? (
+        {showPinnedActions ? (
           <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
-            <button
-              type="button"
-              aria-label="discard all feedback"
-              disabled={!canDiscardFeedback}
-              onClick={onDiscardFeedback}
-              className="inline-flex items-center h-7 px-3.5 rounded-md font-mono text-[0.6875rem] font-medium bg-transparent border border-outline-variant/60 text-on-surface hover:bg-surface-container hover:border-error/50 hover:text-error transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-outline-variant/60 disabled:hover:text-on-surface"
-            >
-              Discard
-            </button>
-            <button
-              type="button"
-              aria-label={`finish feedback (${feedbackCount})`}
-              disabled={!canFinishFeedback}
-              onClick={onFinishFeedback}
-              className="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-2 rounded-md font-mono text-[0.6875rem] font-bold text-on-primary bg-primary hover:bg-primary-container shadow-[0_1px_5px_color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span
-                aria-hidden="true"
-                className="material-symbols-outlined text-sm leading-none"
+            {onRefreshActiveFile !== undefined ? (
+              <Tooltip content="Refresh diff" shortcut="r">
+                <button
+                  type="button"
+                  data-testid="diff-active-file-refresh"
+                  aria-label="refresh diff"
+                  aria-keyshortcuts="r"
+                  onClick={onRefreshActiveFile}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-outline-variant/60 bg-transparent px-3 font-mono text-[0.6875rem] font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-surface-container hover:text-primary disabled:cursor-default disabled:opacity-70 disabled:hover:border-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-on-surface"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-sm leading-none"
+                  >
+                    refresh
+                  </span>
+                  Refresh diff
+                  <span
+                    aria-hidden="true"
+                    className="rounded border border-outline-variant/40 px-1 text-[0.625rem] leading-none text-on-surface-muted"
+                  >
+                    r
+                  </span>
+                </button>
+              </Tooltip>
+            ) : null}
+            {showActions ? (
+              <button
+                type="button"
+                aria-label="discard all feedback"
+                disabled={!canDiscardFeedback}
+                onClick={onDiscardFeedback}
+                className="inline-flex items-center h-7 px-3.5 rounded-md font-mono text-[0.6875rem] font-medium bg-transparent border border-outline-variant/60 text-on-surface hover:bg-surface-container hover:border-error/50 hover:text-error transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-outline-variant/60 disabled:hover:text-on-surface"
               >
-                check
-              </span>
-              Finish
-              <Chip
-                tone="custom"
-                radius="pill"
-                size="custom"
-                className="rounded-full bg-on-primary/20 px-1.5 py-px font-mono text-[0.625rem] font-semibold text-on-primary"
+                Discard
+              </button>
+            ) : null}
+            {showActions ? (
+              <button
+                type="button"
+                aria-label={`finish feedback (${feedbackCount})`}
+                aria-keyshortcuts="Y"
+                disabled={!canFinishFeedback}
+                onClick={onFinishFeedback}
+                className="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-2 rounded-md font-mono text-[0.6875rem] font-bold text-on-primary bg-primary hover:bg-primary-container shadow-[0_1px_5px_color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {feedbackCount}
-              </Chip>
-            </button>
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-sm leading-none"
+                >
+                  check
+                </span>
+                Finish (Y)
+                <Chip
+                  tone="custom"
+                  radius="pill"
+                  size="custom"
+                  className="rounded-full bg-on-primary/20 px-1.5 py-px font-mono text-[0.625rem] font-semibold text-on-primary"
+                >
+                  {feedbackCount}
+                </Chip>
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

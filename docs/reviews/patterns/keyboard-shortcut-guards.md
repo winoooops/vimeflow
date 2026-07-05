@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-01
-ref_count: 4
+last_updated: 2026-07-02
+ref_count: 6
 ---
 
 # Keyboard Shortcut Guards
@@ -345,3 +345,65 @@ against three classes of false-fire:
   through 9 to the forwarded `DigitN` payload, preserving the existing
   allowed-digit filter.
 - **Commit:** same commit as this entry
+### 25. Mod+Z focus toggle captured terminal and editor undo controls
+
+- **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The new document-level `Mod+Z` layout toggle consumed the event before focused controls could handle it, stealing terminal `Ctrl+Z` job suspension and editor/dock undo behavior.
+- **Fix:** Guarded the shortcut so it passes through when the terminal container is inactive or focus is inside editable/xterm input. Added regression coverage for focused dock and xterm helper textarea cases.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Mod+Z focus toggle lacked terminal-container ownership guard
+
+- **Source:** github-claude | PR #631 round 1 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The `KeyZ` branch did not mirror the digit-shortcut container guard, so `Ctrl+Z` / `Cmd+Z` from the focused editor dock toggled the terminal layout instead of reaching the dock.
+- **Fix:** Added an `isTerminalContainerActiveRef.current === false` pass-through before the branch can prevent default, with regression coverage for dock focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Manual layout cycle left stale Mod+Z restore state
+
+- **Source:** github-claude | PR #631 round 2 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The per-session Mod+Z restore map was cleared on restore and failed-restore
+  paths, but not when `Mod+\` manually changed the same session's layout. A user could
+  enter single-pane focus with `Mod+Z`, cycle away with `Mod+\`, later return to single,
+  and have the next `Mod+Z` consume the stale restore entry.
+- **Fix:** Clear the active session's restore entry in the `Backslash` layout-cycle branch
+  before applying the next layout. Added regression coverage for the cycle-away-then-single
+  path so `Mod+Z` returns to the single-layout no-op behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Unified diff navigation reused split-row skipping
+
+- **Source:** github-codex-connector | PR #633 round 2 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The `j`/`k` line shortcuts always skipped sibling targets with the same split-row index, even when the active renderer was unified and `h`/`l` side navigation was disabled.
+- **Fix:** Kept same-row skipping and same-side preservation only for split mode; unified mode now steps target-by-target and uses per-line scroll indexing. Added a regression that reaches the added side of a replacement hunk in unified view.
+- **Commit:** same commit as this entry
+
+### 29. Remounted changed-files pin button dropped diff keyboard scope
+
+- **Source:** github-claude | PR #645 round 4 | 2026-07-02
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The changed-files pin/unpin button flipped the pinned state while the button itself lived inside the subtree that changes shape between pinned and floating modes. Removing the focused button left focus on `body`, so the diff panel's keyboard-scope guard ignored subsequent `j`/`k`/`e` shortcuts until the user clicked back into the diff.
+- **Fix:** Move focus to the stable diff root before toggling the pinned state, matching other handlers that close or remount diff side surfaces. Added a regression test that clicks both pin and unpin and asserts focus remains on `diff-populated-state`.
+- **Commit:** same commit as this entry
+
+### 30. Plain changed-files toggle dropped diff keyboard scope
+
+- **Source:** github-claude | PR #645 round 5 | 2026-07-02
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The plain `e` changed-files toggle could close or unpin the changed-files
+  surface while focus was inside that surface. Removing the focused row or button left
+  focus on `body`, so later diff keyboard shortcuts were ignored until the user clicked
+  back into the diff panel.
+- **Fix:** Move focus to the stable diff root at the start of `toggleFilesList`, mirroring
+  the pinned-toggle handoff before any changed-files subtree is hidden or remounted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

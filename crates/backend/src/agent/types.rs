@@ -309,6 +309,50 @@ pub struct AgentTurnEvent {
     pub num_turns: u32,
 }
 
+/// A structured reply the agent emitted for an inline diff review (VIM-283).
+/// `replies: None` is the malformed marker — the sentinel was present but the
+/// JSON failed schema validation; `raw_text` still carries the full reply so the
+/// frontend can degrade to a plain-text note.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Consumed by the frontend (PR-2 / VIM-249)
+pub struct AgentReplyEvent {
+    /// PTY session ID
+    pub session_id: String,
+    /// Echoed dispatch token; best-effort on malformed (None only if the JSON
+    /// between the sentinels is unparseable).
+    pub nonce: Option<String>,
+    /// The full reply text between the sentinels — the frontend degrade note.
+    pub raw_text: String,
+    /// Typed replies when the block is schema-valid; None is the malformed marker.
+    pub replies: Option<Vec<AgentReply>>,
+}
+
+/// One structured reply, keyed by the `[#n]` handle from the dispatch (VIM-283).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[allow(dead_code)]
+pub struct AgentReply {
+    pub id: u32,
+    pub status: AgentReplyStatus,
+    pub text: String,
+}
+
+/// Outcome the agent reports for a reviewed comment (VIM-283).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum AgentReplyStatus {
+    Answered,
+    Changed,
+    Skipped,
+}
+
 /// Tool call execution status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

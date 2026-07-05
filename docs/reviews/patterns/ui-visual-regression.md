@@ -198,6 +198,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 18. Surface-bright collision hides hover affordances
+### 16. Surface-bright collision hides hover affordances
 
 - **Source:** github-claude | PR #647 round 1 | 2026-07-03
 - **Severity:** MEDIUM
@@ -207,6 +208,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry
 
 ### 19. Adjacent Gruvbox Dark surface rungs collapsed
+### 17. Adjacent Gruvbox Dark surface rungs collapsed
 
 - **Source:** github-claude | PR #647 round 4 | 2026-07-03
 - **Severity:** MEDIUM
@@ -220,6 +222,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 20. Top-tier surface rungs collapse in Gruvbox Dark and Tokyo Night
+### 18. Top-tier surface rungs collapse in Gruvbox Dark and Tokyo Night
 
 - **Source:** github-codex-connector | PR #647 round 5 | 2026-07-03
 - **Severity:** HIGH
@@ -234,6 +237,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 21. Terminal-canvas guard skipped surface rungs used at the canvas edge
+### 19. Terminal-canvas guard skipped surface rungs used at the canvas edge
 
 - **Source:** github-claude | PR #647 round 7 | 2026-07-03
 - **Severity:** MEDIUM
@@ -250,6 +254,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 22. Top-rung surface guard omitted a previously broken theme
+### 20. Top-rung surface guard omitted a previously broken theme
 
 - **Source:** github-claude | PR #647 round 8 | 2026-07-03
 - **Severity:** LOW
@@ -265,6 +270,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 23. Browser bar chrome collided with app surface
+### 21. Browser bar chrome collided with app surface
 
 - **Source:** github-claude | PR #647 round 9 | 2026-07-03
 - **Severity:** HIGH
@@ -282,6 +288,7 @@ test case for the state that triggers the collision.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 24. Browser bar chrome collided with adjacent toolbar surface
+### 22. Browser bar chrome collided with adjacent toolbar surface
 
 - **Source:** github-codex-connector | PR #647 round 11 | 2026-07-03
 - **Severity:** HIGH
@@ -326,4 +333,16 @@ test case for the state that triggers the collision.
 - **Fix:** Made the sync-pill branch own the compact sizing and select the
   active amber tint versus idle primary tint inside that branch. Added a
   regression test covering the active, open, out-of-sync state.
+### 23. Unified diff range bars missed normalized removed rows
+
+- **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/rangeBar/diffRangeBars.ts`
+- **Finding:** The range-bar DOM pass treated unified gutter cells as deletion
+  rows only when `data-line-type="change-deletion"`. Unified diffs can also
+  expose removed rows as `data-line-type="removed"`, which made deletion-side
+  range comments fail to paint their persistent gutter bar on those rows.
+- **Fix:** Mirrored the review-navigation side resolver by classifying both
+  `change-deletion` and `removed` as deletions, and expanded the co-located
+  range-bar test to cover both unified deletion row spellings.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-03
-ref_count: 87
+last_updated: 2026-07-04
+ref_count: 88
 ---
 
 # Accessibility
@@ -798,6 +798,64 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/features/terminal/components/PaneRenameInput.tsx`
 - **Finding:** Rename validation and backend error text rendered only inside `sr-only`, so sighted users received only color and border feedback when a pane rename failed.
 - **Fix:** Rendered a compact visible `role="alert"` message in `text-error` while preserving `aria-describedby`; updated regression coverage to assert the alert is not `sr-only`.
+### 74. Generic layout picker announced workspace-only focus action
+
+- **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutSwitcher.tsx`
+- **Finding:** `LayoutSwitcher` reused the “Focus active pane” accessible name and tooltip for every `single` layout option, including the New Session dialog where the control selects a “Single” template rather than focusing an active pane.
+- **Fix:** Made the focus-action label and shortcut chip opt-in via `labelSingleAsFocusAction`, enabled it only in workspace chrome, and kept generic pickers on the plain “Single” label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 75. Popover action buttons suppressed keyboard focus indication
+
+- **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Cancel and Confirm buttons removed the browser focus ring with `focus:outline-none focus-visible:outline-none` without replacing it, so keyboard users could not tell which action was focused before activating it.
+- **Fix:** Added the shared button focus-ring treatment (`focus-visible:ring-1 focus-visible:ring-primary`) to the popover action class and updated co-located tests to assert the visible focus styles.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 76. Multi-agent send choices had no visible Tab focus
+
+- **Source:** github-claude | PR #633 round 1 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** The multi-agent finish-feedback branch suppressed `focus-visible` outlines on each Send button even though those choices have no shortcut fallback, making Tab navigation through the agent list ambiguous.
+- **Fix:** Routed the Send buttons through the same explicit popover action focus class and added a regression assertion that multi-agent Send buttons include the visible focus ring.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 77. Confirm popover buttons suppressed the shared focus ring
+
+- **Source:** github-codex-connector + github-claude | PR #633 round 2 | 2026-06-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** The hunk/file keyboard-confirm popover passed `className="focus-visible:ring-0"` to both `Button` actions, overriding the shared primitive's only visible keyboard focus indicator.
+- **Fix:** Removed the local ring suppression so the shared `Button` focus styles apply, and added co-located regression assertions for the `No (n)` and `Yes (y)` actions.
+- **Commit:** same commit as this entry
+
+### 78. Primary finish-feedback actions relied on brightness-only focus
+
+- **Source:** github-claude | PR #633 round 3 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/FinishFeedbackPopover.tsx`
+- **Finding:** Finish-feedback Confirm and multi-agent Send buttons suppressed
+  outlines and rings while using only `focus-visible:brightness-110` as the
+  keyboard focus cue. The saturated primary fill made that cue too weak for
+  keyboard-only and low-vision users, especially in the multi-agent list where
+  Tab is the selection path.
+- **Fix:** Replaced the brightness-only primary focus class with a visible
+  token-backed focus ring and updated co-located tests to reject the old
+  brightness/ring-0 treatment.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 79. Focus-opened floating panel lacked focus-out dismissal
+
+- **Source:** github-claude | PR #645 round 1 | 2026-07-02
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The unpinned changed-files edge hint opened the floating panel on keyboard focus, but only mouse leave scheduled dismissal. Tabbing to the hint could leave the absolute panel mounted over the diff until the user manually toggled it or happened to hover and leave.
+- **Fix:** Wrapped the unpinned hint and panel in a focus boundary that schedules hide when focus leaves the surface while preserving tab movement into the panel controls. Added regression coverage for tabbing through the hint, pin button, file row, file-comment button, and then out of the surface.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 80. Dracula highest surface fell below small-label contrast
@@ -834,4 +892,22 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/theme/themes/gruvbox/gruvbox-dark.ts`, `src/theme/themes/gruvbox/gruvbox-light.ts`
 - **Finding:** The final Gruvbox token choices preserved compact-label contrast but left the dark theme with `surface-container` and `surface-bright` duplicated, and both Gruvbox themes with elevated rungs that moved opposite the theme-kind elevation direction. Nested panels and hover states could therefore render flat or visually inverted.
 - **Fix:** Re-picked nearby Gruvbox surface values so the dark ladder increases in luminance, the light ladder decreases in luminance, and all compact surface rungs still meet the existing AA contrast guard. Added a Gruvbox-specific regression test that checks the full surface ladder ordering by theme kind.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 84. Diff remount focus restore stole focus from editable descendants
+
+- **Source:** github-codex-connector | PR #652 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The render-key focus restoration for theme and line-style remounts treated any active element inside the diff root as safe to replace with root focus. Diff-owned text inputs such as search and review-comment editors could regain focus after a workspace theme command, then immediately lose it to the bare diff root.
+- **Fix:** Added a shared diff native-focus predicate and skipped the render-key root restore when `document.activeElement` is an input, textarea, contenteditable element, or `role="textbox"`. Added a regression test that keeps the diff search textbox focused across a workspace theme change.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 85. Palette-close surface focus restore ignored follow-up dialogs
+
+- **Source:** github-claude + github-codex-connector | PR #652 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The command-palette close effect always restored focus to the active terminal or dock surface, even when the command itself opened a follow-up modal such as `UnsavedChangesDialog`. That could move keyboard focus behind an active `aria-modal` dialog.
+- **Fix:** Guarded the palette-close focus restore while `showUnsavedDialog` or `newSessionDialog.open` is true, preserving the follow-up dialog's focus ownership.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

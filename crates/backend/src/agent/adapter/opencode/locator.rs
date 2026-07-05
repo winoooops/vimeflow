@@ -115,8 +115,11 @@ impl OpenCodeLocator {
         resolved_directory: Option<PathBuf>,
     ) -> LocatedStatusSource {
         let status_path = self.status_path_for(&session_id);
-        *self.resolved.lock().expect("opencode resolved lock") =
-            Some((session_id.clone(), status_path.clone(), resolved_directory.clone()));
+        *self.resolved.lock().expect("opencode resolved lock") = Some((
+            session_id.clone(),
+            status_path.clone(),
+            resolved_directory.clone(),
+        ));
         located_from(
             status_path,
             self.bridge_root.clone(),
@@ -335,7 +338,12 @@ impl OpenCodeLocator {
     /// the runtime retries. Keeps a live binding alive across a transient empty
     /// index read; the cache is only ever populated by a fresh resolve.
     fn cached_or_err(&self, not_ready: String) -> Result<LocatedStatusSource, String> {
-        match self.resolved.lock().expect("opencode resolved lock").clone() {
+        match self
+            .resolved
+            .lock()
+            .expect("opencode resolved lock")
+            .clone()
+        {
             Some((session_id, status_path, resolved_directory)) => Ok(located_from(
                 status_path,
                 self.bridge_root.clone(),
@@ -484,8 +492,7 @@ mod tests {
                 .map(|row| row.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
-            std::fs::write(self.root.join("index.jsonl"), format!("{raw}\n"))
-                .expect("write index");
+            std::fs::write(self.root.join("index.jsonl"), format!("{raw}\n")).expect("write index");
         }
 
         /// Touch `<sessionID>.jsonl` so a tailer could open it (not required by
@@ -564,7 +571,10 @@ mod tests {
             .locate(&tracked_cwd, "pty")
             .expect("pid match binds despite cwd mismatch");
         assert_eq!(located.agent_session_id.as_deref(), Some("ses_live"));
-        assert_eq!(located.resolved_directory.as_deref(), Some(project.as_path()));
+        assert_eq!(
+            located.resolved_directory.as_deref(),
+            Some(project.as_path())
+        );
     }
 
     /// Two opencode panes sharing one project dir are NOT ambiguous under
@@ -719,7 +729,10 @@ mod tests {
         let err = locator
             .locate(bridge._tmp.path(), "pty")
             .expect_err("missing index ⇒ Err");
-        assert!(err.contains("not ready"), "missing index is not-ready: {err}");
+        assert!(
+            err.contains("not ready"),
+            "missing index is not-ready: {err}"
+        );
     }
 
     /// A present index with no pid-matched row, no qualifying same-cwd row, and
@@ -756,8 +769,13 @@ mod tests {
         // Note: NO `ses_only_index.jsonl` file written.
 
         let locator = bridge.locator(42, epoch_ms(0));
-        let located = locator.locate(&cwd, "pty").expect("locate ok despite no file");
-        assert_eq!(located.status_path, bridge.root.join("ses_only_index.jsonl"));
+        let located = locator
+            .locate(&cwd, "pty")
+            .expect("locate ok despite no file");
+        assert_eq!(
+            located.status_path,
+            bridge.root.join("ses_only_index.jsonl")
+        );
         assert!(!located.status_path.exists(), "data file is absent on disk");
     }
 
@@ -767,7 +785,10 @@ mod tests {
         let bridge = Bridge::new();
         let cwd = bridge._tmp.path().to_path_buf();
         let cwd_str = cwd.to_string_lossy().into_owned();
-        let raw = format!("not json at all\n{}\n", index_row("ses_good", 5, &cwd_str, 1));
+        let raw = format!(
+            "not json at all\n{}\n",
+            index_row("ses_good", 5, &cwd_str, 1)
+        );
         std::fs::write(bridge.root.join("index.jsonl"), raw).expect("write index");
 
         let locator = bridge.locator(5, epoch_ms(0));
@@ -798,7 +819,9 @@ mod tests {
             index_row("ses_B", 222, &cwd_str, 2_000),
         ]);
 
-        let second = locator.locate(&cwd, "pty").expect("second locate keeps cache");
+        let second = locator
+            .locate(&cwd, "pty")
+            .expect("second locate keeps cache");
         assert_eq!(
             second.agent_session_id.as_deref(),
             Some("ses_A"),
@@ -824,7 +847,9 @@ mod tests {
         // prior resolve is cached and must answer.
         std::fs::remove_file(bridge.root.join("index.jsonl")).expect("rm index");
 
-        let second = locator.locate(&cwd, "pty").expect("cached fallback locate ok");
+        let second = locator
+            .locate(&cwd, "pty")
+            .expect("cached fallback locate ok");
         assert_eq!(first.agent_session_id, second.agent_session_id);
         assert_eq!(first.status_path, second.status_path);
         assert_eq!(second.agent_session_id.as_deref(), Some("ses_cached"));
@@ -871,11 +896,9 @@ mod tests {
     fn validator_accepts_real_jsonl_under_bridge_root() {
         let bridge = Bridge::new();
         let path = bridge.write_session_file("ses_x");
-        let canonical = validate_transcript_path_with_root(
-            path.to_str().expect("utf8 path"),
-            &bridge.root,
-        )
-        .expect("real jsonl under root validates");
+        let canonical =
+            validate_transcript_path_with_root(path.to_str().expect("utf8 path"), &bridge.root)
+                .expect("real jsonl under root validates");
         assert_eq!(canonical, std::fs::canonicalize(&path).expect("canonical"));
     }
 
@@ -883,7 +906,10 @@ mod tests {
     fn validator_rejects_null_byte() {
         let bridge = Bridge::new();
         let result = validate_transcript_path_with_root("/tmp/ses\0.jsonl", &bridge.root);
-        assert!(matches!(result, Err(ValidateTranscriptError::InvalidPath(_))));
+        assert!(matches!(
+            result,
+            Err(ValidateTranscriptError::InvalidPath(_))
+        ));
     }
 
     #[test]
@@ -916,10 +942,8 @@ mod tests {
             .join("..")
             .join(outside_tmp.path().file_name().expect("name"))
             .join("escape.jsonl");
-        let result = validate_transcript_path_with_root(
-            traversal.to_str().expect("utf8"),
-            &bridge.root,
-        );
+        let result =
+            validate_transcript_path_with_root(traversal.to_str().expect("utf8"), &bridge.root);
         assert!(
             matches!(result, Err(ValidateTranscriptError::OutsideRoot { .. }))
                 || matches!(result, Err(ValidateTranscriptError::NotFound(_))),
@@ -932,9 +956,11 @@ mod tests {
         let bridge = Bridge::new();
         let txt = bridge.root.join("notes.txt");
         std::fs::write(&txt, "").expect("write txt");
-        let result =
-            validate_transcript_path_with_root(txt.to_str().expect("utf8"), &bridge.root);
-        assert!(matches!(result, Err(ValidateTranscriptError::InvalidPath(_))));
+        let result = validate_transcript_path_with_root(txt.to_str().expect("utf8"), &bridge.root);
+        assert!(matches!(
+            result,
+            Err(ValidateTranscriptError::InvalidPath(_))
+        ));
     }
 
     #[test]

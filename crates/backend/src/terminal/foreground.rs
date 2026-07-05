@@ -48,7 +48,13 @@ pub(crate) fn poll_foreground_once(
 ) -> HashMap<SessionId, bool> {
     let now = pty.ephemeral_foreground_snapshot();
     for (session_id, running) in foreground_changes(prev, &now) {
-        let _ = emit_burner_foreground(events, &BurnerForegroundEvent { session_id, running });
+        let _ = emit_burner_foreground(
+            events,
+            &BurnerForegroundEvent {
+                session_id,
+                running,
+            },
+        );
     }
     now.into_iter().collect()
 }

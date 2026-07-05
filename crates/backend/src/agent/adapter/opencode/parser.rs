@@ -279,8 +279,7 @@ fn fold_session_info(state: &mut OpencodeFoldState, info: &Value) {
 /// object never clobbers the user-supplied id. `info.model.modelID` is the
 /// primary path; a flat `info.modelID` is a defensive fallback.
 fn fold_message_info(state: &mut OpencodeFoldState, info: &Value) {
-    let model_id =
-        value_str(info, &["model", "modelID"]).or_else(|| value_str(info, &["modelID"]));
+    let model_id = value_str(info, &["model", "modelID"]).or_else(|| value_str(info, &["modelID"]));
     if let Some(model_id) = model_id.filter(|value| !value.is_empty()) {
         state.model_id_from_message = model_id.to_string();
     }

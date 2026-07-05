@@ -16,6 +16,8 @@ import type { Session, SessionStatus, PaneLayoutId } from '../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   PaneLayoutRegistry,
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
   type PaneLayoutDefinition,
 } from '../terminal/layout-registry'
 import {
@@ -834,8 +836,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   })
 
   test('an over-capacity checked layout renders as a disabled pill instead of vanishing', async () => {
+    const user = userEvent.setup()
+
     const baseSession = createMockSession('session-1', 'auth refactor', {
-      layout: 'single',
+      layout: 'grid3x2',
     })
 
     // Five panes exceed Quad's capacity (4) but fit 3x2 grid (6): Quad is
@@ -855,7 +859,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     await setupSessionManager([fivePaneSession], 'session-1')
     window.localStorage.setItem(
       SHOWN_LAYOUTS_STORAGE_KEY,
-      JSON.stringify(['single', 'quad', 'grid3x2'])
+      JSON.stringify([SINGLE_PANE_FOCUS_LAYOUT_ID, 'quad', 'grid3x2'])
     )
     render(<WorkspaceView />)
 
@@ -868,10 +872,21 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     })
     expect(quad).toHaveAttribute('aria-disabled', 'true')
 
+    const single = within(switcher).getByRole('button', {
+      name: SINGLE_PANE_FOCUS_LABEL,
+    })
+    expect(single).not.toHaveAttribute('aria-disabled', 'true')
+
     // A layout that DOES fit the pane count stays enabled.
     expect(
       within(switcher).getByRole('button', { name: '3x2 grid' })
     ).not.toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(single)
+    expect(mockSessionManager.setSessionLayout).toHaveBeenCalledWith(
+      'session-1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
   })
 
   test('the layout display menu can hide a non-active layout pill from the pillar', async () => {

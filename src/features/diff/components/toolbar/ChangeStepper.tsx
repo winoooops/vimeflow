@@ -63,23 +63,25 @@ export const ChangeStepper = ({
       </span>
     </Tooltip>
     <span className="flex flex-col">
-      <Tooltip content="Previous change">
+      <Tooltip content="Previous change" shortcut="[">
         <IconButton
           icon="keyboard_arrow_up"
           label="prev hunk"
           size="sm"
           disabled={!navEnabled}
+          aria-keyshortcuts="["
           onClick={onPrev}
           showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
         />
       </Tooltip>
-      <Tooltip content="Next change">
+      <Tooltip content="Next change" shortcut="]">
         <IconButton
           icon="keyboard_arrow_down"
           label="next hunk"
           size="sm"
           disabled={!navEnabled}
+          aria-keyshortcuts="]"
           onClick={onNext}
           showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}

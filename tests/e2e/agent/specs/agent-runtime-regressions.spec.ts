@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createNewSession } from '../../shared/actions.js'
+import { createNewSessionWithDefaults } from '../../shared/actions.js'
 import { waitForE2eBridge } from '../../shared/e2e-bridge.js'
 import {
   pressEnterInActiveTerminal,
@@ -442,7 +442,7 @@ describe('Agent runtime regressions', () => {
 
     // Spawn a dedicated bridge-enabled PTY through the frontend session manager
     // so the test controls its own precondition and the UI observes it as active.
-    await createNewSession()
+    await createNewSessionWithDefaults()
     let ptyId: string | undefined
     await browser.waitUntil(
       async () => {

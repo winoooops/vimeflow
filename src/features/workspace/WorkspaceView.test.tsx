@@ -12,13 +12,14 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { WorkspaceView } from './WorkspaceView'
+import { WorkspaceView, updateSelectedDiffFilesByOwner } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
+import type { SelectedDiffFile } from '../diff/types'
 import type { SessionList } from '../../bindings'
 import {
   MockResizeObserver,
@@ -327,6 +328,46 @@ const findObservedResizeObserver = (
   )
 
 describe('WorkspaceView', () => {
+  test('keeps selected diff files scoped by terminal owner', () => {
+    const ownerASelection = {
+      path: 'src/second.ts',
+      staged: false,
+      cwd: '/repo-a',
+    }
+
+    const ownerBSelection = {
+      path: 'src/first.ts',
+      staged: false,
+      cwd: '/repo-b',
+    }
+
+    let selections = new Map<string, SelectedDiffFile>()
+
+    selections = updateSelectedDiffFilesByOwner(
+      selections,
+      'session-a:p0',
+      ownerASelection
+    )
+
+    selections = updateSelectedDiffFilesByOwner(
+      selections,
+      'session-b:p0',
+      ownerBSelection
+    )
+
+    expect(selections.get('session-a:p0')).toEqual(ownerASelection)
+    expect(selections.get('session-b:p0')).toEqual(ownerBSelection)
+
+    selections = updateSelectedDiffFilesByOwner(
+      selections,
+      'session-b:p0',
+      null
+    )
+
+    expect(selections.get('session-a:p0')).toEqual(ownerASelection)
+    expect(selections.has('session-b:p0')).toBe(false)
+  })
+
   // Session switching/closing is sidebar-owned (the main session-tab strip
   // was removed in the main-stage chrome). Close via the sidebar card menu.
   const removeSessionViaSidebar = async (

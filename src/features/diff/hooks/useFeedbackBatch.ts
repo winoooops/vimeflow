@@ -1,23 +1,82 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DiffLineAnnotation } from '@pierre/diffs'
+/**
+ * Owns the in-memory review state for the diff surface.
+ *
+ * A feedback batch is the set of submitted inline review comments for one
+ * terminal-owned review. A feedback draft is different: it is the single
+ * comment editor the user has opened but not submitted yet. WorkspaceView keeps
+ * one batch and one draft per terminal owner so switching panes, closing the
+ * dock, or reopening the diff view does not lose unfinished review work.
+ *
+ * This file keeps the storage format private. Callers ask for comments by
+ * `(cwd, filePath, staged)` and summaries by owner; the hook handles map keys,
+ * optimistic updates, soft caps, owner pruning, and repo-root lookup.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
+
+/**
+ * The user's one-axis tag on a review comment (VIM-256/253). It is the
+ * structured signal, not decoration: it drives the chip AND the dispatch intent
+ * (a Question asks the agent to answer; the rest ask it to change files).
+ */
+export type ReviewCommentCategory = 'question' | 'change' | 'bug' | 'suggestion'
+
+/** Ordered for the editor's Ctrl+H / Ctrl+L cycling and the category chips. */
+export const REVIEW_COMMENT_CATEGORIES: readonly ReviewCommentCategory[] = [
+  'question',
+  'change',
+  'bug',
+  'suggestion',
+]
+
+/**
+ * Comments with no explicit category behave as a change request — the prior
+ * one-way behavior — so existing/persisted comments render and dispatch
+ * unchanged.
+ */
+export const DEFAULT_REVIEW_COMMENT_CATEGORY: ReviewCommentCategory = 'change'
 
 export interface ReviewComment {
   id: string
   text: string
-  author: 'self'
+  /**
+   * 'self' = a user comment; 'agent' = a coding-agent reply (VIM-256), which
+   * renders distinctly and is never dispatched or counted as pending.
+   */
+  author: 'self' | 'agent'
+  /**
+   * The user's category tag (VIM-256/253). Absent →
+   * DEFAULT_REVIEW_COMMENT_CATEGORY. Not set on agent replies.
+   */
+  category?: ReviewCommentCategory
   createdAt: number
+  /**
+   * When set, the comment has been dispatched to an agent and now stays in the
+   * hunk as a thread anchor (VIM-282) instead of being wiped on send.
+   * Comments with no dispatchedAt are the *pending* review — what Finish/Send
+   * and the discard action act on. A timestamp, not a boolean, so the thread
+   * model can order sends.
+   */
+  dispatchedAt?: number
+  target?:
+    | { scope: 'file' }
+    | {
+        scope: 'range'
+        side: AnnotationSide
+        startLine: number
+        endLine: number
+      }
 }
 
 /**
  * Sentinel annotation id for the in-progress draft comment — the one the
- * composer is editing before it is committed to the batch. Shared so
- * DiffPanelContent and the dev demo both render the composer (not a row) for
- * it from a single definition.
+ * editor is editing before it is committed to the batch. DiffPanelContent
+ * renders the comment editor instead of a row from this single definition.
  */
 export const DRAFT_ID = '__draft__'
 
 export type FeedbackBatch = Map<
-  /** batchKey: `${cwd}::${filePath}::${staged ? 'staged' : 'unstaged'}` */
+  /** Opaque batch key produced by makeBatchKey(cwd, filePath, staged). */
   string,
   DiffLineAnnotation<ReviewComment>[]
 >
@@ -59,10 +118,56 @@ export const parseBatchKey = (key: string): ParsedBatchKey => {
 
 const SOFT_CAP = 50
 
+export const FILE_COMMENT_LINE_NUMBER = 0
+
+export const isFileLevelReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => annotation.metadata.target?.scope === 'file'
+
+export const isLineLevelReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => !isFileLevelReviewAnnotation(annotation)
+
+/** A coding-agent reply (VIM-256): renders distinctly and is never dispatched. */
+export const isAgentReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean => annotation.metadata.author === 'agent'
+
+/** The effective category, defaulting absent tags to a change request. */
+export const reviewCommentCategory = (
+  comment: ReviewComment
+): ReviewCommentCategory => comment.category ?? DEFAULT_REVIEW_COMMENT_CATEGORY
+
+/**
+ * A comment is *pending* until it is dispatched to an agent. Pending comments
+ * are the review the user is still assembling; dispatched ones stay in the hunk
+ * as thread anchors but are never re-sent, counted as unfinished, or discarded.
+ * Agent replies are never pending — they are the agent's output, not the user's
+ * unsent feedback.
+ */
+export const isPendingReviewAnnotation = (
+  annotation: DiffLineAnnotation<ReviewComment>
+): boolean =>
+  !isAgentReviewAnnotation(annotation) &&
+  annotation.metadata.dispatchedAt === undefined
+
 const countAnnotationsInBatch = (batch: FeedbackBatch): number => {
   let count = 0
   for (const list of batch.values()) {
     count += list.length
+  }
+
+  return count
+}
+
+const countPendingInBatch = (batch: FeedbackBatch): number => {
+  let count = 0
+  for (const list of batch.values()) {
+    for (const annotation of list) {
+      if (isPendingReviewAnnotation(annotation)) {
+        count += 1
+      }
+    }
   }
 
   return count
@@ -139,6 +244,19 @@ const removeAnnotationFromBatch = (
 const EMPTY: DiffLineAnnotation<ReviewComment>[] = []
 Object.freeze(EMPTY)
 
+const EMPTY_BATCH: FeedbackBatch = new Map()
+Object.freeze(EMPTY_BATCH)
+
+const REPO_ROOT_KEY_SEP = '\0'
+
+const makeRepoRootKey = (ownerKey: string, cwd: string): string =>
+  `${ownerKey}${REPO_ROOT_KEY_SEP}${cwd}`
+
+const ownerKeyFromRepoRootKey = (key: string): string =>
+  key.split(REPO_ROOT_KEY_SEP)[0] ?? ''
+
+const LOCAL_FEEDBACK_OWNER_KEY = '__local_feedback__'
+
 export interface UseFeedbackBatchReturn {
   batch: FeedbackBatch
   annotationsForFile: (
@@ -147,6 +265,14 @@ export interface UseFeedbackBatchReturn {
     staged: boolean
   ) => DiffLineAnnotation<ReviewComment>[]
   addAnnotation: (
+    cwd: string,
+    filePath: string,
+    staged: boolean,
+    annotation: DiffLineAnnotation<ReviewComment>
+  ) => 'ok' | 'cap-reached'
+  /** Add onto a SPECIFIC owner (not the active one) — for agent replies (VIM-249). */
+  addAnnotationForOwner: (
+    ownerKey: string,
     cwd: string,
     filePath: string,
     staged: boolean,
@@ -166,68 +292,171 @@ export interface UseFeedbackBatchReturn {
     id: string
   ) => void
   clearBatch: () => void
+  /**
+   * Mark every pending comment in the owner as dispatched (keeping them in the
+   * hunk as thread anchors) and clear the open draft. Replaces clearBatch on the
+   * send path so submitted comments persist instead of being wiped.
+   */
+  markDispatched: (
+    dispatchedAt: number,
+    dispatchedAnnotationIds: ReadonlySet<string>
+  ) => void
+  /**
+   * Drop the pending comments and the open draft, leaving already dispatched
+   * thread anchors intact. The discard action.
+   */
+  clearPending: () => void
   totalAnnotations: () => number
+  /** Count of pending comments (not yet dispatched) — what Finish/Send acts on. */
+  pendingAnnotations: () => number
 }
 
-export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
-  const [batch, setBatch] = useState<FeedbackBatch>(() => new Map())
-  const optimisticBatchRef = useRef<FeedbackBatch>(batch)
+export interface FeedbackBatchSummary {
+  ownerKey: string
+  fileCount: number
+  commentCount: number
+  draftCount: number
+}
+
+export interface FeedbackRepoRootStoreRef {
+  current: string
+  repoRootForCwd: (cwd: string) => string
+}
+
+interface FeedbackDraftBase {
+  cwd: string
+  filePath: string
+  staged: boolean
+  editId?: string
+  text: string
+  /** The picked category, persisted so it survives a draft restore (VIM-256). */
+  category?: ReviewCommentCategory
+}
+
+export type FeedbackDraft =
+  | (FeedbackDraftBase & {
+      scope?: 'line'
+      side: AnnotationSide
+      lineNumber: number
+      rangeEndLine?: number
+    })
+  | (FeedbackDraftBase & {
+      scope: 'file'
+    })
+
+export interface FeedbackDraftStore {
+  draft: FeedbackDraft | null
+  setDraft: (draft: FeedbackDraft | null) => void
+}
+
+export interface UseFeedbackBatchStoreReturn {
+  feedbackBatch: UseFeedbackBatchReturn
+  feedbackRepoRootRef: FeedbackRepoRootStoreRef
+  feedbackDraft: FeedbackDraftStore
+  summaries: FeedbackBatchSummary[]
+  pruneOwners: (liveOwnerKeys: ReadonlySet<string>) => void
+}
+
+export const useFeedbackBatchStore = (
+  ownerKey: string,
+  cwd: string
+): UseFeedbackBatchStoreReturn => {
+  const [batchesByOwner, setBatchesByOwner] = useState<
+    Map<string, FeedbackBatch>
+  >(() => new Map())
+
+  const [draftsByOwner, setDraftsByOwner] = useState<
+    Map<string, FeedbackDraft>
+  >(() => new Map())
+
+  // Mirrors review batches for synchronous optimistic mutations before React
+  // commits state; this is the user-visible comment data.
+  const optimisticBatchesRef = useRef(batchesByOwner)
+  const repoRootsRef = useRef<Map<string, string>>(new Map())
   const addAnnotationResultRef = useRef<'ok' | 'cap-reached'>('ok')
 
   useEffect(() => {
-    optimisticBatchRef.current = batch
-  }, [batch])
+    optimisticBatchesRef.current = batchesByOwner
+  }, [batchesByOwner])
+
+  const batch = batchesByOwner.get(ownerKey) ?? EMPTY_BATCH
+  const draft = draftsByOwner.get(ownerKey) ?? null
 
   const totalAnnotations = useCallback(
     (): number => countAnnotationsInBatch(batch),
     [batch]
   )
 
+  const pendingAnnotations = useCallback(
+    (): number => countPendingInBatch(batch),
+    [batch]
+  )
+
   const annotationsForFile = useCallback(
     (
-      cwd: string,
+      requestedCwd: string,
       filePath: string,
       staged: boolean
     ): DiffLineAnnotation<ReviewComment>[] => {
-      const key = makeBatchKey(cwd, filePath, staged)
+      const key = makeBatchKey(requestedCwd, filePath, staged)
 
       return batch.get(key) ?? EMPTY
     },
     [batch]
   )
 
-  const addAnnotation = useCallback(
+  // Owner-addressed add: targets a SPECIFIC owner, not the active one. The diff
+  // add path uses `addAnnotation` (active owner); an agent reply (VIM-249) uses
+  // this to attach onto the owner that dispatched the review, even after the
+  // user switched panes.
+  const addAnnotationForOwner = useCallback(
     (
-      cwd: string,
+      targetOwnerKey: string,
+      requestedCwd: string,
       filePath: string,
       staged: boolean,
       annotation: DiffLineAnnotation<ReviewComment>
     ): 'ok' | 'cap-reached' => {
-      const key = makeBatchKey(cwd, filePath, staged)
+      const key = makeBatchKey(requestedCwd, filePath, staged)
 
-      if (countAnnotationsInBatch(optimisticBatchRef.current) >= SOFT_CAP) {
+      const optimisticBatch =
+        optimisticBatchesRef.current.get(targetOwnerKey) ?? EMPTY_BATCH
+
+      if (
+        annotation.metadata.author !== 'agent' &&
+        countPendingInBatch(optimisticBatch) >= SOFT_CAP
+      ) {
         addAnnotationResultRef.current = 'cap-reached'
 
         return addAnnotationResultRef.current
       }
 
-      optimisticBatchRef.current = addAnnotationToBatch(
-        optimisticBatchRef.current,
+      const optimisticNextBatch = addAnnotationToBatch(
+        optimisticBatch,
         key,
         annotation
       )
+      optimisticBatchesRef.current = new Map(optimisticBatchesRef.current).set(
+        targetOwnerKey,
+        optimisticNextBatch
+      )
       addAnnotationResultRef.current = 'ok'
-      setBatch((prev) => {
-        if (countAnnotationsInBatch(prev) >= SOFT_CAP) {
+      setBatchesByOwner((prev) => {
+        const currentBatch = prev.get(targetOwnerKey) ?? EMPTY_BATCH
+        if (
+          annotation.metadata.author !== 'agent' &&
+          countPendingInBatch(currentBatch) >= SOFT_CAP
+        ) {
           addAnnotationResultRef.current = 'cap-reached'
-          optimisticBatchRef.current = prev
+          optimisticBatchesRef.current = prev
 
           return prev
         }
 
+        const nextBatch = addAnnotationToBatch(currentBatch, key, annotation)
+        const next = new Map(prev).set(targetOwnerKey, nextBatch)
+        optimisticBatchesRef.current = next
         addAnnotationResultRef.current = 'ok'
-        const next = addAnnotationToBatch(prev, key, annotation)
-        optimisticBatchRef.current = next
 
         return next
       })
@@ -237,44 +466,408 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
     []
   )
 
+  const addAnnotation = useCallback(
+    (
+      requestedCwd: string,
+      filePath: string,
+      staged: boolean,
+      annotation: DiffLineAnnotation<ReviewComment>
+    ): 'ok' | 'cap-reached' =>
+      addAnnotationForOwner(
+        ownerKey,
+        requestedCwd,
+        filePath,
+        staged,
+        annotation
+      ),
+    [addAnnotationForOwner, ownerKey]
+  )
+
   const updateAnnotation = useCallback(
     (
-      cwd: string,
+      requestedCwd: string,
       filePath: string,
       staged: boolean,
       id: string,
       patch: Partial<ReviewComment>
     ): void => {
-      const key = makeBatchKey(cwd, filePath, staged)
-      optimisticBatchRef.current = updateAnnotationInBatch(
-        optimisticBatchRef.current,
+      const key = makeBatchKey(requestedCwd, filePath, staged)
+
+      const optimisticBatch =
+        optimisticBatchesRef.current.get(ownerKey) ?? EMPTY_BATCH
+
+      const optimisticNextBatch = updateAnnotationInBatch(
+        optimisticBatch,
         key,
         id,
         patch
       )
+      optimisticBatchesRef.current = new Map(optimisticBatchesRef.current).set(
+        ownerKey,
+        optimisticNextBatch
+      )
 
-      setBatch((prev) => {
-        const next = updateAnnotationInBatch(prev, key, id, patch)
-        optimisticBatchRef.current = next
+      setBatchesByOwner((prev) => {
+        const currentBatch = prev.get(ownerKey) ?? EMPTY_BATCH
+        const nextBatch = updateAnnotationInBatch(currentBatch, key, id, patch)
+        const next = new Map(prev).set(ownerKey, nextBatch)
+        optimisticBatchesRef.current = next
 
         return next
       })
     },
-    []
+    [ownerKey]
   )
 
   const removeAnnotation = useCallback(
-    (cwd: string, filePath: string, staged: boolean, id: string): void => {
-      const key = makeBatchKey(cwd, filePath, staged)
-      optimisticBatchRef.current = removeAnnotationFromBatch(
-        optimisticBatchRef.current,
+    (
+      requestedCwd: string,
+      filePath: string,
+      staged: boolean,
+      id: string
+    ): void => {
+      const key = makeBatchKey(requestedCwd, filePath, staged)
+
+      const optimisticBatch =
+        optimisticBatchesRef.current.get(ownerKey) ?? EMPTY_BATCH
+
+      const optimisticNextBatch = removeAnnotationFromBatch(
+        optimisticBatch,
         key,
         id
       )
+      const optimisticNext = new Map(optimisticBatchesRef.current)
+      if (optimisticNextBatch.size === 0) {
+        optimisticNext.delete(ownerKey)
+      } else {
+        optimisticNext.set(ownerKey, optimisticNextBatch)
+      }
+      optimisticBatchesRef.current = optimisticNext
 
-      setBatch((prev) => {
-        const next = removeAnnotationFromBatch(prev, key, id)
-        optimisticBatchRef.current = next
+      setBatchesByOwner((prev) => {
+        const currentBatch = prev.get(ownerKey) ?? EMPTY_BATCH
+        const nextBatch = removeAnnotationFromBatch(currentBatch, key, id)
+        const next = new Map(prev)
+        if (nextBatch.size === 0) {
+          next.delete(ownerKey)
+        } else {
+          next.set(ownerKey, nextBatch)
+        }
+        optimisticBatchesRef.current = next
+
+        return next
+      })
+    },
+    [ownerKey]
+  )
+
+  const clearBatch = useCallback((): void => {
+    setBatchesByOwner((prev) => {
+      if (!prev.has(ownerKey)) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      next.delete(ownerKey)
+      optimisticBatchesRef.current = next
+
+      return next
+    })
+
+    setDraftsByOwner((prev) => {
+      if (!prev.has(ownerKey)) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      next.delete(ownerKey)
+
+      return next
+    })
+  }, [ownerKey])
+
+  const clearOwnerDraft = useCallback((): void => {
+    setDraftsByOwner((prev) => {
+      if (!prev.has(ownerKey)) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      next.delete(ownerKey)
+
+      return next
+    })
+  }, [ownerKey])
+
+  // Send path (VIM-282): stamp sent pending comments as dispatched and keep
+  // them in the hunk as thread anchors, then close the draft. Unchanged file lists
+  // keep their identity so Pierre does not re-tokenize files with no pending
+  // comment.
+  const markDispatched = useCallback(
+    (
+      dispatchedAt: number,
+      dispatchedAnnotationIds: ReadonlySet<string>
+    ): void => {
+      setBatchesByOwner((prev) => {
+        const currentBatch = prev.get(ownerKey)
+        if (currentBatch === undefined || currentBatch.size === 0) {
+          return prev
+        }
+
+        let changed = false
+        const nextBatch: FeedbackBatch = new Map()
+        for (const [key, list] of currentBatch) {
+          if (
+            !list.some(
+              (annotation) =>
+                isPendingReviewAnnotation(annotation) &&
+                dispatchedAnnotationIds.has(annotation.metadata.id)
+            )
+          ) {
+            nextBatch.set(key, list)
+
+            continue
+          }
+
+          changed = true
+          nextBatch.set(
+            key,
+            list.map((annotation) =>
+              isPendingReviewAnnotation(annotation) &&
+              dispatchedAnnotationIds.has(annotation.metadata.id)
+                ? {
+                    ...annotation,
+                    metadata: { ...annotation.metadata, dispatchedAt },
+                  }
+                : annotation
+            )
+          )
+        }
+
+        if (!changed) {
+          return prev
+        }
+
+        const next = new Map(prev).set(ownerKey, nextBatch)
+        optimisticBatchesRef.current = next
+
+        return next
+      })
+
+      clearOwnerDraft()
+    },
+    [clearOwnerDraft, ownerKey]
+  )
+
+  // Discard path (VIM-282): drop pending comments and the draft, but leave
+  // dispatched thread anchors in place.
+  const clearPending = useCallback((): void => {
+    setBatchesByOwner((prev) => {
+      const currentBatch = prev.get(ownerKey)
+      if (currentBatch === undefined || currentBatch.size === 0) {
+        return prev
+      }
+
+      let changed = false
+      const nextBatch: FeedbackBatch = new Map()
+      for (const [key, list] of currentBatch) {
+        const kept = list.filter(
+          (annotation) => !isPendingReviewAnnotation(annotation)
+        )
+        if (kept.length === list.length) {
+          nextBatch.set(key, list)
+
+          continue
+        }
+        changed = true
+        if (kept.length > 0) {
+          nextBatch.set(key, kept)
+        }
+      }
+
+      if (!changed) {
+        return prev
+      }
+
+      const next = new Map(prev)
+      if (nextBatch.size === 0) {
+        next.delete(ownerKey)
+      } else {
+        next.set(ownerKey, nextBatch)
+      }
+      optimisticBatchesRef.current = next
+
+      return next
+    })
+
+    clearOwnerDraft()
+  }, [clearOwnerDraft, ownerKey])
+
+  const setDraft = useCallback(
+    (nextDraft: FeedbackDraft | null): void => {
+      setDraftsByOwner((prev) => {
+        const hasCurrent = prev.has(ownerKey)
+        if (nextDraft === null && !hasCurrent) {
+          return prev
+        }
+
+        const next = new Map(prev)
+        if (nextDraft === null) {
+          next.delete(ownerKey)
+        } else {
+          next.set(ownerKey, nextDraft)
+        }
+
+        return next
+      })
+    },
+    [ownerKey]
+  )
+
+  const feedbackBatch = useMemo<UseFeedbackBatchReturn>(
+    () => ({
+      batch,
+      annotationsForFile,
+      addAnnotation,
+      addAnnotationForOwner,
+      updateAnnotation,
+      removeAnnotation,
+      clearBatch,
+      markDispatched,
+      clearPending,
+      totalAnnotations,
+      pendingAnnotations,
+    }),
+    [
+      batch,
+      annotationsForFile,
+      addAnnotation,
+      addAnnotationForOwner,
+      updateAnnotation,
+      removeAnnotation,
+      clearBatch,
+      markDispatched,
+      clearPending,
+      totalAnnotations,
+      pendingAnnotations,
+    ]
+  )
+
+  const feedbackRepoRootRef = useMemo<FeedbackRepoRootStoreRef>(
+    () => ({
+      get current(): string {
+        return repoRootsRef.current.get(makeRepoRootKey(ownerKey, cwd)) ?? ''
+      },
+      set current(nextRoot: string) {
+        const rootKey = makeRepoRootKey(ownerKey, cwd)
+        if (repoRootsRef.current.get(rootKey) === nextRoot) {
+          return
+        }
+
+        const next = new Map(repoRootsRef.current)
+        if (nextRoot.length === 0) {
+          next.delete(rootKey)
+        } else {
+          next.set(rootKey, nextRoot)
+        }
+        repoRootsRef.current = next
+      },
+      repoRootForCwd(requestedCwd: string): string {
+        return (
+          repoRootsRef.current.get(makeRepoRootKey(ownerKey, requestedCwd)) ??
+          ''
+        )
+      },
+    }),
+    [cwd, ownerKey]
+  )
+
+  const feedbackDraft = useMemo<FeedbackDraftStore>(
+    () => ({
+      draft,
+      setDraft,
+    }),
+    [draft, setDraft]
+  )
+
+  const summaries = useMemo<FeedbackBatchSummary[]>(() => {
+    const ownerKeys = new Set([
+      ...batchesByOwner.keys(),
+      ...[...draftsByOwner.entries()]
+        .filter(([, entryDraft]) => entryDraft.text.trim().length > 0)
+        .map(([entryOwnerKey]) => entryOwnerKey),
+    ])
+
+    return [...ownerKeys]
+      .map((entryOwnerKey) => {
+        const entryBatch = batchesByOwner.get(entryOwnerKey) ?? EMPTY_BATCH
+        const entryDraft = draftsByOwner.get(entryOwnerKey) ?? null
+
+        // Only files with a pending comment count as unfinished — dispatched
+        // thread anchors are done (VIM-282).
+        const fileKeys = new Set(
+          [...entryBatch.entries()]
+            .filter(([, list]) => list.some(isPendingReviewAnnotation))
+            .map(([entryKey]) => entryKey)
+        )
+
+        const draftCount =
+          entryDraft !== null && entryDraft.text.trim().length > 0 ? 1 : 0
+
+        if (draftCount > 0 && entryDraft !== null) {
+          fileKeys.add(
+            makeBatchKey(entryDraft.cwd, entryDraft.filePath, entryDraft.staged)
+          )
+        }
+
+        return {
+          ownerKey: entryOwnerKey,
+          fileCount: fileKeys.size,
+          commentCount: countPendingInBatch(entryBatch),
+          draftCount,
+        }
+      })
+      .filter((summary) => summary.commentCount > 0 || summary.draftCount > 0)
+  }, [batchesByOwner, draftsByOwner])
+
+  const pruneOwners = useCallback(
+    (liveOwnerKeys: ReadonlySet<string>): void => {
+      setBatchesByOwner((prev) => {
+        const next = new Map(
+          [...prev.entries()].filter(([entryOwnerKey]) =>
+            liveOwnerKeys.has(entryOwnerKey)
+          )
+        )
+
+        if (next.size === prev.size) {
+          return prev
+        }
+
+        optimisticBatchesRef.current = next
+
+        return next
+      })
+
+      const nextRepoRoots = new Map(
+        [...repoRootsRef.current.entries()].filter(([rootKey]) =>
+          liveOwnerKeys.has(ownerKeyFromRepoRootKey(rootKey))
+        )
+      )
+
+      if (nextRepoRoots.size !== repoRootsRef.current.size) {
+        repoRootsRef.current = nextRepoRoots
+      }
+
+      setDraftsByOwner((prev) => {
+        const next = new Map(
+          [...prev.entries()].filter(([entryOwnerKey]) =>
+            liveOwnerKeys.has(entryOwnerKey)
+          )
+        )
+
+        if (next.size === prev.size) {
+          return prev
+        }
 
         return next
       })
@@ -282,19 +875,14 @@ export const useFeedbackBatch = (): UseFeedbackBatchReturn => {
     []
   )
 
-  const clearBatch = useCallback((): void => {
-    const next: FeedbackBatch = new Map()
-    optimisticBatchRef.current = next
-    setBatch(() => next)
-  }, [])
-
   return {
-    batch,
-    annotationsForFile,
-    addAnnotation,
-    updateAnnotation,
-    removeAnnotation,
-    clearBatch,
-    totalAnnotations,
+    feedbackBatch,
+    feedbackRepoRootRef,
+    feedbackDraft,
+    summaries,
+    pruneOwners,
   }
 }
+
+export const useFeedbackBatch = (): UseFeedbackBatchReturn =>
+  useFeedbackBatchStore(LOCAL_FEEDBACK_OWNER_KEY, '').feedbackBatch

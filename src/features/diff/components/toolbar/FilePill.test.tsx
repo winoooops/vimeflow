@@ -66,6 +66,16 @@ describe('FilePill', () => {
     expect(onPrev).toHaveBeenCalledTimes(1)
   })
 
+  test('file navigation tooltips show keyboard shortcuts', async () => {
+    const user = userEvent.setup()
+    renderPill()
+
+    await user.hover(screen.getByRole('button', { name: /next file/i }))
+
+    expect(await screen.findByText('Next file')).toBeInTheDocument()
+    expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('n')
+  })
+
   test('arrows are disabled and inert when navEnabled is false', () => {
     const onPrev = vi.fn<() => void>()
     const onNext = vi.fn<() => void>()

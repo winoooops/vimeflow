@@ -23,16 +23,6 @@ vi.mock('./features/workspace/WorkspaceView', () => {
   }
 })
 
-vi.mock('./features/diff/demo/InlineCommentDemo', () => {
-  const MockedInlineCommentDemo = (): ReactElement => (
-    <div data-testid="inline-comment-demo">Inline comment demo</div>
-  )
-
-  return {
-    InlineCommentDemo: MockedInlineCommentDemo,
-  }
-})
-
 vi.mock('./features/sessions/demo/ReorderMotionDemo', () => {
   const MockedReorderMotionDemo = (): ReactElement => (
     <div data-testid="session-reorder-demo">Session reorder demo</div>

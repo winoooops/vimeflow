@@ -2000,9 +2000,7 @@ mod tests {
                 .map(|path| path.join("git"))
                 // The QA review runner prepends a push-intercepting git shim;
                 // fixture repos need the real git binary for local pushes.
-                .find(|path| {
-                    path.is_file() && !path.to_string_lossy().contains(".qa-runner/bin")
-                })
+                .find(|path| path.is_file() && !path.to_string_lossy().contains(".qa-runner/bin"))
         });
 
         std::process::Command::new(git_path.unwrap_or_else(|| "git".into()))

@@ -2,7 +2,7 @@
 
 use crate::runtime::{serialize_event, EventSink};
 
-use super::types::{PtyDataEvent, PtyErrorEvent, PtyExitEvent, BurnerForegroundEvent};
+use super::types::{BurnerForegroundEvent, PtyDataEvent, PtyErrorEvent, PtyExitEvent};
 
 pub(crate) fn emit_pty_data(events: &dyn EventSink, payload: &PtyDataEvent) -> Result<(), String> {
     events.emit_json("pty-data", serialize_event(payload)?)

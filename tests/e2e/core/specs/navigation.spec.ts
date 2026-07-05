@@ -1,12 +1,8 @@
 import { clickBySelector } from '../../shared/actions.js'
 
 describe('BottomDrawer navigation', () => {
-  it('defaults to diff panel and switches to editor panel on click', async () => {
-    await clickBySelector('button[aria-label="Show editor & diff panel"]')
-
-    const initialDiffPanel = await $('[data-testid="diff-panel"]')
-    await initialDiffPanel.waitForDisplayed({ timeout: 15_000 })
-
+  it('switches between editor and diff panels on click', async () => {
+    await clickBySelector('[data-testid="status-bar-dock-toggle"]')
     await clickBySelector('button[aria-label="Editor"]')
 
     const editorPanel = await $('[data-testid="editor-panel"]')

@@ -96,11 +96,7 @@ pub(crate) trait StatusSourceLocator: Send + Sync {
 /// distinction was implicit and led to a false "decoders must
 /// `Err`" expectation; this clause makes it explicit.
 pub(crate) trait StateDecoder: Send + Sync {
-    fn decode(
-        &self,
-        session_id: Option<&str>,
-        raw: &str,
-    ) -> Result<StatusSnapshot, String>;
+    fn decode(&self, session_id: Option<&str>, raw: &str) -> Result<StatusSnapshot, String>;
 }
 
 /// Validate a raw transcript path against path-security policy
