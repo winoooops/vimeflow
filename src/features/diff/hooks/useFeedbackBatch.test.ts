@@ -464,6 +464,31 @@ describe('useFeedbackBatch', () => {
 })
 
 describe('useFeedbackBatchStore', () => {
+  test('addAnnotationForOwner targets a specific owner, not the active one', () => {
+    const { result, rerender } = renderHook(
+      ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
+      { initialProps: { ownerKey: 'sess:p0', cwd: '/repo' } }
+    )
+
+    act(() => {
+      result.current.feedbackBatch.addAnnotationForOwner(
+        'sess:p0',
+        '/repo',
+        'a.ts',
+        false,
+        makeAnnotation('reply-1')
+      )
+    })
+
+    // Switch the active owner away and back — the annotation stayed on sess:p0.
+    rerender({ ownerKey: 'sess:p1', cwd: '/repo' })
+    rerender({ ownerKey: 'sess:p0', cwd: '/repo' })
+
+    expect(
+      result.current.feedbackBatch.annotationsForFile('/repo', 'a.ts', false)
+    ).toHaveLength(1)
+  })
+
   test('stores unfinished reviews separately per owner key', () => {
     const { result, rerender } = renderHook(
       ({ ownerKey, cwd }) => useFeedbackBatchStore(ownerKey, cwd),
