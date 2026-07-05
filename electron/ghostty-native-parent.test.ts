@@ -1037,7 +1037,7 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('forwards native command digit shortcuts into the app renderer', async () => {
+  test('forwards native app shortcuts into the app renderer', async () => {
     const callbacks: {
       onShortcut?: (
         key: string,
@@ -1109,6 +1109,36 @@ describe('ghostty native parent', () => {
       'data-workspace-overlay-id="pane-rename"'
     )
     expect(addon.focus).toHaveBeenCalledWith(surface)
+
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+
+    callbacks.onShortcut?.('g', 'KeyG', false, true, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('KeyG')
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+
+    callbacks.onShortcut?.('0', 'Digit0', false, true, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('Digit0')
+    expect(addon.focus).not.toHaveBeenCalled()
 
     controller.dispose()
   })

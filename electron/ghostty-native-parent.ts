@@ -169,6 +169,13 @@ const ghosttyShortcutEventInit = (
   cancelable: true,
 })
 
+const shouldRefocusGhosttyAfterWorkspaceShortcut = (
+  input: GhosttyNativeShortcutInput
+): boolean =>
+  /^Digit[1-9]$/.test(input.code) ||
+  input.code === 'Backslash' ||
+  input.code === 'KeyZ'
+
 const isShortcutContext = (
   value: unknown
 ): value is GhosttyNativeShortcutContext =>
@@ -917,7 +924,10 @@ export class GhosttyNativeParentController {
         false
       )
 
-      if (shouldRefocus === true) {
+      if (
+        shouldRefocusGhosttyAfterWorkspaceShortcut(input) &&
+        shouldRefocus === true
+      ) {
         addon.focus(state.surface)
       }
     } catch {

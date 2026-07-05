@@ -307,6 +307,23 @@ private final class EmbeddedGhosttySurface: NSObject {
         25: "9"
     ]
 
+    // App-owned shortcuts must cross the AppKit -> Electron boundary while
+    // Ghostty has focus. Keep this list explicit; Cmd+R/reload is a later scope.
+    private static let workspaceShortcutByKeyCode: [UInt16: (key: String, code: String)] = [
+        5: ("g", "KeyG"),
+        6: ("z", "KeyZ"),
+        11: ("b", "KeyB"),
+        14: ("e", "KeyE"),
+        29: ("0", "Digit0"),
+        42: ("\\", "Backslash"),
+        45: ("n", "KeyN")
+    ]
+
+    private static let workspaceShortcutCodesAllowingExtraModifiers = Set([
+        "Digit0",
+        "Backslash"
+    ])
+
     private let parentView: NSView
     private let container = EmbeddedGhosttyContainerView(frame: .zero)
     private let callbacks: CallbackBox
@@ -834,6 +851,23 @@ private final class EmbeddedGhosttySurface: NSObject {
             )
 
             return true
+        }
+
+        if let shortcut = Self.workspaceShortcutByKeyCode[event.keyCode] {
+            let allowsExtraModifiers =
+                Self.workspaceShortcutCodesAllowingExtraModifiers.contains(shortcut.code)
+            if allowsExtraModifiers || (!flags.contains(.option) && !flags.contains(.shift)) {
+                callbacks.forwardShortcut(
+                    key: shortcut.key,
+                    code: shortcut.code,
+                    control: flags.contains(.control),
+                    meta: flags.contains(.command),
+                    alt: flags.contains(.option),
+                    shift: flags.contains(.shift)
+                )
+
+                return true
+            }
         }
 
         guard let digit = Self.shortcutDigitByKeyCode[event.keyCode] else {
