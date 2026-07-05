@@ -247,3 +247,5 @@ The only change to the dispatched payload is the footer instruction to emit the 
 - **Prompt adherence** — Codex may not always emit the block. Graceful degrade covers it (no block → no thread reply); PR-2 should sanity-check Codex adherence with a real dispatch before wider rollout.
 - **Sentinel collision** — an agent quoting the sentinel in prose. Low risk (unique literal); the parser takes the first open…close pair.
 - **Superseded dispatch** — a second dispatch to the same pty replaces the record and mints a new nonce; a late reply for the old dispatch fails the nonce gate (Section 3) and is ignored, even when its `#n` handles collide with the new dispatch's.
+
+<!-- codex-reviewed: 2026-07-05T04:16:13Z -->
