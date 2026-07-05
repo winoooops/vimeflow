@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ref_count: 20
 ---
 
@@ -201,7 +201,7 @@ base data is technically "correct."
   `burnerActive` becomes false while the sync affordance remains visible, plus
   regression coverage for the active-to-idle rerender transition.
 
-### 16. Empty diff toolbar ignored draft-only feedback
+### 17. Empty diff toolbar ignored draft-only feedback
 
 - **Source:** github-codex-connector | PR #637 round 1 | 2026-06-30
 - **Severity:** P2 / MEDIUM
@@ -210,7 +210,7 @@ base data is technically "correct."
 - **Fix:** Derive the toolbar pending-feedback count from submitted annotations plus a non-empty draft, so users can discard draft-only reviews even when the diff has no changed files. Added an empty-state regression test for a draft-only feedback store.
 - **Commit:** same commit as this entry
 
-### 17. Draft-only feedback enabled Finish for an empty dispatch
+### 18. Draft-only feedback enabled Finish for an empty dispatch
 
 - **Source:** github-codex-connector | PR #637 round 1 | 2026-06-30
 - **Severity:** HIGH
@@ -224,7 +224,7 @@ base data is technically "correct."
   disabled and cannot open the popover.
 - **Commit:** same commit as this entry
 
-### 18. Range draft validity checked only the start line
+### 19. Range draft validity checked only the start line
 
 - **Source:** github-codex-connector | PR #643 round 1 | 2026-07-01
 - **Severity:** P2 / MEDIUM
@@ -239,7 +239,7 @@ base data is technically "correct."
   Added same-side range regression tests for the valid and stale-end cases.
 - **Commit:** same commit as this entry
 
-### 19. Mouse add-comment reused a stale visual selection from another line
+### 20. Mouse add-comment reused a stale visual selection from another line
 
 - **Source:** github-claude | PR #643 round 1 | 2026-07-01
 - **Severity:** HIGH
@@ -256,7 +256,7 @@ base data is technically "correct."
   2-3.
 - **Commit:** same commit as this entry
 
-### 20. Editing range comments dropped the derived end-line target
+### 21. Editing range comments dropped the derived end-line target
 
 - **Source:** github-claude | PR #643 round 2 | 2026-07-01
 - **Severity:** MEDIUM
@@ -272,7 +272,7 @@ base data is technically "correct."
   comment for edit and submits the updated text through the range dialog.
 - **Commit:** same commit as this entry
 
-### 21. Copied feedback used weaker path derivation than sent feedback
+### 22. Copied feedback used weaker path derivation than sent feedback
 
 - **Source:** github-codex-connector | PR #650 round 1 | 2026-07-03
 - **Severity:** P2 / MEDIUM
@@ -289,7 +289,7 @@ base data is technically "correct."
   path.
 - **Commit:** same commit as this entry
 
-### 22. Sent review anchors counted as active pending feedback
+### 23. Sent review anchors counted as active pending feedback
 
 - **Source:** github-claude + github-codex-connector | PR #655 round 1 | 2026-07-04
 - **Severity:** HIGH
@@ -304,4 +304,19 @@ base data is technically "correct."
   `markDispatched` accept the exact dispatched annotation-id snapshot built by
   the send path. Added hook regressions for sent anchors freeing capacity and
   for late comments remaining pending.
+- **Commit:** same commit as this entry
+
+### 24. Active review target selected a sent anchor before pending feedback
+
+- **Source:** github-codex-connector | PR #664 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useReviewTargetNavigation.ts`
+- **Finding:** The active review-target comment was derived with the first
+  annotation matching the current line and side. After a sent comment remains
+  as a dispatched thread anchor, adding a new pending comment on the same line
+  left keyboard edit/delete shortcuts pointed at the older sent anchor.
+- **Fix:** Resolve all annotations for the active target and prefer the newest
+  pending annotation before falling back to the first retained anchor. Added a
+  hook regression test for a dispatched anchor plus pending comment on the same
+  line.
 - **Commit:** same commit as this entry

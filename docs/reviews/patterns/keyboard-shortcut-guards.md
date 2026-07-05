@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-02
+last_updated: 2026-07-05
 ref_count: 6
 ---
 
@@ -60,7 +60,7 @@ against three classes of false-fire:
   template literal: `` `[data-container-id="${DOCK_CONTAINER_ID}"]` ``.
 - **Commit:** `fix(workspace): address round-2 Claude review findings on focus highlight PR`
 
-### 4. Ctrl+e/g also stolen from CodeMirror vim mode
+### 3. Ctrl+e/g also stolen from CodeMirror vim mode
 
 - **Source:** github-claude | PR #218 | 2026-05-18
 - **Severity:** HIGH
@@ -74,7 +74,7 @@ against three classes of false-fire:
   Added two unit tests covering the vim-mode collision path.
 - **Commit:** `fix(workspace): address round-3 Claude review findings on focus highlight PR`
 
-### 5. focusEditor() silently drops DOM focus when editorView returns false
+### 4. focusEditor() silently drops DOM focus when editorView returns false
 
 - **Source:** github-claude | PR #218 | 2026-05-18
 - **Severity:** MEDIUM
@@ -87,7 +87,7 @@ against three classes of false-fire:
 - **Fix:** `const ok = editorHandleRef.current.focus(); if (!ok) { sectionRef.current?.focus(); } return ok`
 - **Commit:** `fix(workspace): address round-3 Claude review findings on focus highlight PR`
 
-### 6. borderClass contained redundant Tailwind side-specific color utilities
+### 5. borderClass contained redundant Tailwind side-specific color utilities
 
 - **Source:** github-claude | PR #218 | 2026-05-18
 - **Severity:** LOW
@@ -98,7 +98,7 @@ against three classes of false-fire:
 - **Fix:** Extracted `borderColor` constant and simplified each branch to `border-{edge} border-[${borderColor}]`.
 - **Commit:** `fix(workspace): address round-3 Claude review findings on focus highlight PR`
 
-### 3. DIALOG_SELECTOR duplicated verbatim across both shortcut hooks
+### 6. DIALOG_SELECTOR duplicated verbatim across both shortcut hooks
 
 - **Source:** github-claude | PR #218 | 2026-05-18
 - **Severity:** LOW
@@ -346,7 +346,7 @@ against three classes of false-fire:
   allowed-digit filter.
 - **Commit:** same commit as this entry
 
-### 25. Mod+Z focus toggle captured terminal and editor undo controls
+### 26. Mod+Z focus toggle captured terminal and editor undo controls
 
 - **Source:** github-codex-connector | PR #631 round 1 | 2026-06-28
 - **Severity:** P1 / HIGH
@@ -355,7 +355,7 @@ against three classes of false-fire:
 - **Fix:** Guarded the shortcut so it passes through when the terminal container is inactive or focus is inside editable/xterm input. Added regression coverage for focused dock and xterm helper textarea cases.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 26. Mod+Z focus toggle lacked terminal-container ownership guard
+### 27. Mod+Z focus toggle lacked terminal-container ownership guard
 
 - **Source:** github-claude | PR #631 round 1 | 2026-06-28
 - **Severity:** HIGH
@@ -364,7 +364,7 @@ against three classes of false-fire:
 - **Fix:** Added an `isTerminalContainerActiveRef.current === false` pass-through before the branch can prevent default, with regression coverage for dock focus.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 27. Manual layout cycle left stale Mod+Z restore state
+### 28. Manual layout cycle left stale Mod+Z restore state
 
 - **Source:** github-claude | PR #631 round 2 | 2026-06-28
 - **Severity:** MEDIUM
@@ -378,7 +378,7 @@ against three classes of false-fire:
   path so `Mod+Z` returns to the single-layout no-op behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 28. Unified diff navigation reused split-row skipping
+### 29. Unified diff navigation reused split-row skipping
 
 - **Source:** github-codex-connector | PR #633 round 2 | 2026-06-29
 - **Severity:** P2 / MEDIUM
@@ -387,7 +387,7 @@ against three classes of false-fire:
 - **Fix:** Kept same-row skipping and same-side preservation only for split mode; unified mode now steps target-by-target and uses per-line scroll indexing. Added a regression that reaches the added side of a replacement hunk in unified view.
 - **Commit:** same commit as this entry
 
-### 29. Remounted changed-files pin button dropped diff keyboard scope
+### 30. Remounted changed-files pin button dropped diff keyboard scope
 
 - **Source:** github-claude | PR #645 round 4 | 2026-07-02
 - **Severity:** HIGH
@@ -396,7 +396,7 @@ against three classes of false-fire:
 - **Fix:** Move focus to the stable diff root before toggling the pinned state, matching other handlers that close or remount diff side surfaces. Added a regression test that clicks both pin and unpin and asserts focus remains on `diff-populated-state`.
 - **Commit:** same commit as this entry
 
-### 30. Plain changed-files toggle dropped diff keyboard scope
+### 31. Plain changed-files toggle dropped diff keyboard scope
 
 - **Source:** github-claude | PR #645 round 5 | 2026-07-02
 - **Severity:** HIGH

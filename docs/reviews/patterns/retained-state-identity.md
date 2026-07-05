@@ -2,7 +2,7 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ref_count: 4
 ---
 
@@ -32,7 +32,7 @@ When a React component renders retained (stale) content while fresh data for a n
 - **Fix:** Threaded a live pane-key-to-PTY map from `WorkspaceView` into `useBurnerTerminals`, updated retained entries when the host PTY changes, and covered the reattach path with a native burner regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 2. Single focus-toggle restore slot is shared across sessions
+### 3. Single focus-toggle restore slot is shared across sessions
 
 - **Source:** github-claude | PR #631 round 1 | 2026-06-28
 - **Severity:** MEDIUM
@@ -47,7 +47,7 @@ When a React component renders retained (stale) content while fresh data for a n
   independently.
 - **Commit:** same commit as this entry
 
-### 3. Range-bar repaint can target a stale file container on file switch
+### 4. Range-bar repaint can target a stale file container on file switch
 
 - **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
 - **Severity:** HIGH

@@ -272,7 +272,7 @@ completely different root causes. The generic fast-failure modes:
 - **Finding:** `clickLayoutButton` queried `button[aria-label="<layout>"]` globally. Hidden-layout menu checkboxes share those labels with the real layout switcher pills, so an open configuration menu could absorb the follow-up click and leave the split layout unchanged. The navigation smoke test also asserted dock content before opening the now-closed-by-default dock.
 - **Fix:** Scoped layout-button clicks to `[data-testid="layout-switcher"]` so menu items cannot match, and made the navigation smoke open the dock via the real status-bar toggle before asserting the default Diff tab.
 
-### 25. Electron WDIO suites need capability-level worker caps
+### 26. Electron WDIO suites need capability-level worker caps
 
 - **Source:** local-codex | PR #637 CI failure | 2026-06-30
 - **Severity:** HIGH
@@ -281,7 +281,7 @@ completely different root causes. The generic fast-failure modes:
 - **Fix:** Added `'wdio:maxInstances': 1` to each Electron capability block so WDIO serializes the spec files at the capability level. A local WDIO run without Xvfb confirmed worker `0-1` starts only after `0-0` exits.
 - **Commit:** same commit as this entry
 
-### 26. Core E2E specs assumed visible controls that moved behind adaptive UI
+### 27. Core E2E specs assumed visible controls that moved behind adaptive UI
 
 - **Source:** local-codex | PR #643 CI failure | 2026-07-01
 - **Severity:** HIGH
@@ -300,7 +300,7 @@ completely different root causes. The generic fast-failure modes:
   Editor tab before waiting for the editor panel.
 - **Commit:** same commit as this entry
 
-### 27. Terminal E2E new-session selector matched the sidebar dialog trigger
+### 28. Terminal E2E new-session selector matched the sidebar dialog trigger
 
 - **Source:** local-codex | PR #643 CI failure | 2026-07-01
 - **Severity:** HIGH
@@ -317,7 +317,7 @@ completely different root causes. The generic fast-failure modes:
   target the tab-strip plus control.
 - **Commit:** same commit as this entry
 
-### 28. Terminal E2E must complete the new-session dialog flow
+### 29. Terminal E2E must complete the new-session dialog flow
 
 - **Source:** local-codex | PR #643 CI failure | 2026-07-01
 - **Severity:** HIGH
@@ -336,7 +336,7 @@ completely different root causes. The generic fast-failure modes:
   command before asserting the PTY count decrements.
 - **Commit:** same commit as this entry
 
-### 29. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
+### 30. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
 
 - **Source:** deterministic CI failure | PR #647 round 7 | 2026-07-03
 - **Severity:** HIGH
@@ -351,7 +351,7 @@ completely different root causes. The generic fast-failure modes:
   traces that can exhaust the hosted runner's disk.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 30. Final E2E suite should free bulky build intermediates before post-job cleanup
+### 31. Final E2E suite should free bulky build intermediates before post-job cleanup
 
 - **Source:** deterministic CI failure | PR #647 round 8 | 2026-07-03
 - **Severity:** HIGH
@@ -368,7 +368,7 @@ completely different root causes. The generic fast-failure modes:
   while post-job steps have materially more disk headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 31. Final E2E suite may need disk cleanup before running specs
+### 32. Final E2E suite may need disk cleanup before running specs
 
 - **Source:** deterministic CI failure | PR #647 round 12 | 2026-07-03
 - **Severity:** HIGH
@@ -382,7 +382,7 @@ completely different root causes. The generic fast-failure modes:
   headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 32. E2E Codex watcher seed must tolerate retried partial SQLite setup
+### 33. E2E Codex watcher seed must tolerate retried partial SQLite setup
 
 - **Source:** deterministic CI failure | PR #660 round 1 | 2026-07-05
 - **Severity:** HIGH

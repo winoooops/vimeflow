@@ -2,7 +2,7 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ref_count: 6
 ---
 
@@ -139,7 +139,7 @@ to persistent state through a separate, explicit path.
   unthemed request in the same host window.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 9. Split diff row navigation scrolled on no-op movement
+### 10. Split diff row navigation scrolled on no-op movement
 
 - **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29
 - **Severity:** MEDIUM
@@ -153,7 +153,7 @@ to persistent state through a separate, explicit path.
   single-row split replacement from the deletion side.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 10. Split side navigation reused vertical scroll positioning
+### 11. Split side navigation reused vertical scroll positioning
 
 - **Source:** github-claude | PR #633 round 3 | 2026-06-29
 - **Severity:** MEDIUM
@@ -168,7 +168,7 @@ to persistent state through a separate, explicit path.
   regression assertion for lateral movement on a single split replacement row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 11. Closing a review draft retained the prior category
+### 12. Closing a review draft retained the prior category
 
 - **Source:** github-codex-connector | PR #657 round 1 | 2026-07-04
 - **Severity:** P2 / MEDIUM
