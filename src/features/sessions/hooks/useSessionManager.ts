@@ -1937,12 +1937,15 @@ export const useSessionManager = (
               userLabel: undefined,
               cacheHistory: [],
             }
+            const restartedActivePane = oldPane.active
 
             next[idx] = {
               ...current,
               status: 'running',
-              workingDirectory: result.cwd,
-              agentType: 'generic',
+              workingDirectory: restartedActivePane
+                ? result.cwd
+                : current.workingDirectory,
+              agentType: restartedActivePane ? 'generic' : current.agentType,
               panes: current.panes.map((pane) =>
                 pane.id === oldPane.id ? replacementPane : pane
               ),

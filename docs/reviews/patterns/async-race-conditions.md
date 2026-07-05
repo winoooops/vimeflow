@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-05
-ref_count: 81
+ref_count: 82
 ---
 
 # Async Race Conditions
@@ -947,3 +947,31 @@ prevent showing previous data.
 - **Fix:** Replay restored data and buffered events before attaching the live
   native output listener, preserving the cursor ordering used by the DOM path.
 - **Commit:** same commit as this entry
+
+### 88. Native shortcut refocus used a stale surface after async dispatch
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `forwardShortcutToAppRenderer` checked that a native surface
+  existed before awaiting renderer JavaScript, but a pane destroy could run
+  during that await. The captured state still held the old surface handle, so
+  the post-dispatch refocus path could call `addon.focus` on a destroyed surface.
+- **Fix:** Re-checked that the pane key still maps to the same state after
+  `executeJavaScript` resolves before refocusing the native surface. Added a
+  regression test that destroys the pane while shortcut dispatch is pending.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Native menu reposition rejection kept the DOM fallback suppressed
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** After a native menu was active, resize and trigger-observer
+  reposition calls fired `openNativeOverlay` without awaiting the result. If
+  the native layer rejected a reposition, the component kept `nativeAttempt` as
+  active and continued hiding the DOM fallback.
+- **Fix:** Awaited the reposition result and moved `nativeAttempt` to `failed`
+  on rejection, guarded against late state updates after cleanup. Added a menu
+  regression test that rejects the second native open and expects the local menu.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

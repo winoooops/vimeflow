@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-05
-ref_count: 8
+ref_count: 9
 ---
 
 # Keyboard Shortcut Guards
@@ -437,4 +437,18 @@ against three classes of false-fire:
 - **Fix:** Forwarded `isAutoRepeat: repeat` into
   `dispatchCommandPaletteShortcutForWindow`, matching the renderer shortcut
   payload contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Native Ghostty shortcut forwarding reused the pane cache key
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The generic native Ghostty shortcut forwarding callback received
+  `shortcutKey` from the native bridge but populated `KeyboardEventInit.key`
+  from the outer pane cache `key` variable instead. Renderer shortcuts that
+  branch on `event.key` therefore failed only when the native surface owned focus.
+- **Fix:** Forwarded `shortcutKey` as the synthetic keyboard event key and added
+  a focused regression assertion that both `key` and `code` are present in the
+  renderer dispatch script.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

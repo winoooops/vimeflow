@@ -70,6 +70,7 @@ export const NewSessionDialog = ({
   const [nameEdited, setNameEdited] = useState(false)
   const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
   const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
+  const [nativeOverlayActive, setNativeOverlayActive] = useState(false)
   // Native overlay renders this dialog in a separate BrowserWindow, so it gets
   // serializable state instead of React children. This index tells that layer
   // which pane's command picker is active.
@@ -344,6 +345,7 @@ export const NewSessionDialog = ({
       nativeOverlay={nativeOverlay}
       nativeOverlayPayload={nativeOverlayPayload}
       nativeOverlayActions={nativeOverlayActions}
+      onNativeOverlayActiveChange={setNativeOverlayActive}
       panelClassName="flex w-[min(560px,100%)] max-w-[560px] flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 shadow-2xl backdrop-blur-md backdrop-saturate-150"
     >
       {/* header */}
@@ -415,7 +417,7 @@ export const NewSessionDialog = ({
           <WorkingDirectoryField
             path={path}
             onChange={applyPath}
-            browseDisabled={nativeOverlay}
+            browseDisabled={nativeOverlayActive}
           />
         </div>
 

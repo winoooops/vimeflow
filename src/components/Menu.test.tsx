@@ -1041,6 +1041,37 @@ describe('Menu.Context', () => {
     expect(onSelect).toHaveBeenCalledOnce()
   })
 
+  test('falls back locally when native reposition is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+    nativeBridge.open
+      .mockResolvedValueOnce({ accepted: true })
+      .mockResolvedValueOnce({ accepted: false })
+
+    render(
+      <Menu trigger={<button type="button">Open actions</button>} nativeOverlay>
+        <Menu.Section label="Clipboard">
+          <Menu.Row label="Copy" onSelect={vi.fn()}>
+            <span>Copy</span>
+          </Menu.Row>
+        </Menu.Section>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open actions' }))
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+  })
+
   test('serializes context menu detail rows with anchor-width matching', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')

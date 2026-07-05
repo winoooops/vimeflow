@@ -3,7 +3,7 @@ id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
 last_updated: 2026-07-05
-ref_count: 8
+ref_count: 9
 ---
 
 # Transient UI Side Effects
@@ -219,4 +219,33 @@ to persistent state through a separate, explicit path.
   updates tore down and recreated the native window.
 - **Fix:** Split native context-menu lifetime cleanup from payload refreshes and
   close the surface only when the menu can no longer use the native transport.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Inactive native terminal panes accepted imperative focus
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/TerminalBody.tsx`
+- **Finding:** `TerminalBody.focusTerminal()` reused the xterm-era imperative
+  focus contract for native Ghostty without checking the pane `active` prop.
+  Browser focus on hidden xterm DOM was harmless, but native focus IPC can move
+  OS focus into a background pane the user cannot see.
+- **Fix:** Gated the native focus branch on `active` while preserving xterm's
+  existing fallback behavior. Added a regression test proving inactive native
+  panes do not call `focusNativeGhostty`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Local dialog controls followed requested native transport, not active transport
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`,
+  `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** New Session disabled the local Browse button whenever
+  `nativeOverlay` was requested, even if the native dialog was unsupported or
+  rejected and the DOM fallback was visible. The read-only path crumb then left
+  users with no working-directory edit action.
+- **Fix:** Exposed Dialog's actual accepted native-active state and disabled
+  Browse only while that state is active. Added a regression that rejects the
+  native dialog open and expects the local Browse button to stay enabled.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

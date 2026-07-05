@@ -177,4 +177,30 @@ describe('TerminalBody', () => {
       expect(screen.getByTestId('xterm-body')).toBeInTheDocument()
     })
   })
+
+  test('does not focus native Ghostty when the pane is inactive', () => {
+    const ref = { current: null as { focusTerminal: () => void } | null }
+    const inactive = false
+
+    render(
+      <TerminalBody
+        ref={ref}
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active={inactive}
+        service={createService()}
+        mode="attach"
+        deferFit={deferFit}
+        enableImagePaste={enableImagePaste}
+      />
+    )
+
+    act(() => {
+      ref.current?.focusTerminal()
+    })
+
+    expect(nativeMocks.focusNativeGhostty).not.toHaveBeenCalled()
+    expect(screen.getByTestId('ghostty-body')).toBeInTheDocument()
+  })
 })

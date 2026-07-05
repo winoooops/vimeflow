@@ -907,7 +907,7 @@ export class GhosttyNativeParentController {
         }
 
         void this.forwardShortcutToAppRenderer(addon, win, state, {
-          key,
+          key: shortcutKey,
           code,
           control,
           meta,
@@ -1018,7 +1018,15 @@ export class GhosttyNativeParentController {
         isShortcutDispatchState(shouldRefocus) &&
         shouldRefocusGhosttyAfterWorkspaceShortcut(input, shouldRefocus)
       ) {
-        addon.focus(state.surface)
+        const key = this.paneKey(state.pane)
+        const currentState = this.surfaces.get(key)
+
+        const currentSurface =
+          currentState === state ? currentState.surface : null
+
+        if (currentSurface) {
+          addon.focus(currentSurface)
+        }
       }
     } catch {
       // Best effort: native shortcut forwarding should not tear down the pane.

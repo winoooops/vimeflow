@@ -4999,6 +4999,7 @@ describe('useSessionManager', () => {
           projectId: 'proj-1',
           layout: 'horizontal',
           workingDirectory: '/active',
+          agentType: 'codex',
           active: true,
           open: true,
           panes: [
@@ -5009,7 +5010,7 @@ describe('useSessionManager', () => {
               active: true,
               ptyId: 'pty-active',
               cwd: '/active',
-              agentType: 'generic',
+              agentType: 'codex',
               agentSessionId: null,
             },
             {
@@ -5019,7 +5020,7 @@ describe('useSessionManager', () => {
               active: false,
               ptyId: 'pty-side',
               cwd: '/side',
-              agentType: 'generic',
+              agentType: 'claude-code',
               agentSessionId: null,
             },
           ],
@@ -5084,6 +5085,8 @@ describe('useSessionManager', () => {
     expect(
       result.current.sessions[0].panes.find((pane) => pane.id === 'p0')?.ptyId
     ).toBe('pty-active')
+    expect(result.current.sessions[0].workingDirectory).toBe('/active')
+    expect(result.current.sessions[0].agentType).toBe('codex')
   })
 
   test('pane-keyed removeSession leaves session visible when pane kill fails', async () => {

@@ -357,4 +357,17 @@ describe('NewSessionDialog', () => {
       ).toBeDisabled()
     })
   })
+
+  test('keeps local Browse enabled when native overlay is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge()
+    bridge.open.mockResolvedValueOnce({ accepted: false })
+    setup({ nativeOverlay: true })
+
+    await waitFor(() => {
+      expect(bridge.open).toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: /browse/i })).toBeEnabled()
+    })
+  })
 })

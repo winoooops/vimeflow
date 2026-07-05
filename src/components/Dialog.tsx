@@ -51,6 +51,7 @@ interface DialogProps {
   nativeOverlay?: boolean
   nativeOverlayPayload?: NativeOverlayDialogPayload
   nativeOverlayActions?: ReadonlyMap<string, NativeOverlayActionHandler>
+  onNativeOverlayActiveChange?: (active: boolean) => void
   children: ReactNode
 }
 
@@ -282,6 +283,7 @@ const DialogRoot = ({
   nativeOverlay = false,
   nativeOverlayPayload = undefined,
   nativeOverlayActions = EMPTY_NATIVE_OVERLAY_ACTIONS,
+  onNativeOverlayActiveChange = undefined,
   children,
 }: DialogProps): ReactElement | null => {
   const surfaceId = useId()
@@ -308,6 +310,11 @@ const DialogRoot = ({
   canAttemptNativeRef.current = canAttemptNative
 
   const hideLocalForNative = canAttemptNative && nativeAttempt !== 'failed'
+  const nativeOverlayActive = canAttemptNative && nativeAttempt === 'active'
+
+  useEffect(() => {
+    onNativeOverlayActiveChange?.(nativeOverlayActive)
+  }, [nativeOverlayActive, onNativeOverlayActiveChange])
 
   useEffect(() => {
     if (

@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-07-05
-ref_count: 20
+ref_count: 21
 ---
 
 # Derived State Consistency
@@ -320,3 +320,18 @@ base data is technically "correct."
   hook regression test for a dispatched anchor plus pending comment on the same
   line.
 - **Commit:** same commit as this entry
+
+### 25. Background pane restart clobbered active session metadata
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** The pane-targeted restart path can restart an inactive pane, but
+  the session-level `workingDirectory` and `agentType` were always overwritten
+  from the restarted pane. Restarting a background shell could therefore make
+  future panes spawn from the wrong cwd and make the session display disagree
+  with the active pane.
+- **Fix:** Updated session-level cwd and agent type only when the restarted pane
+  is the active pane. Extended the inactive-pane restart test to assert the
+  active session metadata remains unchanged.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -78,29 +78,37 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       setNativeUnavailable(false)
     }, [paneId, ptyId])
 
-    useImperativeHandle(ref, () => ({
-      focusTerminal(): void {
-        if (useNativeGhostty) {
-          void (async (): Promise<void> => {
-            try {
-              const enabled = await focusNativeGhostty({
-                sessionId: ptyId,
-                paneId,
-              })
-              if (!enabled) {
+    useImperativeHandle(
+      ref,
+      () => ({
+        focusTerminal(): void {
+          if (useNativeGhostty) {
+            if (!active) {
+              return
+            }
+
+            void (async (): Promise<void> => {
+              try {
+                const enabled = await focusNativeGhostty({
+                  sessionId: ptyId,
+                  paneId,
+                })
+                if (!enabled) {
+                  handleNativeUnavailable()
+                }
+              } catch {
                 handleNativeUnavailable()
               }
-            } catch {
-              handleNativeUnavailable()
-            }
-          })()
+            })()
 
-          return
-        }
+            return
+          }
 
-        xtermRef.current?.focusTerminal()
-      },
-    }))
+          xtermRef.current?.focusTerminal()
+        },
+      }),
+      [active, handleNativeUnavailable, paneId, ptyId, useNativeGhostty]
+    )
 
     if (useNativeGhostty) {
       return (

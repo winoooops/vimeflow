@@ -510,6 +510,7 @@ const MenuRoot = ({
     }
 
     let frameId: number | null = null
+    let disposed = false
 
     const sendLatestRect = (): void => {
       if (frameId !== null) {
@@ -523,25 +524,31 @@ const MenuRoot = ({
           return
         }
 
-        void openNativeOverlay(
-          {
-            surfaceId,
-            kind: NATIVE_OVERLAY_KINDS.menu,
-            anchorRect: {
-              x: triggerRect.x,
-              y: triggerRect.y,
-              width: triggerRect.width,
-              height: triggerRect.height,
+        void (async (): Promise<void> => {
+          const accepted = await openNativeOverlay(
+            {
+              surfaceId,
+              kind: NATIVE_OVERLAY_KINDS.menu,
+              anchorRect: {
+                x: triggerRect.x,
+                y: triggerRect.y,
+                width: triggerRect.width,
+                height: triggerRect.height,
+              },
+              placement,
+              payload: nativeSpecRef.current.payload,
+              theme: nativeOverlayThemeSnapshot(),
             },
-            placement,
-            payload: nativeSpecRef.current.payload,
-            theme: nativeOverlayThemeSnapshot(),
-          },
-          {
-            actions: nativeActions,
-            onClose: (): void => handleOpenChangeRef.current(false),
+            {
+              actions: nativeActions,
+              onClose: (): void => handleOpenChangeRef.current(false),
+            }
+          )
+
+          if (!accepted && !disposed) {
+            setNativeAttempt('failed')
           }
-        )
+        })()
       })
     }
 
@@ -555,6 +562,7 @@ const MenuRoot = ({
     return (): void => {
       window.removeEventListener('resize', sendLatestRect)
       observer.disconnect()
+      disposed = true
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId)
       }
