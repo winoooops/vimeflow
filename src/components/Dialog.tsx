@@ -307,8 +307,7 @@ const DialogRoot = ({
     open && transport === 'native-overlay' && nativeUnsupportedReason === null
   canAttemptNativeRef.current = canAttemptNative
 
-  const hideLocalForNative =
-    canAttemptNative && nativeAttempt !== 'failed'
+  const hideLocalForNative = canAttemptNative && nativeAttempt !== 'failed'
 
   useEffect(() => {
     if (
