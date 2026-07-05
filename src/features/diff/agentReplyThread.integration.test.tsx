@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { render, screen, act } from '@testing-library/react'
 import { listen } from '@/lib/backend'
+import type { BackendApi } from '@/lib/backend'
 import type { AgentReplyEvent } from '@/bindings'
 import { useFeedbackBatchStore } from './hooks/useFeedbackBatch'
 import { useAgentReply } from './hooks/useAgentReply'
@@ -65,10 +66,17 @@ const emitReply = async (event: AgentReplyEvent): Promise<void> => {
 
 beforeEach(() => {
   listeners.clear()
+  window.vimeflow = {
+    invoke: vi.fn(),
+    listen: vi.fn(),
+  } as unknown as BackendApi
   vi.mocked(listen).mockImplementation(listenImpl as unknown as typeof listen)
 })
 
-afterEach(() => clearPendingReview('pty-1'))
+afterEach(() => {
+  clearPendingReview('pty-1')
+  delete window.vimeflow
+})
 
 describe('inline agent Q&A thread (integration)', () => {
   test('an agent reply renders in the thread under the dispatched comment', async () => {

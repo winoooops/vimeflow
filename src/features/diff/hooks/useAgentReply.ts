@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { listen } from '@/lib/backend'
+import { isDesktop } from '@/lib/environment'
 import type { AgentReplyEvent } from '@/bindings'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { ReviewComment } from './useFeedbackBatch'
@@ -40,6 +41,10 @@ export const useAgentReply = ({
   nextCommentId,
 }: UseAgentReplyOptions): void => {
   useEffect(() => {
+    if (!isDesktop()) {
+      return undefined
+    }
+
     let cancelled = false
     let unlisten: (() => void) | undefined
 
@@ -47,7 +52,7 @@ export const useAgentReply = ({
       ownerKey: string,
       handle: PendingReviewHandle,
       text: string
-    ): void => {
+    ): 'ok' | 'cap-reached' =>
       addAnnotationForOwner(
         ownerKey,
         handle.cwd,
@@ -67,7 +72,6 @@ export const useAgentReply = ({
           },
         }
       )
-    }
 
     const handleReply = (event: AgentReplyEvent): void => {
       const pending = getPendingReview(event.sessionId)
@@ -91,8 +95,10 @@ export const useAgentReply = ({
             continue
           }
 
-          attachAgentNote(pending.ownerKey, handle, reply.text)
-          pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
+          const result = attachAgentNote(pending.ownerKey, handle, reply.text)
+          if (result === 'ok') {
+            pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
+          }
         }
 
         if (pending.byHandle.size === 0) {
@@ -110,7 +116,12 @@ export const useAgentReply = ({
       const lowestId = Math.min(...pending.byHandle.keys())
       const anchor = pending.byHandle.get(lowestId)
       if (anchor !== undefined) {
-        attachAgentNote(pending.ownerKey, anchor, event.rawText)
+        const result = attachAgentNote(pending.ownerKey, anchor, event.rawText)
+        if (result === 'cap-reached') {
+          setPendingReview(pending)
+
+          return
+        }
       }
       clearPendingReview(event.sessionId)
     }

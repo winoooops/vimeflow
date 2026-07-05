@@ -3,6 +3,7 @@ import type { Mock } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import { listen } from '@/lib/backend'
+import type { BackendApi } from '@/lib/backend'
 import type { AgentReplyEvent } from '@/bindings'
 import { useAgentReply } from './useAgentReply'
 import type { ReviewComment } from './useFeedbackBatch'
@@ -92,11 +93,19 @@ const mount = (): void => {
 beforeEach(() => {
   listeners.clear()
   ids = 0
+  window.vimeflow = {
+    invoke: vi.fn(),
+    listen: vi.fn(),
+  } as unknown as BackendApi
   addAnnotationForOwner = vi.fn<AddForOwner>(() => 'ok')
+  vi.mocked(listen).mockClear()
   vi.mocked(listen).mockImplementation(listenImpl as unknown as typeof listen)
 })
 
-afterEach(() => clearPendingReview('pty-1'))
+afterEach(() => {
+  clearPendingReview('pty-1')
+  delete window.vimeflow
+})
 
 describe('useAgentReply', () => {
   test('attaches a matched reply to the dispatching owner by [#n]', async () => {
@@ -234,6 +243,27 @@ describe('useAgentReply', () => {
     expect(addAnnotationForOwner.mock.calls[0][4].metadata.target).toEqual({
       scope: 'file',
     })
+  })
+
+  test('keeps a matched reply pending when the attach cap blocks it', async () => {
+    addAnnotationForOwner.mockReturnValueOnce('cap-reached')
+    setPendingReview(pending(new Map([[1, handle()]])))
+    mount()
+    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
+
+    addAnnotationForOwner.mockReturnValueOnce('ok')
+    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
+  })
+
+  test('does not subscribe when the Electron bridge is unavailable', () => {
+    delete window.vimeflow
+
+    expect(() => {
+      mount()
+    }).not.toThrow()
+    expect(listen).not.toHaveBeenCalled()
   })
 
   test('a replayed event after handles are consumed is a no-op', async () => {

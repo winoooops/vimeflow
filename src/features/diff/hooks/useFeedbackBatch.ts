@@ -422,7 +422,10 @@ export const useFeedbackBatchStore = (
       const optimisticBatch =
         optimisticBatchesRef.current.get(targetOwnerKey) ?? EMPTY_BATCH
 
-      if (countPendingInBatch(optimisticBatch) >= SOFT_CAP) {
+      if (
+        annotation.metadata.author !== 'agent' &&
+        countPendingInBatch(optimisticBatch) >= SOFT_CAP
+      ) {
         addAnnotationResultRef.current = 'cap-reached'
 
         return addAnnotationResultRef.current
@@ -440,7 +443,10 @@ export const useFeedbackBatchStore = (
       addAnnotationResultRef.current = 'ok'
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(targetOwnerKey) ?? EMPTY_BATCH
-        if (countPendingInBatch(currentBatch) >= SOFT_CAP) {
+        if (
+          annotation.metadata.author !== 'agent' &&
+          countPendingInBatch(currentBatch) >= SOFT_CAP
+        ) {
           addAnnotationResultRef.current = 'cap-reached'
           optimisticBatchesRef.current = prev
 
