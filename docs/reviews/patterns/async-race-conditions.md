@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-05
-ref_count: 80
+ref_count: 81
 ---
 
 # Async Race Conditions
@@ -934,4 +934,16 @@ prevent showing previous data.
 - **Fix:** Clear pending tool-call batches from the reset-generation path,
   cancel any scheduled animation frame, and re-check the reset guard at flush
   time before applying batched events.
+- **Commit:** same commit as this entry
+
+### 87. Native restore replay must drain before live attach
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty restore awaited the live output subscription
+  before draining buffered restore events. A live PTY chunk could advance the
+  cursor during that await and make earlier restore bytes look stale.
+- **Fix:** Replay restored data and buffered events before attaching the live
+  native output listener, preserving the cursor ordering used by the DOM path.
 - **Commit:** same commit as this entry

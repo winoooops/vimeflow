@@ -17,10 +17,7 @@ exec -a claude bash <<'BASH'
 set -euo pipefail
 
 end_at=$((SECONDS + ${VIMEFLOW_FAKE_AGENT_SLEEP_SECONDS:-300}))
-
-while (( SECONDS < end_at )); do
-  mkdir -p "$(dirname "$VIMEFLOW_STATUS_FILE")"
-  cat > "$VIMEFLOW_STATUS_FILE" <<'JSON'
+fixture_status_json=$(cat <<'JSON'
 {
   "session_id": "fake-agent-1",
   "version": "e2e",
@@ -36,6 +33,19 @@ while (( SECONDS < end_at )); do
   }
 }
 JSON
+)
+fixture_owns_status=0
+
+while (( SECONDS < end_at )); do
+  mkdir -p "$(dirname "$VIMEFLOW_STATUS_FILE")"
+  if (( fixture_owns_status )) &&
+    [[ -f "$VIMEFLOW_STATUS_FILE" ]] &&
+    ! cmp -s "$VIMEFLOW_STATUS_FILE" <(printf '%s\n' "$fixture_status_json"); then
+    break
+  fi
+
+  printf '%s\n' "$fixture_status_json" > "$VIMEFLOW_STATUS_FILE"
+  fixture_owns_status=1
 
   sleep 1
 done

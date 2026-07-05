@@ -45,6 +45,7 @@ const firstPopup = (
   alignBusy?: boolean
   outOfSync?: boolean
   onCwdChange?: (cwd: string) => void
+  cwd?: string
 }> => {
   const fragment = renderNode as ReactElement<{
     children: ReactElement<{
@@ -54,6 +55,7 @@ const firstPopup = (
       alignBusy?: boolean
       outOfSync?: boolean
       onCwdChange?: (cwd: string) => void
+      cwd?: string
     }>[]
   }>
 
@@ -1354,6 +1356,52 @@ test('marks the popup align button busy while a foreground command runs', async 
 
   // A command is running — the popup is told to disable the align button.
   expect(firstPopup(result.current.renderNode).props.alignBusy).toBe(true)
+})
+
+test('falls back to the DOM popup without killing the burner when native attach is unavailable', async () => {
+  const service = makeService()
+  const focused = makeFocusedPane('s1', 'p0', '/repo')
+  const ghosttyNative = {
+    attachSecondary: vi.fn(() => Promise.resolve({ enabled: false })),
+    secondaryData: vi.fn(() => Promise.resolve({})),
+    focusSecondary: vi.fn(() => Promise.resolve({})),
+    removeSecondary: vi.fn(() => Promise.resolve({})),
+    setSecondaryVisible: vi.fn(() => Promise.resolve({})),
+  }
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const nativeWindow = window as unknown as { vimeflow: unknown }
+  nativeWindow.vimeflow = {
+    ghosttyNative,
+  }
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({ service, resolveFocusedPane: () => focused })
+  )
+
+  await act(async () => {
+    await result.current.toggle({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'host-pty',
+      cwd: '/repo',
+    })
+  })
+
+  const view = render(result.current.renderNode as ReactElement)
+
+  await waitFor(() => {
+    expect(firstPopup(result.current.renderNode).props.cwd).toBe('/repo')
+  })
+  view.rerender(result.current.renderNode as ReactElement)
+
+  expect(ghosttyNative.attachSecondary).toHaveBeenCalledWith({
+    sessionId: 'host-pty',
+    paneId: 'p0',
+    secondarySessionId: 'burner-pty',
+  })
+  expect(service.kill).not.toHaveBeenCalled()
+  expect(result.current.runningByPane.get('s1:p0')).toBe('running')
+  expect(firstPopup(result.current.renderNode).props.open).toBe(true)
 })
 
 test('removes the align affordance once the burner has exited', async () => {

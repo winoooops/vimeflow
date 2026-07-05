@@ -42,6 +42,8 @@ interface BurnerEntry {
   currentCwd: string
   /** A foreground command is currently running in the shell (VIM-71). */
   active: boolean
+  /** Native secondary attach failed for this PTY; keep the shell and use DOM. */
+  nativeUnavailable?: boolean
 }
 
 /**
@@ -784,7 +786,11 @@ export const useBurnerTerminals = ({
           [...entries.entries()].map(([key, entry]): ReactNode => {
             const outOfSync = outOfSyncByPane.get(key) ?? false
 
-            if (canUseNativeGhosttySecondary() && entry.hostPtyId) {
+            if (
+              canUseNativeGhosttySecondary() &&
+              entry.hostPtyId &&
+              !entry.nativeUnavailable
+            ) {
               return createElement(NativeGhosttyBurnerTerminal, {
                 key: `${key}:${entry.burnerPtyId}`,
                 open: visibleKey === key,
@@ -800,9 +806,10 @@ export const useBurnerTerminals = ({
                     return
                   }
 
-                  killBurner(current.burnerPtyId)
-                  entriesRef.current.delete(key)
-                  setVisibleKey((visible) => (visible === key ? null : visible))
+                  entriesRef.current.set(key, {
+                    ...current,
+                    nativeUnavailable: true,
+                  })
                   commit()
                 },
               })

@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-05
-ref_count: 17
+ref_count: 18
 ---
 
 # E2E Testing
@@ -394,4 +394,16 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Made the e2e-only Codex watcher seed idempotent with
   `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and
   `INSERT OR REPLACE` for the seeded thread row.
+- **Commit:** same commit as this entry
+
+### 34. E2E fixture refresh loops must not clobber test-owned state
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/fixtures/agents/fake-claude`
+- **Finding:** The fake Claude fixture rewrote its seeded status JSON every
+  second. Tests that intentionally overwrote the same status file could lose
+  their data before the UI assertion observed it, creating a fixture race.
+- **Fix:** Keep refreshing only while the status file is absent or still
+  contains the fixture-owned JSON; stop once external test content appears.
 - **Commit:** same commit as this entry

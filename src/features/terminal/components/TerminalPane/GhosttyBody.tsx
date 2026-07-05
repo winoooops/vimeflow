@@ -657,19 +657,6 @@ export const GhosttyBody = ({
     const isCancelled = (): boolean => cancelled
 
     const attachOutput = async (): Promise<void> => {
-      const unsubscribe = await attachNativeGhosttyOutput(service, paneRef, {
-        onOutput: (data, offsetStart, byteLen) =>
-          forwardNativeOutput(data, offsetStart, byteLen, false),
-        onUnavailable,
-      })
-
-      if (isCancelled()) {
-        unsubscribe()
-
-        return
-      }
-
-      unsubscribeOutput = unsubscribe
       if (restoredFrom?.replayData) {
         handleNativeOutput(restoredFrom.replayData)
         await sendOutputToNative(restoredFrom.replayData)
@@ -686,6 +673,20 @@ export const GhosttyBody = ({
       if (isCancelled()) {
         return
       }
+
+      const unsubscribe = await attachNativeGhosttyOutput(service, paneRef, {
+        onOutput: (data, offsetStart, byteLen) =>
+          forwardNativeOutput(data, offsetStart, byteLen, false),
+        onUnavailable,
+      })
+
+      if (isCancelled()) {
+        unsubscribe()
+
+        return
+      }
+
+      unsubscribeOutput = unsubscribe
       releasePaneReady = onPaneReady?.(ptyId, drainBufferedOutput) ?? null
     }
 

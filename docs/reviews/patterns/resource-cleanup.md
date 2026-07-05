@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-05
-ref_count: 24
+ref_count: 25
 ---
 
 # Resource Cleanup
@@ -285,4 +285,17 @@ causes listener accumulation and duplicate event handling.
 - **Fix:** Added overlay load failure/timeout handling and routed helper stdin
   writes through a bounded writer that shuts down the helper when pending bytes
   exceed the frame budget.
+- **Commit:** same commit as this entry
+
+### 29. Native burner attach failure must not destroy the PTY
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** The native secondary Ghostty unavailable callback killed and
+  removed the burner entry. A transient native attach failure could therefore
+  terminate a running ephemeral shell even though the DOM popup fallback path
+  already existed.
+- **Fix:** Track native unavailability on the current burner entry and render
+  the DOM burner popup for that PTY instead of calling `killBurner`.
 - **Commit:** same commit as this entry
