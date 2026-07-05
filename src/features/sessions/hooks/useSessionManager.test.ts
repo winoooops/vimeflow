@@ -4999,7 +4999,6 @@ describe('useSessionManager', () => {
           projectId: 'proj-1',
           layout: 'horizontal',
           workingDirectory: '/active',
-          agentType: 'codex',
           active: true,
           open: true,
           panes: [
