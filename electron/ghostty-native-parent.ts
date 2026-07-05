@@ -46,6 +46,8 @@ interface GhosttyNativePayloadByKind {
   secondaryVisible: GhosttyNativeSecondaryVisibleRequest
 }
 
+type GhosttyNativeSurface = object
+
 interface GhosttyNativeParentAddon {
   create: (
     bridgePath: string,
@@ -63,9 +65,9 @@ interface GhosttyNativeParentAddon {
       repeat: boolean
     ) => void,
     onRenamePane: () => void
-  ) => unknown
+  ) => GhosttyNativeSurface
   setFrame: (
-    surface: unknown,
+    surface: GhosttyNativeSurface,
     x: number,
     y: number,
     width: number,
@@ -73,22 +75,25 @@ interface GhosttyNativeParentAddon {
     bottomCornerRadius: number,
     parentHeight: number
   ) => void
-  setShortcutDigits?: (surface: unknown, digits: string) => void
-  setBackgroundColor?: (surface: unknown, color: string) => void
-  setForegroundColor?: (surface: unknown, color: string) => void
-  write: (surface: unknown, data: string) => void
-  focus: (surface: unknown) => void
-  destroy: (surface: unknown) => void
+  setShortcutDigits?: (surface: GhosttyNativeSurface, digits: string) => void
+  setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
+  setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
+  write: (surface: GhosttyNativeSurface, data: string) => void
+  focus: (surface: GhosttyNativeSurface) => void
+  destroy: (surface: GhosttyNativeSurface) => void
   addSecondary?: (
-    surface: unknown,
+    surface: GhosttyNativeSurface,
     onInput: (data: string) => void,
     onResize: (cols: number, rows: number) => void,
     onFocus: () => void
   ) => void
-  setSecondaryVisible?: (surface: unknown, visible: boolean) => void
-  writeSecondary?: (surface: unknown, data: string) => void
-  focusSecondary?: (surface: unknown) => void
-  removeSecondary?: (surface: unknown) => void
+  setSecondaryVisible?: (
+    surface: GhosttyNativeSurface,
+    visible: boolean
+  ) => void
+  writeSecondary?: (surface: GhosttyNativeSurface, data: string) => void
+  focusSecondary?: (surface: GhosttyNativeSurface) => void
+  removeSecondary?: (surface: GhosttyNativeSurface) => void
 }
 
 interface GhosttyNativeParentDeps {
@@ -102,7 +107,7 @@ interface GhosttyNativeParentDeps {
 
 interface GhosttyNativeSurfaceState {
   pane: GhosttyNativePaneRequest
-  surface: unknown | null
+  surface: GhosttyNativeSurface | null
   ownerWindowId: number | null
   pendingData: string[]
   secondary: GhosttyNativeSecondaryState | null
@@ -816,7 +821,7 @@ export class GhosttyNativeParentController {
     addon: GhosttyNativeParentAddon,
     win: BrowserWindow,
     state: GhosttyNativeSurfaceState
-  ): unknown {
+  ): GhosttyNativeSurface {
     if (state.surface && state.ownerWindowId === win.id) {
       return state.surface
     }
@@ -881,7 +886,7 @@ export class GhosttyNativeParentController {
           payload: state.pane,
         })
       },
-      (key, code, control, meta, alt, shift, repeat) => {
+      (shortcutKey, code, control, meta, alt, shift, repeat) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
@@ -889,7 +894,7 @@ export class GhosttyNativeParentController {
         if (
           dispatchCommandPaletteShortcutForWindow(win, {
             type: 'keyDown',
-            key,
+            key: shortcutKey,
             code,
             control,
             meta,

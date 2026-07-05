@@ -141,12 +141,11 @@ describe('Dialog', () => {
 
     const dialog = screen.getByTestId('local-dialog')
 
-    await waitFor(() => {
-      expect(bridge.open).toHaveBeenCalledOnce()
-      expect(dialog).toHaveClass('opacity-0')
-      expect(dialog).toHaveAttribute('aria-hidden', 'true')
-      expect(dialog).toHaveAttribute('inert')
-    })
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+    await waitFor(() => expect(dialog).toHaveClass('opacity-0'))
+
+    expect(dialog).toHaveAttribute('aria-hidden', 'true')
+    expect(dialog).toHaveAttribute('inert')
 
     const request = bridge.open.mock.calls[0]?.[0] as
       | { surfaceId: string }

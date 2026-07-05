@@ -352,7 +352,9 @@ describe('NewSessionDialog', () => {
     setup({ nativeOverlay: true })
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /browse/i })).toBeDisabled()
+      expect(
+        screen.getByRole('button', { name: /browse/i, hidden: true })
+      ).toBeDisabled()
     })
   })
 })
