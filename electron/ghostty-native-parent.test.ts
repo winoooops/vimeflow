@@ -1045,7 +1045,8 @@ describe('ghostty native parent', () => {
         control: boolean,
         meta: boolean,
         alt: boolean,
-        shift: boolean
+        shift: boolean,
+        repeat: boolean
       ) => void
     } = {}
     const surface = { id: 'surface-1' }
@@ -1090,8 +1091,11 @@ describe('ghostty native parent', () => {
       }
     )
 
-    webContentsExecuteJavaScript.mockResolvedValue(true)
-    callbacks.onShortcut?.('2', 'Digit2', false, true, false, false)
+    webContentsExecuteJavaScript.mockResolvedValue({
+      activeGhosttyPane: true,
+      dockHasFocus: false,
+    })
+    callbacks.onShortcut?.('2', 'Digit2', false, true, false, false, false)
 
     await new Promise((resolve) => {
       setTimeout(resolve, 0)
@@ -1114,7 +1118,11 @@ describe('ghostty native parent', () => {
     webContentsExecuteJavaScript.mockClear()
     addon.focus.mockClear()
 
-    callbacks.onShortcut?.('g', 'KeyG', false, true, false, false)
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: true,
+    })
+    callbacks.onShortcut?.('g', 'KeyG', false, true, false, false, false)
 
     await new Promise((resolve) => {
       setTimeout(resolve, 0)
@@ -1129,7 +1137,7 @@ describe('ghostty native parent', () => {
     webContentsExecuteJavaScript.mockClear()
     addon.focus.mockClear()
 
-    callbacks.onShortcut?.('b', 'KeyB', false, true, false, false)
+    callbacks.onShortcut?.('b', 'KeyB', false, true, false, false, false)
 
     await new Promise((resolve) => {
       setTimeout(resolve, 0)
@@ -1144,7 +1152,11 @@ describe('ghostty native parent', () => {
     webContentsExecuteJavaScript.mockClear()
     addon.focus.mockClear()
 
-    callbacks.onShortcut?.('0', 'Digit0', false, true, false, false)
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: true,
+    })
+    callbacks.onShortcut?.('0', 'Digit0', false, true, false, false, false)
 
     await new Promise((resolve) => {
       setTimeout(resolve, 0)
@@ -1154,6 +1166,42 @@ describe('ghostty native parent', () => {
     expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
     expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('Digit0')
     expect(addon.focus).not.toHaveBeenCalled()
+
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: false,
+    })
+    callbacks.onShortcut?.('e', 'KeyE', false, true, false, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('KeyE')
+    expect(addon.focus).toHaveBeenCalledWith(surface)
+
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+
+    callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, true)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('repeat')
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
+      '"repeat":true'
+    )
 
     controller.dispose()
   })
@@ -1166,7 +1214,8 @@ describe('ghostty native parent', () => {
         control: boolean,
         meta: boolean,
         alt: boolean,
-        shift: boolean
+        shift: boolean,
+        repeat: boolean
       ) => void
     } = {}
     const surface = { id: 'surface-1' }
@@ -1212,7 +1261,7 @@ describe('ghostty native parent', () => {
     )
 
     const isMac = process.platform === 'darwin'
-    callbacks.onShortcut?.(';', 'Semicolon', !isMac, isMac, false, false)
+    callbacks.onShortcut?.(';', 'Semicolon', !isMac, isMac, false, false, false)
 
     expect(webContentsFocus).toHaveBeenCalledOnce()
     expect(webContentsSend).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)

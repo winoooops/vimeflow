@@ -3,7 +3,7 @@ id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
 last_updated: 2026-07-05
-ref_count: 6
+ref_count: 7
 ---
 
 # Transient UI Side Effects
@@ -179,3 +179,19 @@ to persistent state through a separate, explicit path.
 - **Fix:** Reset the category to the default from `closeCommentDraft`, and add a
   hook regression test that closes a non-default draft before opening a new one.
 - **Commit:** same commit as this entry
+
+### 13. No-op native dock shortcuts left focus on the renderer proxy
+
+- **Source:** github-claude | PR #666 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty shortcut forwarding used a static refocus
+  allowlist that excluded dock-opening shortcuts such as Cmd+G, Cmd+E, Cmd+N,
+  and Cmd+0. When React handled one of those chords as a no-op and left focus
+  on the hidden renderer proxy, the active Ghostty pane did not regain
+  keyboard focus.
+- **Fix:** Changed the post-dispatch probe to return both same-pane activity and
+  whether focus moved into the dock. Ghostty is refocused only when the same
+  pane remains active and the dock did not take focus, so no-op dock shortcuts
+  recover terminal focus without stealing it from successful dock opens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -25,6 +25,7 @@ public typealias VimeflowGhosttyShortcutCallback = @convention(c) (
     Bool,
     Bool,
     Bool,
+    Bool,
     Bool
 ) -> Void
 
@@ -203,7 +204,8 @@ private final class CallbackBox: @unchecked Sendable {
         control: Bool,
         meta: Bool,
         alt: Bool,
-        shift: Bool
+        shift: Bool,
+        repeatEvent: Bool
     ) {
         key.withCString { keyPointer in
             code.withCString { codePointer in
@@ -214,7 +216,8 @@ private final class CallbackBox: @unchecked Sendable {
                     control,
                     meta,
                     alt,
-                    shift
+                    shift,
+                    repeatEvent
                 )
             }
         }
@@ -848,7 +851,8 @@ private final class EmbeddedGhosttySurface: NSObject {
                 control: flags.contains(.control),
                 meta: flags.contains(.command),
                 alt: flags.contains(.option),
-                shift: flags.contains(.shift)
+                shift: flags.contains(.shift),
+                repeatEvent: event.isARepeat
             )
 
             return true
@@ -864,7 +868,8 @@ private final class EmbeddedGhosttySurface: NSObject {
                     control: flags.contains(.control),
                     meta: flags.contains(.command),
                     alt: flags.contains(.option),
-                    shift: flags.contains(.shift)
+                    shift: flags.contains(.shift),
+                    repeatEvent: event.isARepeat
                 )
 
                 return true
@@ -885,7 +890,8 @@ private final class EmbeddedGhosttySurface: NSObject {
             control: flags.contains(.control),
             meta: flags.contains(.command),
             alt: flags.contains(.option),
-            shift: flags.contains(.shift)
+            shift: flags.contains(.shift),
+            repeatEvent: event.isARepeat
         )
 
         return true
