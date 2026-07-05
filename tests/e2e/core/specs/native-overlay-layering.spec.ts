@@ -240,15 +240,13 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
 const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   browser.electron.execute((electron: ElectronModule) => {
     const parent =
-      electron.BrowserWindow.getAllWindows().find(
-        (window) => {
-          const mode = new URL(window.webContents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+      electron.BrowserWindow.getAllWindows().find((window) => {
+        const mode = new URL(window.webContents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
 
-          return mode !== '1' && mode !== 'menu' && mode !== 'tooltip'
-        }
-      ) ?? electron.BrowserWindow.getAllWindows()[0]
+        return mode !== '1' && mode !== 'menu' && mode !== 'tooltip'
+      }) ?? electron.BrowserWindow.getAllWindows()[0]
 
     if (!parent) {
       throw new Error('Electron parent window unavailable')
