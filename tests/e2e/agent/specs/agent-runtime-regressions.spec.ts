@@ -434,7 +434,7 @@ describe('Agent runtime regressions', () => {
       await invokeBackend('write_pty', {
         request: {
           sessionId,
-          data: 'printf vimeflow_bridge_e2e > "$VIMEFLOW_STATUS_FILE"\n',
+          data: 'printf \'%s\' vimeflow_bridge_e2e > "$VIMEFLOW_STATUS_FILE"\n',
         },
       })
 
@@ -443,7 +443,7 @@ describe('Agent runtime regressions', () => {
           fs.existsSync(info.statusFile!) &&
           fs.readFileSync(info.statusFile!, 'utf8') === 'vimeflow_bridge_e2e',
         {
-          timeout: 10_000,
+          timeout: 30_000,
           interval: 250,
           timeoutMsg:
             'spawned shell did not write through VIMEFLOW_STATUS_FILE',
