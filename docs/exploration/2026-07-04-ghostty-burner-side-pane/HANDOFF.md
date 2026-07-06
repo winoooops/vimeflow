@@ -1,5 +1,10 @@
 # Ghostty Burner Nested Pane Handoff
 
+Product baseline: built-in native Ghostty via `libghostty-spm` has shipped as
+the packaged macOS terminal backbone. This handoff only covers the follow-up
+burner terminal nested inside that surface; it does not revisit the base
+terminal renderer choice.
+
 ## Current Decision
 
 The burner terminal should not consume Vimeflow split-layout slots.

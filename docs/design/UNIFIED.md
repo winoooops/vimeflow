@@ -19,7 +19,7 @@ order below.
 
 1. **This file** — layout, surfaces, the agent-state contract, component contracts, interactions.
 2. **`DESIGN.md`** — design philosophy, color/surface theory, typography scale, do/don'ts.
-3. **`src/theme/themes/*.ts`** — the runtime token SSoT: **Catppuccin** (dark, `obsidian-lens.ts`) + **Flexoki** (light, `flexoki.ts`). `tokens.css` / `tokens.ts` are kept only for the non-color scales (type/radius/motion/dimensions) and the `SessionState` / `stateToken` / `contextSmiley()` contract — **not** color values.
+3. **`src/theme/themes/*.ts`** — the runtime token SSoT: **Catppuccin** (dark default, `obsidian-lens.ts`), **Flexoki** (light baseline, `flexoki.ts`), Gruvbox Dark/Light, Tokyo Night, and Dracula. `tokens.css` / `tokens.ts` are kept only for the non-color scales (type/radius/motion/dimensions) and the `SessionState` / `stateToken` / `contextSmiley()` contract — **not** color values.
 4. **`archive/`** — first-draft Stitch screens + prototypes, visual reference only. This file always wins.
 
 ---
@@ -81,14 +81,14 @@ Separation is **tonal-first** with two planes:
 | `threeRight` | 3        | wide left + two stacked right |
 | `quad`       | 4        | 2×2                           |
 
-- **Grid invariant:** every track is `minmax(0,1fr)`, never `1fr` — the `minmax(0,…)` floor lets panes shrink below xterm's intrinsic width so the grid never overflows. `resolveGrid` injects an **8px divider track** between fr-pairs (both fr tracks always sum to 1).
+- **Grid invariant:** every track is `minmax(0,1fr)`, never `1fr` — the `minmax(0,…)` floor lets panes shrink below terminal intrinsic widths so the grid never overflows. `resolveGrid` injects an **8px divider track** between fr-pairs (both fr tracks always sum to 1).
 - **Dividers:** `SplitDividers` overlays draggable + keyboard-resizable `ResizeHandle`s (elastic, clamped 15–85%, commit-on-end; `Arrow`/`Home`/`End`, 20px / Shift 100px steps).
 - **Empty capacity slots** render an `EmptySlot` add-pane card (dashed `outline-variant`/35 border) → add a **Shell** or **Browser** pane.
 
 **`TerminalPane`** — a self-contained card (`bg-surface`, `radius 10`), `flex-col`:
 
 - **Header** (`font-mono` 10.5px, `border-b outline-variant/[0.18]`): agent chip (glyph + short name, `accentDim` bg / `accentSoft` border / `accent` text) · truncating title (`userLabel ?? agentTitle ?? session.name`) · metadata (`GitRefChip` · `+added/−removed` · relative time) · `HeaderActions` (burner · collapse · close, 22×22). Focused header gets an `accentDim` gradient wash.
-- **Body:** xterm.js, or `RestartAffordance` ("Session exited." + Restart) when the PTY exited.
+- **Body:** native Ghostty (`libghostty-spm` parented `NSView`) on packaged macOS arm64; xterm.js for Linux/dev fallback and native-load failure; or `RestartAffordance` ("Session exited." + Restart) when the PTY exited.
 - **Footer** (`font-mono` 11px, `border-t outline-variant/20`): click-to-focus prompt line (`>` in `accent` + state-aware placeholder).
 - **Focus ring:** absolute `inset-0` span — resting `1px outline-variant/22`; focused `2px agent.accent` border + `6px accentDim` glow.
 - Keyed by `pane.ptyId` (clean remount on PTY restart); slot wrapper keyed by `pane.id`.
@@ -574,7 +574,7 @@ If more density is needed, tighten _content_ (abbreviate, collapse), not the tok
 
 ## 9. Tokens & theming
 
-The token system is **multi-theme at runtime** (`src/theme/`): TypeScript `ThemeDefinition`s (`ui` / `effects` / `shadows` / `syntax` / `terminal` / `agents`) applied as `--color-*` / `--shadow-*` CSS variables on `documentElement`. Two themes ship under the design-system name **The Lens**: **Catppuccin** (dark, default — file/id `obsidian-lens`, on the Catppuccin Mocha palette) and **Flexoki** (light — file/id `flexoki`), both exposing identical token keys so `bg-surface` etc. resolve per active theme. The dark theme's file/id keeps the legacy `obsidian-lens` slug; its display `label` is `Catppuccin`. `themeService.apply(id)` writes the vars, sets `data-theme` + `colorScheme`, persists to `localStorage`, and notifies subscribers (xterm re-themes via `initTerminalThemeBridge`, since it renders to canvas).
+The token system is **multi-theme at runtime** (`src/theme/`): TypeScript `ThemeDefinition`s (`ui` / `effects` / `shadows` / `syntax` / `terminal` / `agents`) applied as `--color-*` / `--shadow-*` CSS variables on `documentElement`. The shipped themes are **Catppuccin** (dark default — file/id `obsidian-lens`, on the Catppuccin Mocha palette), **Flexoki** (light baseline — file/id `flexoki`), **Gruvbox Dark**, **Gruvbox Light**, **Tokyo Night**, and **Dracula**, all exposing identical token keys so `bg-surface` etc. resolve per active theme. The default dark theme's file/id keeps the legacy `obsidian-lens` slug; its display `label` is `Catppuccin`. `themeService.apply(id)` writes the vars, sets `data-theme` + `colorScheme`, persists to `localStorage`, and notifies subscribers; terminal renderers consume the same terminal token bridge (native Ghostty on macOS, xterm canvas fallback elsewhere).
 
 - **The runtime SSoT is `src/theme/themes/*.ts`** — not the dark-only tables in `DESIGN.md` / `tokens.css`. `theme.css` mirrors the Catppuccin (`obsidian-lens`) defaults (kept in sync by `themeCss.test.ts`; regenerate via `scripts/generate-theme-css.ts`).
 - `tokens.ts` / `tokens.css` remain for: the `SessionState` union + `stateToken` map + `contextSmiley()` breakpoints, and the non-color scales (type, radius `xl/lg/md/sm/full`, motion `ease-pane` + durations, layout dims). Treat their color tables as a historical snapshot.

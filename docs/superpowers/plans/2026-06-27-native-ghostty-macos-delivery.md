@@ -1,14 +1,28 @@
-# Native Ghostty macOS Delivery Plan
+# Native Ghostty macOS Delivery Status
 
 Date: 2026-06-27
 Worktree: `/Users/winoooops/projects/vimeflow/worktrees/ghostty-native-macos-runtime`
 Branch: `spike/ghostty-native-macos-runtime`
+
+Status update: shipped into the main product path. Packaged macOS arm64 builds
+now bundle the built-in `libghostty-spm` SwiftPM bridge, `libGhosttyElectronBridge.dylib`,
+and `ghostty_native_parent.node`; the parented Ghostty `NSView` is the macOS
+terminal backbone. The Rust sidecar still owns PTYs, and xterm.js remains the
+Linux/dev/native-failure fallback.
 
 ## Goal
 
 Make native Ghostty the normal macOS terminal path for Vimeflow, with xterm kept as the Linux/non-macOS fallback.
 
 The product path is the parented macOS `NSView` addon route. The WTerm/libghostty-wasm renderer, custom WebGL renderer, and floating Swift helper window are no longer the delivery path.
+
+Current shipped shape:
+
+- `native/ghostty-helper` pins `Lakr233/libghostty-spm` and builds the Swift bridge.
+- `native/ghostty-parent/ghostty_native_parent.cc` parents the Ghostty surface into Electron.
+- `scripts/package-electron.mjs` builds and smokes the native parent for `mac-arm64`.
+- `electron-builder.yml` bundles `dist-native/ghostty-parent` into packaged mac resources.
+- `electron/ghostty-native-parent.ts` enables native Ghostty by default for packaged macOS and keeps the opt-in flag for dev/e2e.
 
 ## Delivery Shape
 
