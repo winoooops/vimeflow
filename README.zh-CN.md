@@ -12,7 +12,7 @@
 
 </div>
 
-Vimeflow 是一个 Electron 桌面应用，使用 Rust `vimeflow-backend` 旁路进程。它把终端会话、多 pane 布局、文件浏览、代码编辑、Git Diff 审查、命令面板，以及 Claude Code、Codex CLI、Kimi Code 和 OpenCode 的实时可观测性集中在一个工作空间中。
+Vimeflow 是一个 Electron 桌面应用，使用 Rust `vimeflow-backend` 旁路进程。它把 macOS 内置原生 Ghostty 终端 pane、多 pane 布局、文件浏览、代码编辑、Git Diff 审查、命令面板，以及 Claude Code、Codex CLI、Kimi Code 和 OpenCode 的实时可观测性集中在一个工作空间中。
 
 ## 当前支持范围
 
@@ -21,6 +21,7 @@ Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
 - 支持的版本线：`0.1.0`
 - 支持的打包目标：在本地从源码构建 Linux x64 AppImage 和 macOS arm64 DMG
 - 桌面运行时：Electron 42 + Rust 旁路，通过 LSP 帧 JSON IPC 通信
+- 终端运行时：macOS arm64 打包版本内置基于 `libghostty-spm` 的原生 Ghostty；Linux、开发回退和 native 加载失败路径保留 xterm.js
 - agent可观测性：Claude Code、Codex CLI、Kimi Code 和 OpenCode
 - 暂不支持：托管二进制发布、Windows 打包、生产签名/公证、自动更新
 
@@ -47,6 +48,12 @@ npm ci
 
 ```bash
 npm run electron:dev
+```
+
+运行 macOS 原生 Ghostty 开发路径：
+
+```bash
+npm run electron:dev:ghostty
 ```
 
 如果 Linux 主机没有可用的 Chromium sandbox：
@@ -81,7 +88,7 @@ chmod +x release/vimeflow-*.AppImage
 ./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
-macOS DMG 会写入 `release/vimeflow-*-arm64.dmg`。它面向本地源码构建，尚未公证。
+macOS DMG 会写入 `release/vimeflow-*-arm64.dmg`。它会打包原生 Ghostty parent runtime，面向本地源码构建，尚未公证。
 
 ## 使用 Vimeflow
 
@@ -94,7 +101,7 @@ Kimi Code 的套餐用量抓取需要显式开启，因为它会把已配置的 
 
 OpenCode 通过一个自动安装的小型桥接插件在本地检测，并把每个会话的活动写入 Vimeflow 自有目录；状态面板会显示其模型、上下文窗口（基于 OpenCode 的 models.dev 缓存推算）以及工具活动，且不访问任何凭据。OpenCode 未提供用量配额 API，因此状态卡片以上游请求链接（[sst/opencode#16017](https://github.com/sst/opencode/issues/16017)）替代套餐用量条。
 
-**在同一个 pane 中运行你心爱的 TUI** —— `nvim`、`htop`、`less` 等全屏工具可以和代理会话并排运行。应用内终端是真正的 PTY，本机终端能跑的程序在这里同样能跑。
+**在同一个 pane 中运行你心爱的 TUI** —— `nvim`、`htop`、`less` 等全屏工具可以和代理会话并排运行。Rust 旁路仍然拥有真正的 PTY；macOS 打包版本以内置原生 Ghostty（`libghostty-spm` + parented `NSView`）作为终端骨架。Linux、开发回退和 native 加载失败路径继续使用 xterm.js。
 
 <div align="center">
   <img src="docs/media/terminal-nvim.png" alt="Vimeflow 终端 pane 中正在编辑文件的 Neovim" width="900" />

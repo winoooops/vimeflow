@@ -10,7 +10,7 @@ This file is intentionally minimal — it is an **index, not a reference**. Each
 
 Vimeflow is a **CLI coding agent control plane** — an Electron desktop application (Rust sidecar + React/TypeScript frontend) that unifies terminal sessions for AI coding agents, file explorer, code editor, git diff, command palette, and live agent observability in one window.
 
-**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and agent adapter modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The frontend workspace shell is active: sessions own `layout` + `panes[]`, `TerminalZone` renders the 5-layout `SplitView`, and `DockPanel` hosts Editor / Diff with bottom / top / left / right docking and elastic resize. Track live status in `docs/roadmap/progress.yaml`.
+**Current state** — the chat-first UI has been removed. The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with terminal PTY, filesystem, git, and agent adapter modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The terminal feature now uses the built-in native Ghostty path as the macOS backbone: packaged macOS arm64 builds bundle `libghostty-spm`, `libGhosttyElectronBridge.dylib`, and `ghostty_native_parent.node`, while Rust keeps PTY ownership and xterm.js remains the Linux/dev fallback. The frontend workspace shell is active: sessions own `layout` + `panes[]`, `TerminalZone` renders the 5-layout `SplitView`, and `DockPanel` hosts Editor / Diff with bottom / top / left / right docking and elastic resize. Track live status in `docs/roadmap/progress.yaml`.
 
 ## Commands
 
@@ -45,7 +45,7 @@ src/
 ├── features/
 │   ├── sessions/               # Session tabs, pane model, layout state, lifecycle orchestration
 │   ├── workspace/              # Workspace assembly, shell components, DockPanel, focus state
-│   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
+│   ├── terminal/               # Native Ghostty/xterm terminal surfaces + DesktopTerminalService IPC bridge
 │   ├── agent-status/           # Live agent observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
@@ -80,7 +80,7 @@ crates/backend/
 
 ## Design System: "The Lens"
 
-**The Lens** is a multi-theme system: **Catppuccin** (dark, default — atmospheric dark on the Catppuccin Mocha palette) and **Flexoki** (light). Colors are defined as semantic theme tokens in `src/theme/` (TS theme definitions applied as CSS variables at runtime — see `docs/superpowers/specs/2026-06-11-theme-system-design.md`; utilities like `bg-surface-container`, `text-on-surface`, `text-primary` resolve per active theme). The dark theme's file/id keeps the legacy `obsidian-lens` slug (its display label is `Catppuccin`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
+**The Lens** is a multi-theme system: **Catppuccin** (dark default), **Flexoki** (light baseline), Gruvbox Dark, Gruvbox Light, Tokyo Night, and Dracula. Colors are defined as semantic theme tokens in `src/theme/` (TS theme definitions applied as CSS variables at runtime — see `docs/superpowers/specs/2026-06-11-theme-system-design.md`; utilities like `bg-surface-container`, `text-on-surface`, `text-primary` resolve per active theme). The dark theme's file/id keeps the legacy `obsidian-lens` slug (its display label is `Catppuccin`). Fonts: Manrope (headlines), Inter (body/labels), JetBrains Mono (code). No visible borders — use tonal depth and glassmorphism.
 
 **Read order:** `docs/design/UNIFIED.md` (authoritative, code-grounded — 3-zone shell + two-plane surface model, agent-state contract, component contracts), then `docs/design/DESIGN.md` (foundational philosophy/typography), then `src/theme/themes/*.ts` for runtime token values. Historical handoffs/mockups live in `docs/design/archive/` (reference only; UNIFIED wins).
 

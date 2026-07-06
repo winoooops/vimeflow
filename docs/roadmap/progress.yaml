@@ -3,19 +3,25 @@
 # Source: docs/roadmap/ui-update-roadmap.md
 # Schema: phase → steps → dod (definition of done)
 # Status values: pending | in_progress | done | blocked
-# Revised: 2026-06-21 — OpenCode adapter (observability v1) merged; Kimi Code
-#   support merged; Electron runtime cutover complete. Tauri runtime fully
-#   removed; vimeflow now ships as an Electron shell with a runtime-neutral
-#   Rust sidecar binary (vimeflow-backend).
+# Revised: 2026-07-06 — native Ghostty terminal runtime shipped for packaged
+#   macOS arm64 via libghostty-spm; xterm.js remains Linux/dev fallback.
+#   OpenCode adapter (observability v1) merged; Kimi Code support merged;
+#   Electron runtime cutover complete. Tauri runtime fully removed; vimeflow
+#   now ships as an Electron shell with a runtime-neutral Rust sidecar binary
+#   (vimeflow-backend).
 
-version: 12
-updated: '2026-06-21'
+version: 13
+updated: '2026-07-06'
 roadmap: docs/roadmap/ui-update-roadmap.md
 changelog:
   en: CHANGELOG.md
   zh-CN: CHANGELOG.zh-CN.md
 notes: >-
-  Phases 1-4 are done. The Electron migration (a separate track from
+  Phases 1-4 are done. The built-in native Ghostty terminal runtime is
+  shipped for packaged macOS arm64: `libghostty-spm` feeds the parented
+  Ghostty `NSView` path, while the Rust sidecar remains the PTY owner
+  and xterm.js stays as the Linux/dev fallback. The Electron migration
+  (a separate track from
   the original Tauri-targeting roadmap) shipped as three merged PRs
   over six design tracks May 13-16, 2026: PR-A (runtime-neutral Rust
   backend), PR-B (sidecar IPC), PR-C (frontend backend bridge), PR-D1
@@ -310,6 +316,12 @@ phases:
         commit: 2fc3fa2
         pr: 34
         notes: 'useTerminal cleanup kills session on unmount'
+      - id: p3-d6
+        check: 'Packaged macOS arm64 uses built-in native Ghostty as the terminal renderer'
+        status: done
+        commit: null
+        pr: null
+        notes: 'macOS packaging builds/smokes ghostty_native_parent.node + libGhosttyElectronBridge.dylib from native/ghostty-helper (libghostty-spm) and bundles dist-native/ghostty-parent; Rust PTY ownership and xterm.js fallback remain.'
 
   - id: phase-4
     name: 'Agent Status Sidebar'
@@ -985,7 +997,7 @@ phases:
         status: done
         commit: f585ac8
         pr: 190
-        notes: 'TerminalPane handoff shell, header/body/footer, xterm bridge, and UI adjustments.'
+        notes: 'TerminalPane handoff shell, header/body/footer, xterm bridge, and UI adjustments. Later native Ghostty work made the packaged macOS renderer path built-in while preserving xterm fallback.'
       - id: ui-s5a
         name: 'Per-session pane model refactor'
         status: done

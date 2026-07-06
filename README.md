@@ -12,7 +12,7 @@ English | [简体中文](./README.zh-CN.md)
 
 </div>
 
-Vimeflow is an Electron desktop app with a Rust `vimeflow-backend` sidecar. It brings terminal sessions, multi-pane layouts, file browsing, code editing, git diff review, command palette actions, and live observability for Claude Code, Codex CLI, Kimi Code, and OpenCode into one workspace.
+Vimeflow is an Electron desktop app with a Rust `vimeflow-backend` sidecar. It brings built-in native Ghostty terminal panes on macOS, multi-pane layouts, file browsing, code editing, git diff review, command palette actions, and live observability for Claude Code, Codex CLI, Kimi Code, and OpenCode into one workspace.
 
 ## Current Support
 
@@ -21,6 +21,7 @@ Vimeflow currently supports **version 0.1.0 from source code only**.
 - Supported release line: `0.1.0`
 - Supported packaged targets: Linux x64 AppImage and macOS arm64 DMG built locally from source
 - Desktop runtime: Electron 42 + Rust sidecar over LSP-framed JSON IPC
+- Terminal runtime: built-in native Ghostty via `libghostty-spm` for packaged macOS arm64, with xterm.js kept as the Linux/dev fallback
 - Agent observability: Claude Code, Codex CLI, Kimi Code, and OpenCode
 - Not yet supported: hosted binary releases, Windows packaging, production signing/notarization, or auto-update
 
@@ -47,6 +48,12 @@ Run the desktop app from source:
 
 ```bash
 npm run electron:dev
+```
+
+Run the macOS native Ghostty dev path:
+
+```bash
+npm run electron:dev:ghostty
 ```
 
 On Linux hosts without a working Chromium sandbox:
@@ -81,7 +88,7 @@ If the host does not provide `libfuse2`, use AppImage's fallback:
 ./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
 ```
 
-The macOS DMG is written to `release/vimeflow-*-arm64.dmg`. It is intended for local source builds and is not notarized.
+The macOS DMG is written to `release/vimeflow-*-arm64.dmg`. It bundles the native Ghostty parent runtime and is intended for local source builds; it is not notarized.
 
 ## Use Vimeflow
 
@@ -94,7 +101,7 @@ Kimi Code plan-usage fetching is opt-in because it sends your configured Kimi cr
 
 OpenCode is detected locally through a small auto-installed bridge plugin that streams each session's activity to a Vimeflow-owned directory; the status panel surfaces its model, context window (sized from OpenCode's models.dev cache), and tool activity with no credential access. OpenCode exposes no usage-quota API, so the status card links the upstream request ([sst/opencode#16017](https://github.com/sst/opencode/issues/16017)) in place of plan-usage bars.
 
-**Run your beloved TUI in the same pane** — `nvim`, `htop`, `less`, and other full-screen tools render side-by-side with your agent session. The in-app terminal is a real PTY, so anything that works in your usual terminal works here too.
+**Run your beloved TUI in the same pane** — `nvim`, `htop`, `less`, and other full-screen tools render side-by-side with your agent session. The Rust sidecar owns a real PTY, while packaged macOS builds use built-in native Ghostty (`libghostty-spm` + a parented `NSView`) as the terminal backbone. Linux, dev fallback, and native-load failures still use xterm.js.
 
 <div align="center">
   <img src="docs/media/terminal-nvim.png" alt="Neovim editing a file inside a Vimeflow terminal pane" width="900" />

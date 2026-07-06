@@ -4,7 +4,7 @@
 
 This design system transforms the sterile developer environment into a sophisticated, editorial workspace. Our Creative North Star is **The Lens** — an aesthetic that treats the UI not as a flat grid of boxes, but as a series of illuminated, translucent layers stacked within a deep, nocturnal void.
 
-The Lens ships two runtime themes (§9). The default, **Catppuccin** (dark), leverages the Catppuccin Mocha palette to move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience; a parallel **Flexoki** (light) theme applies the same surface logic in a warm paper palette. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
+The Lens ships multiple runtime themes (§9). The default, **Catppuccin** (dark), leverages the Catppuccin Mocha palette to move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience; **Flexoki** provides the light baseline, with Gruvbox Dark/Light, Tokyo Night, and Dracula also available. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
 
 The **workspace expression** of this system applies The Lens aesthetic to a terminal-first CLI agent management interface — the same depth, glass, and editorial precision, now serving a command-line-native workflow.
 
@@ -24,7 +24,7 @@ The palette is rooted in deep purples and blues, punctuated by vibrant accents. 
 
 ### Surface Hierarchy & Nesting
 
-Treat the UI as a physical stack of frosted glass. Values below are the **Catppuccin** dark snapshot (`obsidian-lens.ts`); the runtime SSoT — including the **Flexoki** light theme (`flexoki.ts`) — is `src/theme/themes/*.ts`. See `UNIFIED.md` §2.1 for how these levels map onto the two-plane shell.
+Treat the UI as a physical stack of frosted glass. Values below are the **Catppuccin** dark snapshot (`obsidian-lens.ts`); the runtime SSoT for all shipped themes is `src/theme/themes/*.ts`. See `UNIFIED.md` §2.1 for how these levels map onto the two-plane shell.
 
 - **Level 0 — Canvas:** `surface` (#121221) — the work plane: main canvas, terminal/SplitView, dock, the 44px top-chrome banner, the 24px status bar, **and** the right activity panel (all co-planar).
 - **Level 1 — Chrome:** `surface-container-low` (#1a1a2a) — the distinct-chrome plane: the left sidebar + the backdrop. One step off the canvas (lighter in dark, darker in light).
@@ -243,10 +243,10 @@ The context window indicator uses emoji that degrades as context fills:
 
 ## 9. Themes & Design Resources
 
-**Themes.** The Lens ships two runtime themes (`src/theme/themes/*.ts`), both exposing identical token keys so `bg-surface` etc. resolve per active theme:
+**Themes.** The Lens ships six runtime themes (`src/theme/themes/*.ts`), all exposing identical token keys so `bg-surface` etc. resolve per active theme:
 
 - **Catppuccin** (dark, default) — file/id `obsidian-lens` (legacy slug), `label: 'Catppuccin'`. Atmospheric dark on the Catppuccin Mocha palette; the hex tables above are its snapshot.
-- **Flexoki** (light) — file/id `flexoki`, `label: 'Flexoki'`. The same surface logic in a warm paper palette.
+- **Flexoki** (light baseline), **Gruvbox Dark**, **Gruvbox Light**, **Tokyo Night**, and **Dracula**.
 
 Color SSoT is `src/theme/themes/*.ts` — see `UNIFIED.md` §9 for the runtime mechanism.
 
