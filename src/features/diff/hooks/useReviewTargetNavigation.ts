@@ -13,7 +13,10 @@ import type {
 } from '@pierre/diffs'
 import type { FileDiff } from '../types'
 import type { DiffStyle } from './useToolbarState'
-import type { ReviewComment } from './useFeedbackBatch'
+import {
+  isPendingReviewAnnotation,
+  type ReviewComment,
+} from './useFeedbackBatch'
 import {
   isLineRangeFullyVisible,
   lineRangeFitsBelowHeader,
@@ -207,6 +210,25 @@ const reviewTargetIndexForLine = (
   targets.findIndex(
     (target) => target.lineNumber === lineNumber && target.side === side
   )
+
+const reviewAnnotationForTarget = (
+  annotations: DiffLineAnnotation<ReviewComment>[],
+  target: ReviewNavigationTarget
+): DiffLineAnnotation<ReviewComment> | undefined => {
+  const matchingAnnotations = annotations.filter(
+    (annotation) =>
+      annotation.lineNumber === target.lineNumber &&
+      annotation.side === target.side
+  )
+
+  const pendingAnnotations = matchingAnnotations.filter(
+    isPendingReviewAnnotation
+  )
+
+  return (
+    pendingAnnotations[pendingAnnotations.length - 1] ?? matchingAnnotations[0]
+  )
+}
 
 // Pierre exposes side information through different attributes in split and
 // unified layouts, so pointer navigation reads the closest reliable marker.
@@ -505,11 +527,7 @@ export const useReviewTargetNavigation = ({
       return undefined
     }
 
-    return annotations.find(
-      (annotation) =>
-        annotation.lineNumber === currentTarget.lineNumber &&
-        annotation.side === currentTarget.side
-    )
+    return reviewAnnotationForTarget(annotations, currentTarget)
   }, [currentTarget, annotations])
 
   const activateTarget = useCallback(

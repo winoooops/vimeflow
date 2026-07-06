@@ -4,9 +4,11 @@ import { formatRelativeTime } from '../../../agent-status/utils/relativeTime'
 import { GitRefChip } from './GitRefChip'
 
 export interface PaneStatusBarProps {
+  isActive?: boolean
   worktreeName: string | null
   branch: string | null
   cwd?: string
+  nativeOverlay?: boolean
   added: number
   removed: number
   lastActivityAt: string
@@ -14,7 +16,7 @@ export interface PaneStatusBarProps {
 
 /**
  * Minimal-height bottom bar carrying the pane's git ref, line-change deltas,
- * and last-activity time. Rendered only when the pane header is expanded.
+ * and last-activity time. Rendered only when pane status is expanded.
  *
  * The bar is a size container that sheds the lowest-priority info first as it
  * narrows, so the branch is never crammed against the metadata:
@@ -27,9 +29,11 @@ export interface PaneStatusBarProps {
  * the collapsed state instead of a separate width floor.
  */
 export const PaneStatusBar = ({
+  isActive = false,
   worktreeName,
   branch,
   cwd = undefined,
+  nativeOverlay = false,
   added,
   removed,
   lastActivityAt,
@@ -39,7 +43,9 @@ export const PaneStatusBar = ({
   return (
     <div
       data-testid="terminal-pane-status-bar"
-      className="flex shrink-0 items-center gap-3 border-t border-outline-variant/[0.18] px-3 py-1 font-mono text-[10.5px] [container-type:inline-size]"
+      className={`flex shrink-0 items-center gap-3 border-t border-outline-variant/[0.18] bg-surface-container-lowest px-3 py-1 font-mono text-[10.5px] [container-type:inline-size] ${
+        isActive ? 'bg-primary-container/15' : ''
+      }`}
     >
       {/* Ref group is hard-bounded to the leftover space and clips, so the
        * always-visible time on the right is never overlapped. */}
@@ -52,6 +58,7 @@ export const PaneStatusBar = ({
           branch={branch}
           cwd={cwd}
           collapsibleWorktree
+          nativeOverlay={nativeOverlay}
         />
       </div>
 

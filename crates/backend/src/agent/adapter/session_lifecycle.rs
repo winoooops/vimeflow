@@ -165,7 +165,9 @@ mod tests {
         );
 
         let attach = lifecycle
-            .resolve_attach(&sid, app_data.path(), None, |_pid| Some((AgentType::Codex, 4242)))
+            .resolve_attach(&sid, app_data.path(), None, |_pid| {
+                Some((AgentType::Codex, 4242))
+            })
             .expect("resolve_attach");
 
         // resolve_attach is a thin delegate to resolve_bind_inputs; this test

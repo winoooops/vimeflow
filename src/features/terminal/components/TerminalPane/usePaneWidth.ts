@@ -7,7 +7,7 @@ import { useLayoutEffect, useState, type RefObject } from 'react'
  *
  * Used to drive width-responsive React state — e.g. the pane's auto-collapse —
  * that CSS container queries can express visually but cannot feed back into
- * component state (the chevron, `data-collapsed`, the status-bar render gate).
+ * component state (the chevron and the status-bar render gate).
  */
 export const usePaneWidth = <T extends Element>(
   ref: RefObject<T | null>

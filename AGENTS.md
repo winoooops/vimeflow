@@ -46,6 +46,23 @@ crates/backend/
 - **Generated bindings**: Rust `ts-rs` exports live in `src/bindings/`; use `npm run generate:bindings` after Rust type changes
 - **Workspace shell**: current top-level UI composition lives in `src/features/workspace/WorkspaceView.tsx`
 
+## Ghostty Native Debugging
+
+When investigating Ghostty native runtime, native overlays, or React DOM surfaces that align with native views, treat DOM rect and viewport conversion as the first fragile boundary.
+
+- DOM APIs such as `getBoundingClientRect()` return renderer CSS pixels
+- Electron/AppKit native view frames use window points
+- Compare `window.innerWidth`, `window.innerHeight`, `window.outerWidth`, and `window.outerHeight` before blaming React lifecycle, refresh rate, or AppKit z-order
+- Preserve debugging notes for native view registry, frame, and lifecycle issues in `docs/superpowers/plans/`; include DOM rect, renderer viewport metrics, Electron window/content bounds, and the native frame that was applied
+
+For renderer inspection, start Electron with an explicit remote debugging port:
+
+```bash
+VIMEFLOW_REMOTE_DEBUGGING_PORT=9223 VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 VITE_NATIVE_OVERLAY=1 npm run electron:dev -- --port 5175
+```
+
+Then open `http://127.0.0.1:9223/json/list` and attach a DevTools client to the renderer target. Keep this opt-in only; do not enable remote debugging by default.
+
 ## Code Style
 
 Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-function components only, explicit return types on exports, no `console.log`, `test()` not `it()`, CSpell spell-checking, ESM-only.

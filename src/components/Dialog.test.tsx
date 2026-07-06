@@ -1,8 +1,99 @@
 import { createRef, useState, type ReactElement } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
-import { Dialog } from './Dialog'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { __resetNativeOverlayForTest } from '@/components/base/floating/nativeOverlay'
+import { Dialog, type NativeOverlayCommandPaletteDialogPayload } from './Dialog'
+
+const nativeDialogPayload: NativeOverlayCommandPaletteDialogPayload = {
+  kind: 'dialog',
+  dialog: 'command-palette',
+  ariaLabel: 'Command palette',
+  query: ':',
+  selectedIndex: 0,
+  results: [
+    {
+      id: 'help',
+      label: ':help',
+      description: 'Show help',
+      icon: 'help',
+    },
+  ],
+  actions: {
+    selectIndex: 'command-palette:select-index',
+    executeIndex: 'command-palette:execute-index',
+  },
+}
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (
+  result: boolean | Promise<{ accepted: boolean }>
+): {
+  open: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+} => {
+  const open = vi.fn(() =>
+    typeof result === 'boolean' ? Promise.resolve({ accepted: result }) : result
+  )
+  const close = vi.fn(() => Promise.resolve())
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close,
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return { open, close }
+}
+
+const deferredOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+} => {
+  let resolveOpen: (value: { accepted: boolean }) => void = () => undefined
+
+  const promise = new Promise<{ accepted: boolean }>((resolve) => {
+    resolveOpen = resolve
+  })
+
+  return { promise, resolve: resolveOpen }
+}
+
+afterEach(() => {
+  __resetNativeOverlayForTest()
+  vi.unstubAllEnvs()
+  restorePlatform?.()
+  restorePlatform = null
+  delete window.vimeflow
+})
 
 describe('Dialog', () => {
   test('renders nothing when open is false', () => {
@@ -28,6 +119,201 @@ describe('Dialog', () => {
     const dialog = screen.getByRole('dialog', { name: 'Settings' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(screen.getByText('Dialog body')).toBeInTheDocument()
+  })
+
+  test('hides local dialog while native overlay is active and closes on unmount', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge(true)
+
+    const { unmount } = render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+        testId="local-dialog"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    const dialog = screen.getByTestId('local-dialog')
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+    await waitFor(() => expect(dialog).toHaveClass('opacity-0'))
+
+    expect(dialog).toHaveAttribute('aria-hidden', 'true')
+    expect(dialog).toHaveAttribute('inert')
+
+    const request = bridge.open.mock.calls[0]?.[0] as
+      | { surfaceId: string }
+      | undefined
+
+    if (request === undefined) {
+      throw new Error('expected native overlay open request')
+    }
+
+    const surfaceId = request.surfaceId
+    unmount()
+
+    expect(bridge.close).toHaveBeenCalledWith({
+      surfaceId,
+      reason: 'renderer',
+    })
+  })
+
+  test('does not move focus into hidden local dialog during native overlay', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge(true)
+    const prior = document.createElement('button')
+    prior.textContent = 'Prior'
+    document.body.appendChild(prior)
+    prior.focus()
+
+    try {
+      render(
+        <Dialog
+          open
+          nativeOverlay
+          nativeOverlayPayload={nativeDialogPayload}
+          onOpenChange={vi.fn()}
+          aria-label="Command palette"
+        >
+          <button type="button">Local action</button>
+        </Dialog>
+      )
+
+      await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+      expect(prior).toHaveFocus()
+    } finally {
+      prior.remove()
+    }
+  })
+
+  test('keeps local dialog visible when native overlay is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge(false)
+
+    render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+        testId="local-dialog"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    const dialog = screen.getByTestId('local-dialog')
+
+    await waitFor(() => {
+      expect(bridge.open).toHaveBeenCalledOnce()
+      expect(dialog).not.toHaveClass('opacity-0')
+      expect(screen.getByText('Local body')).toBeInTheDocument()
+    })
+  })
+
+  test('serializes native dialog updates for the same surface', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const firstOpen = deferredOpen()
+    const bridge = installNativeOverlayBridge(firstOpen.promise)
+
+    const updatedPayload: NativeOverlayCommandPaletteDialogPayload = {
+      ...nativeDialogPayload,
+      query: ':open',
+    }
+
+    const { rerender } = render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    rerender(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={updatedPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    expect(bridge.open).toHaveBeenCalledOnce()
+    firstOpen.resolve({ accepted: true })
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledTimes(2))
+    expect(bridge.close).not.toHaveBeenCalled()
+  })
+
+  test('closes a late accepted native dialog after dismissal', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const open = deferredOpen()
+    const closed = false
+    const bridge = installNativeOverlayBridge(open.promise)
+
+    const { rerender } = render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    const request = bridge.open.mock.calls[0]?.[0] as
+      | { surfaceId: string }
+      | undefined
+
+    if (request === undefined) {
+      throw new Error('expected native overlay open request')
+    }
+
+    rerender(
+      <Dialog
+        open={closed}
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        onOpenChange={vi.fn()}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    open.resolve({ accepted: true })
+
+    await waitFor(() => {
+      expect(bridge.close).toHaveBeenCalledWith({
+        surfaceId: request.surfaceId,
+        reason: 'renderer',
+      })
+    })
   })
 
   test('supports aria-labelledby and aria-describedby wiring', () => {
@@ -70,7 +356,10 @@ describe('Dialog', () => {
       </Dialog>
     )
 
-    await user.click(screen.getByTestId('dialog-backdrop'))
+    const backdrop = screen.getByTestId('dialog-backdrop')
+    expect(backdrop).toHaveClass('bg-scrim/40')
+
+    await user.click(backdrop)
 
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })

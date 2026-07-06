@@ -1,7 +1,9 @@
 import {
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
+  useId,
   useState,
   type ReactElement,
   type ReactNode,
@@ -24,6 +26,14 @@ import {
   useRole,
   type Placement,
 } from '@floating-ui/react'
+import {
+  NATIVE_OVERLAY_KINDS,
+  closeNativeOverlay,
+  nativeOverlayThemeSnapshot,
+  openNativeOverlay,
+  selectFloatingTransport,
+  warnNativeOverlayFallback,
+} from '@/components/base/floating/nativeOverlay'
 import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 
 interface TooltipCommonProps {
@@ -33,6 +43,7 @@ interface TooltipCommonProps {
   delayMs?: number
   disabled?: boolean
   className?: string
+  nativeOverlay?: boolean
 }
 
 /**
@@ -107,6 +118,7 @@ export const Tooltip = ({
   disabled = false,
   maxWidth = 320,
   className = '',
+  nativeOverlay = false,
   interactive = false,
   ariaLabel = undefined,
   bare = false,
@@ -116,8 +128,28 @@ export const Tooltip = ({
   // `0` is still treated as content (it renders as a visible "0" tooltip).
   const hasContent = content != null && content !== false && content !== ''
   const enabled = !disabled && hasContent && isValidElement(children)
+  const nativeSurfaceId = `tooltip:${useId()}`
 
   const [open, setOpen] = useState(false)
+
+  const [nativeFailed, setNativeFailed] = useState(false)
+
+  const transport = selectFloatingTransport(nativeOverlay)
+  const nativeTooltipText = typeof content === 'string' ? content : null
+
+  const nativeUnsupportedReason =
+    nativeTooltipText === null
+      ? 'tooltip native overlay only supports plain text'
+      : interactive
+        ? 'interactive tooltip native overlay is not in v0'
+        : bare
+          ? 'bare tooltip native overlay is not in v0'
+          : shortcut !== undefined
+            ? 'shortcut tooltip native overlay is not in v0'
+            : null
+
+  const canUseNativeOverlay =
+    open && transport === 'native-overlay' && nativeUnsupportedReason === null
 
   // Reset stale open state when the tooltip becomes ineligible mid-flight
   // (consumer toggles disabled, or content drops to null/undefined). Without
@@ -146,11 +178,169 @@ export const Tooltip = ({
     useHover(context, {
       enabled,
       delay: { open: delayMs, close: interactive ? 150 : 0 },
-      handleClose: safePolygon(),
+      handleClose: interactive ? safePolygon() : undefined,
     }),
     useFocus(context, { enabled }),
     useDismiss(context, { enabled, escapeKey: true }),
     useRole(context, { enabled, role: interactive ? 'dialog' : 'tooltip' }),
+  ])
+
+  useEffect(() => {
+    if (
+      open &&
+      transport === 'native-overlay' &&
+      nativeUnsupportedReason !== null
+    ) {
+      warnNativeOverlayFallback(nativeUnsupportedReason)
+    }
+  }, [nativeUnsupportedReason, open, transport])
+
+  const sendNativeTooltipRequest = useCallback(async (): Promise<boolean> => {
+    if (nativeTooltipText === null) {
+      return false
+    }
+
+    const reference = refs.reference.current
+    if (!(reference instanceof Element)) {
+      warnNativeOverlayFallback('tooltip native overlay is missing an anchor')
+      setNativeFailed(true)
+
+      return false
+    }
+
+    const rect = reference.getBoundingClientRect()
+
+    return openNativeOverlay(
+      {
+        surfaceId: nativeSurfaceId,
+        kind: NATIVE_OVERLAY_KINDS.tooltip,
+        anchorRect: {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        },
+        placement,
+        payload: {
+          kind: 'tooltip',
+          text: nativeTooltipText,
+          maxWidth,
+        },
+        theme: nativeOverlayThemeSnapshot(),
+      },
+      {
+        actions: new Map(),
+        onClose: () => setOpen(false),
+      }
+    )
+  }, [maxWidth, nativeSurfaceId, nativeTooltipText, placement, refs.reference])
+
+  useEffect(() => {
+    if (!canUseNativeOverlay || nativeTooltipText === null) {
+      if (!open) {
+        setNativeFailed(false)
+      }
+
+      return
+    }
+
+    const state = { canceled: false }
+    setNativeFailed(false)
+
+    void (async (): Promise<void> => {
+      const accepted = await sendNativeTooltipRequest()
+
+      if (state.canceled) {
+        if (accepted) {
+          closeNativeOverlay(nativeSurfaceId)
+        }
+
+        return
+      }
+
+      if (!accepted) {
+        warnNativeOverlayFallback('tooltip native overlay was rejected')
+        setNativeFailed(true)
+
+        return
+      }
+    })()
+
+    return (): void => {
+      state.canceled = true
+      closeNativeOverlay(nativeSurfaceId)
+    }
+  }, [
+    canUseNativeOverlay,
+    nativeSurfaceId,
+    nativeTooltipText,
+    open,
+    sendNativeTooltipRequest,
+  ])
+
+  useEffect(() => {
+    if (!canUseNativeOverlay || nativeTooltipText === null || nativeFailed) {
+      return
+    }
+
+    let frameId: number | null = null
+    let disposed = false
+
+    const sendLatestRect = (): void => {
+      if (frameId !== null) {
+        return
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null
+
+        void (async (): Promise<void> => {
+          const accepted = await sendNativeTooltipRequest()
+          if (disposed) {
+            if (accepted) {
+              closeNativeOverlay(nativeSurfaceId)
+            }
+
+            return
+          }
+
+          if (!accepted) {
+            warnNativeOverlayFallback('tooltip native overlay was rejected')
+            setNativeFailed(true)
+          }
+        })()
+      })
+    }
+
+    const reference = refs.reference.current
+
+    const observer =
+      typeof ResizeObserver !== 'undefined' && reference instanceof Element
+        ? new ResizeObserver(sendLatestRect)
+        : null
+
+    if (reference instanceof Element) {
+      observer?.observe(reference)
+    }
+
+    window.addEventListener('resize', sendLatestRect)
+
+    return (): void => {
+      disposed = true
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+
+      observer?.disconnect()
+      window.removeEventListener('resize', sendLatestRect)
+    }
+  }, [
+    canUseNativeOverlay,
+    nativeFailed,
+    nativeSurfaceId,
+    nativeTooltipText,
+    refs.reference,
+    sendNativeTooltipRequest,
   ])
 
   const childRef = isValidElement(children)
@@ -170,6 +360,8 @@ export const Tooltip = ({
     ? `${interactionClass} z-50`
     : `${interactionClass} ${TOOLTIP_BASE_CLASSES}`
   const classes = className ? `${tooltipClasses} ${className}` : tooltipClasses
+
+  const showLocalTooltip = open && (!canUseNativeOverlay || nativeFailed)
 
   const floatingSurface = (
     <div
@@ -200,7 +392,7 @@ export const Tooltip = ({
         ...getReferenceProps(children.props as Record<string, unknown>),
         ref: mergedRef,
       })}
-      {open && (
+      {showLocalTooltip && (
         <FloatingPortal>
           {interactive ? (
             <FloatingFocusManager

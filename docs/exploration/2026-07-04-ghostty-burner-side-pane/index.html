@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghostty Burner Side Pane Options</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #10101b;
+        --surface: #171725;
+        --surface-2: #242037;
+        --surface-3: #312a45;
+        --text: #ebe8f6;
+        --muted: #a59dbb;
+        --line: rgba(224, 216, 255, 0.12);
+        --shell: #d6a348;
+        --blue: #79addc;
+        --green: #85c88a;
+        --danger: #f28b82;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      header.page {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 20px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border-radius: 8px;
+        padding: 5px 8px;
+        background: color-mix(in srgb, var(--shell) 16%, transparent);
+        color: #ffd990;
+        font:
+          700 11px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.06em;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 18px 0;
+      }
+
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: var(--surface-2);
+        color: var(--text);
+        font:
+          600 12px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+        cursor: pointer;
+      }
+
+      button[data-active='true'] {
+        background: color-mix(in srgb, var(--shell) 28%, var(--surface-2));
+        color: #ffe1a3;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 330px;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .canvas,
+      .notes,
+      .option-card {
+        background: var(--surface);
+        border-radius: 12px;
+      }
+
+      .canvas {
+        overflow: hidden;
+        min-height: 620px;
+        border: 1px solid var(--line);
+      }
+
+      .appbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 12px;
+        background: #131322;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 999px;
+      }
+
+      .dot.red {
+        background: #ff6b6b;
+      }
+
+      .dot.yellow {
+        background: #ffd166;
+      }
+
+      .dot.green {
+        background: #87d37c;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        min-height: 586px;
+      }
+
+      .sidebar {
+        padding: 12px;
+        background: #151526;
+        border-right: 1px solid var(--line);
+      }
+
+      .session {
+        margin-top: 12px;
+        border-radius: 8px;
+        padding: 10px;
+        background: var(--surface-2);
+      }
+
+      .stage {
+        padding: 14px;
+      }
+
+      .pane-grid {
+        display: grid;
+        height: 550px;
+        gap: 8px;
+      }
+
+      .pane-grid.side {
+        grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.8fr);
+      }
+
+      .pane-grid.bottom {
+        grid-template-rows: minmax(0, 1.25fr) minmax(180px, 0.65fr);
+      }
+
+      .pane-grid.host-only {
+        grid-template-columns: 1fr;
+      }
+
+      .pane {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex-direction: column;
+        overflow: hidden;
+        border-radius: 10px;
+        background: #0f0f18;
+      }
+
+      .pane.host {
+        outline: 1px solid color-mix(in srgb, var(--blue) 22%, transparent);
+      }
+
+      .pane.burner {
+        outline: 1px solid color-mix(in srgb, var(--shell) 35%, transparent);
+      }
+
+      .pane-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 6px 8px;
+        background: var(--surface-2);
+        border-bottom: 1px solid var(--line);
+        font:
+          600 11px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      .glyph {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        background: color-mix(in srgb, var(--shell) 18%, transparent);
+        color: var(--shell);
+      }
+
+      .title {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .micro {
+        color: var(--muted);
+        font:
+          600 10px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.04em;
+      }
+
+      .chip {
+        border-radius: 7px;
+        padding: 4px 6px;
+        background: color-mix(in srgb, var(--shell) 16%, transparent);
+        color: #ffd990;
+        font:
+          700 10px/1 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.06em;
+      }
+
+      .term {
+        flex: 1;
+        padding: 14px;
+        background: #1b1b1b;
+        color: #f5f2e9;
+        font:
+          700 13px/1.45 ui-monospace,
+          'SFMono-Regular',
+          Menlo,
+          Consolas,
+          monospace;
+      }
+
+      .prompt {
+        display: inline;
+        background: #ffd69c;
+        color: #17110b;
+        padding: 1px 4px;
+      }
+
+      .burner .term {
+        background: #191715;
+      }
+
+      .ghost {
+        color: #9f9a8e;
+      }
+
+      .notes {
+        padding: 14px;
+        border: 1px solid var(--line);
+      }
+
+      .notes h2 {
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+
+      .note {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 8px;
+        margin: 10px 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .marker {
+        color: var(--green);
+        font-weight: 800;
+      }
+
+      .options {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .option-card {
+        padding: 14px;
+        border: 1px solid var(--line);
+      }
+
+      .option-card h2 {
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .option-card p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 900px) {
+        .grid,
+        .options,
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .pane-grid.side {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(320px, 1fr) minmax(220px, 0.6fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="page">
+        <div>
+          <h1>Ghostty Burner Side Pane Options</h1>
+          <p class="lede">
+            The burner should stop being a floating terminal dialog. The safest
+            route is to make it a normal Vimeflow shell pane rendered by the
+            existing native Ghostty surface path.
+          </p>
+        </div>
+        <span class="badge">RECOMMENDED: SIDE PANE</span>
+      </header>
+
+      <nav class="toolbar" aria-label="Demo mode">
+        <button type="button" data-mode="side" data-active="true">
+          right side pane
+        </button>
+        <button type="button" data-mode="bottom">bottom side pane</button>
+        <button type="button" data-mode="host-only">host only</button>
+      </nav>
+
+      <section class="grid">
+        <div class="canvas" aria-label="Workspace mockup">
+          <div class="appbar">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            <span class="micro">vimeflow ghostty canvas</span>
+          </div>
+          <div class="workspace">
+            <aside class="sidebar">
+              <span class="micro">SESSIONS</span>
+              <div class="session">
+                <strong>vimeflow</strong>
+                <p class="micro" style="margin-top: 8px">running · 2 panes</p>
+              </div>
+            </aside>
+            <section class="stage">
+              <div id="paneGrid" class="pane-grid side">
+                <article class="pane host">
+                  <div class="pane-head">
+                    <span class="glyph">$</span>
+                    <span class="title">vimeflow</span>
+                    <span class="chip">BURNER x1</span>
+                    <span class="micro">CMD 1</span>
+                  </div>
+                  <div class="term">
+                    <span class="prompt">winoooops</span>
+                    <span class="prompt">~/vimeflow</span>
+                    <span class="prompt">feature/vim-267</span>
+                    <br />
+                    <span class="ghost">main Ghostty pane stays primary</span>
+                  </div>
+                </article>
+
+                <article id="burnerPane" class="pane burner">
+                  <div class="pane-head">
+                    <span class="glyph">$</span>
+                    <span class="chip">BURNER</span>
+                    <span class="title">linked to vimeflow</span>
+                    <span class="micro">sync cwd</span>
+                  </div>
+                  <div class="term">
+                    <span class="prompt">burner</span>
+                    <span class="prompt">~/vimeflow</span>
+                    <br />
+                    <span class="ghost">
+                      ephemeral shell, no agent bridge, rendered by Ghostty
+                    </span>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <aside class="notes">
+          <h2>Mechanism</h2>
+          <div class="note">
+            <span class="marker">1</span>
+            <span
+              >Clicking burner creates or reveals a Vimeflow shell pane.</span
+            >
+          </div>
+          <div class="note">
+            <span class="marker">2</span>
+            <span>
+              The pane uses an ephemeral PTY and disables the agent bridge.
+            </span>
+          </div>
+          <div class="note">
+            <span class="marker">3</span>
+            <span>
+              Ghostty gets no special split command; it just renders another
+              native surface for another React pane.
+            </span>
+          </div>
+          <div class="note">
+            <span class="marker">4</span>
+            <span>
+              The host header gets a small burner cue. The burner header gets
+              the temporary identity and cwd sync control.
+            </span>
+          </div>
+        </aside>
+      </section>
+
+      <section class="options">
+        <article class="option-card">
+          <h2>A. Vimeflow Side Pane</h2>
+          <p>
+            Best v1. Reuses split layout, pane lifecycle, Ghostty native
+            rendering, shortcuts, and xterm fallback.
+          </p>
+        </article>
+        <article class="option-card">
+          <h2>B. Overlay Terminal</h2>
+          <p>
+            Avoid. It revives the floating-terminal problem and makes focus,
+            shutdown, and resize harder than a pane.
+          </p>
+        </article>
+        <article class="option-card">
+          <h2>C. Ghostty Internal Split</h2>
+          <p>
+            Blocked for now. Our bridge exposes one TerminalView per surface,
+            not a host-controlled split tree.
+          </p>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const buttons = [...document.querySelectorAll('button[data-mode]')]
+      const grid = document.getElementById('paneGrid')
+      const burner = document.getElementById('burnerPane')
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const mode = button.dataset.mode
+          buttons.forEach((item) => {
+            item.dataset.active = item === button ? 'true' : 'false'
+          })
+          grid.className = `pane-grid ${mode}`
+          burner.hidden = mode === 'host-only'
+        })
+      })
+    </script>
+  </body>
+</html>

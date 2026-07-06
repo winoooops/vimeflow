@@ -2,8 +2,8 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-06-24
-ref_count: 3
+last_updated: 2026-07-05
+ref_count: 5
 ---
 
 # Terminal Input Handling
@@ -61,3 +61,48 @@ double execution, and paste failures.
 - **Finding:** `pasteImageIfAvailable` converted the top clipboard image to a data URL and pasted it into the PTY without checking byte size. Large screenshots can expand to multi-megabyte base64 input, freezing the terminal and overflowing coding-agent context windows.
 - **Fix:** Added a 512 KB pre-encoding cap for clipboard image paste, clears the image-paste affordance when exceeded, surfaces an error through `onPasteError`, and covers the rejection path with a regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Native Ghostty panes bypassed restore replay and command-submit tracking
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** The native Ghostty body attached live PTY output but did not replay `restoredFrom` output and did not surface main-process native input through the terminal command-submit path. Restored panes could appear blank until new output, and `/clear` or `/resume` typed into a native pane bypassed workspace reset logic.
+- **Fix:** Forwarded `restoredFrom` and `onCommandSubmit` into `GhosttyBody`, replayed historical and buffered output into the native surface, and mirrored native input from Electron main through a backend event that the renderer tracks with the same command-line parsing rules as xterm.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Native Ghostty output bypassed cwd parsers
+
+- **Source:** github-codex-connector | PR #630 round 2 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty panes forwarded PTY bytes into the native view but did not run the renderer's OSC 7 and agent cwd-hint parsing path. After `cd` or worktree-changing agent output, pane cwd, git status, and burner cwd stayed at the launch directory while native mode was active.
+- **Fix:** Passed `onCwdChange` into `GhosttyBody`, parsed native PTY output for OSC 7 and text cwd hints before forwarding the unchanged bytes to Ghostty, and added a component regression test for OSC 7 output.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Native Ghostty restore drain ignored PTY byte cursors
+
+- **Source:** github-codex-connector | PR #630 round 4 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** The native Ghostty restore path replayed restored buffered bytes and registered a pane-ready drain without using `offsetStart` and `byteLen`. If live subscription output and the mount-time drain overlapped, the native surface could receive the same PTY byte range twice.
+- **Fix:** Added a cursor initialized from `replayEndOffset`, threaded byte offsets through native output callbacks and pane-ready drains, and skipped any restored, live, or drained event whose `offsetStart` is behind the cursor.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Helper-mode native Ghostty input was broadcast to every BrowserWindow
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The Swift helper path forwarded raw terminal input by iterating every Electron `BrowserWindow`. Renderer-side pane filtering prevented command tracking from acting on unrelated panes, but sensitive keystrokes were still delivered to unrelated renderer processes.
+- **Fix:** Store the owning `BrowserWindow` from the validated update IPC event and send helper input only to that live window. Added regression tests for multi-window fan-out and destroyed-window behavior.
+- **Commit:** same commit as this entry
+
+### 10. Native Ghostty input/write lengths crossed bridge bounds unchecked
+
+- **Source:** github-claude | PR #667 round 8 | 2026-07-05
+- **Severity:** MEDIUM / LOW
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`, `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** Native Ghostty input and write paths crossed Swift/C++ bridge APIs with `Int32`/`int` length parameters but did not guard oversized byte buffers before conversion.
+- **Fix:** Drop input buffers larger than `Int32.max` before the Swift callback conversion and throw JS-visible errors before narrowing primary or secondary write strings beyond `INT_MAX`.
+- **Commit:** same commit as this entry

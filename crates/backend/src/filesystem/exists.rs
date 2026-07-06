@@ -1,9 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::scope::{
-    ensure_within_home, expand_home, home_canonical, reject_parent_refs,
-};
+use super::scope::{ensure_within_home, expand_home, home_canonical, reject_parent_refs};
 use super::types::FileExistsRequest;
 
 /// Resolve the nearest existing ancestor of `path` and verify that it lies

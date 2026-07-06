@@ -415,6 +415,30 @@ pub struct AgentToolCallEvent {
     pub is_test_file: bool,
 }
 
+/// One-shot summary of agent activity accumulated during transcript replay.
+///
+/// On resume, the codex/claude_code decoders replay the whole transcript and
+/// would otherwise emit one `agent-tool-call` / `agent-turn` / `agent-cwd`
+/// event per historical line — thousands of events that flood the IPC stdout
+/// queue and freeze the UI. Instead, during replay the per-line events are
+/// suppressed and their effect is accumulated; this single event is emitted
+/// once at the replay→live boundary (`on_caught_up`) carrying the aggregated
+/// state. Live events resume after the boundary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used by frontend and future sub-specs
+pub struct AgentReplaySummaryEvent {
+    pub session_id: String,
+    pub num_turns: u32,
+    pub cwd: Option<String>,
+    pub tool_call_total: u32,
+    pub tool_call_by_type: std::collections::HashMap<String, u32>,
+    /// Completed tool calls accumulated during replay, newest-first, capped at 50.
+    pub recent_tool_calls: Vec<AgentToolCallEvent>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]

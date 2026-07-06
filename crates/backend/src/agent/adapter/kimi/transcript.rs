@@ -248,10 +248,7 @@ fn emit_session_status(
         *last_mtime = current_mtime;
         (snapshot, settled_turn_count)
     } else {
-        (
-            last_snapshot.clone().unwrap(),
-            last_turn_count.unwrap_or(0),
-        )
+        (last_snapshot.clone().unwrap(), last_turn_count.unwrap_or(0))
     };
 
     // Drive the turn-debounced usage fetch every poll so an idle session — or

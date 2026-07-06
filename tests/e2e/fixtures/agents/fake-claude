@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # E2E fixture: a fake Claude Code agent.
 #
-# Writes a valid statusline JSON payload to VIMEFLOW_STATUS_FILE, then
-# re-execs into `sleep` with argv[0]="claude" so the polling detector
-# (reads /proc/<pid>/cmdline) picks it up as a real claude process.
+# Re-execs into a small bash loop with argv[0]="claude" so the polling
+# detector (reads /proc/<pid>/cmdline) picks it up as a real claude
+# process. The loop keeps refreshing a valid statusline JSON payload
+# while the fake agent is alive, matching real Claude's repeated
+# statusline writes and avoiding a one-shot write race with watcher
+# startup.
 #
 # Intended to run inside a Vimeflow PTY, which exports VIMEFLOW_STATUS_FILE.
 set -euo pipefail
 
 : "${VIMEFLOW_STATUS_FILE:?VIMEFLOW_STATUS_FILE not set — must run inside a Vimeflow PTY}"
 
-mkdir -p "$(dirname "$VIMEFLOW_STATUS_FILE")"
+exec -a claude bash <<'BASH'
+set -euo pipefail
 
-cat > "$VIMEFLOW_STATUS_FILE" <<'JSON'
+end_at=$((SECONDS + ${VIMEFLOW_FAKE_AGENT_SLEEP_SECONDS:-300}))
+fixture_status_json=$(cat <<'JSON'
 {
   "session_id": "fake-agent-1",
   "version": "e2e",
@@ -28,5 +33,20 @@ cat > "$VIMEFLOW_STATUS_FILE" <<'JSON'
   }
 }
 JSON
+)
+fixture_owns_status=0
 
-exec -a claude sleep "${VIMEFLOW_FAKE_AGENT_SLEEP_SECONDS:-300}"
+while (( SECONDS < end_at )); do
+  mkdir -p "$(dirname "$VIMEFLOW_STATUS_FILE")"
+  if (( fixture_owns_status )) &&
+    [[ -f "$VIMEFLOW_STATUS_FILE" ]] &&
+    ! cmp -s "$VIMEFLOW_STATUS_FILE" <(printf '%s\n' "$fixture_status_json"); then
+    break
+  fi
+
+  printf '%s\n' "$fixture_status_json" > "$VIMEFLOW_STATUS_FILE"
+  fixture_owns_status=1
+
+  sleep 1
+done
+BASH

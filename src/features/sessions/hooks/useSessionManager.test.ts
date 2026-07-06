@@ -1534,6 +1534,100 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].id).toBe('restored-1')
   })
 
+  test('reports createSession spawn failures through the error callback', async () => {
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+    service.spawn = vi.fn().mockRejectedValue(new Error('bridge unavailable'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession()
+    })
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to create terminal: bridge unavailable'
+      )
+    )
+    expect(result.current.sessions).toHaveLength(0)
+  })
+
+  test('reports addPane spawn failures through the error callback', async () => {
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession()
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    const sessionId = result.current.sessions[0].id
+
+    act(() => {
+      result.current.setSessionLayout(sessionId, 'vsplit')
+    })
+
+    vi.mocked(service.spawn).mockRejectedValueOnce(
+      new Error('bridge unavailable')
+    )
+
+    act(() => {
+      result.current.addPane(sessionId)
+    })
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to add terminal pane: bridge unavailable'
+      )
+    )
+  })
+
+  test('reports restartSession spawn failures through the error callback', async () => {
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => {
+      result.current.createSession()
+    })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    vi.mocked(service.spawn).mockRejectedValueOnce(
+      new Error('bridge unavailable')
+    )
+
+    act(() => {
+      result.current.restartSession(result.current.sessions[0].id)
+    })
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to restart terminal: bridge unavailable'
+      )
+    )
+  })
+
   // A browser-only session restored from the durable store has no shell PTY,
   // but its idle browser pane makes it a usable workspace — auto-create must
   // NOT seed an extra terminal tab on top of it.
@@ -4895,6 +4989,103 @@ describe('useSessionManager', () => {
     expect(restarted.panes[0].id).toBe('p0')
     expect(restarted.panes[0].status).toBe('running')
     expect(restarted.panes[0].agentType).toBe('generic')
+  })
+
+  test('pane-keyed restartSession targets the requested inactive pane', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'horizontal',
+          workingDirectory: '/active',
+          active: true,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-active',
+              cwd: '/active',
+              agentType: 'codex',
+              agentSessionId: null,
+            },
+            {
+              kind: 'shell',
+              paneId: 'p1',
+              paneIndex: 1,
+              active: false,
+              ptyId: 'pty-side',
+              cwd: '/side',
+              agentType: 'claude-code',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-active',
+      sessions: [
+        {
+          id: 'pty-active',
+          cwd: '/active',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'pty-side',
+          cwd: '/side',
+          status: {
+            kind: 'Exited',
+            exit_code: 0,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi.fn().mockResolvedValue({
+      sessionId: 'pty-side-new',
+      pid: 2,
+      cwd: '/side',
+      shell: '/bin/zsh',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    act(() => result.current.restartSession('ws-shell', 'p1'))
+
+    await waitFor(() =>
+      expect(
+        result.current.sessions[0].panes.find((pane) => pane.id === 'p1')?.ptyId
+      ).toBe('pty-side-new')
+    )
+
+    expect(service.spawn).toHaveBeenCalledWith({
+      cwd: '/side',
+      env: {},
+      enableAgentBridge: true,
+    })
+    expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-side' })
+    expect(
+      result.current.sessions[0].panes.find((pane) => pane.id === 'p0')?.ptyId
+    ).toBe('pty-active')
+    expect(result.current.sessions[0].workingDirectory).toBe('/active')
+    expect(result.current.sessions[0].agentType).toBe('codex')
   })
 
   test('pane-keyed removeSession leaves session visible when pane kill fails', async () => {

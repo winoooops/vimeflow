@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-03
-ref_count: 16
+last_updated: 2026-07-05
+ref_count: 18
 ---
 
 # E2E Testing
@@ -264,7 +264,15 @@ completely different root causes. The generic fast-failure modes:
 - **Fix:** Replaced the ambient-PTY reuse with a frontend-driven new session (`button[aria-label="New session"]`), waited for the visible PTY to change, and used that dedicated bridge-enabled session for the watcher/UI assertions. Added cleanup that closes the spawned tab after the scenario.
 - **Commit:** same commit as this entry
 
-### 25. Electron WDIO suites need capability-level worker caps
+### 25. E2E helper selector collides with an open configuration menu
+
+- **Source:** deterministic CI failure | PR #642 round 1 | 2026-07-01
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/actions.ts`, `tests/e2e/core/specs/navigation.spec.ts`
+- **Finding:** `clickLayoutButton` queried `button[aria-label="<layout>"]` globally. Hidden-layout menu checkboxes share those labels with the real layout switcher pills, so an open configuration menu could absorb the follow-up click and leave the split layout unchanged. The navigation smoke test also asserted dock content before opening the now-closed-by-default dock.
+- **Fix:** Scoped layout-button clicks to `[data-testid="layout-switcher"]` so menu items cannot match, and made the navigation smoke open the dock via the real status-bar toggle before asserting the default Diff tab.
+
+### 26. Electron WDIO suites need capability-level worker caps
 
 - **Source:** local-codex | PR #637 CI failure | 2026-06-30
 - **Severity:** HIGH
@@ -273,7 +281,7 @@ completely different root causes. The generic fast-failure modes:
 - **Fix:** Added `'wdio:maxInstances': 1` to each Electron capability block so WDIO serializes the spec files at the capability level. A local WDIO run without Xvfb confirmed worker `0-1` starts only after `0-0` exits.
 - **Commit:** same commit as this entry
 
-### 26. Core E2E specs assumed visible controls that moved behind adaptive UI
+### 27. Core E2E specs assumed visible controls that moved behind adaptive UI
 
 - **Source:** local-codex | PR #643 CI failure | 2026-07-01
 - **Severity:** HIGH
@@ -292,7 +300,7 @@ completely different root causes. The generic fast-failure modes:
   Editor tab before waiting for the editor panel.
 - **Commit:** same commit as this entry
 
-### 27. Terminal E2E new-session selector matched the sidebar dialog trigger
+### 28. Terminal E2E new-session selector matched the sidebar dialog trigger
 
 - **Source:** local-codex | PR #643 CI failure | 2026-07-01
 - **Severity:** HIGH
@@ -309,7 +317,7 @@ completely different root causes. The generic fast-failure modes:
   target the tab-strip plus control.
 - **Commit:** same commit as this entry
 
-### 28. Terminal E2E must complete the new-session dialog flow
+### 29. Terminal E2E must complete the new-session dialog flow
 
 - **Source:** local-codex | PR #643 CI failure | 2026-07-01
 - **Severity:** HIGH
@@ -328,7 +336,7 @@ completely different root causes. The generic fast-failure modes:
   command before asserting the PTY count decrements.
 - **Commit:** same commit as this entry
 
-### 29. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
+### 30. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
 
 - **Source:** deterministic CI failure | PR #647 round 7 | 2026-07-03
 - **Severity:** HIGH
@@ -343,7 +351,7 @@ completely different root causes. The generic fast-failure modes:
   traces that can exhaust the hosted runner's disk.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 30. Final E2E suite should free bulky build intermediates before post-job cleanup
+### 31. Final E2E suite should free bulky build intermediates before post-job cleanup
 
 - **Source:** deterministic CI failure | PR #647 round 8 | 2026-07-03
 - **Severity:** HIGH
@@ -360,7 +368,7 @@ completely different root causes. The generic fast-failure modes:
   while post-job steps have materially more disk headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 31. Final E2E suite may need disk cleanup before running specs
+### 32. Final E2E suite may need disk cleanup before running specs
 
 - **Source:** deterministic CI failure | PR #647 round 12 | 2026-07-03
 - **Severity:** HIGH
@@ -373,3 +381,50 @@ completely different root causes. The generic fast-failure modes:
   agent WDIO suite, while preserving the after-suite cleanup for post-job
   headroom.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. E2E Codex watcher seed must tolerate retried partial SQLite setup
+
+- **Source:** deterministic CI failure | PR #660 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** The Linux agent smoke suite retried `e2e_start_codex_watcher`
+  after a partial SQLite setup left `state.sqlite` initialized. The helper used
+  plain `CREATE TABLE` statements, so the retry failed with `table threads
+already exists` before the spec could assert agent status rendering.
+- **Fix:** Made the e2e-only Codex watcher seed idempotent with
+  `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and
+  `INSERT OR REPLACE` for the seeded thread row.
+- **Commit:** same commit as this entry
+
+### 34. E2E fixture refresh loops must not clobber test-owned state
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/fixtures/agents/fake-claude`
+- **Finding:** The fake Claude fixture rewrote its seeded status JSON every
+  second. Tests that intentionally overwrote the same status file could lose
+  their data before the UI assertion observed it, creating a fixture race.
+- **Fix:** Keep refreshing only while the status file is absent or still
+  contains the fixture-owned JSON; stop once external test content appears.
+- **Commit:** same commit as this entry
+
+### 35. E2E menu retry toggled an already-open menu closed
+
+- **Source:** github-codex-connector | PR #667 round 4 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/actions.ts`
+- **Finding:** `waitForLayoutDisplayMenuItem` clicked the displayed-layouts
+  trigger on every retry. Because the trigger is a toggle, a slow first wait
+  could leave the menu open and the retry would close it before waiting again.
+- **Fix:** Check for the displayed-layouts menu before clicking the trigger, so
+  retrying waits against an already-open menu instead of toggling it closed.
+- **Commit:** same commit as this entry
+
+### 36. Platform-skipped specs must be wired into a matching platform CI job
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `package.json`
+- **Finding:** The native-overlay layering spec lived in the Linux core suite but skipped unless `process.platform === 'darwin'`. The macOS Ghostty workflow used an explicit `--spec` filter that only selected the terminal smoke spec, so the layering assertions never ran in CI.
+- **Fix:** Added the layering spec to the macOS Ghostty E2E npm script, which the workflow already runs with native Ghostty and native-overlay environment variables enabled.
+- **Commit:** same commit as this entry

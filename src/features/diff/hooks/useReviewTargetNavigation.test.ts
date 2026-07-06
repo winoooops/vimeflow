@@ -36,6 +36,27 @@ const annotation: DiffLineAnnotation<ReviewComment> = {
   },
 }
 
+const dispatchedAnnotation: DiffLineAnnotation<ReviewComment> = {
+  ...annotation,
+  metadata: {
+    ...annotation.metadata,
+    id: 'comment-dispatched',
+    text: 'Sent anchor',
+    createdAt: 100,
+    dispatchedAt: 200,
+  },
+}
+
+const pendingAnnotation: DiffLineAnnotation<ReviewComment> = {
+  ...annotation,
+  metadata: {
+    ...annotation.metadata,
+    id: 'comment-pending',
+    text: 'Pending edit',
+    createdAt: 300,
+  },
+}
+
 describe('useReviewTargetNavigation', () => {
   test('tracks one active review target for selection and comments', () => {
     const onHunkIndexChange = vi.fn()
@@ -92,5 +113,28 @@ describe('useReviewTargetNavigation', () => {
 
     expect(result.current.selectedLines).toBeNull()
     expect(result.current.activeTarget).toBeNull()
+  })
+
+  test('prefers pending comments over dispatched anchors on the active line', () => {
+    const onHunkIndexChange = vi.fn()
+    const scrollBodyRef = { current: document.createElement('div') }
+
+    const { result } = renderHook(() =>
+      useReviewTargetNavigation({
+        annotations: [dispatchedAnnotation, pendingAnnotation],
+        clearTransientSelection: vi.fn(),
+        diffStyle: 'split',
+        fileDiff,
+        fileKey: 'src/foo.ts:unstaged',
+        onHunkIndexChange,
+        scrollBodyRef,
+      })
+    )
+
+    act(() => {
+      result.current.activateTarget(1)
+    })
+
+    expect(result.current.currentTargetComment).toEqual(pendingAnnotation)
   })
 })

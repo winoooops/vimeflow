@@ -4,6 +4,7 @@ import {
   COMMAND_PALETTE_GLOBAL_ACCELERATORS,
   commandPaletteShortcutConfigForPlatform,
   type CommandPaletteShortcutOverrideOptions,
+  dispatchCommandPaletteShortcutForWindow,
   installCommandPaletteShortcutOverride,
   isCommandPaletteShortcutInput,
 } from './command-palette-shortcut'
@@ -26,6 +27,7 @@ type WindowHandler = () => void
 
 interface FakeWindowFixture {
   beforeInputHandlers: BeforeInputHandler[]
+  focus: ReturnType<typeof vi.fn>
   send: ReturnType<typeof vi.fn>
   win: Parameters<typeof installCommandPaletteShortcutOverride>[0]
   windowHandlers: Map<string, WindowHandler[]>
@@ -41,6 +43,7 @@ interface ShortcutRegistryFixture {
 const createFakeWindow = (focused = false): FakeWindowFixture => {
   const beforeInputHandlers: BeforeInputHandler[] = []
   const windowHandlers = new Map<string, WindowHandler[]>()
+  const focus = vi.fn()
   const send = vi.fn()
 
   const webContentsOn = vi.fn(
@@ -59,9 +62,15 @@ const createFakeWindow = (focused = false): FakeWindowFixture => {
 
   return {
     beforeInputHandlers,
+    focus,
     send,
     win: {
-      webContents: { on: webContentsOn, send },
+      webContents: {
+        focus,
+        isDestroyed: vi.fn(() => false),
+        on: webContentsOn,
+        send,
+      },
       on,
       isFocused: vi.fn(() => focused),
       isDestroyed: vi.fn(() => false),
@@ -161,6 +170,22 @@ describe('command palette shortcut override', () => {
     ).toBe(true)
   })
 
+  test('matches Cmd+; by physical Semicolon code from native key events', () => {
+    expect(
+      isCommandPaletteShortcutInput(
+        {
+          type: 'keyDown',
+          key: 'Semicolon',
+          code: 'Semicolon',
+          control: false,
+          meta: true,
+          alt: false,
+        },
+        commandPaletteShortcutConfigForPlatform('darwin')
+      )
+    ).toBe(true)
+  })
+
   test('ignores Cmd+Shift+; keydown on macOS', () => {
     expect(
       isCommandPaletteShortcutInput(
@@ -240,6 +265,46 @@ describe('command palette shortcut override', () => {
         commandPaletteShortcutConfigForPlatform('linux')
       )
     ).toBe(false)
+  })
+
+  test('dispatches a matched shortcut through the shared window helper', () => {
+    const { focus, send, win } = createFakeWindow()
+
+    const handled = dispatchCommandPaletteShortcutForWindow(
+      win,
+      {
+        type: 'keyDown',
+        key: ';',
+        control: false,
+        meta: true,
+        alt: false,
+      },
+      commandPaletteShortcutConfigForPlatform('darwin')
+    )
+
+    expect(handled).toBe(true)
+    expect(focus).toHaveBeenCalledOnce()
+    expect(send).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)
+  })
+
+  test('does not dispatch unmatched shortcuts through the shared window helper', () => {
+    const { focus, send, win } = createFakeWindow()
+
+    const handled = dispatchCommandPaletteShortcutForWindow(
+      win,
+      {
+        type: 'keyDown',
+        key: '2',
+        control: false,
+        meta: true,
+        alt: false,
+      },
+      commandPaletteShortcutConfigForPlatform('darwin')
+    )
+
+    expect(handled).toBe(false)
+    expect(focus).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
   })
 
   test('prevents renderer Ctrl+; keydown and sends palette toggle IPC on Linux', () => {

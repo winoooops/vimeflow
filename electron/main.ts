@@ -1,3 +1,4 @@
+// cspell:ignore ghostty Ghostty
 import {
   app,
   BrowserWindow,
@@ -18,8 +19,23 @@ import { installCommandPaletteShortcutOverride } from './command-palette-shortcu
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
 import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  setupNativeOverlayIpc,
+  type NativeOverlayController,
+  type NativeOverlayKind,
+} from './native-overlay'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
+import {
+  isGhosttyNativeEnabled,
+  setupGhosttyNativeHelper,
+  type GhosttyNativeHelperController,
+} from './ghostty-native-helper'
+import {
+  isGhosttyNativeParentEnabled,
+  setupGhosttyNativeParent,
+  type GhosttyNativeParentController,
+} from './ghostty-native-parent'
 import { setupDialogIpc } from './dialog-ipc'
 import {
   setupWorkspaceLayoutController,
@@ -38,6 +54,19 @@ import type { PersistedTab } from './workspace-layout-types'
 // stopping the occlusion-driven reclaim.
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
+
+const remoteDebuggingPort = process.env.VIMEFLOW_REMOTE_DEBUGGING_PORT
+
+if (
+  !app.isPackaged &&
+  remoteDebuggingPort !== undefined &&
+  remoteDebuggingPort.length > 0
+) {
+  // Keep this opt-in for Ghostty/native-view debugging. It gives developers
+  // and agents a stable way to inspect renderer logs, DOM rects, and viewport
+  // metrics without shipping a remote debugging port in production.
+  app.commandLine.appendSwitch('remote-debugging-port', remoteDebuggingPort)
+}
 
 // __dirname is not defined in ESM modules. Derive it from import.meta.url.
 // vite-plugin-electron bundles main.ts as ESM (main.js) under
@@ -89,6 +118,36 @@ const resolveSidecarBin = (): string => {
   }
 
   return path.resolve(__dirname, '..', 'target', 'debug', BINARY_NAME)
+}
+
+const withNativeOverlayMode = (
+  url: string,
+  mode: NativeOverlayKind
+): string => {
+  const parsedUrl = new URL(url)
+  parsedUrl.searchParams.set('nativeOverlay', mode)
+
+  return parsedUrl.toString()
+}
+
+// The overlay window loads the same renderer bundle in a host-only mode. That
+// URL boots React; the actual menu rows/actions still arrive later as a
+// serialized NativeOverlayRequest over IPC.
+const resolveNativeOverlayRendererUrl = (mode: NativeOverlayKind): string => {
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+
+  if (app.isPackaged) {
+    return withNativeOverlayMode(`${APP_ORIGIN}/index.html`, mode)
+  }
+
+  if (devUrl !== undefined && devUrl.length > 0) {
+    return withNativeOverlayMode(devUrl, mode)
+  }
+
+  return withNativeOverlayMode(
+    pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).toString(),
+    mode
+  )
 }
 
 const installContentSecurityPolicy = (): void => {
@@ -202,6 +261,13 @@ type InvokeEnvelope =
 
 let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
+let ghosttyNativeController:
+  | GhosttyNativeHelperController
+  | GhosttyNativeParentController
+  | null = null
+// React DOM overlays in the main renderer can sit behind Ghostty's NSView;
+// this controller owns the separate native BrowserWindow used for those cases.
+let nativeOverlayController: NativeOverlayController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
 let quitting = false
@@ -372,6 +438,44 @@ const setupApp = async (): Promise<void> => {
   browserPaneController?.dispose()
   browserPaneController = null
   browserPaneController = setupBrowserPaneIpc()
+  ghosttyNativeController?.dispose()
+
+  const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
+    process.platform,
+    process.env,
+    app.isPackaged
+  )
+
+  const ghosttyNativeHelperEnabled = isGhosttyNativeEnabled(
+    process.platform,
+    process.env,
+    app.isPackaged
+  )
+  if (ghosttyNativeParentEnabled) {
+    // Preload checks process.env before exposing window.vimeflow.ghosttyNative.
+    // Set it here for packaged macOS so main, preload, and renderer agree on
+    // the shipped Ghostty runtime without requiring users to launch with env.
+    process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'
+    ghosttyNativeController = setupGhosttyNativeParent({
+      sidecar: spawnedSidecar,
+      packaged: app.isPackaged,
+    })
+  } else if (ghosttyNativeHelperEnabled) {
+    ghosttyNativeController = setupGhosttyNativeHelper({
+      sidecar: spawnedSidecar,
+      packaged: app.isPackaged,
+    })
+  } else {
+    ghosttyNativeController = null
+  }
+  nativeOverlayController?.unregister()
+  nativeOverlayController = null
+  // Menus are interactive, but tooltips must stay passive and sit above them;
+  // two overlay renderer layers keep those roles from stealing each other.
+  nativeOverlayController = setupNativeOverlayIpc(
+    resolveNativeOverlayRendererUrl('menu'),
+    resolveNativeOverlayRendererUrl('tooltip')
+  )
   setupDialogIpc(ipcMain)
 
   const layoutWriter = new WorkspaceLayoutWriter({
@@ -477,6 +581,10 @@ app.on('before-quit', (event) => {
     } finally {
       browserPaneController?.dispose()
       browserPaneController = null
+      ghosttyNativeController?.dispose()
+      ghosttyNativeController = null
+      nativeOverlayController?.unregister()
+      nativeOverlayController = null
       workspaceLayoutController?.dispose()
       workspaceLayoutController = null
 

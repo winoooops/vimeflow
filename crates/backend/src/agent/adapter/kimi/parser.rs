@@ -142,7 +142,11 @@ fn count_settled_user_turns(raw: &str) -> u64 {
 /// agent-originated prompt).
 fn is_user_turn_prompt(dto: &KimiLineDto) -> bool {
     dto.record_type() == KimiRecordType::TurnPrompt
-        && dto.origin.as_ref().and_then(|origin| origin.kind.as_deref()) == Some("user")
+        && dto
+            .origin
+            .as_ref()
+            .and_then(|origin| origin.kind.as_deref())
+            == Some("user")
 }
 
 pub(super) struct AgentWire {
@@ -387,7 +391,8 @@ mod tests {
         write_agent_wire(dir, "main", "{\"type\":\"config.update\"}\n");
         let escaped = outside.path().join("agents").join("main");
         std::fs::create_dir_all(&escaped).expect("escaped dir");
-        std::fs::write(escaped.join("wire.jsonl"), "{\"type\":\"metadata\"}\n").expect("escaped wire");
+        std::fs::write(escaped.join("wire.jsonl"), "{\"type\":\"metadata\"}\n")
+            .expect("escaped wire");
         std::fs::write(
             dir.join("state.json"),
             format!(

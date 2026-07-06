@@ -172,8 +172,76 @@ describe('TerminalPane index', () => {
     expect(onBurner).toHaveBeenCalledWith({
       sessionId: 's1',
       paneId: 'p0',
+      hostPtyId: 'pty-s1',
       cwd: '/home/user/repo',
     })
+  })
+
+  test('the burner sync button activates its pane and syncs that pane burner', async () => {
+    const onBurner = vi.fn()
+    const onSyncBurner = vi.fn()
+    const onRequestActive = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        onBurner={onBurner}
+        onSyncBurner={onSyncBurner}
+        onRequestActive={onRequestActive}
+        openBurnerPaneKeys={new Set(['s1:p0'])}
+        outOfSyncBurnerPaneKeys={new Set(['s1:p0'])}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: /sync burner terminal/i })
+    )
+
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+    expect(onSyncBurner).toHaveBeenCalledWith({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'pty-s1',
+      cwd: '/home/user/repo',
+    })
+    expect(onBurner).not.toHaveBeenCalled()
+  })
+
+  test('clicking an inactive terminal body requests pane activation', async () => {
+    const onRequestActive = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(screen.getByTestId('body-mock'))
+
+    expect(onRequestActive).toHaveBeenCalledOnce()
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+  })
+
+  test('clicking an inactive terminal header requests pane activation', async () => {
+    const onRequestActive = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(screen.getByTestId('terminal-pane-header'))
+
+    expect(onRequestActive).toHaveBeenCalledOnce()
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
   })
 
   test('renders RestartAffordance when mode is awaiting-restart', () => {
@@ -203,10 +271,42 @@ describe('TerminalPane index', () => {
     ).toBeNull()
   })
 
+  test('clicking inactive restart targets that pane directly', async () => {
+    const user = userEvent.setup()
+    const onRequestActive = vi.fn()
+    const onRestart = vi.fn()
+
+    const completedSession: Session = {
+      ...session,
+      status: 'completed',
+      panes: [{ ...session.panes[0], active: false, status: 'completed' }],
+    }
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        mode="awaiting-restart"
+        session={completedSession}
+        pane={completedSession.panes[0]}
+        onRequestActive={onRequestActive}
+        onRestart={onRestart}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /restart session/i }))
+
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+    expect(onRestart).toHaveBeenCalledWith('s1', 'p0')
+    expect(onRequestActive.mock.invocationCallOrder[0]).toBeLessThan(
+      onRestart.mock.invocationCallOrder[0]
+    )
+  })
+
   test('Header shows agent chip resolved from pane.agentType', () => {
     render(<TerminalPane {...baseProps} />)
 
-    expect(screen.getByText('CLAUDE')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-glyph-label')).toHaveTextContent('CLAUDE')
+    expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
   })
 
   test('chrome reflects pane.agentType directly (no override prop)', () => {
@@ -218,7 +318,7 @@ describe('TerminalPane index', () => {
       />
     )
 
-    expect(screen.getByText('CODEX')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-glyph-label')).toHaveTextContent('CODEX')
   })
 
   test('generic sessions render the SHELL agent chip', () => {
@@ -230,7 +330,7 @@ describe('TerminalPane index', () => {
       />
     )
 
-    expect(screen.getByText('SHELL')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-glyph-label')).toHaveTextContent('SHELL')
   })
 
   test('status bar shows line changes from git status files', () => {
@@ -248,12 +348,20 @@ describe('TerminalPane index', () => {
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveClass(
       '@container/pane'
     )
+
+    expect(
+      screen.getByTestId('terminal-pane-wrapper').getAttribute('style')
+    ).toContain('background: var(--color-surface-container-lowest)')
   })
 
   test('collapsing the pane hides the status bar', async () => {
     const user = userEvent.setup()
     render(<TerminalPane {...baseProps} />)
 
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveClass('gap-1.5')
+    expect(header).toHaveClass('px-2')
+    expect(header).toHaveClass('py-1')
     expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /collapse status/i }))
@@ -261,9 +369,17 @@ describe('TerminalPane index', () => {
     expect(
       screen.queryByTestId('terminal-pane-status-bar')
     ).not.toBeInTheDocument()
+
+    expect(screen.getByTestId('terminal-pane-body-slot')).toHaveStyle({
+      borderBottomLeftRadius: '10px',
+      borderBottomRightRadius: '10px',
+    })
+    expect(header).toHaveClass('gap-1.5')
+    expect(header).toHaveClass('px-2')
+    expect(header).toHaveClass('py-1')
   })
 
-  test('auto-collapses (header + status bar) when the pane is narrower than the floor', () => {
+  test('auto-collapses the status bar when the pane is narrower than the floor', () => {
     vi.mocked(usePaneWidth).mockReturnValue(180)
 
     render(<TerminalPane {...baseProps} />)
@@ -272,10 +388,7 @@ describe('TerminalPane index', () => {
       screen.queryByTestId('terminal-pane-status-bar')
     ).not.toBeInTheDocument()
 
-    expect(screen.getByTestId('terminal-pane-header')).toHaveAttribute(
-      'data-collapsed',
-      'true'
-    )
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass('gap-1.5')
 
     // The collapse toggle is hidden too — it can't expand a too-narrow pane.
     expect(
@@ -289,8 +402,9 @@ describe('TerminalPane index', () => {
     render(<TerminalPane {...baseProps} />)
 
     expect(screen.getByTestId('terminal-pane-status-bar')).toBeInTheDocument()
-    expect(screen.getByTestId('terminal-pane-header')).not.toHaveAttribute(
-      'data-collapsed'
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass('gap-1.5')
+    expect(screen.getByTestId('terminal-pane-body-slot')).not.toHaveClass(
+      'overflow-hidden'
     )
   })
 
@@ -314,18 +428,56 @@ describe('TerminalPane index', () => {
     expect(onClose).toHaveBeenCalledWith('s1', 'p0')
   })
 
-  test('data-focused mirrors pane.active=true', () => {
+  test('clicking inactive pane close does not request pane activation', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const onRequestActive = vi.fn()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        onClose={onClose}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'close pane' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledWith('s1', 'p0')
+    expect(onRequestActive).not.toHaveBeenCalled()
+  })
+
+  test('clicking inactive pane collapse does not request pane activation', async () => {
+    const user = userEvent.setup()
+    const onRequestActive = vi.fn()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        onRequestActive={onRequestActive}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'collapse status' }))
+
+    expect(screen.queryByTestId('terminal-pane-status-bar')).toBeNull()
+    expect(onRequestActive).not.toHaveBeenCalled()
+  })
+
+  test('active pane keeps semantic active marker without focus marker', () => {
     render(
       <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
     )
 
-    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveAttribute(
-      'data-focused',
-      'true'
-    )
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
+    expect(wrapper).toHaveAttribute('data-pane-active', 'true')
+    expect(wrapper).not.toHaveAttribute('data-focused')
   })
 
-  test('data-focused absent when pane.active=false', () => {
+  test('inactive pane has no active marker or focus marker', () => {
     render(
       <TerminalPane
         {...baseProps}
@@ -333,21 +485,22 @@ describe('TerminalPane index', () => {
       />
     )
 
-    expect(screen.getByTestId('terminal-pane-wrapper')).not.toHaveAttribute(
-      'data-focused'
-    )
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
+    expect(wrapper).not.toHaveAttribute('data-pane-active')
+    expect(wrapper).not.toHaveAttribute('data-focused')
   })
 
-  test('renders focus ring overlay above scrollable terminal body', () => {
+  test('renders neutral border overlay above scrollable terminal body', () => {
     render(<TerminalPane {...baseProps} />)
 
     const wrapper = screen.getByTestId('terminal-pane-wrapper')
-    const focusRing = screen.getByTestId('terminal-pane-focus-ring')
+    const border = screen.getByTestId('terminal-pane-border')
 
     expect(wrapper).toHaveClass('isolate')
-    expect(focusRing).toHaveClass('absolute')
-    expect(focusRing).toHaveClass('z-30')
-    expect(focusRing).toHaveClass('pointer-events-none')
+    expect(border).toHaveClass('absolute')
+    expect(border).toHaveClass('z-30')
+    expect(border).toHaveClass('pointer-events-none')
+    expect(border).toHaveClass('border-outline-variant/[0.22]')
   })
 
   test('does not render a message-input footer banner', () => {
@@ -380,12 +533,8 @@ describe('TerminalPane index', () => {
     })
   })
 
-  test('active pane can suppress focus highlight while staying full opacity', () => {
-    const showFocusHighlight = false
-
-    render(
-      <TerminalPane {...baseProps} showFocusHighlight={showFocusHighlight} />
-    )
+  test('active pane uses the neutral border while staying full opacity', () => {
+    render(<TerminalPane {...baseProps} />)
 
     expect(screen.getByTestId('terminal-pane-wrapper')).not.toHaveAttribute(
       'data-focused'
@@ -395,10 +544,9 @@ describe('TerminalPane index', () => {
       opacity: '1',
     })
 
-    expect(screen.getByTestId('terminal-pane-focus-ring')).toHaveStyle({
-      border:
-        '1px solid color-mix(in srgb, var(--color-outline-variant) 22%, transparent)',
-    })
+    expect(screen.getByTestId('terminal-pane-border')).toHaveClass(
+      'border-outline-variant/[0.22]'
+    )
   })
 
   test('focuses on initial mount when pane.active=true', () => {

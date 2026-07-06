@@ -1,13 +1,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "e2e-test")]
 use std::time::SystemTime;
 
 #[cfg(feature = "e2e-test")]
 use rusqlite::{params, Connection};
 
+#[cfg(feature = "e2e-test")]
+use crate::agent::types::{AgentStatusEvent, AgentTurnEvent};
 use crate::agent::types::{
-    AgentStatusEvent, AgentTurnEvent, AgentType, RenameAgentSessionError,
-    RenameAgentSessionErrorReason, RenameAgentSessionRequest,
+    AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::git::watcher::GitWatcherState;
@@ -552,8 +554,7 @@ impl BackendState {
 
         std::fs::create_dir_all(&sessions_dir)
             .map_err(|e| format!("create codex sessions dir: {e}"))?;
-        std::fs::write(&rollout_path, b"")
-            .map_err(|e| format!("create empty rollout: {e}"))?;
+        std::fs::write(&rollout_path, b"").map_err(|e| format!("create empty rollout: {e}"))?;
 
         let since_epoch = pty_start
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -566,7 +567,7 @@ impl BackendState {
         let state = Connection::open(&state_db).map_err(|e| format!("open state db: {e}"))?;
         state
             .execute_batch(
-                "CREATE TABLE threads (
+                "CREATE TABLE IF NOT EXISTS threads (
                     id TEXT PRIMARY KEY,
                     rollout_path TEXT NOT NULL,
                     cwd TEXT,
@@ -576,7 +577,7 @@ impl BackendState {
             .map_err(|e| format!("create threads table: {e}"))?;
         state
             .execute(
-                "INSERT INTO threads (id, rollout_path, cwd, updated_at_ms)
+                "INSERT OR REPLACE INTO threads (id, rollout_path, cwd, updated_at_ms)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     format!("tid-e2e-{session_id}"),
@@ -590,7 +591,7 @@ impl BackendState {
         let logs_db = codex_home.join("logs.sqlite");
         let logs = Connection::open(&logs_db).map_err(|e| format!("open logs db: {e}"))?;
         logs.execute_batch(
-            "CREATE TABLE logs (
+            "CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY,
                 ts INTEGER NOT NULL,
                 ts_nanos INTEGER NOT NULL,
@@ -599,7 +600,7 @@ impl BackendState {
                 process_uuid TEXT NOT NULL,
                 thread_id TEXT
             );
-            CREATE INDEX idx_logs_ts ON logs(ts DESC, ts_nanos DESC, id DESC);",
+            CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts DESC, ts_nanos DESC, id DESC);",
         )
         .map_err(|e| format!("create logs table: {e}"))?;
 
@@ -662,9 +663,7 @@ impl BackendState {
             .map_err(|e| format!("create kimi wire dirs: {e}"))?;
         std::fs::write(
             &wire_path,
-            format!(
-                "{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"
-            ),
+            format!("{{\"type\":\"metadata\",\"created_at\":{created_at_ms}}}\n"),
         )
         .map_err(|e| format!("create kimi wire: {e}"))?;
 
@@ -682,9 +681,7 @@ impl BackendState {
         )
         .map_err(|e| format!("create kimi index: {e}"))?;
 
-        let result = self
-            .start_agent_watcher(session_id, Some(home_dir))
-            .await;
+        let result = self.start_agent_watcher(session_id, Some(home_dir)).await;
         result?;
 
         Ok(wire_path)

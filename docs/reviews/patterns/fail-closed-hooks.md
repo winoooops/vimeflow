@@ -2,8 +2,8 @@
 id: fail-closed-hooks
 category: security
 created: 2026-04-20
-last_updated: 2026-06-17
-ref_count: 1
+last_updated: 2026-07-05
+ref_count: 3
 ---
 
 # Fail-Closed Security Hooks
@@ -91,3 +91,16 @@ When building any subprocess-based security hook for a CLI tool that uses
 - **Fix:** Replaced the boolean check with an explicit `match`: `Some(0)` → `Done`, `Some(_)` → `Failed`, `None` → `Failed`. Added a unit test covering a `function_call_output` payload with no exit-code line.
 - **Commit:** same commit as this entry
 - **Note:** Non-security instance of the fail-closed principle: when an authoritative signal is missing, prefer the conservative (failure) default.
+
+### 5. Privileged overlay windows lacked in-place navigation guard
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** Native overlay `BrowserWindow`s used the app preload and denied
+  `window.open`, but did not block `will-navigate`. An in-place navigation
+  could therefore carry the privileged bridge into an unintended document.
+- **Fix:** Installed the same navigation guard used by the main window on each
+  overlay layer, preserving external-link handling while blocking document
+  replacement.
+- **Commit:** same commit as this entry

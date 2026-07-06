@@ -370,16 +370,15 @@ mod tests {
     /// at a fresh temp dir so `for_attach`'s `ensure_bridge_installed` never
     /// writes to the real `~/.config/opencode/plugins`. The returned guard +
     /// tempdir must be held for the duration of the `for_attach` call.
-    fn opencode_plugins_temp() -> (crate::agent::adapter::opencode::OpencodeEnvGuard, tempfile::TempDir)
-    {
+    fn opencode_plugins_temp() -> (
+        crate::agent::adapter::opencode::OpencodeEnvGuard,
+        tempfile::TempDir,
+    ) {
         let guard = crate::agent::adapter::opencode::OpencodeEnvGuard::acquire();
         let tmp = tempfile::tempdir().expect("plugins tempdir");
         std::env::set_var("VIMEFLOW_OPENCODE_PLUGINS_DIR", tmp.path());
         // Also pin a temp bridge dir so the locator root is hermetic.
-        std::env::set_var(
-            "VIMEFLOW_OPENCODE_BRIDGE_DIR",
-            tmp.path().join("bridge"),
-        );
+        std::env::set_var("VIMEFLOW_OPENCODE_BRIDGE_DIR", tmp.path().join("bridge"));
         (guard, tmp)
     }
 
@@ -499,10 +498,7 @@ mod tests {
         }
         let plugins_dir = readonly_parent.join("plugins");
         std::env::set_var("VIMEFLOW_OPENCODE_PLUGINS_DIR", &plugins_dir);
-        std::env::set_var(
-            "VIMEFLOW_OPENCODE_BRIDGE_DIR",
-            tmp.path().join("bridge"),
-        );
+        std::env::set_var("VIMEFLOW_OPENCODE_BRIDGE_DIR", tmp.path().join("bridge"));
 
         let result = AgentBindings::for_attach(&opencode_ctx(None));
 
@@ -510,10 +506,8 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &readonly_parent,
-                std::fs::Permissions::from_mode(0o700),
-            );
+            let _ =
+                std::fs::set_permissions(&readonly_parent, std::fs::Permissions::from_mode(0o700));
         }
         drop(guard);
 
@@ -526,8 +520,7 @@ mod tests {
     #[test]
     fn for_attach_opencode_install_honors_plugins_dir_override() {
         let (_guard, tmp) = opencode_plugins_temp();
-        let bindings =
-            AgentBindings::for_attach(&opencode_ctx(None)).expect("opencode binds");
+        let bindings = AgentBindings::for_attach(&opencode_ctx(None)).expect("opencode binds");
         assert_eq!(bindings.agent_type, AgentType::Opencode);
 
         // The bridge plugin was written under the override dir.
@@ -645,7 +638,10 @@ mod tests {
             "status_path must resolve under the explicit override home, got {}",
             located.status_path.display(),
         );
-        assert_eq!(located.agent_session_id.as_deref(), Some("session_override"));
+        assert_eq!(
+            located.agent_session_id.as_deref(),
+            Some("session_override")
+        );
     }
 
     // NOTE: the B' shared-`Arc` regression test

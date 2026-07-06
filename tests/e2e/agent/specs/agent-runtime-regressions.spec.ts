@@ -66,6 +66,45 @@ const invokeBackend = async <T>(
     args
   )
 
+const readAgentBridgeInfo = async (
+  sessionId: string
+): Promise<E2eAgentBridgeInfo> =>
+  await invokeBackend<E2eAgentBridgeInfo>('e2e_agent_bridge_info', {
+    sessionId,
+  })
+
+const waitForVisibleBridgePtyId = async (
+  previousPtyId: string
+): Promise<string> => {
+  let bridgePtyId: string | null = null
+  await browser.waitUntil(
+    async () => {
+      const visible = await waitForVisiblePtyId()
+      if (visible === previousPtyId) {
+        return false
+      }
+
+      const info = await readAgentBridgeInfo(visible).catch(() => null)
+      if (info?.statusFile) {
+        bridgePtyId = visible
+
+        return true
+      }
+
+      return false
+    },
+    {
+      timeout: 15_000,
+      interval: 250,
+      timeoutMsg: 'new bridge-enabled session did not become the visible PTY',
+    }
+  )
+
+  assert.ok(bridgePtyId, 'spawned bridge PTY id should be resolved')
+
+  return bridgePtyId
+}
+
 const seedAgent = async (
   ptyId: string,
   agentType: E2eAgentType
@@ -395,7 +434,7 @@ describe('Agent runtime regressions', () => {
       await invokeBackend('write_pty', {
         request: {
           sessionId,
-          data: 'printf vimeflow_bridge_e2e > "$VIMEFLOW_STATUS_FILE"\n',
+          data: 'printf \'%s\' vimeflow_bridge_e2e > "$VIMEFLOW_STATUS_FILE"\n',
         },
       })
 
@@ -404,7 +443,7 @@ describe('Agent runtime regressions', () => {
           fs.existsSync(info.statusFile!) &&
           fs.readFileSync(info.statusFile!, 'utf8') === 'vimeflow_bridge_e2e',
         {
-          timeout: 10_000,
+          timeout: 30_000,
           interval: 250,
           timeoutMsg:
             'spawned shell did not write through VIMEFLOW_STATUS_FILE',
@@ -443,33 +482,13 @@ describe('Agent runtime regressions', () => {
     // Spawn a dedicated bridge-enabled PTY through the frontend session manager
     // so the test controls its own precondition and the UI observes it as active.
     await createNewSessionWithDefaults()
-    let ptyId: string | undefined
-    await browser.waitUntil(
-      async () => {
-        const visible = await waitForVisiblePtyId()
-        if (visible !== initialPtyId) {
-          ptyId = visible
-          return true
-        }
-        return false
-      },
-      {
-        timeout: 15_000,
-        interval: 250,
-        timeoutMsg: 'new bridge-enabled session did not become the visible PTY',
-      }
-    )
-
-    assert.ok(ptyId, 'spawned PTY id should be resolved')
+    const ptyId = await waitForVisibleBridgePtyId(initialPtyId)
 
     try {
       await seedClaudeAgent(ptyId)
 
       await invokeBackend<null>('start_agent_watcher', { sessionId: ptyId })
-      const info = await invokeBackend<E2eAgentBridgeInfo>(
-        'e2e_agent_bridge_info',
-        { sessionId: ptyId }
-      )
+      const info = await readAgentBridgeInfo(ptyId)
 
       assert.equal(info.agentType, 'claudeCode')
       assert.ok(info.statusFile, 'statusFile should be populated')

@@ -14,8 +14,7 @@ use std::path::{Path, PathBuf};
 /// The bridge plugin source, embedded at build time. The same bytes are written
 /// to disk by [`ensure_bridge_installed`] and parsed for the version header by
 /// [`embedded_version`].
-pub(crate) const BRIDGE_PLUGIN_SOURCE: &str =
-    include_str!("plugin/vimeflow-opencode-bridge.ts");
+pub(crate) const BRIDGE_PLUGIN_SOURCE: &str = include_str!("plugin/vimeflow-opencode-bridge.ts");
 
 /// File name of the installed plugin inside the opencode plugins directory.
 pub(crate) const BRIDGE_PLUGIN_FILENAME: &str = "vimeflow-opencode-bridge.ts";
@@ -273,13 +272,12 @@ mod tests {
         let leftovers: Vec<_> = fs::read_dir(&plugins)
             .expect("read plugins")
             .filter_map(Result::ok)
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .contains(".tmp-")
-            })
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
             .collect();
-        assert!(leftovers.is_empty(), "atomic temp file should be renamed away");
+        assert!(
+            leftovers.is_empty(),
+            "atomic temp file should be renamed away"
+        );
     }
 
     #[cfg(unix)]
@@ -362,8 +360,14 @@ mod tests {
 
         // Registered hooks.
         assert!(src.contains("event:"), "event hook");
-        assert!(src.contains("'tool.execute.before'"), "tool.execute.before hook");
-        assert!(src.contains("'tool.execute.after'"), "tool.execute.after hook");
+        assert!(
+            src.contains("'tool.execute.before'"),
+            "tool.execute.before hook"
+        );
+        assert!(
+            src.contains("'tool.execute.after'"),
+            "tool.execute.after hook"
+        );
 
         // Bridge-dir rule parity with Rust.
         assert!(src.contains("VIMEFLOW_OPENCODE_BRIDGE_DIR"));

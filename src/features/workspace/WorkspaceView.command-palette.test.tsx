@@ -1,5 +1,6 @@
+// cspell:ignore Ghostty ghostty
 import { render, screen, waitFor, act } from '@testing-library/react'
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import {
   forwardRef,
@@ -24,6 +25,10 @@ const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 const overlayRegistrationPropsSpy = vi.hoisted(() => vi.fn())
 const terminalFocusActivePaneSpy = vi.hoisted(() => vi.fn())
 
+const backendListeners = vi.hoisted(
+  () => new Map<string, (payload: unknown) => void>()
+)
+
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
 vi.mock('../../lib/backend', () => ({
@@ -31,11 +36,13 @@ vi.mock('../../lib/backend', () => ({
   // Stubs for any other backend functions imported by the workspace tree.
   // listen/invoke return inert no-ops so the WorkspaceView mount under
   // jsdom doesn't try to reach a real bridge.
-  listen: vi.fn(() =>
-    Promise.resolve(() => {
-      /* no-op unlisten */
+  listen: vi.fn((event: string, callback: (payload: unknown) => void) => {
+    backendListeners.set(event, callback)
+
+    return Promise.resolve(() => {
+      backendListeners.delete(event)
     })
-  ),
+  }),
   invoke: vi.fn().mockResolvedValue(null),
   // useCommandPalette subscribes to the Electron main-process palette toggle
   // override on mount; return a synchronous no-op unlisten so the
@@ -251,6 +258,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.clearAllMocks()
     terminalZonePropsSpy.mockClear()
     overlayRegistrationPropsSpy.mockClear()
+    backendListeners.clear()
+    window.vimeflow = {} as typeof window.vimeflow
 
     // Create mock sessions
     mockSessions = [
@@ -396,10 +405,17 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(useBurnerTerminals).mockReturnValue({
       renderNode: null,
       toggle: vi.fn().mockResolvedValue(undefined),
+      syncToPaneCwd: vi.fn(),
       runningByPane: new Map(),
       activeByPane: new Map(),
+      outOfSyncByPane: new Map(),
       hasVisibleBurner: false,
+      visibleBurnerPaneKey: null,
     })
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
   })
 
   const openPalette = (): void => {
@@ -1241,6 +1257,34 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     expect(mockSessionManager.setPaneUserLabel).toHaveBeenCalled()
     expect(mockSessionManager.renameSession).not.toHaveBeenCalled()
+  })
+
+  test('native Ghostty rename event opens the pane rename editor', async () => {
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(backendListeners.has('ghostty-native-rename-pane')).toBe(true)
+    })
+
+    act(() => {
+      backendListeners.get('ghostty-native-rename-pane')?.({
+        sessionId: 'pty-session-1',
+        paneId: 'p0',
+      })
+    })
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-1'
+    )
+
+    expect(mockSessionManager.setSessionActivePane).toHaveBeenCalledWith(
+      'session-1',
+      'p0'
+    )
+
+    expect(screen.getByRole('textbox', { name: 'Pane name' })).toHaveValue(
+      'main'
+    )
   })
 
   test(':next command switches to next session', async () => {

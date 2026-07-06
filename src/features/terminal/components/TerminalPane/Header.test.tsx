@@ -43,44 +43,75 @@ const session: Session = {
 const baseProps = {
   agent: AGENTS.claude,
   session,
-  isFocused: true,
+  isActive: true,
   isCollapsed: false,
   ptyId: 's1',
   onToggleCollapse: vi.fn(),
 }
 
 describe('Header', () => {
-  test('renders agent chip with short name and glyph', () => {
+  test('renders compact glyph-only agent chip', () => {
     render(<Header {...baseProps} />)
 
-    expect(screen.getByText('CLAUDE')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-glyph-label')).toHaveTextContent('CLAUDE')
+    expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
 
     const glyphChip = screen.getByTestId('agent-glyph-chip')
+    expect(glyphChip).toHaveClass('h-[22px]')
+    expect(glyphChip).toHaveClass('w-[22px]')
+    expect(glyphChip).toHaveClass('justify-center')
     // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
     const brandMark = glyphChip.querySelector('svg')
 
     expect(brandMark).toBeInTheDocument()
   })
 
-  test('agent chip sheds its label to glyph-only on a narrow pane', () => {
+  test('header uses compact spacing by default', () => {
     render(<Header {...baseProps} />)
 
-    // The short-name label hides via a container query below the narrow-pane
-    // threshold (same 280px breakpoint the status bar uses to go compact)...
-    expect(screen.getByTestId('agent-glyph-label')).toHaveClass(
-      '@max-[280px]/pane:hidden'
-    )
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveClass('gap-1.5')
+    expect(header).toHaveClass('px-2')
+    expect(header).toHaveClass('py-1')
+  })
 
-    // ...while the glyph itself always renders, so the chip never goes empty.
+  test('collapsed status does not change the compact header', () => {
+    render(<Header {...baseProps} isCollapsed />)
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveClass('gap-1.5')
+    expect(header).toHaveClass('px-2')
+    expect(header).toHaveClass('py-1')
+
     const glyphChip = screen.getByTestId('agent-glyph-chip')
-    // eslint-disable-next-line testing-library/no-node-access -- the glyph is an svg brand mark
-    expect(glyphChip.querySelector('svg')).toBeInTheDocument()
+    expect(glyphChip).toHaveClass('h-[22px]')
+    expect(glyphChip).toHaveClass('w-[22px]')
+    expect(glyphChip).toHaveClass('justify-center')
+    expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
   })
 
   test('renders pane title from session.name', () => {
     render(<Header {...baseProps} />)
 
     expect(screen.getByText('auth refactor')).toBeInTheDocument()
+  })
+
+  test('uses the theme active surface tone', () => {
+    render(<Header {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass(
+      'bg-primary-container/15'
+    )
+  })
+
+  test('does not tint inactive pane headers', () => {
+    const inactiveProps = { ...baseProps, isActive: false }
+
+    render(<Header {...inactiveProps} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveClass(
+      'bg-primary-container/15'
+    )
   })
 
   test('renders paneAgentTitle when provided', () => {
@@ -186,15 +217,6 @@ describe('Header', () => {
     expect(
       screen.getByRole('button', { name: /close pane/i })
     ).toBeInTheDocument()
-  })
-
-  test('focused state applies header gradient marker', () => {
-    render(<Header {...baseProps} isFocused />)
-
-    expect(screen.getByTestId('terminal-pane-header')).toHaveAttribute(
-      'data-focused',
-      'true'
-    )
   })
 
   test('is not draggable by default', () => {

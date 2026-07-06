@@ -52,6 +52,7 @@ export interface BrowserPaneProps {
   onRequestActive?: (sessionId: string, paneId: string) => void
   onRequestFocus?: () => void
   onUrlChange?: (sessionId: string, paneId: string, url: string) => void
+  shortcutHint?: string
   showFocusHighlight?: boolean
 }
 
@@ -82,6 +83,7 @@ export const BrowserPane = ({
   onRequestActive = undefined,
   onRequestFocus = undefined,
   onUrlChange = undefined,
+  shortcutHint = undefined,
   showFocusHighlight = true,
 }: BrowserPaneProps): ReactElement => {
   const contentRef = useRef<HTMLDivElement>(null)
@@ -698,6 +700,7 @@ export const BrowserPane = ({
         onActivate={handleActivateTab}
         onClose={handleCloseTab}
         onNewTab={handleNewTab}
+        shortcutHint={shortcutHint}
         onClosePane={
           onClose ? (): void => onClose(session.id, pane.id) : undefined
         }

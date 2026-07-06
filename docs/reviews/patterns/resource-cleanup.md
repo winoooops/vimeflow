@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-21
-ref_count: 19
+last_updated: 2026-07-05
+ref_count: 25
 ---
 
 # Resource Cleanup
@@ -190,3 +190,121 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** `message.part.updated` running events cached tool metadata for every call, but the terminal part-update path only removed `in_flight` state. Calls without a later `tool.after` left one stale metadata entry per completed tool call for the lifetime of the session.
 - **Fix:** Remove the call's metadata immediately after a terminal part update is accepted for calls that do not expect `tool.after`, and add a regression test that asserts pure part-update completion clears the metadata cache.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. N-API external creation failure leaked native Ghostty surface resources
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `napi_create_external` was unchecked after allocating the `SurfaceHandle`, creating both TSFNs, and creating the Swift surface. If external creation failed, the handle and native resources were never registered for GC finalization and leaked permanently.
+- **Fix:** Checked the `napi_create_external` status, called `FinalizeSurface` on failure, and returned a thrown error instead of an indeterminate external value.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Disabled native Ghostty flags still registered no-op IPC handlers
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/main.ts`
+- **Finding:** Main-process setup always installed either the native parent controller or the Swift helper fallback, so Ghostty IPC channels were registered even on platforms and environments where both native flags were disabled. The handlers short-circuited, but the process-global IPC surface stayed larger than necessary.
+- **Fix:** Guarded controller creation on the parent and helper feature flags. When neither native mode is enabled, `ghosttyNativeController` remains null and no Ghostty IPC handlers are registered.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Explicit native Ghostty surface destroy left TSFNs alive until GC
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `Destroy` tore down the Swift surface but left the input and resize threadsafe functions alive until the JS external finalizer eventually ran. Pending native callbacks could still dispatch through closures after explicit pane teardown.
+- **Fix:** Release both TSFNs with `napi_tsfn_abort` during explicit destroy after nulling the Swift surface, and null the TSFN pointers so the later finalizer remains idempotent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Native surface callbacks can send through a destroyed BrowserWindow
+
+- **Source:** github-codex-connector | PR #630 round 5 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty input and resize callbacks captured a `BrowserWindow` and only checked pane membership before calling `win.webContents.send`. A late callback during window teardown could touch a destroyed Electron object and throw in the main process.
+- **Fix:** Guard both callback closures with `win.isDestroyed()` before accessing `webContents` or dispatching sidecar work, preserving the existing pane-liveness check for normal teardown.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Fire-and-forget native surface cleanup dropped destroy IPC rejection
+
+- **Source:** github-codex-connector | PR #630 round 6 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** `GhosttyBody` voided `destroyNativeGhostty(paneRef)` during unmount cleanup without handling rejection. If Electron IPC teardown was already unavailable during quit, hot reload, or pane teardown, the renderer could emit an unhandled promise rejection from an otherwise best-effort cleanup path.
+- **Fix:** Wrap the destroy call in a voided async cleanup task with local
+  `try/catch` so destroy failures are absorbed without violating
+  `promise/prefer-await-to-then`, and add a regression test that rejects
+  `destroyNativeGhostty` during unmount.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Cancelled pending native overlay open skipped the late close IPC
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/base/floating/nativeOverlay.ts`
+- **Finding:** If a native overlay menu closed before `open()` resolved, cleanup deleted the renderer session and sent one close IPC. When the delayed open later resolved, the cancellation branch called `closeNativeOverlay` again, but the helper returned early because the session had already been deleted.
+- **Fix:** Made `closeNativeOverlay` always send the close IPC after deleting any local session. A regression test holds `open()` pending, unmounts the menu, then resolves the open and asserts the second close is sent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Native overlay close touched destroyed BrowserWindow methods
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** `closeSurface` called `overlayWindow.webContents.send()`,
+  `hide()`, `setAlwaysOnTop()`, and `setIgnoreMouseEvents()` whenever a
+  surface record existed. If the overlay BrowserWindow had already been
+  destroyed while the surface remained registered, an ordinary close could
+  throw through the IPC handler and leave renderer cleanup unresolved.
+- **Fix:** Keep the surface deletion and pending-ready resolution
+  unconditional, but guard every overlay-window/webContents method behind
+  `!record.overlayWindow.isDestroyed()`. Added regression coverage for closing
+  after overlay-window destruction.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 27. Hoisted preload test env mutation leaked across Vitest worker state
+
+- **Source:** github-claude | PR #656 round 1 | 2026-07-04
+- **Severity:** LOW
+- **File:** `electron/preload.test.ts`
+- **Finding:** A hoisted preload test set `process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'` directly so the native bridge existed before importing preload code, but never restored the process-global env value. Later tests in the same worker could inherit native Ghostty mode unexpectedly.
+- **Fix:** Replaced the raw env write with `vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')` and added `afterAll(() => vi.unstubAllEnvs())`, mirroring the existing explicit global cleanup pattern.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Native helper and overlay queues need explicit failure bounds
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `electron/native-overlay.ts`, `electron/ghostty-native-helper.ts`
+- **Finding:** Native overlay layer readiness only resolved on
+  `did-finish-load`, permanently wedging future opens if the first page load
+  failed. The Ghostty dev helper also wrote directly to child stdin without
+  honoring stream backpressure, allowing unbounded queued memory.
+- **Fix:** Added overlay load failure/timeout handling and routed helper stdin
+  writes through a bounded writer that shuts down the helper when pending bytes
+  exceed the frame budget.
+- **Commit:** same commit as this entry
+
+### 29. Native burner attach failure must not destroy the PTY
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** The native secondary Ghostty unavailable callback killed and
+  removed the burner entry. A transient native attach failure could therefore
+  terminate a running ephemeral shell even though the DOM popup fallback path
+  already existed.
+- **Fix:** Track native unavailability on the current burner entry and render
+  the DOM burner popup for that PTY instead of calling `killBurner`.
+- **Commit:** same commit as this entry
+
+### 30. Cached native pane surfaces must be evicted when their BrowserWindow closes
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty surfaces were cached only by session and pane id, while the callback closures captured the original `BrowserWindow`. macOS close/reopen could leave restored panes reusing a native surface bound to a destroyed window.
+- **Fix:** Track surface keys by owning `BrowserWindow.id`, register one `closed` handler per window, and destroy/evict every surface owned by that window before a later update can reuse the pane id. The surface creation path also destroys a stale owner-specific surface before reparenting.
+- **Commit:** same commit as this entry

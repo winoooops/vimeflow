@@ -17,7 +17,10 @@ pub(crate) enum AgentReplyOutcome {
     // the JSON is unparseable. The frontend nonce-gates on it, so a malformed
     // block whose nonce still matches the pending dispatch reaches the degrade
     // path; a truly unparseable one (None) is ignored — it can't be correlated.
-    Malformed { raw: String, nonce: Option<String> },
+    Malformed {
+        raw: String,
+        nonce: Option<String>,
+    },
     Structured {
         raw: String,
         nonce: String,
@@ -146,13 +149,10 @@ mod tests {
 
     #[test]
     fn valid_block_is_structured() {
-        let text = block(
-            r#"{"v":1,"nonce":"abc","replies":[{"id":1,"status":"answered","text":"hi"}]}"#,
-        );
+        let text =
+            block(r#"{"v":1,"nonce":"abc","replies":[{"id":1,"status":"answered","text":"hi"}]}"#);
         match extract_agent_reply(&text) {
-            Some(AgentReplyOutcome::Structured {
-                nonce, replies, ..
-            }) => {
+            Some(AgentReplyOutcome::Structured { nonce, replies, .. }) => {
                 assert_eq!(nonce, "abc");
                 assert_eq!(replies.len(), 1);
                 assert_eq!(replies[0].id, 1);
@@ -185,7 +185,7 @@ mod tests {
         let cases = [
             r#"{"v":2,"nonce":"a","replies":[{"id":1,"status":"answered","text":"x"}]}"#, // bad version
             r#"{"v":1,"nonce":"","replies":[{"id":1,"status":"answered","text":"x"}]}"#, // empty nonce
-            r#"{"v":1,"nonce":"a","replies":[]}"#,                                        // empty replies
+            r#"{"v":1,"nonce":"a","replies":[]}"#, // empty replies
             r#"{"v":1,"nonce":"a","replies":[{"id":0,"status":"answered","text":"x"}]}"#, // zero id
             r#"{"v":1,"nonce":"a","replies":[{"id":-1,"status":"answered","text":"x"}]}"#, // negative id
             r#"{"v":1,"nonce":"a","replies":[{"id":1,"status":"bogus","text":"x"}]}"#, // unknown status
@@ -206,9 +206,8 @@ mod tests {
     fn schema_invalid_but_parseable_block_keeps_the_nonce() {
         // Bad status, but the object + nonce parse → Malformed carries the nonce
         // so the frontend can still nonce-gate the degrade.
-        let text = block(
-            r#"{"v":1,"nonce":"keep","replies":[{"id":1,"status":"bogus","text":"x"}]}"#,
-        );
+        let text =
+            block(r#"{"v":1,"nonce":"keep","replies":[{"id":1,"status":"bogus","text":"x"}]}"#);
         assert!(matches!(
             extract_agent_reply(&text),
             Some(AgentReplyOutcome::Malformed { nonce: Some(n), .. }) if n == "keep"

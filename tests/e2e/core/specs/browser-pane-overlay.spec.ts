@@ -1,9 +1,11 @@
-import { clickBySelector } from '../../shared/actions.js'
-import type { LayoutId, PaneKind } from '@/features/sessions/types'
+import { clickLayoutButton, createNewSession } from '../../shared/actions.js'
+import type { PaneKind, PaneLayoutId } from '@/features/sessions/types'
 import {
   LAYOUTS,
   type LayoutShape,
 } from '@/features/terminal/components/SplitView/layouts'
+
+type ElectronModule = typeof import('electron')
 
 interface BrowserPaneIdentity {
   sessionId: string
@@ -37,16 +39,16 @@ interface BrowserPaneDomRect {
 }
 
 const commandPaletteSelector = '[role="dialog"][aria-label="Command palette"]'
-const commandPaletteInputSelector = '[aria-label="Command palette search"]'
-const enterKey = '\uE007'
 
 const layouts = Object.values(LAYOUTS)
 
+// Browser panes are added through split-view controls, so the seeded shell owns
+// slot 0 and the browser can occupy each subsequently created slot.
 const browserSlotCases = layouts.flatMap((layout) =>
   Array.from({ length: layout.capacity }, (_, slotIndex) => ({
     layout,
     slotIndex,
-  }))
+  })).filter(({ slotIndex }) => slotIndex > 0)
 )
 
 const dispatchCommandPaletteShortcut = async (): Promise<void> => {
@@ -72,6 +74,11 @@ const dispatchCommandPaletteShortcut = async (): Promise<void> => {
 }
 
 const openCommandPalette = async (): Promise<void> => {
+  await browser.electron.execute((electron: ElectronModule) => {
+    const win = electron.BrowserWindow.getAllWindows()[0]
+    win?.focus()
+    win?.webContents.focus()
+  })
   await dispatchCommandPaletteShortcut()
   await (
     await $(commandPaletteSelector)
@@ -108,20 +115,6 @@ const waitForCommandPaletteClosed = async (): Promise<void> => {
       timeoutMsg: 'command palette did not close',
     }
   )
-}
-
-const runWorkspaceCommand = async (
-  command: ':new' | ':new-browser'
-): Promise<void> => {
-  await openCommandPalette()
-  const input = await $(commandPaletteInputSelector)
-  await input.waitForDisplayed({ timeout: 3_000 })
-  await input.setValue(command)
-  await browser.execute((selector: string) => {
-    document.querySelector<HTMLInputElement>(selector)?.focus()
-  }, commandPaletteInputSelector)
-  await browser.action('key').down(enterKey).up(enterKey).perform()
-  await waitForCommandPaletteClosed()
 }
 
 const waitForActiveSplitView = async (): Promise<void> => {
@@ -168,6 +161,20 @@ const waitForVisibleSessionChange = async (
   )
 }
 
+const waitForDialogClosed = async (): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () => document.querySelector('[role="dialog"]') === null
+      ),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'dialog did not close',
+    }
+  )
+}
+
 const waitForPaneKinds = async (
   expectedKinds: readonly PaneKind[]
 ): Promise<void> => {
@@ -209,7 +216,7 @@ const waitForPaneKinds = async (
 const switchToLayout = async (layout: LayoutShape): Promise<void> => {
   await waitForActiveSplitView()
 
-  const alreadyActive = await browser.execute((layoutId: LayoutId) => {
+  const alreadyActive = await browser.execute((layoutId: PaneLayoutId) => {
     const splitViews = Array.from(
       document.querySelectorAll<HTMLElement>('[data-testid="split-view"]')
     )
@@ -226,75 +233,11 @@ const switchToLayout = async (layout: LayoutShape): Promise<void> => {
     return
   }
 
-  const clickedVisiblePill = await browser.execute((label: string) => {
-    const button = document.querySelector<HTMLButtonElement>(
-      `button[aria-label="${label}"]`
-    )
-    if (button === null) {
-      return false
-    }
-
-    button.click()
-
-    return true
-  }, layout.name)
-
-  if (!clickedVisiblePill) {
-    await clickBySelector('button[aria-label="Configure displayed layouts"]')
-
-    const revealed = await browser.execute((label: string) => {
-      const row = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          '[role="menuitemcheckbox"]'
-        )
-      ).find((candidate) => (candidate.textContent ?? '').includes(label))
-
-      if (row === undefined) {
-        return false
-      }
-
-      if (row.getAttribute('aria-checked') !== 'true') {
-        row.click()
-      }
-
-      return true
-    }, layout.name)
-
-    if (!revealed) {
-      throw new Error(`layout display menu had no ${layout.name} row`)
-    }
-
-    await browser.execute(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'Escape',
-          code: 'Escape',
-          bubbles: true,
-          cancelable: true,
-        })
-      )
-    })
-
-    await browser.waitUntil(
-      async () =>
-        await browser.execute(
-          (label: string) =>
-            document.querySelector(`button[aria-label="${label}"]`) !== null,
-          layout.name
-        ),
-      {
-        timeout: 3_000,
-        interval: 100,
-        timeoutMsg: `${layout.name} layout pill did not become visible`,
-      }
-    )
-
-    await clickBySelector(`button[aria-label="${layout.name}"]`)
-  }
+  await clickLayoutButton(layout.name)
 
   await browser.waitUntil(
     async () =>
-      await browser.execute((layoutId: LayoutId) => {
+      await browser.execute((layoutId: PaneLayoutId) => {
         const splitViews = Array.from(
           document.querySelectorAll<HTMLElement>('[data-testid="split-view"]')
         )
@@ -398,17 +341,10 @@ const addBrowserPane = async (nextPaneCount: number): Promise<void> => {
 const createFreshShellSession = async (): Promise<void> => {
   await waitForActiveSplitView()
   const previousSessionId = await readVisibleSessionId()
-  await runWorkspaceCommand(':new')
+  await createNewSession()
   await waitForVisibleSessionChange(previousSessionId)
+  await waitForDialogClosed()
   await waitForPaneKinds(['shell'])
-}
-
-const createFreshBrowserSession = async (): Promise<void> => {
-  await waitForActiveSplitView()
-  const previousSessionId = await readVisibleSessionId()
-  await runWorkspaceCommand(':new-browser')
-  await waitForVisibleSessionChange(previousSessionId)
-  await waitForPaneKinds(['browser'])
 }
 
 const readBrowserPaneIdentity = async (
@@ -693,15 +629,11 @@ const prepareBrowserPaneAtSlot = async (
 ): Promise<BrowserPaneIdentity> => {
   await resetBoundsCapture()
 
-  if (slotIndex === 0) {
-    await createFreshBrowserSession()
-  } else {
-    await createFreshShellSession()
-  }
+  await createFreshShellSession()
 
   await switchToLayout(layout)
 
-  const expectedKinds: PaneKind[] = slotIndex === 0 ? ['browser'] : ['shell']
+  const expectedKinds: PaneKind[] = ['shell']
 
   for (let index = 1; index < slotIndex; index += 1) {
     await addShellPane(index + 1)

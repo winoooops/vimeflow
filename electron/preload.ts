@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   BACKEND_EVENT,
@@ -5,6 +6,18 @@ import {
   COMMAND_PALETTE_TOGGLE,
   DIALOG_PICK_DIRECTORY,
 } from './ipc-channels'
+import {
+  NATIVE_OVERLAY_ACTION,
+  NATIVE_OVERLAY_ACTION_RESULT,
+  NATIVE_OVERLAY_CLEAR,
+  NATIVE_OVERLAY_CLOSE,
+  NATIVE_OVERLAY_CLOSED,
+  NATIVE_OVERLAY_KEYDOWN,
+  NATIVE_OVERLAY_OPEN,
+  NATIVE_OVERLAY_READY,
+  NATIVE_OVERLAY_RENDER,
+  NATIVE_OVERLAY_RESUME,
+} from './native-overlay-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -23,6 +36,17 @@ import {
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
+import {
+  GHOSTTY_NATIVE_DATA,
+  GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_ATTACH,
+  GHOSTTY_NATIVE_SECONDARY_DATA,
+  GHOSTTY_NATIVE_SECONDARY_FOCUS,
+  GHOSTTY_NATIVE_SECONDARY_REMOVE,
+  GHOSTTY_NATIVE_SECONDARY_VISIBLE,
+  GHOSTTY_NATIVE_UPDATE,
+} from './ghostty-native-channels'
 import {
   WORKSPACE_LAYOUT_BEGIN_HYDRATION,
   WORKSPACE_LAYOUT_END_HYDRATION,
@@ -97,6 +121,42 @@ const onCommandPaletteToggle = (callback: () => void): (() => void) => {
     ipcRenderer.off(COMMAND_PALETTE_TOGGLE, handler)
   }
 }
+
+const isNativeGhosttyPreloadEnabled =
+  process.env.VITE_GHOSTTY_NATIVE_MACOS === '1' ||
+  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+
+const isNativeGhosttyParentPreloadEnabled =
+  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+
+const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
+  ? {
+      ghosttyNative: {
+        update: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_UPDATE, request),
+        data: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_DATA, request),
+        focus: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_FOCUS, request),
+        destroy: (request: unknown): Promise<unknown> =>
+          ipcRenderer.invoke(GHOSTTY_NATIVE_DESTROY, request),
+        ...(isNativeGhosttyParentPreloadEnabled
+          ? {
+              attachSecondary: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_ATTACH, request),
+              secondaryData: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_DATA, request),
+              focusSecondary: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_FOCUS, request),
+              removeSecondary: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_REMOVE, request),
+              setSecondaryVisible: (request: unknown): Promise<unknown> =>
+                ipcRenderer.invoke(GHOSTTY_NATIVE_SECONDARY_VISIBLE, request),
+            }
+          : {}),
+      },
+    }
+  : {}
 
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
@@ -181,9 +241,94 @@ contextBridge.exposeInMainWorld('vimeflow', {
       }
     },
   },
+  ...ghosttyNativeBridge,
   dialog: {
     pickDirectory: (): Promise<string | null> =>
       ipcRenderer.invoke(DIALOG_PICK_DIRECTORY) as Promise<string | null>,
+  },
+  nativeOverlay: {
+    open: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_OPEN, request),
+    close: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
+    actionResult: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_ACTION_RESULT, request),
+    resume: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_RESUME, request),
+    onAction: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_ACTION, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_ACTION, handler)
+      }
+    },
+    onClose: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_CLOSED, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_CLOSED, handler)
+      }
+    },
+  },
+  nativeOverlayHost: {
+    ready: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_READY, request),
+    action: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_ACTION, request),
+    close: (request: unknown): Promise<unknown> =>
+      ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
+    onRender: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_RENDER, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_RENDER, handler)
+      }
+    },
+    onClear: (callback: () => void): (() => void) => {
+      const handler = (): void => {
+        callback()
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_CLEAR, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_CLEAR, handler)
+      }
+    },
+    onActionResult: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_ACTION_RESULT, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_ACTION_RESULT, handler)
+      }
+    },
+    onKeyDown: (callback: (payload: unknown) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+        callback(payload)
+      }
+
+      ipcRenderer.on(NATIVE_OVERLAY_KEYDOWN, handler)
+
+      return (): void => {
+        ipcRenderer.off(NATIVE_OVERLAY_KEYDOWN, handler)
+      }
+    },
   },
   workspaceLayout: {
     pushShape: (dto: unknown): Promise<unknown> =>

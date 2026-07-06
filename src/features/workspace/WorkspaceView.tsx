@@ -1,4 +1,4 @@
-// cspell:ignore worktree
+// cspell:ignore worktree Ghostty ghostty
 import type { CSSProperties, ReactElement } from 'react'
 import {
   useCallback,
@@ -60,7 +60,7 @@ import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
-import { renameAgentSession } from '../../lib/backend'
+import { listen, renameAgentSession } from '../../lib/backend'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
 import {
@@ -277,6 +277,11 @@ const readCompactViewport = (): boolean =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia(COMPACT_WORKSPACE_QUERY).matches
 
+interface GhosttyNativeRenamePaneEvent {
+  sessionId: string
+  paneId: string
+}
+
 const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
   { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
   { id: 'files', label: 'FILES', icon: 'folder_open' },
@@ -308,6 +313,9 @@ const WorkspaceViewContent = (): ReactElement => {
   // pins the instance for the component's lifetime so re-renders don't
   // produce a fresh mock and silently disconnect the manager from the panes.
   const terminalService = useMemo(() => createTerminalService(), [])
+  // General-purpose error banner for workspace-level failures that are not
+  // owned by a dialog, including terminal spawn failures.
+  const [fileError, setFileError] = useState<string | null>(null)
 
   const {
     sessions,
@@ -338,7 +346,9 @@ const WorkspaceViewContent = (): ReactElement => {
     notifyPaneReady,
     registerPending,
     dropAllForPty,
-  } = useSessionManager(terminalService)
+  } = useSessionManager(terminalService, {
+    onTerminalSpawnError: setFileError,
+  })
 
   // Detect which modifier the toolbar advertises on this platform so
   // the keyboard shortcut reserves EXACTLY that combo (and no other).
@@ -1136,10 +1146,6 @@ const WorkspaceViewContent = (): ReactElement => {
     setIsUnsavedDialogSaving(value)
   }, [])
 
-  // General-purpose error banner for non-dialog file ops (direct file open,
-  // async load failure inside CodeEditor, vim :w save failure).
-  const [fileError, setFileError] = useState<string | null>(null)
-
   // Dock panel controlled state.
   const dockCanvasRef = useRef<HTMLDivElement>(null)
   const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
@@ -1172,10 +1178,69 @@ const WorkspaceViewContent = (): ReactElement => {
     return { pane: activePane, session: activeSession }
   }, [activePane, activeSession])
 
-  const { renderNode: paneRenameNode } = usePaneRenameChord(
+  const { renderNode: paneRenameNode, openPaneRename } = usePaneRenameChord(
     resolveFocusedPane,
     setPaneUserLabel
   )
+
+  const sessionsRef = useRef(sessions)
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.vimeflow) {
+      return
+    }
+
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    const attachNativeRenameListener = async (): Promise<void> => {
+      const cleanup = await listen<GhosttyNativeRenamePaneEvent>(
+        'ghostty-native-rename-pane',
+        (payload) => {
+          // Ghostty names this field `sessionId`, but the native surface is
+          // keyed by the PTY id that backs a pane.
+          const session = sessionsRef.current.find((candidate) =>
+            candidate.panes.some(
+              (pane) =>
+                pane.id === payload.paneId && pane.ptyId === payload.sessionId
+            )
+          )
+
+          const pane = session?.panes.find(
+            (candidate) =>
+              candidate.id === payload.paneId &&
+              candidate.ptyId === payload.sessionId
+          )
+
+          if (!session || !pane || (pane.kind ?? 'shell') !== 'shell') {
+            return
+          }
+
+          setActiveSessionId(session.id)
+          setSessionActivePane(session.id, pane.id)
+          openPaneRename({ session, pane })
+        }
+      )
+
+      if (cancelled) {
+        cleanup()
+
+        return
+      }
+
+      unlisten = cleanup
+    }
+
+    void attachNativeRenameListener()
+
+    return (): void => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [openPaneRename, setActiveSessionId, setSessionActivePane])
 
   // Burner terminal popup (VIM-53) — reap reload-orphaned ephemeral PTYs before the first spawn.
   const [burnerReapDone, setBurnerReapDone] = useState(false)
@@ -1231,6 +1296,16 @@ const WorkspaceViewContent = (): ReactElement => {
     [sessions]
   )
 
+  const livePanePtyIds = useMemo(
+    () =>
+      new Map(
+        sessions.flatMap((s) =>
+          s.panes.map((p) => [`${s.id}:${p.id}`, p.ptyId] as const)
+        )
+      ),
+    [sessions]
+  )
+
   // Preferred burner sync targets from the active agent's structured cwd.
   // This captures agent-driven worktree moves that may not be reflected in the
   // host shell's pwd yet; `useBurnerTerminals` falls back to `livePaneCwds`.
@@ -1263,9 +1338,12 @@ const WorkspaceViewContent = (): ReactElement => {
   const {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
+    syncToPaneCwd: syncBurnerToPaneCwd,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
+    outOfSyncByPane: outOfSyncBurnerByPane,
     hasVisibleBurner,
+    visibleBurnerPaneKey,
   } = useBurnerTerminals({
     service: terminalService,
     resolveFocusedPane,
@@ -1276,6 +1354,7 @@ const WorkspaceViewContent = (): ReactElement => {
     dropAllForPty,
     livePaneCwds,
     agentPaneCwds,
+    livePanePtyIds,
   })
 
   // Stable wrapper for the `:burner` palette command so the command-list memo
@@ -1288,7 +1367,8 @@ const WorkspaceViewContent = (): ReactElement => {
     void toggleBurnerRef.current()
   }, [])
 
-  // Pane-keys with a live burner shell — drives the status-bar count.
+  // Pane-keys with a live burner shell. Hidden native burners stay here, but
+  // the bottom bar only counts the currently visible secondary terminal.
   const runningBurnerPaneKeys = useMemo(
     () =>
       new Set(
@@ -1308,6 +1388,24 @@ const WorkspaceViewContent = (): ReactElement => {
           .map(([key]) => key)
       ),
     [activeBurnerByPane]
+  )
+
+  const openBurnerPaneKeys = useMemo(
+    () =>
+      visibleBurnerPaneKey === null
+        ? new Set<string>()
+        : new Set([visibleBurnerPaneKey]),
+    [visibleBurnerPaneKey]
+  )
+
+  const outOfSyncBurnerPaneKeys = useMemo(
+    () =>
+      new Set(
+        [...outOfSyncBurnerByPane]
+          .filter(([, outOfSync]) => outOfSync)
+          .map(([key]) => key)
+      ),
+    [outOfSyncBurnerByPane]
   )
 
   const requestFocus = useCallback((target: FocusTarget): void => {
@@ -2955,6 +3053,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   onDuplicateCustomLayout={handleDuplicateCustomLayout}
                   onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
+                  nativeOverlay
                 />
               }
             />
@@ -2994,8 +3093,11 @@ const WorkspaceViewContent = (): ReactElement => {
                 setActiveContainerId(TERMINAL_CONTAINER_ID)
               }}
               onBurner={(target): void => void toggleBurner(target)}
+              onSyncBurner={syncBurnerToPaneCwd}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
+              openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
+              outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
             />
           </div>
           {!dockBeforeTerminal ? dockPanel : null}
@@ -3044,7 +3146,8 @@ const WorkspaceViewContent = (): ReactElement => {
           onOpenPalette={commandPalette.open}
           dockOpen={isDockOpen}
           onToggleDock={handleToggleDock}
-          burnerCount={runningBurnerPaneKeys.size}
+          burnerCount={openBurnerPaneKeys.size}
+          burnerOpen={openBurnerPaneKeys.size > 0}
         />
       </main>
 
@@ -3144,6 +3247,7 @@ const WorkspaceViewContent = (): ReactElement => {
             onCreated: () => claimTerminal(),
           })
         }}
+        nativeOverlay
       />
 
       <LayoutCreatorModal

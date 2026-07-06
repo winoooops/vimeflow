@@ -2238,6 +2238,23 @@ describe('WorkspaceView', () => {
     expect(Array.from(stack?.children ?? [])).toEqual([alert, status])
   })
 
+  test('surfaces terminal spawn failures in the workspace alert banner', async () => {
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    workspaceTerminalMock.service.spawn.mockRejectedValue(
+      new Error('bridge unavailable')
+    )
+
+    render(<WorkspaceView />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Failed to create terminal: bridge unavailable'
+    )
+  })
+
   test('lifts useAgentStatus and forwards the latest active pane ptyId', async () => {
     render(<WorkspaceView />)
 

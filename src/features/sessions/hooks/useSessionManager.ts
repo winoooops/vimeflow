@@ -119,10 +119,10 @@ export interface SessionManager {
    * replaced with metadata for the new session — status flips to 'running'
    * and id is the new sessionId returned by spawn.
    *
-   * No-op if the id isn't in `sessions`. Surfaces spawn errors via
-   * console.warn — a future iteration may surface as a toast.
+   * No-op if the id isn't in `sessions`. Surfaces spawn errors via the
+   * configured terminal-spawn error callback.
    */
-  restartSession: (id: string) => void
+  restartSession: (id: string, paneId?: string) => void
   renameSession: (id: string, name: string) => void
   /**
    * Set a per-pane user label (overrides `pane.agentTitle` and
@@ -262,6 +262,13 @@ const browserSessionIdForSession = (session: Session): string => session.id
  */
 export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
+  onTerminalSpawnError?: (message: string) => void
+}
+
+const spawnErrorMessage = (action: string, error: unknown): string => {
+  const detail = error instanceof Error ? error.message : String(error)
+
+  return `${action}: ${detail}`
 }
 
 // Generated AgentPhase is lower-camel (serde rename_all camelCase).
@@ -277,7 +284,7 @@ export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
 ): SessionManager => {
-  const { autoCreateOnEmpty = true } = options
+  const { autoCreateOnEmpty = true, onTerminalSpawnError } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
 
@@ -869,6 +876,7 @@ export const useSessionManager = (
 
           const panes: Pane[] = []
           const browserPaneIds: string[] = []
+          let shellSpawnFailure: unknown = null
 
           specs.forEach((spec, i) => {
             const mapped = commandToPane(spec.command)
@@ -897,6 +905,9 @@ export const useSessionManager = (
                 'createSession: pane spawn failed',
                 settled.status === 'rejected' ? settled.reason : undefined
               )
+              if (settled.status === 'rejected') {
+                shellSpawnFailure = settled.reason
+              }
 
               return
             }
@@ -929,8 +940,24 @@ export const useSessionManager = (
 
           if (panes.length === 0) {
             log.warn('createSession: no panes spawned; session not created')
+            onTerminalSpawnError?.(
+              shellSpawnFailure === null
+                ? 'Failed to create terminal'
+                : spawnErrorMessage(
+                    'Failed to create terminal',
+                    shellSpawnFailure
+                  )
+            )
 
             return
+          }
+          if (shellSpawnFailure !== null) {
+            onTerminalSpawnError?.(
+              spawnErrorMessage(
+                'Failed to create one or more terminal panes',
+                shellSpawnFailure
+              )
+            )
           }
           panes[0] = { ...panes[0], active: true }
 
@@ -987,12 +1014,21 @@ export const useSessionManager = (
           }
         } catch (err) {
           log.warn('createSession failed', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to create terminal', err)
+          )
         } finally {
           setPendingSpawns((c) => c - 1)
         }
       })()
     },
-    [layoutRegistry, registerPending, service, setActiveSessionId]
+    [
+      layoutRegistry,
+      onTerminalSpawnError,
+      registerPending,
+      service,
+      setActiveSessionId,
+    ]
   )
 
   // Create a browser-only session from scratch (spec §6.2): one runtime browser
@@ -1596,6 +1632,9 @@ export const useSessionManager = (
           registerPtySession(result.sessionId, result.sessionId, result.cwd)
         } catch (err) {
           log.warn('addPane: spawn failed', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to add terminal pane', err)
+          )
         } finally {
           setPendingSpawns((count) => count - 1)
           pendingPaneOps.current.delete(sessionId)
@@ -1606,6 +1645,7 @@ export const useSessionManager = (
       activeSessionIdRef,
       dropAllForPty,
       layoutRegistry,
+      onTerminalSpawnError,
       registerPending,
       service,
     ]
@@ -1757,7 +1797,7 @@ export const useSessionManager = (
   // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
   // id and useTerminal mounts a fresh attach lifecycle.
   const restartSession = useCallback(
-    (sessionId: string): void => {
+    (sessionId: string, paneId?: string): void => {
       void (async (): Promise<void> => {
         const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
         if (!oldSession) {
@@ -1766,14 +1806,28 @@ export const useSessionManager = (
           return
         }
 
-        // Restart the active shell when one is focused; only fall back to
-        // another shell when the active pane is a browser (so a browser-active
-        // session is still restartable without targeting the wrong PTY).
-        const activePane = getActivePane(oldSession)
+        const requestedPane =
+          paneId !== undefined
+            ? oldSession.panes.find((pane) => pane.id === paneId)
+            : undefined
 
-        const oldPane = isShellPane(activePane)
-          ? activePane
-          : oldSession.panes.find(isShellPane)
+        if (paneId !== undefined && requestedPane === undefined) {
+          log.warn(`restartSession: no pane ${paneId} in session ${sessionId}`)
+
+          return
+        }
+
+        // Restart the explicitly requested shell when one is supplied by pane
+        // chrome. Legacy callers without a pane id keep the active-pane
+        // behavior, falling back to another shell only when a browser is active.
+        const activePane =
+          paneId === undefined ? getActivePane(oldSession) : null
+
+        const oldPane =
+          requestedPane ??
+          (activePane !== null && isShellPane(activePane)
+            ? activePane
+            : oldSession.panes.find(isShellPane))
         if (!oldPane || !isShellPane(oldPane)) {
           log.warn('restartSession: no shell pane found')
 
@@ -1795,6 +1849,9 @@ export const useSessionManager = (
           })
         } catch (err) {
           log.warn('restartSession: spawn failed; old session preserved', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to restart terminal', err)
+          )
 
           return
         }
@@ -1880,12 +1937,15 @@ export const useSessionManager = (
               userLabel: undefined,
               cacheHistory: [],
             }
+            const restartedActivePane = oldPane.active
 
             next[idx] = {
               ...current,
               status: 'running',
-              workingDirectory: result.cwd,
-              agentType: 'generic',
+              workingDirectory: restartedActivePane
+                ? result.cwd
+                : current.workingDirectory,
+              agentType: restartedActivePane ? 'generic' : current.agentType,
               panes: current.panes.map((pane) =>
                 pane.id === oldPane.id ? replacementPane : pane
               ),
@@ -1916,6 +1976,7 @@ export const useSessionManager = (
     [
       activeSessionIdRef,
       dropAllForPty,
+      onTerminalSpawnError,
       registerPending,
       service,
       setActiveSessionId,

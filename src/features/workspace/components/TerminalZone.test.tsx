@@ -56,7 +56,6 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       mode,
       onCwdChange,
       deferFit,
-      showFocusHighlight,
       onRestart,
       onClose,
       onCommandSubmit,
@@ -72,7 +71,6 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         data-restored={pane.restoreData ? 'true' : 'false'}
         data-mode={mode}
         data-defer-fit={deferFit ? 'true' : 'false'}
-        data-show-focus-highlight={showFocusHighlight ? 'true' : 'false'}
         data-session-name={session.name}
         data-is-active={isActive ? 'true' : 'false'}
         data-session-agent-type={session.agentType}
@@ -84,7 +82,7 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
           <button
             type="button"
             data-testid={`mock-restart-${session.id}`}
-            onClick={() => onRestart(session.id)}
+            onClick={() => onRestart(session.id, pane.id)}
           >
             mock-restart
           </button>
@@ -171,30 +169,11 @@ describe('TerminalZone', () => {
     expect(screen.getByTestId('terminal-zone')).toHaveClass('opacity-[0.65]')
   })
 
-  test('keeps the active pane highlight even when the zone is not focused', () => {
-    // The active pane highlight tracks "which pane is active" and must persist
-    // when focus moves to the dock — the zone still dims, but the highlight
-    // stays so the user never loses the active-pane reference.
-    const isZoneFocused = false
-
-    render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
-
-    expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
-      'data-show-focus-highlight',
-      'true'
-    )
-  })
-
   test('isZoneFocused=true by default does not apply dim class', () => {
     render(<TerminalZone {...defaultProps} />)
 
     expect(screen.getByTestId('terminal-zone')).not.toHaveClass(
       'opacity-[0.65]'
-    )
-
-    expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
-      'data-show-focus-highlight',
-      'true'
     )
   })
 
@@ -692,8 +671,8 @@ describe('TerminalZone', () => {
 
   // F5 (round 2): the Restart click on an Exited (awaiting-restart) pane
   // must propagate through TerminalZone → TerminalPane.onRestart with the
-  // session id. Previously WorkspaceView never passed onSessionRestart, so
-  // the Restart button was a silent no-op.
+  // clicked pane id. Previously WorkspaceView never passed onSessionRestart,
+  // so the Restart button was a silent no-op.
   test('F5 (round 2): forwards onSessionRestart to TerminalPane onRestart', async () => {
     const user = userEvent.setup()
     const onSessionRestart = vi.fn()
@@ -705,7 +684,7 @@ describe('TerminalZone', () => {
     const button = screen.getByTestId('mock-restart-sess-1')
     await user.click(button)
 
-    expect(onSessionRestart).toHaveBeenCalledWith('sess-1')
+    expect(onSessionRestart).toHaveBeenCalledWith('sess-1', 'p0')
     expect(onSessionRestart).toHaveBeenCalledTimes(1)
   })
 

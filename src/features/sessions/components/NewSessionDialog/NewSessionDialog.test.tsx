@@ -1,8 +1,13 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../../terminal/layout-registry'
 import { NewSessionDialog } from './NewSessionDialog'
+
+interface CapturedNativeOverlayRequest {
+  surfaceId: string
+  payload: Record<string, unknown>
+}
 
 const setup = (
   overrides: Partial<Parameters<typeof NewSessionDialog>[0]> = {}
@@ -40,6 +45,90 @@ const renderWithOpen = (
       layoutRegistry={BUILTIN_PANE_LAYOUT_REGISTRY}
     />
   )
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  onAction: ReturnType<typeof vi.fn>
+  resume: ReturnType<typeof vi.fn>
+  emitAction: (event: unknown) => void
+} => {
+  let actionListener: ((event: unknown) => void) | null = null
+  const open = vi.fn(() => Promise.resolve({ accepted: true }))
+
+  const onAction = vi.fn((callback: (event: unknown) => void) => {
+    actionListener = callback
+
+    return vi.fn()
+  })
+
+  const resume = vi.fn(() => Promise.resolve())
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close: vi.fn(() => Promise.resolve()),
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume,
+      onAction,
+      onClose: vi.fn(() => vi.fn()),
+    },
+    dialog: {
+      pickDirectory: vi.fn(() => Promise.resolve(null)),
+    },
+  }
+
+  return {
+    open,
+    onAction,
+    resume,
+    emitAction: (event): void => {
+      actionListener?.(event)
+    },
+  }
+}
+
+const isCapturedNativeOverlayRequest = (
+  value: unknown
+): value is CapturedNativeOverlayRequest =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  typeof (value as { surfaceId?: unknown }).surfaceId === 'string' &&
+  typeof (value as { payload?: unknown }).payload === 'object' &&
+  (value as { payload?: unknown }).payload !== null &&
+  !Array.isArray((value as { payload?: unknown }).payload)
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.resetModules()
+  restorePlatform?.()
+  restorePlatform = null
+  delete window.vimeflow
+})
 
 describe('NewSessionDialog', () => {
   test('opens as a dialog named "New session"', () => {
@@ -166,5 +255,119 @@ describe('NewSessionDialog', () => {
     )
 
     expect(input).toHaveValue('custom name')
+  })
+
+  test('serializes native overlay state and handles overlay actions', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge()
+    window.vimeflow!.dialog!.pickDirectory = vi.fn(() =>
+      Promise.reject(new Error('IPC unavailable'))
+    )
+    const { onCreate } = setup({ nativeOverlay: true })
+
+    await waitFor(() => {
+      expect(bridge.open).toHaveBeenCalled()
+    })
+
+    const initialRequest = bridge.open.mock.calls[0]?.[0]
+    if (!isCapturedNativeOverlayRequest(initialRequest)) {
+      throw new Error('expected native overlay request')
+    }
+
+    expect(initialRequest.payload).toMatchObject({
+      kind: 'dialog',
+      dialog: 'new-session',
+      name: 'vimeflow-core',
+      path: '~/code/vimeflow-core',
+      selectedLayoutId: 'single',
+    })
+
+    const surfaceId = initialRequest.surfaceId
+
+    act(() => {
+      bridge.emitAction({
+        surfaceId,
+        actionId: 'new-session:pick-layout:vsplit',
+      })
+    })
+
+    await waitFor(() => {
+      const latestRequest =
+        bridge.open.mock.calls[bridge.open.mock.calls.length - 1]?.[0]
+      expect(latestRequest).toMatchObject({
+        payload: { selectedLayoutId: 'vsplit' },
+      })
+    })
+
+    act(() => {
+      bridge.emitAction({
+        surfaceId,
+        actionId: 'new-session:pick-command:1:codex',
+      })
+    })
+
+    await waitFor(() => {
+      const latestRequest =
+        bridge.open.mock.calls[bridge.open.mock.calls.length - 1]?.[0]
+      expect(latestRequest).toMatchObject({
+        payload: {
+          panes: [{ commandId: 'claude' }, { commandId: 'codex' }],
+        },
+      })
+    })
+
+    act(() => {
+      bridge.emitAction({
+        surfaceId,
+        actionId: 'new-session:browse',
+      })
+    })
+
+    await waitFor(() => {
+      expect(bridge.resume).toHaveBeenCalledWith({ surfaceId })
+    })
+
+    act(() => {
+      bridge.emitAction({
+        surfaceId,
+        actionId: 'new-session:create',
+      })
+    })
+
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith({
+        name: 'vimeflow-core',
+        cwd: '~/code/vimeflow-core',
+        layout: 'vsplit',
+        panes: [{ command: 'claude' }, { command: 'codex' }],
+      })
+    })
+  })
+
+  test('disables the local Browse button while native overlay is active', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    installNativeOverlayBridge()
+    setup({ nativeOverlay: true })
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /browse/i, hidden: true })
+      ).toBeDisabled()
+    })
+  })
+
+  test('keeps local Browse enabled when native overlay is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge()
+    bridge.open.mockResolvedValueOnce({ accepted: false })
+    setup({ nativeOverlay: true })
+
+    await waitFor(() => {
+      expect(bridge.open).toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: /browse/i })).toBeEnabled()
+    })
   })
 })

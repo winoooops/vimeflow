@@ -44,30 +44,32 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 6        | 1    | 2026-07-03   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 10       | 1    | 2026-07-05   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 64   | 2026-06-27   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 19       | 19   | 2026-06-21   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 30       | 25   | 2026-07-05   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 12       | 12   | 2026-06-22   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 22       | 20   | 2026-07-04   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 25       | 21   | 2026-07-05   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 87       | 41   | 2026-07-04   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 5        | 3    | 2026-06-24   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 93       | 90   | 2026-06-25   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 93       | 88   | 2026-07-04   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 10       | 5    | 2026-07-05   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 99       | 88   | 2026-07-05   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 71       | 71   | 2026-06-26   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 90       | 83   | 2026-07-05   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
-| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 4        | 1    | 2026-06-17   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 4        | 2    | 2026-06-21   |
+| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 5        | 3    | 2026-07-05   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 4        | 4    | 2026-06-21   |
+| [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 8        | 2    | 2026-07-05   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
@@ -75,17 +77,17 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 27       | 12   | 2026-07-03   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 45       | 45   | 2026-06-26   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 48   | 2026-07-05   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 30       | 16   | 2026-07-03   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 36       | 18   | 2026-07-05   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 17       | 3    | 2026-06-25   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 30       | 6    | 2026-07-02   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 34       | 9    | 2026-07-05   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 23       | 15   | 2026-07-04   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 16       | 9    | 2026-07-05   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 19       | 9    | 2026-07-05   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 14       | 7    | 2026-06-23   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
@@ -95,13 +97,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 7        | 7    | 2026-06-22   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 8        | 5    | 2026-06-20   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 16       | 10   | 2026-07-05   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
-| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 10       | 7    | 2026-06-22   |
+| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 10   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 10       | 9    | 2026-07-04   |
-| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 3        | 4    | 2026-07-04   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 7        | 3    | 2026-07-05   |
+| [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 4        | 4    | 2026-07-05   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 7        | 4    | 2026-07-05   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 2    | 2026-06-18   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
@@ -109,6 +111,6 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
 | [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 13       | 5    | 2026-06-22   |
 | [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 3        | 1    | 2026-06-22   |
-| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 11       | 6    | 2026-07-04   |
+| [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 17       | 9    | 2026-07-05   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 2        | 1    | 2026-06-22   |

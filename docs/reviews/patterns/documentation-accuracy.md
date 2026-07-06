@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-06-25
-ref_count: 90
+last_updated: 2026-07-05
+ref_count: 91
 ---
 
 # Documentation Accuracy
@@ -873,3 +873,27 @@ Stale documentation misleads future contributors and review agents.
 - **Finding:** The Claude Code icon comment used a five-line production block with an undefined `ponytail:` label while trying to preserve the important `preserveAspectRatio="none"` invariant. The extra history and jargon made the deliberate non-uniform scaling harder to trust.
 - **Fix:** Replaced the block with one concise `NOTE:` comment that states `preserveAspectRatio="none"` is intentional for the Claude Code mark's non-uniform squish.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 94. Native parent build script pointed at obsolete docs smoke package
+
+- **Source:** github-codex-connector | PR #630 round 2 | 2026-06-28
+- **Severity:** P2 / MEDIUM
+- **File:** `scripts/build-ghostty-native-parent.js`
+- **Finding:** The npm build script still used a docs exploration smoke directory as its SwiftPM cwd even though the committed Swift package now lives under `native/ghostty-helper`. macOS developers enabling the native parent runtime would fail before producing `dist-native/ghostty-parent`.
+- **Fix:** Pointed the build cwd at the committed `native/ghostty-helper` package so `swift build --product GhosttyElectronBridge` runs against the package shipped in the PR.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 95. Merge left duplicate review-pattern finding numbers
+
+- **Source:** github-claude | PR #664 round 1 | 2026-07-05
+- **Severity:** LOW
+- **File:** `docs/reviews/patterns/*.md`
+- **Finding:** The merge concatenated independently numbered review-pattern
+  entries from the base branch and the feature branch, leaving duplicate
+  section numbers and a few back-to-back duplicate headings in nine pattern
+  files. The duplicated headings made the knowledge base index and individual
+  pattern references unreliable.
+- **Fix:** Removed orphan duplicate headings, renumbered each affected pattern
+  file sequentially, and updated the knowledge-base index counts and dates to
+  match the rewritten headings.
+- **Commit:** same commit as this entry

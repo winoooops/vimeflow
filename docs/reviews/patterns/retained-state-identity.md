@@ -2,7 +2,7 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-04
+last_updated: 2026-07-05
 ref_count: 4
 ---
 
@@ -23,7 +23,16 @@ When a React component renders retained (stale) content while fresh data for a n
 - **Fix:** Added an identity guard before `writeStatusScrollAnchor` that returns early when `bodySnapshotKey !== snapshotKey`, and added `snapshotKey` to the `handleScroll` `useCallback` dependencies.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 2. Single focus-toggle restore slot is shared across sessions
+### 2. Retained burner entries kept a stale native host PTY after pane restart
+
+- **Source:** github-codex-connector | PR #656 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** Burner entries are intentionally retained by stable `${sessionId}:${paneId}` identity across pane restarts, but the native secondary request kept the old `hostPtyId`. When the host pane remounted with a new PTY, an open native burner stayed attached to the removed native surface until the user toggled it.
+- **Fix:** Threaded a live pane-key-to-PTY map from `WorkspaceView` into `useBurnerTerminals`, updated retained entries when the host PTY changes, and covered the reattach path with a native burner regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. Single focus-toggle restore slot is shared across sessions
 
 - **Source:** github-claude | PR #631 round 1 | 2026-06-28
 - **Severity:** MEDIUM
@@ -38,7 +47,7 @@ When a React component renders retained (stale) content while fresh data for a n
   independently.
 - **Commit:** same commit as this entry
 
-### 3. Range-bar repaint can target a stale file container on file switch
+### 4. Range-bar repaint can target a stale file container on file switch
 
 - **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
 - **Severity:** HIGH

@@ -6,12 +6,23 @@ describe('BottomDrawer navigation', () => {
     await clickBySelector('button[aria-label="Editor"]')
 
     const editorPanel = await $('[data-testid="editor-panel"]')
-    await editorPanel.waitForDisplayed({ timeout: 15_000 })
+    await editorPanel.waitForDisplayed({ timeout: 10_000 })
+
+    await browser.waitUntil(
+      async () => !(await (await $('[data-testid="diff-panel"]')).isExisting()),
+      {
+        timeout: 5_000,
+        timeoutMsg: 'diff-panel still in DOM after switching to editor',
+      }
+    )
 
     await clickBySelector('button[aria-label="Diff Viewer"]')
 
-    const diffPanel = await $('[data-testid="diff-panel"]')
-    await diffPanel.waitForDisplayed({ timeout: 10_000 })
+    await (
+      await $('[data-testid="diff-panel"]')
+    ).waitForDisplayed({
+      timeout: 10_000,
+    })
 
     await browser.waitUntil(
       async () =>
@@ -21,12 +32,5 @@ describe('BottomDrawer navigation', () => {
         timeoutMsg: 'editor-panel still in DOM after switching to diff',
       }
     )
-
-    await clickBySelector('button[aria-label="Editor"]')
-    await (
-      await $('[data-testid="editor-panel"]')
-    ).waitForDisplayed({
-      timeout: 10_000,
-    })
   })
 })

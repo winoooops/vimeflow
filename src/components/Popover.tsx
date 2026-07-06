@@ -1,7 +1,16 @@
-import { type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import {
+  useEffect,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
 import { type Placement } from '@/components/base/floating/glassSurface'
+import {
+  selectFloatingTransport,
+  warnNativeOverlayFallback,
+} from '@/components/base/floating/nativeOverlay'
 
 interface PopoverProps {
   anchor: HTMLElement | null
@@ -14,6 +23,7 @@ interface PopoverProps {
   // e.g. { ancestorScroll: false } for a plain-dismiss confirm dialog
   middleware?: { ancestorScroll?: boolean }
   'aria-label': string
+  nativeOverlay?: boolean
   children: ReactNode
 }
 
@@ -30,6 +40,7 @@ export const Popover = ({
   focus = 'dialog',
   middleware = undefined,
   'aria-label': ariaLabel,
+  nativeOverlay = false,
   children,
 }: PopoverProps): ReactElement | null => {
   const { refs, floatingStyles, context, getFloatingProps } =
@@ -41,6 +52,16 @@ export const Popover = ({
       role: 'dialog',
       middleware,
     })
+
+  useEffect(() => {
+    if (
+      open &&
+      nativeOverlay &&
+      selectFloatingTransport(nativeOverlay) === 'native-overlay'
+    ) {
+      warnNativeOverlayFallback('popover native overlay is not in v0')
+    }
+  }, [nativeOverlay, open])
 
   if (!open) {
     return null
