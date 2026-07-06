@@ -453,6 +453,88 @@ describe('NativeOverlayController', () => {
     expect(menuWindow.hide).not.toHaveBeenCalled()
   })
 
+  test('updates the active tooltip surface without closing its owner session', async () => {
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    const tooltipWindow = finishOverlayLoad(1)
+
+    await Promise.resolve()
+    await acknowledgeOverlayReady(tooltipWindow, tooltipRequest.surfaceId)
+    await tooltipOpenPromise
+
+    const refreshedTooltipRequest = {
+      ...tooltipRequest,
+      anchorRect: { ...tooltipRequest.anchorRect, width: 32 },
+    }
+
+    tooltipWindow.webContents.send.mockClear()
+    tooltipWindow.hide.mockClear()
+    electronMock.owner.webContents.send.mockClear()
+
+    const refreshPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      refreshedTooltipRequest
+    )
+
+    await Promise.resolve()
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      refreshedTooltipRequest
+    )
+
+    await acknowledgeOverlayReady(tooltipWindow, tooltipRequest.surfaceId)
+    await expect(refreshPromise).resolves.toEqual({ accepted: true })
+
+    expect(tooltipWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(tooltipWindow.hide).not.toHaveBeenCalled()
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.objectContaining({ surfaceId: tooltipRequest.surfaceId })
+    )
+  })
+
+  test('resolves a pending active tooltip open before refreshing the same surface', async () => {
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    const tooltipWindow = finishOverlayLoad(1)
+
+    const refreshedTooltipRequest = {
+      ...tooltipRequest,
+      anchorRect: { ...tooltipRequest.anchorRect, width: 32 },
+    }
+
+    await Promise.resolve()
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      tooltipRequest
+    )
+
+    const refreshPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      refreshedTooltipRequest
+    )
+
+    await Promise.resolve()
+    await expect(tooltipOpenPromise).resolves.toEqual({ accepted: true })
+    await expect(refreshPromise).resolves.toEqual({ accepted: true })
+
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      refreshedTooltipRequest
+    )
+
+    expect(tooltipWindow.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(tooltipWindow.hide).not.toHaveBeenCalled()
+  })
+
   test('opens dialog requests on the interactive menu layer', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },

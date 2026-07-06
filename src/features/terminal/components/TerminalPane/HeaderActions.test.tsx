@@ -219,6 +219,13 @@ describe('HeaderActions', () => {
       screen.queryByRole('button', { name: /sync burner terminal/i })
     ).toBeNull()
 
+    expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+      'data-state',
+      'closed'
+    )
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass('gap-0')
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass('p-0')
+
     rerender(
       <HeaderActions
         isCollapsed={expanded}
@@ -232,6 +239,11 @@ describe('HeaderActions', () => {
     expect(
       screen.queryByRole('button', { name: /sync burner terminal/i })
     ).toBeNull()
+
+    expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+      'data-state',
+      'closed'
+    )
 
     rerender(
       <HeaderActions
@@ -248,9 +260,44 @@ describe('HeaderActions', () => {
       screen.getByRole('button', { name: /sync burner terminal/i })
     ).toBeInTheDocument()
 
+    expect(
+      screen.getByRole('button', { name: /sync burner terminal/i }).className
+    ).toContain('!w-5')
+
     expect(screen.getByTestId('burner-control-pill').className).toContain(
       'h-[22px]'
     )
+
+    expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+      'data-state',
+      'open'
+    )
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass('gap-px')
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass('p-px')
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass(
+      'transition-[background-color,border-color,gap,padding]'
+    )
+
+    rerender(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        onBurner={vi.fn()}
+        onSyncBurner={onSyncBurner}
+        burnerOpen
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /sync burner terminal/i })
+    ).toBeNull()
+
+    expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+      'data-state',
+      'closed'
+    )
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass('gap-0')
+    expect(screen.getByTestId('burner-control-pill')).toHaveClass('p-0')
   })
 
   test('burner sync sits before the burner toggle and stops click propagation', () => {
@@ -281,10 +328,98 @@ describe('HeaderActions', () => {
 
     expect(onSyncBurner).toHaveBeenCalledTimes(1)
     expect(onParentClick).not.toHaveBeenCalled()
-    expect(sync.className).toContain('animate-spin')
+    expect(sync.className).toContain('vf-burner-sync-spin')
   })
 
-  test('burner sync shows failure if the cwd remains out of sync', () => {
+  test('burner sync resolves with the prototype spin before collapsing', () => {
+    vi.useFakeTimers()
+    const onSyncBurner = vi.fn()
+
+    try {
+      const { rerender } = render(
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={vi.fn()}
+          onSyncBurner={onSyncBurner}
+          burnerOpen
+          burnerOutOfSync
+        />
+      )
+
+      const sync = screen.getByRole('button', {
+        name: /sync burner terminal/i,
+      })
+
+      act(() => {
+        sync.focus()
+      })
+
+      fireEvent.click(sync)
+
+      expect(onSyncBurner).toHaveBeenCalledTimes(1)
+      expect(sync.className).toContain('vf-burner-sync-spin')
+
+      rerender(
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={vi.fn()}
+          onSyncBurner={onSyncBurner}
+          burnerOpen
+        />
+      )
+
+      expect(
+        screen.getByRole('button', { name: /syncing burner terminal/i })
+      ).toBeInTheDocument()
+
+      expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+        'data-state',
+        'open'
+      )
+
+      act(() => {
+        vi.advanceTimersByTime(480)
+      })
+
+      expect(
+        screen.queryByRole('button', { name: /sync burner terminal/i })
+      ).toBeNull()
+
+      expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+        'data-state',
+        'closed'
+      )
+
+      expect(
+        screen.getByRole('button', { name: /hide burner terminal/i })
+      ).toHaveFocus()
+
+      rerender(
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={vi.fn()}
+          onSyncBurner={onSyncBurner}
+          burnerOpen
+          burnerOutOfSync
+        />
+      )
+
+      const syncAgain = screen.getByRole('button', {
+        name: /sync burner terminal/i,
+      })
+      fireEvent.click(syncAgain)
+
+      expect(onSyncBurner).toHaveBeenCalledTimes(2)
+      expect(syncAgain.className).toContain('vf-burner-sync-spin')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('burner sync returns to retry state if the cwd remains out of sync', () => {
     vi.useFakeTimers()
     const onSyncBurner = vi.fn()
 
@@ -310,10 +445,16 @@ describe('HeaderActions', () => {
 
       expect(onSyncBurner).toHaveBeenCalledTimes(1)
       expect(
-        screen.getByRole('button', {
+        screen.queryByRole('button', {
           name: /sync failed; check burner terminal/i,
         })
-      ).toHaveTextContent('sync_problem')
+      ).toBeNull()
+
+      expect(
+        screen.getByRole('button', {
+          name: /sync burner terminal/i,
+        })
+      ).toHaveTextContent('sync')
     } finally {
       vi.useRealTimers()
     }

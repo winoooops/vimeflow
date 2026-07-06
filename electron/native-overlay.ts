@@ -843,7 +843,10 @@ export class NativeOverlayController {
     record: NativeOverlayRecord,
     payload: NativeOverlayRequest
   ): Promise<NativeOverlayOpenResult> {
-    if (record.activeTooltipSurfaceId !== null) {
+    const isActiveTooltipRefresh =
+      record.activeTooltipSurfaceId === payload.surfaceId
+
+    if (record.activeTooltipSurfaceId !== null && !isActiveTooltipRefresh) {
       this.closeSurface(record.activeTooltipSurfaceId, 'replaced', true, false)
     }
 
@@ -868,6 +871,13 @@ export class NativeOverlayController {
       parentId: parent.id,
       kind: 'tooltip',
     })
+
+    if (isActiveTooltipRefresh) {
+      this.resolvePendingReady(payload.surfaceId, true)
+      record.tooltip.window.webContents.send(NATIVE_OVERLAY_RENDER, payload)
+
+      return { accepted: true }
+    }
 
     const readyPromise = this.waitForReady(payload.surfaceId)
     record.tooltip.window.webContents.send(NATIVE_OVERLAY_RENDER, payload)
