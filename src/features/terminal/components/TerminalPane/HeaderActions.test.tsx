@@ -379,6 +379,11 @@ describe('HeaderActions', () => {
         'open'
       )
 
+      sync.setAttribute('disabled', '')
+      fireEvent.blur(sync)
+      screen.getByRole('button', { name: /collapse status/i }).focus()
+      expect(sync).not.toHaveFocus()
+
       act(() => {
         vi.advanceTimersByTime(480)
       })

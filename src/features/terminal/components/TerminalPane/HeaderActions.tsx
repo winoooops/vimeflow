@@ -74,6 +74,7 @@ export const HeaderActions = ({
     useState<BurnerSyncStatus>('idle')
   const burnerButtonRef = useRef<HTMLButtonElement | null>(null)
   const syncButtonRef = useRef<HTMLButtonElement | null>(null)
+  const syncButtonHadFocusRef = useRef(false)
 
   const burnerLabel = burnerButtonLabel(
     burnerActive,
@@ -94,11 +95,13 @@ export const HeaderActions = ({
   }, [showBurnerSync])
 
   useEffect(() => {
-    if (
-      showBurnerSync ||
-      document.activeElement !== syncButtonRef.current ||
-      burnerButtonRef.current === null
-    ) {
+    if (showBurnerSync) {
+      return
+    }
+
+    const shouldRestoreFocus = syncButtonHadFocusRef.current
+    syncButtonHadFocusRef.current = false
+    if (!shouldRestoreFocus || burnerButtonRef.current === null) {
       return
     }
 
@@ -215,6 +218,16 @@ export const HeaderActions = ({
                 }
                 setBurnerSyncStatus('syncing')
                 onSyncBurner?.()
+              }}
+              onFocus={() => {
+                syncButtonHadFocusRef.current = true
+              }}
+              onBlur={(event) => {
+                if (event.currentTarget.disabled) {
+                  return
+                }
+
+                syncButtonHadFocusRef.current = false
               }}
             />
           </Tooltip>
