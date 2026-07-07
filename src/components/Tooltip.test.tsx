@@ -1,4 +1,4 @@
-import { createRef } from 'react'
+import { createRef, type ReactElement } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -428,6 +428,38 @@ describe('Tooltip', () => {
       },
     })
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('keeps native shortcut tooltip open across equal inline shortcut rerenders', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    const renderShortcutTooltip = (): ReactElement => (
+      <Tooltip
+        content="Collapse panel"
+        delayMs={0}
+        shortcut={['Mod', '0']}
+        nativeOverlay
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const { rerender } = render(renderShortcutTooltip())
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    rerender(renderShortcutTooltip())
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(nativeBridge.open).toHaveBeenCalledOnce()
+    expect(nativeBridge.close).not.toHaveBeenCalled()
   })
 
   test('resyncs native tooltip anchor geometry after resize', async () => {

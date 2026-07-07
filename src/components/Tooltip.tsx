@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useState,
   type ReactElement,
   type ReactNode,
@@ -137,6 +138,11 @@ export const Tooltip = ({
   const transport = selectFloatingTransport(nativeOverlay)
   const nativeTooltipText = typeof content === 'string' ? content : null
 
+  const formattedShortcut = useMemo(
+    () => (shortcut === undefined ? undefined : formatShortcut(shortcut)),
+    [shortcut]
+  )
+
   const nativeUnsupportedReason =
     nativeTooltipText === null
       ? 'tooltip native overlay only supports plain text'
@@ -208,9 +214,6 @@ export const Tooltip = ({
 
     const rect = reference.getBoundingClientRect()
 
-    const nativeShortcut =
-      shortcut === undefined ? undefined : formatShortcut(shortcut)
-
     return openNativeOverlay(
       {
         surfaceId: nativeSurfaceId,
@@ -225,7 +228,9 @@ export const Tooltip = ({
         payload: {
           kind: 'tooltip',
           text: nativeTooltipText,
-          ...(nativeShortcut === undefined ? {} : { shortcut: nativeShortcut }),
+          ...(formattedShortcut === undefined
+            ? {}
+            : { shortcut: formattedShortcut }),
           maxWidth,
         },
         theme: nativeOverlayThemeSnapshot(),
@@ -236,12 +241,12 @@ export const Tooltip = ({
       }
     )
   }, [
+    formattedShortcut,
     maxWidth,
     nativeSurfaceId,
     nativeTooltipText,
     placement,
     refs.reference,
-    shortcut,
   ])
 
   useEffect(() => {
@@ -386,7 +391,7 @@ export const Tooltip = ({
         <div className="flex items-center gap-3">
           <span className="min-w-0 flex-1">{content}</span>
           <kbd data-testid="tooltip-shortcut" className={SHORTCUT_CHIP_CLASSES}>
-            {formatShortcut(shortcut)}
+            {formattedShortcut}
           </kbd>
         </div>
       ) : (
