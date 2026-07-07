@@ -3,9 +3,9 @@ import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
-const SYNC_FAILURE_TIMEOUT_MS = 1200
+const SYNC_RESOLVE_SPIN_MS = 480
 
-type BurnerSyncStatus = 'idle' | 'syncing' | 'blocked' | 'failed'
+type BurnerSyncStatus = 'idle' | 'syncing' | 'blocked'
 
 const burnerButtonLabel = (
   active: boolean,
@@ -72,10 +72,9 @@ export const HeaderActions = ({
 }: HeaderActionsProps): ReactElement => {
   const [burnerSyncStatus, setBurnerSyncStatus] =
     useState<BurnerSyncStatus>('idle')
-
-  const syncFailureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
+  const burnerButtonRef = useRef<HTMLButtonElement | null>(null)
+  const syncButtonRef = useRef<HTMLButtonElement | null>(null)
+  const syncButtonHadFocusRef = useRef(false)
 
   const burnerLabel = burnerButtonLabel(
     burnerActive,
@@ -83,18 +82,30 @@ export const HeaderActions = ({
     burnerShellExists
   )
 
+  const canShowBurnerSync = Boolean(onBurner && onSyncBurner && burnerOpen)
+
   const showBurnerSync = Boolean(
-    onBurner && onSyncBurner && burnerOpen && burnerOutOfSync
+    canShowBurnerSync && (burnerOutOfSync || burnerSyncStatus === 'syncing')
   )
 
   useEffect(() => {
     if (!showBurnerSync) {
-      if (syncFailureTimeoutRef.current) {
-        clearTimeout(syncFailureTimeoutRef.current)
-        syncFailureTimeoutRef.current = null
-      }
       setBurnerSyncStatus('idle')
     }
+  }, [showBurnerSync])
+
+  useEffect(() => {
+    if (showBurnerSync) {
+      return
+    }
+
+    const shouldRestoreFocus = syncButtonHadFocusRef.current
+    syncButtonHadFocusRef.current = false
+    if (!shouldRestoreFocus || burnerButtonRef.current === null) {
+      return
+    }
+
+    burnerButtonRef.current.focus()
   }, [showBurnerSync])
 
   useEffect(() => {
@@ -103,33 +114,44 @@ export const HeaderActions = ({
     }
   }, [burnerActive, burnerSyncStatus, showBurnerSync])
 
-  useEffect(
-    () => (): void => {
-      if (syncFailureTimeoutRef.current) {
-        clearTimeout(syncFailureTimeoutRef.current)
-      }
-    },
-    []
-  )
+  useEffect(() => {
+    if (!canShowBurnerSync || burnerSyncStatus !== 'syncing') {
+      return undefined
+    }
 
-  const burnerSyncFailed =
-    burnerSyncStatus === 'blocked' || burnerSyncStatus === 'failed'
+    const timeoutId = setTimeout(() => {
+      setBurnerSyncStatus('idle')
+    }, SYNC_RESOLVE_SPIN_MS)
 
-  const burnerSyncLabel = burnerSyncFailed
-    ? burnerSyncStatus === 'blocked'
-      ? 'stop the running command, then sync pwd'
-      : 'sync failed; check burner terminal'
+    return (): void => clearTimeout(timeoutId)
+  }, [burnerSyncStatus, canShowBurnerSync])
+
+  const burnerSyncBlocked = burnerSyncStatus === 'blocked'
+
+  const burnerSyncLabel = burnerSyncBlocked
+    ? 'stop the running command, then sync pwd'
     : burnerSyncStatus === 'syncing'
       ? 'syncing burner terminal'
       : 'sync burner terminal'
 
-  const burnerSyncIcon = burnerSyncFailed ? 'sync_problem' : 'sync'
+  const burnerSyncIcon = burnerSyncBlocked ? 'sync_problem' : 'sync'
 
   const collapseLabel = isCollapsed ? 'expand status' : 'collapse status'
+
+  const burnerButtonClassName = showBurnerSync
+    ? `!h-5 !w-5 rounded-md ${
+        burnerActive
+          ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
+          : 'bg-primary/10 text-primary hover:bg-primary/15'
+      }`
+    : burnerActive
+      ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
+      : undefined
 
   const burnerButton = onBurner ? (
     <Tooltip content={burnerLabel} placement="bottom" nativeOverlay>
       <IconButton
+        ref={burnerButtonRef}
         icon="terminal"
         label={burnerLabel}
         showTooltip={TOOLTIP_SUPPRESSED}
@@ -140,17 +162,7 @@ export const HeaderActions = ({
           onBurner()
         }}
         // Running keeps the amber status tint; pressed still reflects open/hidden.
-        className={
-          showBurnerSync
-            ? `!h-5 !w-5 rounded-md ${
-                burnerActive
-                  ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
-                  : 'bg-primary/10 text-primary hover:bg-primary/15'
-              }`
-            : burnerActive
-              ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
-              : undefined
-        }
+        className={burnerButtonClassName}
       />
     </Tooltip>
   ) : null
@@ -166,30 +178,39 @@ export const HeaderActions = ({
         </span>
       )}
 
-      {showBurnerSync ? (
+      {burnerButton ? (
         <div
           data-testid="burner-control-pill"
-          className="inline-flex h-[22px] shrink-0 items-center gap-px rounded-lg border border-primary/20 bg-primary/10 p-px"
+          data-state={showBurnerSync ? 'open' : 'closed'}
+          className={`inline-flex h-[22px] shrink-0 items-center rounded-lg border transition-[background-color,border-color,gap,padding] duration-200 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none ${
+            showBurnerSync
+              ? 'gap-px border-primary/20 bg-primary/10 p-px'
+              : 'gap-0 border-transparent bg-transparent p-0'
+          }`}
         >
           <Tooltip content={burnerSyncLabel} placement="bottom" nativeOverlay>
             <IconButton
+              ref={syncButtonRef}
               icon={burnerSyncIcon}
               label={burnerSyncLabel}
               showTooltip={TOOLTIP_SUPPRESSED}
               size="sm"
-              className={`!h-5 !w-5 rounded-md ${
+              aria-hidden={showBurnerSync ? undefined : true}
+              tabIndex={showBurnerSync ? undefined : -1}
+              disabled={!showBurnerSync}
+              className={`vf-burner-sync-icon-motion !h-5 overflow-hidden rounded-md transition-[background-color,color,width] duration-200 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none ${
+                showBurnerSync
+                  ? '!w-5 opacity-100'
+                  : 'pointer-events-none !w-0 opacity-0'
+              } ${
                 burnerSyncStatus === 'syncing'
-                  ? 'animate-spin text-agent-shell-accent'
-                  : burnerSyncFailed
+                  ? 'vf-burner-sync-spin text-agent-shell-accent'
+                  : burnerSyncBlocked
                     ? 'bg-error/10 text-error hover:bg-error/15'
                     : 'text-agent-shell-accent hover:bg-agent-shell-accent/15'
               }`}
               onClick={(event) => {
                 event.stopPropagation()
-                if (syncFailureTimeoutRef.current) {
-                  clearTimeout(syncFailureTimeoutRef.current)
-                  syncFailureTimeoutRef.current = null
-                }
                 if (burnerActive) {
                   setBurnerSyncStatus('blocked')
 
@@ -197,18 +218,22 @@ export const HeaderActions = ({
                 }
                 setBurnerSyncStatus('syncing')
                 onSyncBurner?.()
-                syncFailureTimeoutRef.current = setTimeout(() => {
-                  syncFailureTimeoutRef.current = null
-                  setBurnerSyncStatus('failed')
-                }, SYNC_FAILURE_TIMEOUT_MS)
+              }}
+              onFocus={() => {
+                syncButtonHadFocusRef.current = true
+              }}
+              onBlur={(event) => {
+                if (event.currentTarget.disabled) {
+                  return
+                }
+
+                syncButtonHadFocusRef.current = false
               }}
             />
           </Tooltip>
           {burnerButton}
         </div>
-      ) : (
-        burnerButton
-      )}
+      ) : null}
 
       {!hideCollapseToggle && (
         <Tooltip content={collapseLabel} placement="bottom" nativeOverlay>

@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-05
-ref_count: 88
+last_updated: 2026-07-07
+ref_count: 89
 ---
 
 # Accessibility
@@ -920,4 +920,13 @@ handlers must not trap focus without implementing the promised behavior.
 - **File:** `src/components/Dialog.tsx`
 - **Finding:** While native overlay transport owned the visible dialog, the local DOM fallback stayed mounted with `role="dialog"` and `aria-modal="true"` and still received initial focus. Keyboard and assistive-technology users could be moved into an invisible modal subtree.
 - **Fix:** Mark the hidden local fallback `aria-hidden` and `inert`, skip local initial focus, and skip dialog-stack registration while native transport is active. Added regression tests for hidden fallback attributes and focus retention outside the local subtree.
+- **Commit:** same commit as this entry
+
+### 100. Disabled sync button blur dropped keyboard focus
+
+- **Source:** github-claude + github-codex-connector | PR #669 round 1 | 2026-07-07
+- **Severity:** MEDIUM / P2
+- **File:** `src/features/terminal/components/TerminalPane/HeaderActions.tsx`
+- **Finding:** The burner sync collapse effect inferred focus from `document.activeElement` after the sync button had already become disabled. Chromium can blur a focused disabled control before passive effects run, leaving focus on another element or body and causing the intended handoff to the burner toggle to be skipped.
+- **Fix:** Tracked sync-button focus intent with focus/blur handlers, preserved the intent for disabled-triggered blur, and restored focus to the burner toggle when the sync control collapses. Expanded the regression test to simulate active focus moving away before collapse.
 - **Commit:** same commit as this entry

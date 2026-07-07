@@ -181,6 +181,23 @@
   }
 }
 
+.vf-burner-sync-icon-motion .material-symbols-outlined {
+  transform-origin: center;
+}
+
+.vf-burner-sync-spin .material-symbols-outlined {
+  animation: vfBurnerSyncSpin 480ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes vfBurnerSyncSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @utility glass-panel {
   /* Background lives on the Tailwind `bg-[…]/<alpha>` class on each consumer
      so the panel's opacity is explicit at the call site. We only contribute
@@ -256,6 +273,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vf-burner-sync-icon-motion .material-symbols-outlined {
+    animation: none;
+  }
+
   .vf-liquid-wave-a,
   .vf-liquid-wave-b,
   .vf-liquid-slosh {
