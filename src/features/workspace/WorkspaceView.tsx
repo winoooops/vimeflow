@@ -105,7 +105,10 @@ import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
-import { selectVisiblePanes } from '../terminal/components/SplitView'
+import {
+  canClosePane,
+  selectVisiblePanes,
+} from '../terminal/components/SplitView'
 import {
   canSelectLayoutOverCapacity,
   getPaneLayoutCapacity,
@@ -138,7 +141,6 @@ import {
   DOCK_VERTICAL_ELASTIC_CONFIG,
   DOCK_HORIZONTAL_ELASTIC_CONFIG,
 } from './panelConfig'
-import { canClosePane } from '../terminal/components/SplitView'
 import { OverlayStackProvider } from './overlays/OverlayStackProvider'
 import { WorkspaceOverlayRegistrations } from './overlays/WorkspaceOverlayRegistrations'
 import {

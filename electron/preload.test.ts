@@ -1,6 +1,5 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
-import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -22,6 +21,7 @@ import {
 import {
   COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
+  DIALOG_PICK_DIRECTORY,
   SETTINGS_CHANGED,
   SETTINGS_OPEN_WINDOW,
 } from './ipc-channels'

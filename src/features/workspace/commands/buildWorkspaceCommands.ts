@@ -1,3 +1,4 @@
+// cspell:ignore tabnew tabe tabclose tabc tabnext tabn tabprev tabp
 import type {
   LayoutId,
   Session,

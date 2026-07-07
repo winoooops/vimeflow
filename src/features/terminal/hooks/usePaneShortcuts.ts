@@ -49,6 +49,7 @@ export const usePaneShortcuts = ({
   const onTerminalZoneFocusRef = useRef(onTerminalZoneFocus)
   const isTerminalContainerActiveRef = useRef(isTerminalContainerActive)
   const layoutRegistryRef = useRef(layoutRegistry)
+
   const lastSingleToggleLayoutBySessionRef = useRef(
     new Map<string, PaneLayoutId>()
   )
@@ -154,9 +155,6 @@ export const usePaneShortcuts = ({
           activeSession.layout
         )
         const slotId = layout.definition.addOrder[paneNumber - 1]
-        if (slotId === undefined) {
-          return
-        }
 
         const target = resolvePanePlacement(
           activeSession.panes,
