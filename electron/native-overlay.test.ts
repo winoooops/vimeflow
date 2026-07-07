@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import type { BrowserWindow } from 'electron'
 import {
   NATIVE_OVERLAY_ACTION,
   NATIVE_OVERLAY_ACTION_RESULT,
@@ -835,6 +836,47 @@ describe('NativeOverlayController', () => {
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(overlayWindow.showInactive).toHaveBeenCalledOnce()
     expect(overlayWindow.webContents.focus).not.toHaveBeenCalled()
+  })
+
+  test('reports active interactive overlay surfaces but ignores passive tooltips', async () => {
+    const ownerWindow = electronMock.owner as unknown as BrowserWindow
+
+    expect(controller.hasActiveInteractiveOverlaySurface(ownerWindow)).toBe(
+      false
+    )
+
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    const tooltipWindow = finishOverlayLoad(1)
+    await acknowledgeOverlayReady(tooltipWindow, tooltipRequest.surfaceId)
+    await tooltipOpenPromise
+
+    expect(controller.hasActiveInteractiveOverlaySurface(ownerWindow)).toBe(
+      false
+    )
+
+    const dialogOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      dialogRequest
+    )
+    const dialogWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(dialogWindow, dialogRequest.surfaceId)
+    await dialogOpenPromise
+
+    expect(controller.hasActiveInteractiveOverlaySurface(ownerWindow)).toBe(
+      true
+    )
+
+    handler(NATIVE_OVERLAY_CLOSE)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: dialogRequest.surfaceId, reason: 'renderer' }
+    )
+
+    expect(controller.hasActiveInteractiveOverlaySurface(ownerWindow)).toBe(
+      false
+    )
   })
 
   test('does not hide a newer active overlay when an older render times out', async () => {

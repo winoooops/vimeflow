@@ -103,6 +103,7 @@ interface GhosttyNativeParentDeps {
   packaged?: boolean
   resourcesPath?: string
   addon?: GhosttyNativeParentAddon
+  inputBlocked?: (win: BrowserWindow) => boolean
 }
 
 interface GhosttyNativeSurfaceState {
@@ -330,6 +331,8 @@ export class GhosttyNativeParentController {
 
   private readonly nativeParentDir: string
 
+  private readonly inputBlocked: (win: BrowserWindow) => boolean
+
   private addon: GhosttyNativeParentAddon | null
 
   private addonLoadFailed = false
@@ -350,6 +353,7 @@ export class GhosttyNativeParentController {
       deps.resourcesPath ?? process.resourcesPath
     )
     this.addon = deps.addon ?? null
+    this.inputBlocked = deps.inputBlocked ?? ((): boolean => false)
   }
 
   registerIpc(): void {
@@ -587,6 +591,10 @@ export class GhosttyNativeParentController {
           return
         }
 
+        if (this.inputBlocked(win)) {
+          return
+        }
+
         this.invokeSidecar('write_pty', {
           request: {
             sessionId: payload.secondarySessionId,
@@ -621,6 +629,10 @@ export class GhosttyNativeParentController {
       },
       () => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        if (this.inputBlocked(win)) {
           return
         }
 
@@ -846,6 +858,10 @@ export class GhosttyNativeParentController {
           return
         }
 
+        if (this.inputBlocked(win)) {
+          return
+        }
+
         win.webContents.send(BACKEND_EVENT, {
           event: 'ghostty-native-input',
           payload: { ...state.pane, data },
@@ -881,6 +897,10 @@ export class GhosttyNativeParentController {
           return
         }
 
+        if (this.inputBlocked(win)) {
+          return
+        }
+
         win.webContents.send(BACKEND_EVENT, {
           event: 'ghostty-native-focus',
           payload: state.pane,
@@ -888,6 +908,10 @@ export class GhosttyNativeParentController {
       },
       (shortcutKey, code, control, meta, alt, shift, repeat) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        if (this.inputBlocked(win)) {
           return
         }
 
@@ -918,6 +942,10 @@ export class GhosttyNativeParentController {
       },
       () => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        if (this.inputBlocked(win)) {
           return
         }
 
