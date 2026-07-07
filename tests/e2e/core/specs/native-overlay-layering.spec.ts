@@ -468,21 +468,12 @@ describe('NativeOverlay BrowserWindow layering', () => {
     }
 
     const paneRect = await waitForRealNativeGhosttyPane()
+    const trigger = await $('button[aria-label="Configure displayed layouts"]')
     await waitForLayoutDisplayAnchor()
     const before = captureScreen()
     const mapping = await mapViewportToScreenPixels()
 
-    const clicked = await browser.execute(() => {
-      const button = document.querySelector<HTMLElement>(
-        'button[aria-label="Configure displayed layouts"]'
-      )
-      button?.click()
-
-      return button !== null
-    })
-    if (!clicked) {
-      throw new Error('layout display trigger unavailable')
-    }
+    await trigger.click()
     await waitForOverlayMenu()
 
     await waitForOverlayPaint(before, mapping, paneRect)
