@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { IconButton } from '@/components/IconButton'
+import { Menu, isNativeOverlayMenuTransportActive } from '@/components/Menu'
 import { Popover } from '@/components/Popover'
 import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
@@ -23,6 +24,7 @@ interface PriorityPlusProps {
   children: readonly ReactNode[]
   maxRows?: number
   gap?: string
+  renderNativeOverflowMenu?: (hiddenKeys: readonly string[]) => ReactNode
   // Bump to force a re-measure when a child's rendered WIDTH changes without a
   // change in child count or container size (e.g. the file pill swapping a
   // short filename for a long one). PriorityPlus otherwise only re-measures on
@@ -60,6 +62,7 @@ export const PriorityPlus = ({
   children,
   maxRows = 1,
   gap = 'gap-x-3 gap-y-2',
+  renderNativeOverflowMenu = undefined,
   remeasureKey = undefined,
 }: PriorityPlusProps): ReactElement => {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -176,8 +179,14 @@ export const PriorityPlus = ({
 
   // Drop separators from the tray — a 1px vertical hairline is meaningless in
   // the vertical `…` menu and would inflate the "N more controls" count.
-  const hiddenItems = showOverflow
-    ? children.slice(overflowFrom).filter((child) => !isSeparatorElement(child))
+  const hiddenEntries = showOverflow
+    ? children
+        .slice(overflowFrom)
+        .map((child, index) => ({
+          item: child,
+          key: stableItemKey(child, overflowFrom + index),
+        }))
+        .filter(({ item }) => !isSeparatorElement(item))
     : []
 
   return (
@@ -213,8 +222,11 @@ export const PriorityPlus = ({
           </div>
         )
       })}
-      {hiddenItems.length > 0 ? (
-        <OverflowMenu hiddenItems={hiddenItems} />
+      {hiddenEntries.length > 0 ? (
+        <OverflowMenu
+          hiddenEntries={hiddenEntries}
+          renderNativeOverflowMenu={renderNativeOverflowMenu}
+        />
       ) : null}
     </div>
   )
@@ -235,23 +247,54 @@ const stableItemKey = (item: ReactNode, index: number): string => {
 // items are arbitrary stateful controls the user operates inside the tray,
 // so this is a dialog-shaped Popover, not a selectable menu.
 const OverflowMenu = ({
-  hiddenItems,
+  hiddenEntries,
+  renderNativeOverflowMenu = undefined,
 }: {
-  hiddenItems: readonly ReactNode[]
+  hiddenEntries: readonly { key: string; item: ReactNode }[]
+  renderNativeOverflowMenu?: (hiddenKeys: readonly string[]) => ReactNode
 }): ReactElement => {
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
 
-  return (
-    <>
-      <Tooltip
-        content={`Show ${hiddenItems.length} more controls`}
+  const label = `Show ${hiddenEntries.length} more controls`
+
+  const nativeMenu = renderNativeOverflowMenu?.(
+    hiddenEntries.map((entry) => entry.key)
+  )
+
+  if (
+    nativeMenu !== undefined &&
+    nativeMenu !== null &&
+    isNativeOverlayMenuTransportActive(true)
+  ) {
+    return (
+      <Menu
+        trigger={
+          <IconButton
+            ref={setAnchor}
+            icon="more_horiz"
+            label={label}
+            size="lg"
+            showTooltip={TOOLTIP_SUPPRESSED}
+            className="rounded-full"
+          />
+        }
+        placement="bottom-end"
+        aria-label="More controls"
         nativeOverlay
       >
+        {nativeMenu}
+      </Menu>
+    )
+  }
+
+  return (
+    <>
+      <Tooltip content={label} nativeOverlay>
         <IconButton
           ref={setAnchor}
           icon="more_horiz"
-          label={`Show ${hiddenItems.length} more controls`}
+          label={label}
           size="lg"
           showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already supplies the label
           onClick={(): void => setOpen((previous) => !previous)}
@@ -266,12 +309,12 @@ const OverflowMenu = ({
         anchor={anchor}
         open={open}
         onOpenChange={setOpen}
-        placement="bottom-start"
+        placement="bottom-end"
         aria-label="More controls"
       >
         <div className="flex flex-col gap-2 p-3 max-w-[320px]">
-          {hiddenItems.map((item, index) => (
-            <div key={stableItemKey(item, index)}>{item}</div>
+          {hiddenEntries.map(({ key, item }) => (
+            <div key={key}>{item}</div>
           ))}
         </div>
       </Popover>

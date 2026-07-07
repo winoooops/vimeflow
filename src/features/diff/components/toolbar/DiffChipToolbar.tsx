@@ -6,9 +6,14 @@ import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { Dropdown, type DropdownOption } from '@/components/Dropdown'
+import { Menu } from '@/components/Menu'
 import { PriorityPlus } from './PriorityPlus'
 import { Segmented } from './Segmented'
-import { ViewSettingsDropdown } from './ViewSettingsDropdown'
+import {
+  ViewSettingsDropdown,
+  VIEW_INDICATOR_OPTIONS,
+  VIEW_OVERFLOW_OPTIONS,
+} from './ViewSettingsDropdown'
 import { FilePill } from './FilePill'
 import { ChangeStepper } from './ChangeStepper'
 import {
@@ -111,6 +116,15 @@ const LINE_DIFF_OPTIONS: readonly DropdownOption<LineDiffType>[] = [
     label: 'None',
     description: 'Show line-level changes only',
   },
+]
+
+const DIFF_STYLE_OPTIONS: readonly {
+  value: DiffStyle
+  label: string
+  icon: string
+}[] = [
+  { value: 'split', label: 'Split', icon: 'vertical_split' },
+  { value: 'unified', label: 'Unified', icon: 'view_headline' },
 ]
 
 export interface DiffChipToolbarProps {
@@ -466,6 +480,221 @@ export const DiffChipToolbar = ({
   const canFinishFeedback = onFinishFeedback !== undefined
   const showPinnedActions = onRefreshActiveFile !== undefined || showActions
 
+  const renderNativeOverflowMenu = (
+    hiddenKeys: readonly string[]
+  ): ReactNode => {
+    const hidden = new Set(hiddenKeys)
+    const sections: ReactNode[] = []
+
+    if (hidden.has('diff-style')) {
+      sections.push(
+        <Menu.Section key="diff-style" label="Diff view">
+          {DIFF_STYLE_OPTIONS.map((option) => (
+            <Menu.Checkbox
+              key={option.value}
+              icon={option.icon}
+              checked={diffStyle === option.value}
+              onChange={(): void => onDiffStyleChange(option.value)}
+            >
+              {option.label}
+            </Menu.Checkbox>
+          ))}
+        </Menu.Section>
+      )
+    }
+
+    if (hidden.has('file-nav')) {
+      sections.push(
+        <Menu.Section key="file-nav" label={`File ${fileCounterText}`}>
+          <Menu.Row
+            label="Previous file"
+            disabled={!fileNavEnabled}
+            nativeOverlayIcon="chevron_left"
+            onSelect={onPrevFile}
+          >
+            <span>Previous file</span>
+            <kbd>p</kbd>
+          </Menu.Row>
+          <Menu.Row
+            label="Next file"
+            disabled={!fileNavEnabled}
+            nativeOverlayIcon="chevron_right"
+            onSelect={onNextFile}
+          >
+            <span>Next file</span>
+            <kbd>n</kbd>
+          </Menu.Row>
+        </Menu.Section>
+      )
+    }
+
+    if (hidden.has('tool-well')) {
+      sections.push(
+        <Menu.Section key="tool-well" label="Changes">
+          <Menu.Row
+            label="Stage hunk"
+            disabled={onStage === undefined || staging}
+            nativeOverlayIcon="add_box"
+            onSelect={(): Promise<void> | undefined => onStage?.()}
+          >
+            <span>Stage hunk</span>
+            <kbd>s</kbd>
+          </Menu.Row>
+          {diffMode === 'staged' ? (
+            <Menu.Row
+              label="Unstage"
+              disabled={onUnstage === undefined || staging}
+              nativeOverlayIcon="indeterminate_check_box"
+              onSelect={(): Promise<void> | undefined => onUnstage?.()}
+            >
+              <span>Unstage</span>
+              <kbd>s</kbd>
+            </Menu.Row>
+          ) : null}
+          <Menu.Row
+            label="Discard hunk"
+            disabled={onDiscard === undefined || staging}
+            nativeOverlayIcon="backspace"
+            onSelect={(): Promise<void> | undefined => onDiscard?.()}
+          >
+            <span>Discard hunk</span>
+            <kbd>d</kbd>
+          </Menu.Row>
+          {onDiscardAll !== undefined ? (
+            <Menu.Row
+              label="Discard all changes"
+              disabled
+              nativeOverlayIcon="delete_sweep"
+              nativeOverlayDetail="Confirmation required"
+            >
+              <span>Discard all changes</span>
+            </Menu.Row>
+          ) : null}
+        </Menu.Section>
+      )
+    }
+
+    if (hidden.has('change-stepper')) {
+      sections.push(
+        <Menu.Section key="change-stepper" label={`Hunks ${hunkCounterText}`}>
+          <Menu.Row
+            label="Previous change"
+            disabled={!hunkNavEnabled}
+            nativeOverlayIcon="keyboard_arrow_up"
+            onSelect={onPrevHunk}
+          >
+            <span>Previous change</span>
+            <kbd>[</kbd>
+          </Menu.Row>
+          <Menu.Row
+            label="Next change"
+            disabled={!hunkNavEnabled}
+            nativeOverlayIcon="keyboard_arrow_down"
+            onSelect={onNextHunk}
+          >
+            <span>Next change</span>
+            <kbd>]</kbd>
+          </Menu.Row>
+        </Menu.Section>
+      )
+    }
+
+    if (hidden.has('highlight')) {
+      sections.push(
+        <Menu.Section key="highlight" label="Highlight">
+          {LINE_DIFF_OPTIONS.map((option) => (
+            <Menu.Checkbox
+              key={option.value}
+              icon="format_ink_highlighter"
+              checked={lineDiffType === option.value}
+              onChange={(): void => onLineDiffTypeChange(option.value)}
+            >
+              {option.label}
+            </Menu.Checkbox>
+          ))}
+        </Menu.Section>
+      )
+    }
+
+    if (hidden.has('theme')) {
+      sections.push(
+        <Menu.Section key="theme" label="Theme">
+          {THEME_OPTIONS.map((option) => (
+            <Menu.Checkbox
+              key={option.value}
+              icon="palette"
+              checked={theme === option.value}
+              onChange={(): void => onThemeChange(option.value)}
+            >
+              {option.label}
+            </Menu.Checkbox>
+          ))}
+        </Menu.Section>
+      )
+    }
+
+    if (hidden.has('view-settings')) {
+      sections.push(
+        <Menu.Section key="view-format" label="Indicators">
+          {VIEW_INDICATOR_OPTIONS.map((option) => (
+            <Menu.Checkbox
+              key={option.value}
+              icon="flag"
+              checked={diffIndicators === option.value}
+              onChange={(): void => onDiffIndicatorsChange(option.value)}
+            >
+              {option.label}
+            </Menu.Checkbox>
+          ))}
+        </Menu.Section>,
+        <Menu.Section key="view-overflow" label="Overflow">
+          {VIEW_OVERFLOW_OPTIONS.map((option) => (
+            <Menu.Checkbox
+              key={option.value}
+              icon="wrap_text"
+              checked={overflow === option.value}
+              onChange={(): void => onOverflowChange(option.value)}
+            >
+              {option.label}
+            </Menu.Checkbox>
+          ))}
+        </Menu.Section>,
+        <Menu.Section key="view-options" label="View options">
+          <Menu.Checkbox
+            icon="123"
+            checked={!disableLineNumbers}
+            onChange={(next): void => onDisableLineNumbersChange(!next)}
+          >
+            Line numbers
+          </Menu.Checkbox>
+          <Menu.Checkbox
+            icon="format_paint"
+            checked={!disableBackground}
+            onChange={(next): void => onDisableBackgroundChange(!next)}
+          >
+            Background tint
+          </Menu.Checkbox>
+          <Menu.Checkbox
+            icon="description"
+            checked={!disableFileHeader}
+            onChange={(next): void => onDisableFileHeaderChange(!next)}
+          >
+            File header
+          </Menu.Checkbox>
+          <Menu.Checkbox
+            icon="push_pin"
+            checked={stickyHeader}
+            onChange={onStickyHeaderChange}
+          >
+            Sticky header
+          </Menu.Checkbox>
+        </Menu.Section>
+      )
+    }
+
+    return sections.length === 0 ? null : sections
+  }
+
   return (
     <div
       role="toolbar"
@@ -476,6 +705,7 @@ export const DiffChipToolbar = ({
         <PriorityPlus
           maxRows={1}
           remeasureKey={`${selectedFileName ?? ''}|${fileCounterText}|${hunkCounterText}|${theme}|${lineDiffType}|${diffMode}`}
+          renderNativeOverflowMenu={renderNativeOverflowMenu}
         >
           {chips}
         </PriorityPlus>
