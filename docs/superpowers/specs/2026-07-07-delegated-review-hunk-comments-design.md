@@ -28,7 +28,7 @@ VIMEFLOW_REVIEW>>>
 
 ### Dispatch instruction (the "Request review" payload)
 
-The affordance mints a per-dispatch `nonce` and sends an instruction telling the agent to: **(a)** delegate a code review of the current diff to a capable reviewer; **(b)** end its reply with the block above, **echoing the nonce verbatim** and self-reporting the reviewer's name; **(c)** additionally give a **short prose overview** in its normal reply (not inside the block) — useful context, especially on low-finding reviews. The `[#n]`-style per-comment item blocks of the feedback dispatch are not used here (findings self-anchor).
+The affordance mints a per-dispatch `nonce` and sends an instruction telling the agent to: **(a)** delegate a code review of a **specific diff scope** — the instruction names the repo-relative paths and the **staged / unstaged mode** being reviewed (the view the affordance was invoked on), so the reviewer inspects the same hunks the app will place against (e.g. "review the *unstaged* diff of these files: …"); **(b)** anchor each finding with **diff-side line coordinates** — `side: "additions"` uses **new-file** line numbers, `side: "deletions"` uses **old-file** line numbers (the convention the diff annotations already use); **(c)** end its reply with the block above, **echoing the nonce verbatim** and self-reporting the reviewer's name; **(d)** additionally give a **short prose overview** in its normal reply (not inside the block) — useful context, especially on low-finding reviews. The `[#n]`-style per-comment item blocks of the feedback dispatch are not used here (findings self-anchor).
 
 ### Fields
 
@@ -39,7 +39,7 @@ The affordance mints a per-dispatch `nonce` and sends an instruction telling the
   - **`scope`** — exactly one of `"line"` | `"range"` | `"file"`.
   - **`path`** — repo-relative file path. Required for all three scopes.
   - **`side`** — `"additions"` | `"deletions"`. Required for `line` / `range`.
-  - **`line`** (line scope) or **`startLine`/`endLine`** (range scope) — positive integers within `u32` range; `startLine ≤ endLine`.
+  - **`line`** (line scope) or **`startLine`/`endLine`** (range scope) — positive integers within `u32` range; `startLine ≤ endLine`. **Coordinate space:** new-file line numbers for `side: "additions"`, old-file line numbers for `side: "deletions"` (matching `side`).
   - **`category`** — exactly one of `"bug"` | `"suggestion"` | `"change"` | `"question"` (the existing `ReviewCommentCategory`).
   - **`text`** — non-empty string; the finding body (may be multi-line).
 
@@ -61,10 +61,10 @@ No `session` scope — the block carries only anchored findings. The review's **
 
 **Malformed is reserved for schema violations.** A schema-valid finding whose **anchor can't be resolved at placement time** degrades rather than dropping, in two cases:
 
-- **`path` is present in the owner's diff, but the line/range isn't** (e.g. `line` outside that file's hunks) → attach as a **file-level** note on `(path, staged)` — there is a file row to render under.
-- **`path` is not present in the owner's diff at all** (the reviewer referenced an out-of-scope file) → there is **no** `(path, staged)` row to anchor under, so attach it to a **review-level fallback** surfaced with the request (kept visible, grouped as an "unplaceable finding"), never dropped.
+- **`path` is in the reviewed diff, but the line/range isn't** (e.g. `line` outside that file's hunks) → attach as a **file-level** note on `(path, staged)` — there is a file row to render under.
+- **`path` is not in the reviewed diff at all** (the reviewer referenced an out-of-scope file) → there is **no** `(path, staged)` row to anchor under, so attach it to a **review-level fallback** surfaced with the request (kept visible, grouped as an "unplaceable finding"), never dropped.
 
-Placement resolves against the owner's diff **live at arrival** (Section 3 pins the exact semantics + the drift case); the contract only fixes that **nothing is discarded** — every schema-valid finding lands somewhere visible.
+Resolution is against the request's **diff snapshot**, captured at dispatch (Section 3 pins the record + the exact semantics); the contract only fixes that **nothing is discarded** — every schema-valid finding lands somewhere visible.
 
 ### Why a separate block from `agent-reply`
 
@@ -190,17 +190,24 @@ A diff-side action (**"Request review"**, beside the existing Finish / Copy feed
 Parallel to `pendingReviews` (the reply-correlation store), a `pendingReviewRequests` store keyed by **nonce** (forward-compatible with VIM-297's nonce-keying — multiple requests can be in flight on one pty):
 
 ```ts
+interface HunkRange { start: number; end: number } // diff-side line range
+
 interface PendingReviewRequest {
   nonce: string
   ptyId: string
-  ownerKey: string   // sessionId:paneId at dispatch — findings route here
+  ownerKey: string // sessionId:paneId at dispatch — findings route here
   cwd: string
-  staged: boolean    // the invoked diff view's axis; findings inherit it
+  staged: boolean // the invoked diff view's axis; findings inherit it
+  // The diff the reviewer was given, captured at DISPATCH: each reviewed file's
+  // hunk line ranges per side. This is BOTH the scope named in the dispatch
+  // instruction AND the placement resolver (below) — so a finding resolves
+  // against exactly what the reviewer saw, immune to edits after dispatch.
+  diffSnapshot: Array<{ path: string; additions: HunkRange[]; deletions: HunkRange[] }>
   dispatchedAt: number
 }
 ```
 
-No `[#n]` map — findings self-anchor. `ownerKey` + `cwd` + `staged` are what placement needs; the request owner's live diff supplies which `path`s exist (for the file-level-vs-review-level fallback).
+No `[#n]` map — findings self-anchor. `ownerKey` routes the findings; `cwd` + `staged` form the batch key; **`diffSnapshot` is the single placement data source** — which `path`s exist and which lines are inside a hunk (for the file-level-vs-review-level fallback). Capturing it at dispatch (the app already has the diff loaded to render the view) removes the need to refetch or read live diff state at arrival, and eliminates drift.
 
 ### Capture hook — `useAgentReview`
 
@@ -232,12 +239,12 @@ Each finding maps to a `DiffLineAnnotation<ReviewComment>` placed via `addAnnota
 - **range** → `target: { scope:'range', side, startLine, endLine }`, `lineNumber: startLine` (reuses the existing range-scope target from VIM-282/256).
 - **file** → `target: { scope:'file' }`, `lineNumber: FILE_COMMENT_LINE_NUMBER (0)`.
 
-**Anchor resolution + fallback** (Section 1). Anchors resolve against the **request owner's live diff at the moment the `agent-review` arrives** — v1 stores no dispatch-time diff snapshot:
-- `path` present in the owner's diff, line/range resolvable → place as above.
-- `path` present but the line/range is **out of range** → downgrade to a **file-level** annotation on `(path, staged)`.
-- `path` **not** present in the owner's diff → **review-level fallback** (Section 5), never dropped.
+**Anchor resolution + fallback** (Section 1). Anchors resolve against the request's **`diffSnapshot`** (captured at dispatch — the exact hunks the reviewer was given), so a finding places against what the reviewer actually saw, immune to edits after dispatch:
+- `path` in the snapshot, and `line`/`range` falls inside a hunk range for that `side` → place at the anchor.
+- `path` in the snapshot, but the line/range is **outside** every hunk range → downgrade to a **file-level** annotation on `(path, staged)`.
+- `path` **not** in the snapshot → **review-level fallback** (Section 5), never dropped.
 
-If the diff **drifted** between dispatch and arrival (the user edited / staged in between): a line that **no longer exists** (now out of range) degrades down this ladder; a line that **still exists but whose content shifted** places at that line number against the live diff — v1 **cannot detect content drift**, so the finding may land beside slightly-moved content. So: never placed on a *nonexistent* line, but it can land on a *shifted* one. A dispatch-time diff snapshot (pinning line numbers to what the reviewer actually saw) is the **hardening**, out of scope for v1.
+Because resolution is against the immutable snapshot, there is no drift-vs-live ambiguity: the reviewer's coordinates always map to the hunks it was shown. The placed annotation is then stored on the batch key `(cwd, path, staged)` and renders whenever the DiffView shows that file/side — the **same persistence property as every review comment** (VIM-282). If the user re-stages the file *after* placement, the annotation follows the `(cwd, path, staged)` key exactly as a user comment would; the snapshot fixes *where the reviewer's coordinates resolve*, not the batch key's later visibility (which is existing VIM-282 behavior, not a new failure mode).
 
 ### Lifecycle
 
@@ -356,7 +363,7 @@ The **ordered, nested** render of a multi-turn thread (reviewer finding → agen
 
 - **Prompt adherence** — the delegated reviewer may not emit a clean block, or the primary agent may not echo the nonce. Graceful degrade covers both (no block → nothing; malformed → a note); PR-2 should sanity-check adherence on a real delegated review before wider rollout.
 - **Status migration** — PR-3 changes the shipped `agent-reply` status vocabulary; it must land atomically (backend enum + block schema + frontend + binding) with the legacy-literal map for in-flight blocks.
-- **Diff drift** — placement resolves against the live diff (Section 3); heavy drift degrades findings to file / review level. A dispatch-time snapshot is the hardening if this proves noisy.
+- **Snapshot vs. live view** — placement resolves against the dispatch-time diff snapshot (Section 3), so the reviewer's coordinates are unambiguous. If the user edits the file before the review returns, a placed annotation follows its `(cwd, path, staged)` batch key and renders only while the DiffView still shows that file / side — the same property as any persisted comment (VIM-282), not a new failure mode. Capturing the snapshot is cheap: the app already holds the diff to render the view.
 - **Reviewer trust** — `reviewer`, `text`, and `rawText` are agent-controlled and render as **plain text** (React-escaped); findings can only annotate the request's own diff on the gated owner. No path executes reviewer text.
 
 ### Tests
