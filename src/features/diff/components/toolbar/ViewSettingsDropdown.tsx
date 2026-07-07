@@ -12,13 +12,18 @@ type Overflow = NonNullable<BaseDiffOptions['overflow']>
 // Hardcoded enum lists for the nested sub-dropdowns. Mirrors the same
 // constants that DiffChipToolbar.tsx used to host before consolidation —
 // they moved here because ViewSettingsDropdown is now the only consumer.
-const INDICATOR_OPTIONS: readonly DropdownOption<DiffIndicators>[] = [
-  { value: 'classic', label: 'classic', description: 'Plus and minus glyphs' },
-  { value: 'bars', label: 'bars', description: 'Colored gutter bars' },
-  { value: 'none', label: 'none', description: 'No indicator column' },
-]
+export const VIEW_INDICATOR_OPTIONS: readonly DropdownOption<DiffIndicators>[] =
+  [
+    {
+      value: 'classic',
+      label: 'classic',
+      description: 'Plus and minus glyphs',
+    },
+    { value: 'bars', label: 'bars', description: 'Colored gutter bars' },
+    { value: 'none', label: 'none', description: 'No indicator column' },
+  ]
 
-const OVERFLOW_OPTIONS: readonly DropdownOption<Overflow>[] = [
+export const VIEW_OVERFLOW_OPTIONS: readonly DropdownOption<Overflow>[] = [
   {
     value: 'scroll',
     label: 'scroll',
@@ -85,14 +90,14 @@ export const ViewSettingsDropdown = ({
         label="Indicators"
         icon="flag"
         value={diffIndicators}
-        options={INDICATOR_OPTIONS}
+        options={VIEW_INDICATOR_OPTIONS}
         onChange={onDiffIndicatorsChange}
       />
       <Menu.Submenu
         label="Overflow"
         icon="wrap_text"
         value={overflow}
-        options={OVERFLOW_OPTIONS}
+        options={VIEW_OVERFLOW_OPTIONS}
         onChange={onOverflowChange}
       />
     </Menu.Section>

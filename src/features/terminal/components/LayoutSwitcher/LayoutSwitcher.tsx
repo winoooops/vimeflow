@@ -39,6 +39,7 @@ export interface LayoutSwitcherProps {
    * toggle. Generic layout pickers keep the plain layout name.
    */
   labelSingleAsFocusAction?: boolean
+  nativeOverlayTooltips?: boolean
 }
 
 export const LayoutSwitcher = ({
@@ -52,6 +53,7 @@ export const LayoutSwitcher = ({
   trailing = undefined,
   vertical = false,
   labelSingleAsFocusAction = false,
+  nativeOverlayTooltips = false,
 }: LayoutSwitcherProps): ReactElement => {
   const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
 
@@ -124,6 +126,7 @@ export const LayoutSwitcher = ({
         })}
         onChange={onPick}
         skipActiveReselect
+        nativeOverlayTooltips={nativeOverlayTooltips}
         // Vertical mode fills the column as a grouped list: each row is a
         // full-width glyph + name. Horizontal mode keeps the compact icon pill.
         buttonClassName={

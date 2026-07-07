@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
@@ -7,6 +7,8 @@ import { DiffChipToolbar, type DiffChipToolbarProps } from './DiffChipToolbar'
 // Capture the ResizeObserver callback so the test can flush PriorityPlus
 // measurements deterministically — same pattern as PriorityPlus.test.tsx.
 let resizeCallback: ResizeObserverCallback | null = null
+let restorePlatform: (() => void) | null = null
+let nativeOverlayActionListener: ((event: unknown) => void) | null = null
 
 class TestResizeObserver implements ResizeObserver {
   constructor(callback: ResizeObserverCallback) {
@@ -20,6 +22,77 @@ class TestResizeObserver implements ResizeObserver {
   }
   disconnect(): void {
     // No-op.
+  }
+}
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  action: (event: unknown) => void
+} => {
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close: vi.fn(() => Promise.resolve()),
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn((callback: (event: unknown) => void) => {
+        nativeOverlayActionListener = callback
+
+        return vi.fn()
+      }),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return {
+    open,
+    action: (event): void => {
+      nativeOverlayActionListener?.(event)
+    },
+  }
+}
+
+interface NativeMenuItemForTest {
+  id?: string
+  label?: string
+  disabled?: boolean
+}
+
+interface NativeMenuSectionForTest {
+  label?: string
+  items: NativeMenuItemForTest[]
+}
+
+interface NativeMenuRequestForTest {
+  surfaceId: string
+  kind: string
+  placement: string
+  payload: {
+    sections?: NativeMenuSectionForTest[]
   }
 }
 
@@ -157,6 +230,10 @@ describe('DiffChipToolbar', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    restorePlatform?.()
+    restorePlatform = null
+    delete window.vimeflow
     resizeCallback = null
   })
 
@@ -827,5 +904,135 @@ describe('DiffChipToolbar', () => {
     expect(
       screen.getByRole('button', { name: /previous file/i })
     ).toBeInTheDocument()
+  })
+
+  test('overflow controls use a native overlay menu when native overlay is active', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+    const onStage = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+
+    renderToolbar({
+      onStage,
+      onDiscard: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      onPrevHunk: vi.fn<() => void>(),
+      onNextHunk: vi.fn<() => void>(),
+      totalHunks: 3,
+      focusedHunkIndex: 1,
+    })
+
+    const layouts: ItemLayout[] = []
+    for (let index = 0; index < 9; index += 1) {
+      layouts.push({
+        offsetTop: index === 0 ? 0 : 30,
+        offsetHeight: 24,
+        offsetLeft: index * 72,
+        offsetWidth: 60,
+      })
+    }
+
+    stubLayout(priorityPlusRoot(), layouts, 600)
+    fireResize()
+
+    await user.click(
+      screen.getByRole('button', { name: /show 7 more controls/i })
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(
+      screen.queryByRole('dialog', { name: 'More controls' })
+    ).not.toBeInTheDocument()
+
+    const request = nativeBridge.open.mock
+      .calls[0][0] as NativeMenuRequestForTest
+    expect(request.kind).toBe('menu')
+    expect(request.placement).toBe('bottom-end')
+    expect(request.payload.sections?.map((section) => section.label)).toEqual([
+      'Diff view',
+      'File 2/9',
+      'Changes',
+      'Hunks 2/3',
+      'Highlight',
+      'Theme',
+      'Indicators',
+      'Overflow',
+      'View options',
+    ])
+
+    const stage = request.payload.sections
+      ?.find((section) => section.label === 'Changes')
+      ?.items.find((item) => item.label === 'Stage hunk')
+    expect(stage?.id).toBeDefined()
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: stage?.id,
+      })
+    })
+
+    await waitFor(() => expect(onStage).toHaveBeenCalledOnce())
+  })
+
+  test('native overflow discard-all row preserves confirmation', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    const onDiscardAll = vi
+      .fn<() => Promise<void>>()
+      .mockResolvedValue(undefined)
+
+    renderToolbar({
+      onDiscardAll,
+      selectedFileName: 'src/App.tsx',
+    })
+
+    const layouts: ItemLayout[] = []
+    for (let index = 0; index < 9; index += 1) {
+      layouts.push({
+        offsetTop: index === 0 ? 0 : 30,
+        offsetHeight: 24,
+        offsetLeft: index * 72,
+        offsetWidth: 60,
+      })
+    }
+
+    stubLayout(priorityPlusRoot(), layouts, 600)
+    fireResize()
+
+    await user.click(
+      screen.getByRole('button', { name: /show 7 more controls/i })
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeBridge.open.mock
+      .calls[0][0] as NativeMenuRequestForTest
+
+    const discardAll = request.payload.sections
+      ?.find((section) => section.label === 'Changes')
+      ?.items.find((item) => item.label === 'Discard all changes')
+
+    expect(discardAll?.id).toBeDefined()
+    expect(discardAll?.disabled).not.toBe(true)
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: discardAll?.id,
+      })
+    })
+
+    expect(onDiscardAll).not.toHaveBeenCalled()
+    expect(
+      await screen.findByText(/discard all changes to "src\/App\.tsx"/i)
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^discard$/i }))
+
+    await waitFor(() => expect(onDiscardAll).toHaveBeenCalledOnce())
   })
 })

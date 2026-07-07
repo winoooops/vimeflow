@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useState,
   type ReactElement,
   type ReactNode,
@@ -137,6 +138,11 @@ export const Tooltip = ({
   const transport = selectFloatingTransport(nativeOverlay)
   const nativeTooltipText = typeof content === 'string' ? content : null
 
+  const formattedShortcut = useMemo(
+    () => (shortcut === undefined ? undefined : formatShortcut(shortcut)),
+    [shortcut]
+  )
+
   const nativeUnsupportedReason =
     nativeTooltipText === null
       ? 'tooltip native overlay only supports plain text'
@@ -144,9 +150,7 @@ export const Tooltip = ({
         ? 'interactive tooltip native overlay is not in v0'
         : bare
           ? 'bare tooltip native overlay is not in v0'
-          : shortcut !== undefined
-            ? 'shortcut tooltip native overlay is not in v0'
-            : null
+          : null
 
   const canUseNativeOverlay =
     open && transport === 'native-overlay' && nativeUnsupportedReason === null
@@ -224,6 +228,9 @@ export const Tooltip = ({
         payload: {
           kind: 'tooltip',
           text: nativeTooltipText,
+          ...(formattedShortcut === undefined
+            ? {}
+            : { shortcut: formattedShortcut }),
           maxWidth,
         },
         theme: nativeOverlayThemeSnapshot(),
@@ -233,7 +240,14 @@ export const Tooltip = ({
         onClose: () => setOpen(false),
       }
     )
-  }, [maxWidth, nativeSurfaceId, nativeTooltipText, placement, refs.reference])
+  }, [
+    formattedShortcut,
+    maxWidth,
+    nativeSurfaceId,
+    nativeTooltipText,
+    placement,
+    refs.reference,
+  ])
 
   useEffect(() => {
     if (!canUseNativeOverlay || nativeTooltipText === null) {
@@ -377,7 +391,7 @@ export const Tooltip = ({
         <div className="flex items-center gap-3">
           <span className="min-w-0 flex-1">{content}</span>
           <kbd data-testid="tooltip-shortcut" className={SHORTCUT_CHIP_CLASSES}>
-            {formatShortcut(shortcut)}
+            {formattedShortcut}
           </kbd>
         </div>
       ) : (
