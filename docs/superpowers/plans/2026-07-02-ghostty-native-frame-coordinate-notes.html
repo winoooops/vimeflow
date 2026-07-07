@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ghostty Native Frame 坐标问题技术记录</title>
+    <style>
+      body {
+        margin: 32px auto;
+        max-width: 920px;
+        padding: 0 20px;
+        background: #15131f;
+        color: #eee8d5;
+        font:
+          15px/1.7 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      h1,
+      h2 {
+        color: #ffd37a;
+        line-height: 1.25;
+      }
+
+      code {
+        border-radius: 4px;
+        background: #262238;
+        padding: 1px 5px;
+      }
+
+      pre {
+        overflow-x: auto;
+        border-radius: 6px;
+        background: #262238;
+        padding: 12px 14px;
+      }
+
+      pre code {
+        padding: 0;
+      }
+
+      .box {
+        border-left: 3px solid #8ec07c;
+        margin: 20px 0;
+        padding: 10px 14px;
+        background: #201c2b;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ghostty Native Frame 坐标问题技术记录</h1>
+
+    <div class="box">
+      结论：这次错位不是刷新率问题，也不是 React 生命周期延迟问题。根因是
+      <code>getBoundingClientRect()</code> 返回的是 renderer CSS pixels，而
+      Ghostty 的 native <code>NSView.frame</code> 需要的是 Electron/AppKit
+      window points。两个坐标系不一致时，越靠右的 split pane 错位越明显。
+    </div>
+
+    <h2>现象</h2>
+    <p>
+      在多 pane split 布局里，Ghostty canvas 的 x 位置会逐个 pane 累积偏移。
+      第一格还能看起来接近正确，第二格、第三格会越来越往右脱离 React
+      容器。干净版本正常，恢复 context-menu/native-menu 相关改动后复现。
+    </p>
+
+    <h2>排查过程</h2>
+    <p>
+      我们先怀疑 React context menu 的删除改变了 GhosttyBody 生命周期，于是拆成
+      Swift-only、React-only、延迟 remeasure 等批次测试。延迟一帧、重新调度
+      frame update 都没有解决，说明问题不只是 “测量太早”。
+    </p>
+    <p>
+      后来加 trace 同时记录三类值：React DOM slot rect、Electron main 收到的
+      frame request、实际 native frame。关键数据是：
+    </p>
+    <ul>
+      <li><code>window.outerWidth = 1400</code></li>
+      <li><code>window.innerWidth = 1533</code></li>
+      <li><code>devicePixelRatio ≈ 0.913</code></li>
+      <li>DOM rect 示例：<code>x=282, width=477</code></li>
+    </ul>
+    <p>
+      旧代码把 <code>x=282,width=477</code> 原样传给 AppKit。正确的 native
+      window points 应该乘以 <code>outerWidth / innerWidth</code>，也就是约
+      <code>x=258,width=435</code>。这也解释了为什么错误会在 x 轴上累积： x
+      越大，未转换的误差越大。
+    </p>
+
+    <h2>修复</h2>
+    <p>
+      在 renderer IPC 边界修复一次：<code>GhosttyBody</code> 仍然用
+      <code>getBoundingClientRect()</code> 读 DOM，但传给 native 前通过
+      <code>outerWidth / innerWidth</code> 和
+      <code>outerHeight / innerHeight</code>
+      转成 window points。native bridge 不需要知道 CSS pixel，也不用在 Swift
+      侧猜 zoom。
+    </p>
+
+    <h2>验证</h2>
+    <ul>
+      <li>恢复 <code>stash@{5}</code> 后保留坐标转换。</li>
+      <li>新增测试覆盖 1:1、zoom/scaled、无效 viewport fallback。</li>
+      <li>通过 changed-file Vitest：193 tests passed。</li>
+      <li>通过 <code>npm run type-check:generated</code>。</li>
+      <li>通过 changed-file ESLint。</li>
+      <li>通过 <code>npm run ghostty:native-parent:build</code>。</li>
+      <li>通过 <code>npm run ghostty:native-parent:smoke</code>。</li>
+    </ul>
+
+    <h2>长期调试入口</h2>
+    <p>
+      以后排查 Ghostty native view、overlay、DOM rect
+      对齐问题时，保留远程调试端口。 开发时可以这样启动：
+    </p>
+    <pre><code>VIMEFLOW_REMOTE_DEBUGGING_PORT=9223 VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 VITE_NATIVE_OVERLAY=1 npm run electron:dev -- --port 5175</code></pre>
+    <p>
+      然后打开 <code>http://127.0.0.1:9223/json/list</code>，连接 renderer
+      target，直接看 console、DOM rect、viewport
+      和初始化顺序。调试记录里至少保留： DOM rect、renderer viewport、Electron
+      window/content bounds、native frame request、native frame applied。
+    </p>
+
+    <h2>建议</h2>
+    <ul>
+      <li>
+        所有 DOM-to-native frame IPC 都明确写清楚坐标单位。DOM 是 CSS pixels，
+        AppKit 是 window points，不能默认相等。
+      </li>
+      <li>
+        对 native view / overlay 这类跨坐标系代码，保留一个 zoom/scaled viewport
+        单测。这个测试很便宜，比以后再用肉眼查偏移省很多时间。
+      </li>
+      <li>
+        Debug 时同时记录 DOM rect、renderer viewport、Electron content/window
+        bounds、native frame。只看其中一个会误判成 React 生命周期或刷新率。
+      </li>
+      <li>
+        不要在 Swift 侧补 CSS 比例。比例只有 renderer 最清楚，越靠近 IPC
+        边界转换，越不容易让 native 层背锅。
+      </li>
+    </ul>
+  </body>
+</html>

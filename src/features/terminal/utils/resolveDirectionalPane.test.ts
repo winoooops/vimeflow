@@ -307,6 +307,7 @@ describe('resolveDirectionalPane', () => {
     // "treat an absent slot as a wall" implementation would wrongly return null,
     // which the real layouts (absent slots only ever at a grid edge) cannot catch.
     const layout: LayoutShape = {
+      ...LAYOUTS.single,
       id: 'single',
       name: 'synthetic',
       capacity: 1,
@@ -323,6 +324,7 @@ describe('resolveDirectionalPane', () => {
     // produce NaN comparisons that silently exclude the slot; the function
     // should just treat those slots as absent and continue scanning.
     const layout: LayoutShape = {
+      ...LAYOUTS.single,
       id: 'single',
       name: 'synthetic',
       capacity: 1,

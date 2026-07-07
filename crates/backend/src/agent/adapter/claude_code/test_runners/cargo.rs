@@ -17,10 +17,10 @@ use std::path::Path;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::ANSI_RE;
 use super::types::{
     CapturedOutput, TestGroup, TestGroupKind, TestGroupStatus, TestRunSummary, TestRunner,
 };
+use super::ANSI_RE;
 
 pub static CARGO_TEST: TestRunner = TestRunner {
     name: "cargo",

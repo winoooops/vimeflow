@@ -12,13 +12,14 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { WorkspaceView } from './WorkspaceView'
+import { WorkspaceView, updateSelectedDiffFilesByOwner } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import type { SwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
+import type { SelectedDiffFile } from '../diff/types'
 import type { SessionList } from '../../bindings'
 import {
   MockResizeObserver,
@@ -144,12 +145,31 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
   })),
 }))
 
+vi.mock('../agent-status/hooks/useAgentReattach', () => ({
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
+}))
+
 // Mock useEditorBuffer so individual tests can flip isDirty without
 // having to drive the real hook through the editor. The default impl
 // (set in beforeEach below) returns a clean buffer so the bulk of
 // existing tests behave as if no file is open.
 vi.mock('../editor/hooks/useEditorBuffer', () => ({
   useEditorBuffer: vi.fn(),
+}))
+
+vi.mock('../../lib/backend', () => ({
+  renameAgentSession: vi.fn().mockResolvedValue(undefined),
+  listen: vi.fn(() =>
+    Promise.resolve(() => {
+      /* no-op unlisten */
+    })
+  ),
+  invoke: vi.fn().mockResolvedValue(null),
+  listenCommandPaletteToggle: vi.fn(() => (): void => {
+    /* no-op unlisten */
+  }),
 }))
 
 vi.mock('../terminal/hooks/usePaneShortcuts', () => ({
@@ -259,6 +279,46 @@ const findObservedResizeObserver = (
   )
 
 describe('WorkspaceView', () => {
+  test('keeps selected diff files scoped by terminal owner', () => {
+    const ownerASelection = {
+      path: 'src/second.ts',
+      staged: false,
+      cwd: '/repo-a',
+    }
+
+    const ownerBSelection = {
+      path: 'src/first.ts',
+      staged: false,
+      cwd: '/repo-b',
+    }
+
+    let selections = new Map<string, SelectedDiffFile>()
+
+    selections = updateSelectedDiffFilesByOwner(
+      selections,
+      'session-a:p0',
+      ownerASelection
+    )
+
+    selections = updateSelectedDiffFilesByOwner(
+      selections,
+      'session-b:p0',
+      ownerBSelection
+    )
+
+    expect(selections.get('session-a:p0')).toEqual(ownerASelection)
+    expect(selections.get('session-b:p0')).toEqual(ownerBSelection)
+
+    selections = updateSelectedDiffFilesByOwner(
+      selections,
+      'session-b:p0',
+      null
+    )
+
+    expect(selections.get('session-a:p0')).toEqual(ownerASelection)
+    expect(selections.has('session-b:p0')).toBe(false)
+  })
+
   // Session switching/closing is sidebar-owned (the main session-tab strip
   // was removed in the main-stage chrome). Close via the sidebar card menu.
   const removeSessionViaSidebar = async (
@@ -322,13 +382,13 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('renders workspace zones (sidebar, terminal, dock panel, agent status panel)', () => {
+  test('renders workspace zones (sidebar, terminal, dock toggle, agent status panel)', () => {
     render(<WorkspaceView />)
 
     // VIM-76: icon rail removed; sidebar | main | activity.
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument() // DockPanel
+    expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
@@ -606,12 +666,18 @@ describe('WorkspaceView', () => {
         ).toBe(true)
       })
 
+      // Completing the new-session flow (button → dialog → Create session)
+      // appends a session whose name derives from cwd '~' → 'session'.
       await user.click(
         within(screen.getByTestId('sidebar')).getByRole('button', {
           name: 'New session',
         })
       )
-      await screen.findByRole('button', { name: 'session 2' })
+      const dialog = await screen.findByRole('dialog', { name: /new session/i })
+      await user.click(
+        within(dialog).getByRole('button', { name: /create session/i })
+      )
+      await screen.findByRole('button', { name: 'session' })
 
       await waitFor(() => {
         expect(
@@ -1352,13 +1418,26 @@ describe('WorkspaceView', () => {
     )
     await user.click(newSessionButton)
 
-    // After clicking, the spawn() mock resolves with a new sessionId
-    // and useSessionManager appends a new Session at index 1, with
-    // tabName(cwd='~', index=1) = 'session 2'. Asserting the new row
-    // appears proves createSession was wired through end-to-end —
-    // a regression of the onClick handler being dropped (e.g. during
-    // a future Sidebar.footer slot refactor) would fail this test.
-    await screen.findByRole('button', { name: 'session 2' })
+    // The button no longer instant-creates a session — it opens the
+    // NewSessionDialog. The session is created only when the user clicks
+    // "Create session", which calls createSession(opts) then closes the
+    // dialog. Completing the full flow proves the button → dialog → create
+    // path is wired end-to-end (a dropped onClick or onCreate handler would
+    // fail this test).
+    const dialog = await screen.findByRole('dialog', { name: /new session/i })
+    await user.click(
+      within(dialog).getByRole('button', { name: /create session/i })
+    )
+
+    // The dialog defaults the name to deriveSessionName(cwd) — cwd '~'
+    // (the seed session's working directory) → 'session'. The spawn() mock
+    // resolves with a new sessionId and useSessionManager appends the new
+    // Session, so a second sidebar row appears: the original 'session 1' plus
+    // the freshly-created 'session'.
+    await screen.findByRole('button', { name: 'session' })
+    expect(
+      screen.getByRole('button', { name: 'session 1' })
+    ).toBeInTheDocument()
   })
 
   test('new-session button lives in the switcher row, not the list bottom', () => {
@@ -1376,10 +1455,12 @@ describe('WorkspaceView', () => {
   })
 
   test('Ctrl+⇧N creates a new session (keyboard shortcut)', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
     await screen.findByRole('button', { name: 'session 1' })
 
+    // The chord now opens the NewSessionDialog rather than instant-creating.
     act(() => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
@@ -1392,7 +1473,14 @@ describe('WorkspaceView', () => {
       )
     })
 
-    await screen.findByRole('button', { name: 'session 2' })
+    // Completing the dialog ("Create session") creates the session, named
+    // from cwd '~' → 'session'.
+    const dialog = await screen.findByRole('dialog', { name: /new session/i })
+    await user.click(
+      within(dialog).getByRole('button', { name: /create session/i })
+    )
+
+    await screen.findByRole('button', { name: 'session' })
   })
 
   test('opens command palette from the status-bar command button', async () => {
@@ -1425,11 +1513,13 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('DockPanel is present below TerminalZone', () => {
+  test('DockPanel opens below TerminalZone', async () => {
+    const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // DockPanel should render with Editor tab active
-    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
+
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /diff viewer/i })
     ).toBeInTheDocument()
@@ -1439,6 +1529,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
     await user.click(screen.getByRole('button', { name: /dock: left/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
@@ -1461,6 +1552,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
+    await user.click(screen.getByTestId('status-bar-dock-toggle'))
     await user.click(screen.getByRole('button', { name: /dock: right/i }))
 
     const inner = screen.getByTestId('dock-canvas-wrapper')
@@ -1491,12 +1583,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Dock starts open.
-    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    // Closed: the dock is gone and there is no "show panel" peek affordance —
+    // Closed by default: the dock is gone and there is no "show panel" peek affordance —
     // only the terminal remains. The bottom action bar's dock toggle is the
     // single reopen control.
     expect(screen.queryByTestId('dock-panel')).toBeNull()
@@ -1553,14 +1640,21 @@ describe('WorkspaceView', () => {
       'bg-primary-container/15'
     )
 
+    // Creating a session via the dialog makes it the active one — the
+    // highlight must move off 'session 1' onto the new row (named 'session',
+    // derived from cwd '~').
     const newSessionButton = within(screen.getByTestId('sidebar')).getByRole(
       'button',
       { name: 'New session' }
     )
     await user.click(newSessionButton)
+    const dialog = await screen.findByRole('dialog', { name: /new session/i })
+    await user.click(
+      within(dialog).getByRole('button', { name: /create session/i })
+    )
 
     const secondSession = await screen.findByRole('button', {
-      name: 'session 2',
+      name: 'session',
     })
     expect(secondSession.closest('li')!.className).toContain(
       'bg-primary-container/15'
@@ -1579,7 +1673,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
   })
 
   test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
@@ -2070,6 +2164,23 @@ describe('WorkspaceView', () => {
     expect(stack).toBe(status.parentElement)
     expect(stack).toHaveClass('flex-col', 'gap-2')
     expect(Array.from(stack?.children ?? [])).toEqual([alert, status])
+  })
+
+  test('surfaces terminal spawn failures in the workspace alert banner', async () => {
+    workspaceTerminalMock.service.listSessions.mockResolvedValue({
+      activeSessionId: null,
+      sessions: [],
+    })
+
+    workspaceTerminalMock.service.spawn.mockRejectedValue(
+      new Error('bridge unavailable')
+    )
+
+    render(<WorkspaceView />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Failed to create terminal: bridge unavailable'
+    )
   })
 
   test('lifts useAgentStatus and forwards the latest active pane ptyId', async () => {

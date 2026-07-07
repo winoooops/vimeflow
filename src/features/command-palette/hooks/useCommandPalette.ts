@@ -292,58 +292,144 @@ export const useCommandPalette = (
     })
   }, [filteredResults])
 
-  const executeSelected = useCallback((): void => {
-    if (clampedSelectedIndex < 0) {
-      return
-    }
-
-    const selected = selectedCommand
-
-    if (!selected) {
-      return
-    }
-
-    // If it's a namespace, drill into it
-    if (selected.children && selected.children.length > 0) {
-      setState((prev) => ({
-        ...prev,
-        currentNamespace: selected,
-        query: ':',
-        selectedIndex: 0,
-      }))
-
-      return
-    }
-
-    // If it's a leaf, execute it
-    if (selected.execute) {
-      // Inside a namespace, the user's typed input is the value (the
-      // commandVerb is what they're picking, not a verb to strip). We must
-      // reconstruct the full post-`:` text so values containing spaces
-      // (e.g. a filename like `my file.ts`) reach the handler intact.
-      // Without this, `parseQuery` would split on the first space and
-      // pass only the trailing token, silently truncating the input.
-      const executionArgs =
-        state.currentNamespace !== null
-          ? (
-              parsedQuery.commandVerb +
-              (parsedQuery.args.length > 0 ? ' ' + parsedQuery.args : '')
-            ).replace(/^:/, '')
-          : parsedQuery.args
-
-      selected.execute(executionArgs)
-      if (selected.preview != null) {
-        originalThemeIdRef.current = null
+  // Run the command at a specific index. The keyboard (Enter) and pointer
+  // (click) paths both resolve the target from the same index so click
+  // never races a stale selectedIndex.
+  const executeAt = useCallback(
+    (index: number): void => {
+      if (index < 0 || index >= filteredResults.length) {
+        return
       }
-      close()
+
+      const selected = filteredResults[index]
+
+      // If it's a namespace, drill into it
+      if (selected.children && selected.children.length > 0) {
+        setState((prev) => ({
+          ...prev,
+          currentNamespace: selected,
+          query: ':',
+          selectedIndex: 0,
+        }))
+
+        return
+      }
+
+      // If it's a leaf, execute it
+      if (selected.execute) {
+        // Inside a namespace, the user's typed input is the value (the
+        // commandVerb is what they're picking, not a verb to strip). We must
+        // reconstruct the full post-`:` text so values containing spaces
+        // (e.g. a filename like `my file.ts`) reach the handler intact.
+        // Without this, `parseQuery` would split on the first space and
+        // pass only the trailing token, silently truncating the input.
+        const executionArgs =
+          state.currentNamespace !== null
+            ? (
+                parsedQuery.commandVerb +
+                (parsedQuery.args.length > 0 ? ' ' + parsedQuery.args : '')
+              ).replace(/^:/, '')
+            : parsedQuery.args
+
+        if (
+          selected.requiresArgument === true &&
+          executionArgs.trim().length === 0
+        ) {
+          const queryPrefix =
+            state.currentNamespace !== null
+              ? `:${selected.label.replace(/^:/, '')}`
+              : selected.label
+
+          setQuery(`${queryPrefix} `)
+
+          return
+        }
+
+        selected.execute(executionArgs)
+        if (selected.preview != null) {
+          originalThemeIdRef.current = null
+        }
+        close()
+      }
+    },
+    [
+      filteredResults,
+      parsedQuery.args,
+      parsedQuery.commandVerb,
+      state.currentNamespace,
+      close,
+      setQuery,
+    ]
+  )
+
+  const executeSelected = useCallback((): void => {
+    executeAt(clampedSelectedIndex)
+  }, [executeAt, clampedSelectedIndex])
+
+  // Shell-style longest-common-prefix completion for the Tab key.
+  const completeCommonPrefix = useCallback((): void => {
+    const cleanVerb = parsedQuery.commandVerb.startsWith(':')
+      ? parsedQuery.commandVerb.slice(1)
+      : parsedQuery.commandVerb
+
+    const labelWithoutColon = (label: string): string =>
+      label.startsWith(':') ? label.slice(1) : label
+
+    const candidates =
+      cleanVerb.length === 0
+        ? filteredResults
+        : filteredResults.filter((cmd) =>
+            labelWithoutColon(cmd.label)
+              .toLowerCase()
+              .startsWith(cleanVerb.toLowerCase())
+          )
+
+    let completionCandidates = candidates
+    if (completionCandidates.length === 0 && parsedQuery.args.length === 0) {
+      completionCandidates = filteredResults
+    }
+
+    if (completionCandidates.length === 0) {
+      return
+    }
+
+    const labels = completionCandidates.map((cmd) =>
+      labelWithoutColon(cmd.label)
+    )
+
+    // Case is taken from the first candidate; comparison is case-insensitive.
+    let lcp = labels[0]
+    for (const label of labels.slice(1)) {
+      let i = 0
+      while (
+        i < lcp.length &&
+        i < label.length &&
+        lcp[i].toLowerCase() === label[i].toLowerCase()
+      ) {
+        i += 1
+      }
+      lcp = lcp.slice(0, i)
+      if (lcp.length === 0) {
+        break
+      }
+    }
+
+    const completion = ':' + lcp
+
+    // Only extend the query toward the common prefix; never append a space or
+    // auto-pick. No-op once already at the ambiguous common prefix.
+    if (
+      completion.length > state.query.length &&
+      parsedQuery.args.length === 0
+    ) {
+      setQuery(completion)
     }
   }, [
-    clampedSelectedIndex,
-    parsedQuery.args,
     parsedQuery.commandVerb,
-    selectedCommand,
-    state.currentNamespace,
-    close,
+    parsedQuery.args,
+    filteredResults,
+    state.query,
+    setQuery,
   ])
 
   // Refs let the once-registered capture-phase listener always read the latest handlers without re-attaching.
@@ -356,6 +442,7 @@ export const useCommandPalette = (
     navigateUp,
     navigateDown,
     executeSelected,
+    completeCommonPrefix,
   })
 
   // useLayoutEffect (not useEffect) closes the commit→effect gap where a capture-phase keydown could read stale refs.
@@ -368,6 +455,7 @@ export const useCommandPalette = (
       navigateUp,
       navigateDown,
       executeSelected,
+      completeCommonPrefix,
     }
   })
 
@@ -508,6 +596,11 @@ export const useCommandPalette = (
             event.preventDefault()
             handlersRef.current.executeSelected()
             break
+          case 'Tab':
+            // stopImmediatePropagation beats the Dialog focus-trap.
+            fullyConsumeEvent(event)
+            handlersRef.current.completeCommonPrefix()
+            break
           case 'Backspace':
             // Close on backspace when query is empty ':'
             if (stateRef.current.query === ':') {
@@ -549,6 +642,7 @@ export const useCommandPalette = (
     setQuery,
     selectIndex,
     executeSelected,
+    executeAt,
     navigateUp,
     navigateDown,
   }

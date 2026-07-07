@@ -43,33 +43,75 @@ const session: Session = {
 const baseProps = {
   agent: AGENTS.claude,
   session,
-  worktreeName: null,
-  branch: 'feat/jose-auth',
-  added: 48,
-  removed: 12,
-  isFocused: true,
+  isActive: true,
   isCollapsed: false,
   ptyId: 's1',
   onToggleCollapse: vi.fn(),
 }
 
 describe('Header', () => {
-  test('renders agent chip with short name and glyph', () => {
+  test('renders compact glyph-only agent chip', () => {
     render(<Header {...baseProps} />)
 
-    expect(screen.getByText('CLAUDE')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-glyph-label')).toHaveTextContent('CLAUDE')
+    expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
 
     const glyphChip = screen.getByTestId('agent-glyph-chip')
+    expect(glyphChip).toHaveClass('h-[22px]')
+    expect(glyphChip).toHaveClass('w-[22px]')
+    expect(glyphChip).toHaveClass('justify-center')
     // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
     const brandMark = glyphChip.querySelector('svg')
 
     expect(brandMark).toBeInTheDocument()
   })
 
+  test('header uses compact spacing by default', () => {
+    render(<Header {...baseProps} />)
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveClass('gap-1.5')
+    expect(header).toHaveClass('px-2')
+    expect(header).toHaveClass('py-1')
+  })
+
+  test('collapsed status does not change the compact header', () => {
+    render(<Header {...baseProps} isCollapsed />)
+
+    const header = screen.getByTestId('terminal-pane-header')
+    expect(header).toHaveClass('gap-1.5')
+    expect(header).toHaveClass('px-2')
+    expect(header).toHaveClass('py-1')
+
+    const glyphChip = screen.getByTestId('agent-glyph-chip')
+    expect(glyphChip).toHaveClass('h-[22px]')
+    expect(glyphChip).toHaveClass('w-[22px]')
+    expect(glyphChip).toHaveClass('justify-center')
+    expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
+  })
+
   test('renders pane title from session.name', () => {
     render(<Header {...baseProps} />)
 
     expect(screen.getByText('auth refactor')).toBeInTheDocument()
+  })
+
+  test('uses the theme active surface tone', () => {
+    render(<Header {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass(
+      'bg-primary-container/15'
+    )
+  })
+
+  test('does not tint inactive pane headers', () => {
+    const inactiveProps = { ...baseProps, isActive: false }
+
+    render(<Header {...inactiveProps} />)
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveClass(
+      'bg-primary-container/15'
+    )
   })
 
   test('renders paneAgentTitle when provided', () => {
@@ -122,40 +164,11 @@ describe('Header', () => {
     )
   })
 
-  test('expanded header shows branch, added, and removed counts', () => {
+  test('does not render git metadata (it lives in the status bar)', () => {
     render(<Header {...baseProps} />)
 
-    expect(screen.getByText('feat/jose-auth')).toBeInTheDocument()
-    expect(screen.getByText('+48')).toBeInTheDocument()
-    expect(screen.getByText('−12')).toBeInTheDocument()
-  })
-
-  test('collapsed header hides branch, counts, and relative-time', () => {
-    render(<Header {...baseProps} isCollapsed />)
-
-    expect(screen.queryByText('feat/jose-auth')).not.toBeInTheDocument()
-    expect(screen.queryByText('+48')).not.toBeInTheDocument()
-    expect(screen.queryByText('−12')).not.toBeInTheDocument()
-  })
-
-  test('collapsed header hides the git ref chip', () => {
-    render(<Header {...baseProps} isCollapsed worktreeName="agent-sidebar" />)
-
     expect(screen.queryByTestId('git-ref-chip')).not.toBeInTheDocument()
-  })
-
-  test('null branch omits the branch segment', () => {
-    render(<Header {...baseProps} branch={null} />)
-
-    expect(screen.queryByText('feat/jose-auth')).not.toBeInTheDocument()
-  })
-
-  test('renders git ref chip with worktree label when worktreeName is supplied', () => {
-    render(<Header {...baseProps} worktreeName="agent-sidebar" />)
-
-    expect(screen.getByTestId('git-ref-chip-wt-label')).toHaveTextContent(
-      'agent-sidebar'
-    )
+    expect(screen.queryByText('+48')).not.toBeInTheDocument()
   })
 
   test('collapse button fires onToggleCollapse', () => {
@@ -165,6 +178,14 @@ describe('Header', () => {
     fireEvent.click(screen.getByRole('button', { name: /collapse status/i }))
 
     expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  test('hides collapse button when the status bar cannot render', () => {
+    render(<Header {...baseProps} hideCollapseToggle />)
+
+    expect(
+      screen.queryByRole('button', { name: /collapse status|expand status/i })
+    ).toBeNull()
   })
 
   test('close button renders only when onClose is defined', () => {
@@ -179,13 +200,23 @@ describe('Header', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  test('focused state applies header gradient marker', () => {
-    render(<Header {...baseProps} isFocused />)
-
-    expect(screen.getByTestId('terminal-pane-header')).toHaveAttribute(
-      'data-focused',
-      'true'
+  test('keeps action buttons rendered alongside a long pane title', () => {
+    render(
+      <Header
+        {...baseProps}
+        paneUserLabel="a-very-long-pane-title-that-would-otherwise-push-the-controls-off"
+        onClose={vi.fn()}
+        onBurner={vi.fn()}
+      />
     )
+
+    expect(
+      screen.getByRole('button', { name: /open burner terminal/i })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /close pane/i })
+    ).toBeInTheDocument()
   })
 
   test('is not draggable by default', () => {

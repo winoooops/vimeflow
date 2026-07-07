@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import type { AgentAlias } from '../bindings/AgentAlias'
 import type { AppSettings } from '../bindings/AppSettings'
 import type { SystemFont } from '../bindings/SystemFont'
@@ -54,6 +55,41 @@ export interface BackendApi {
 
   settings?: SettingsBridge
   aliases?: AliasesBridge
+
+  dialog?: {
+    pickDirectory: () => Promise<string | null>
+  }
+
+  ghosttyNative?: {
+    update: (request: unknown) => Promise<unknown>
+    data: (request: unknown) => Promise<unknown>
+    focus: (request: unknown) => Promise<unknown>
+    destroy: (request: unknown) => Promise<unknown>
+    attachSecondary?: (request: unknown) => Promise<unknown>
+    secondaryData?: (request: unknown) => Promise<unknown>
+    focusSecondary?: (request: unknown) => Promise<unknown>
+    removeSecondary?: (request: unknown) => Promise<unknown>
+    setSecondaryVisible?: (request: unknown) => Promise<unknown>
+  }
+
+  nativeOverlay?: {
+    open: (request: unknown) => Promise<{ accepted: boolean; reason?: string }>
+    close: (request: unknown) => Promise<void>
+    actionResult: (request: unknown) => Promise<void>
+    resume: (request: unknown) => Promise<void>
+    onAction: (callback: (event: unknown) => void) => UnlistenFn
+    onClose: (callback: (event: unknown) => void) => UnlistenFn
+  }
+
+  nativeOverlayHost?: {
+    ready: (request: unknown) => Promise<unknown>
+    action: (request: unknown) => Promise<unknown>
+    close: (request: unknown) => Promise<unknown>
+    onRender: (callback: (event: unknown) => void) => UnlistenFn
+    onClear: (callback: () => void) => UnlistenFn
+    onActionResult: (callback: (event: unknown) => void) => UnlistenFn
+    onKeyDown: (callback: (event: unknown) => void) => UnlistenFn
+  }
 }
 
 const renameAgentSessionErrorReasons: readonly RenameAgentSessionErrorReason[] =

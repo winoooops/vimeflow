@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react'
 import { WorkerPoolContextProvider } from '@pierre/diffs/react'
 import { WorkspaceView } from './features/workspace/WorkspaceView'
-import { InlineCommentDemo } from './features/diff/demo/InlineCommentDemo'
 import { ReorderMotionDemo } from './features/sessions/demo/ReorderMotionDemo'
 import { SettingsProvider } from './features/settings/SettingsProvider'
 import { SettingsContent } from './features/settings/SettingsContent'
@@ -34,10 +33,6 @@ const devDemoName = (): string | null =>
     : null
 
 const renderDemo = (demoName: string | null): ReactElement => {
-  if (demoName === 'inline-comments') {
-    return <InlineCommentDemo />
-  }
-
   if (demoName === 'session-reorder') {
     return <ReorderMotionDemo />
   }

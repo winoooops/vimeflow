@@ -1,7 +1,13 @@
 // cspell:ignore worktree
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement,
+} from 'react'
 import { Chip } from '@/components/Chip'
-import { Tooltip } from '@/components/Tooltip'
+import { Menu, isNativeOverlayMenuTransportActive } from '@/components/Menu'
 import { writeClipboardText } from '@/lib/clipboard'
 
 export interface GitRefChipProps {
@@ -13,6 +19,13 @@ export interface GitRefChipProps {
   cwd?: string
   /** PR-A: optional, always defaults to false. PR-B wires the live value. */
   detached?: boolean
+  /**
+   * When true, the worktree segment (icon, basename, chevron) hides inside a
+   * narrow size-container so the card collapses to branch-only. Opt-in — the
+   * chip renders the full ref by default.
+   */
+  collapsibleWorktree?: boolean
+  nativeOverlay?: boolean
 }
 
 export type GitRefCopyRowKey = 'worktree' | 'path' | 'branch'
@@ -84,31 +97,56 @@ export const composeCopyRows = (
 /** How long a copied row shows its green check before reverting. */
 const COPY_FEEDBACK_MS = 1300
 
-interface GitRefCopyRowProps {
-  row: GitRefCopyRowData
-  copied: boolean
-  onCopy: (key: GitRefCopyRowKey, value: string) => Promise<void>
+const useGitRefCopyFeedback = (): {
+  copiedKey: GitRefCopyRowKey | null
+  handleCopy: (key: GitRefCopyRowKey, value: string) => Promise<boolean>
+} => {
+  const [copiedKey, setCopiedKey] = useState<GitRefCopyRowKey | null>(null)
+  const timerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const clearPending = (): void => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current)
+      }
+    }
+
+    return clearPending
+  }, [])
+
+  const handleCopy = async (
+    key: GitRefCopyRowKey,
+    value: string
+  ): Promise<boolean> => {
+    const copied = await writeClipboardText(value)
+    if (!copied) {
+      return false
+    }
+
+    setCopiedKey(key)
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current)
+    }
+    timerRef.current = window.setTimeout(() => {
+      setCopiedKey(null)
+    }, COPY_FEEDBACK_MS)
+
+    return true
+  }
+
+  return { copiedKey, handleCopy }
 }
 
-// One click-to-copy row: leading icon · stacked micro label + mono value
-// (truncates when long) · trailing copy glyph that flips to a check while
-// copied. The whole row is the button — clicking anywhere copies the value.
-const GitRefCopyRow = ({
+interface GitRefCopyRowContentProps {
+  row: GitRefCopyRowData
+  copied: boolean
+}
+
+const GitRefCopyRowContent = ({
   row,
   copied,
-  onCopy,
-}: GitRefCopyRowProps): ReactElement => (
-  <button
-    type="button"
-    aria-label={`Copy ${row.label}`}
-    onClick={(event) => {
-      // The popover renders in a portal, so React still bubbles this click to
-      // the pane's focus handler — stop it so copying never refocuses the pane.
-      event.stopPropagation()
-      void onCopy(row.key, row.value)
-    }}
-    className="group flex w-full items-center gap-2 rounded-chip px-[7px] py-1.5 text-left hover:bg-primary-container/[0.12]"
-  >
+}: GitRefCopyRowContentProps): ReactElement => (
+  <>
     <span
       aria-hidden="true"
       className={`material-symbols-outlined shrink-0 text-[13px] ${row.iconClassName}`}
@@ -133,96 +171,83 @@ const GitRefCopyRow = ({
     >
       {copied ? 'check' : 'content_copy'}
     </span>
-  </button>
+  </>
 )
 
-export interface GitRefCopyRowsProps {
-  worktreeName: string | null
-  branch: string
-  cwd: string | null
-  detached?: boolean
+const GIT_REF_MENU_ROW_CLASSES =
+  'group flex min-h-8 w-full items-center gap-2 rounded-chip px-[7px] py-1.5 text-left text-xs text-on-surface outline-none transition-colors hover:bg-primary-container/[0.12] focus-visible:bg-primary-container/[0.12]'
+
+interface GitRefCopyMenuRowElementsOptions {
+  rows: readonly GitRefCopyRowData[]
+  copiedKey: GitRefCopyRowKey | null
+  onCopy: (key: GitRefCopyRowKey, value: string) => Promise<boolean>
 }
 
-/**
- * Interactive content of the chip's copy popover — one click-to-copy row per
- * ref fact, with a transient green check on the row just copied. Rendered as
- * the chip's `bare interactive` Tooltip surface; exported so the row + copy
- * behavior is unit-testable without driving the floating surface's hover state
- * (the Tooltip only mounts this on hover, through a portal).
- */
-export const GitRefCopyRows = ({
-  worktreeName,
-  branch,
-  cwd,
-  detached = false,
-}: GitRefCopyRowsProps): ReactElement => {
-  const [copiedKey, setCopiedKey] = useState<GitRefCopyRowKey | null>(null)
-  const timerRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const clearPending = (): void => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current)
-      }
-    }
-
-    return clearPending
-  }, [])
-
-  const handleCopy = async (
-    key: GitRefCopyRowKey,
-    value: string
-  ): Promise<void> => {
-    const copied = await writeClipboardText(value)
-    if (!copied) {
-      return
-    }
-
-    setCopiedKey(key)
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current)
-    }
-    timerRef.current = window.setTimeout(() => {
-      setCopiedKey(null)
-    }, COPY_FEEDBACK_MS)
-  }
-
-  return (
-    <div className="flex flex-col">
-      {composeCopyRows(worktreeName, branch, cwd, detached).map((row) => (
-        <GitRefCopyRow
-          key={row.key}
-          row={row}
-          copied={copiedKey === row.key}
-          onCopy={handleCopy}
-        />
-      ))}
-    </div>
-  )
-}
-
-// The copy popover reuses the "Tweaks panel" floating chrome (same family as
-// the activity-details card): a 244px glass card with an accent-bright hairline
-// border, soft modal shadow, and a subtle slide-in. All semantic tokens, so it
-// recolors across every theme.
-const GIT_REF_TIP_SURFACE =
-  'w-[244px] rounded-pane border border-primary/20 bg-surface-container/[0.92] p-1 shadow-modal backdrop-blur-[20px] backdrop-saturate-150 animate-vf-tip-in'
+const gitRefCopyMenuRowElements = ({
+  rows,
+  copiedKey,
+  onCopy,
+}: GitRefCopyMenuRowElementsOptions): ReactElement[] =>
+  rows.map((row) => (
+    <Menu.Row
+      key={row.key}
+      label={`Copy ${row.label}`}
+      className={GIT_REF_MENU_ROW_CLASSES}
+      nativeOverlayIcon={row.icon}
+      nativeOverlayDetail={row.value}
+      nativeOverlayFeedback="copy"
+      onSelect={() => onCopy(row.key, row.value)}
+    >
+      <GitRefCopyRowContent row={row} copied={copiedKey === row.key} />
+    </Menu.Row>
+  ))
 
 export const GitRefChip = ({
   worktreeName,
   branch,
   cwd = undefined,
   detached = false,
+  collapsibleWorktree = false,
+  nativeOverlay = false,
 }: GitRefChipProps): ReactElement | null => {
+  const chipRef = useRef<HTMLSpanElement | null>(null)
+  const skipRestoredFocusRef = useRef(false)
+  const skipRestoredFocusTimerRef = useRef<number | null>(null)
+  const [open, setOpen] = useState(false)
+
+  const [anchorRect, setAnchorRect] = useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  })
+  const { copiedKey, handleCopy } = useGitRefCopyFeedback()
+
+  useEffect(
+    () => (): void => {
+      if (skipRestoredFocusTimerRef.current !== null) {
+        window.clearTimeout(skipRestoredFocusTimerRef.current)
+      }
+    },
+    []
+  )
+
   if (branch === null || branch.length === 0) {
     return null
   }
 
   const hasWorktree = worktreeName !== null && worktreeName.length > 0
   const tooltipCwd = cwd !== undefined && cwd.length > 0 ? cwd : null
+  const copyRows = composeCopyRows(worktreeName, branch, tooltipCwd, detached)
 
+  const usesNativeOverlayTransport =
+    isNativeOverlayMenuTransportActive(nativeOverlay)
+
+  // `max-w-full` + `min-w-0` cap the chip at its container's width so the
+  // branch label truncates with an ellipsis instead of the chip overflowing
+  // and being hard-clipped (the Chip primitive is `shrink-0`).
   const frameBase =
-    'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border max-w-[340px] overflow-hidden'
+    'inline-flex items-center gap-1.5 h-[22px] pl-1.5 pr-2 rounded-chip border min-w-0 max-w-full overflow-hidden outline-none focus:outline-none focus-visible:outline-none'
 
   // Two-tone coral when detached, per docs/design/git-chip/GitRefChip.html:
   // worktree uses `text-error` (lighter coral), branch uses
@@ -232,13 +257,16 @@ export const GitRefChip = ({
     ? `${frameBase} bg-tertiary/[0.06] border-tertiary/25`
     : `${frameBase} bg-primary-container/[0.06] border-primary-container/20`
 
+  // Collapse the worktree segment to branch-only inside a narrow size-container.
+  const worktreeHideClass = collapsibleWorktree ? '@max-[280px]:hidden' : ''
+
   const wtIconClasses = `material-symbols-outlined text-[13px] shrink-0 ${
     detached ? 'text-error' : 'text-secondary-dim'
-  }`
+  } ${worktreeHideClass}`
 
   const wtLabelClasses = `font-mono text-[10.5px] max-w-[120px] shrink-0 truncate ${
     detached ? 'text-error' : 'text-secondary-dim'
-  }`
+  } ${worktreeHideClass}`
 
   const brIconClasses = `material-symbols-outlined text-[13px] shrink-0 ${
     detached ? 'text-tertiary' : 'text-primary-container'
@@ -248,30 +276,97 @@ export const GitRefChip = ({
     detached ? 'text-tertiary' : 'text-on-surface'
   }`
 
-  return (
-    <Tooltip
-      bare
-      interactive
-      ariaLabel="Git ref details"
-      placement="bottom"
-      className={GIT_REF_TIP_SURFACE}
-      content={
-        <GitRefCopyRows
-          worktreeName={worktreeName}
-          branch={branch}
-          cwd={tooltipCwd}
-          detached={detached}
-        />
+  const updateAnchorRect = (): boolean => {
+    const rect = chipRef.current?.getBoundingClientRect()
+    if (rect === undefined) {
+      return false
+    }
+
+    setAnchorRect({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    })
+
+    return true
+  }
+
+  const openCopyMenu = (): void => {
+    if (updateAnchorRect()) {
+      setOpen(true)
+    }
+  }
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    if (!nextOpen) {
+      skipRestoredFocusRef.current = true
+      if (skipRestoredFocusTimerRef.current !== null) {
+        window.clearTimeout(skipRestoredFocusTimerRef.current)
       }
-    >
+      skipRestoredFocusTimerRef.current = window.setTimeout(() => {
+        skipRestoredFocusRef.current = false
+        skipRestoredFocusTimerRef.current = null
+      }, 0)
+    }
+
+    setOpen(nextOpen)
+  }
+
+  const handleFocus = (): void => {
+    if (usesNativeOverlayTransport) {
+      return
+    }
+
+    if (skipRestoredFocusRef.current) {
+      skipRestoredFocusRef.current = false
+      if (skipRestoredFocusTimerRef.current !== null) {
+        window.clearTimeout(skipRestoredFocusTimerRef.current)
+        skipRestoredFocusTimerRef.current = null
+      }
+
+      return
+    }
+
+    openCopyMenu()
+  }
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLSpanElement>): void => {
+    if (
+      event.key !== 'Enter' &&
+      event.key !== ' ' &&
+      event.key !== 'ArrowDown'
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    openCopyMenu()
+  }
+
+  return (
+    <>
       <Chip
+        ref={chipRef}
         data-testid="git-ref-chip"
+        role="button"
         aria-label="Git ref details"
+        aria-haspopup="menu"
+        aria-expanded={open}
         tabIndex={0}
         tone="custom"
         size="custom"
         radius="chip"
         className={frameClasses}
+        onClick={(event): void => {
+          event.stopPropagation()
+          openCopyMenu()
+        }}
+        onMouseDown={(event): void => {
+          event.stopPropagation()
+        }}
+        onFocus={handleFocus}
+        onKeyDown={handleKeyDown}
       >
         {hasWorktree && (
           <>
@@ -290,7 +385,7 @@ export const GitRefChip = ({
             </span>
             <span
               data-testid="git-ref-chip-chevron"
-              className="text-outline-variant text-[11px] shrink-0"
+              className={`text-outline-variant text-[11px] shrink-0 ${worktreeHideClass}`}
             >
               ›
             </span>
@@ -307,6 +402,22 @@ export const GitRefChip = ({
           {branch}
         </span>
       </Chip>
-    </Tooltip>
+      <Menu.Context
+        position={anchorRect}
+        placement="bottom"
+        matchAnchorWidth
+        surfaceTone="primary-container-soft"
+        open={open}
+        onOpenChange={handleOpenChange}
+        aria-label="Git ref details"
+        nativeOverlay={nativeOverlay}
+      >
+        {gitRefCopyMenuRowElements({
+          rows: copyRows,
+          copiedKey,
+          onCopy: handleCopy,
+        })}
+      </Menu.Context>
+    </>
   )
 }

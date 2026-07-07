@@ -18,3 +18,5 @@ export const SETTINGS_OPEN_WINDOW = 'settings:open-window'
 export const SETTINGS_SYNC_SNAPSHOT = 'settings:sync-snapshot'
 
 export const SETTINGS_CHANGED = 'settings:changed'
+
+export const DIALOG_PICK_DIRECTORY = 'dialog:pick-directory'

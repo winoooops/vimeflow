@@ -94,7 +94,14 @@ pub(crate) fn spawn_watch_with_sync(
     stop: Arc<AtomicBool>,
     sync_tx: std::sync::mpsc::Sender<&'static str>,
 ) -> std::thread::JoinHandle<()> {
-    spawn_watch_inner(path, agent_session_id, session_id, events, stop, Some(sync_tx))
+    spawn_watch_inner(
+        path,
+        agent_session_id,
+        session_id,
+        events,
+        stop,
+        Some(sync_tx),
+    )
 }
 
 fn spawn_watch_inner(

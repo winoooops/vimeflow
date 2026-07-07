@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-06-19
-ref_count: 10
+last_updated: 2026-07-05
+ref_count: 18
 ---
 
 # E2E Testing
@@ -262,4 +262,169 @@ completely different root causes. The generic fast-failure modes:
 - **File:** `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
 - **Finding:** The "ingests app-data status files" scenario called `waitForVisiblePtyId()` to reuse the app's initial terminal PTY, then asserted `info.statusFile` was populated. `statusFile` is only non-null when the PTY was spawned with `enable_agent_bridge: true`. The assertion therefore depended on the E2E launch configuration rather than the test itself, and a violation would fail with a confusing "statusFile should be populated" message.
 - **Fix:** Replaced the ambient-PTY reuse with a frontend-driven new session (`button[aria-label="New session"]`), waited for the visible PTY to change, and used that dedicated bridge-enabled session for the watcher/UI assertions. Added cleanup that closes the spawned tab after the scenario.
+- **Commit:** same commit as this entry
+
+### 25. E2E helper selector collides with an open configuration menu
+
+- **Source:** deterministic CI failure | PR #642 round 1 | 2026-07-01
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/actions.ts`, `tests/e2e/core/specs/navigation.spec.ts`
+- **Finding:** `clickLayoutButton` queried `button[aria-label="<layout>"]` globally. Hidden-layout menu checkboxes share those labels with the real layout switcher pills, so an open configuration menu could absorb the follow-up click and leave the split layout unchanged. The navigation smoke test also asserted dock content before opening the now-closed-by-default dock.
+- **Fix:** Scoped layout-button clicks to `[data-testid="layout-switcher"]` so menu items cannot match, and made the navigation smoke open the dock via the real status-bar toggle before asserting the default Diff tab.
+
+### 26. Electron WDIO suites need capability-level worker caps
+
+- **Source:** local-codex | PR #637 CI failure | 2026-06-30
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** The Electron core suite still planned all five spec files as workers even though the root config set `maxInstances: 1`. In CI this let multiple Electron sessions contend for the same desktop-app resources and produced deterministic startup selector failures such as missing layout buttons, `FILES`, and `editor-panel`.
+- **Fix:** Added `'wdio:maxInstances': 1` to each Electron capability block so WDIO serializes the spec files at the capability level. A local WDIO run without Xvfb confirmed worker `0-1` starts only after `0-0` exits.
+- **Commit:** same commit as this entry
+
+### 27. Core E2E specs assumed visible controls that moved behind adaptive UI
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/browser-pane-overlay.spec.ts`,
+  `tests/e2e/core/specs/files-to-editor.spec.ts`,
+  `tests/e2e/core/specs/ipc-roundtrip.spec.ts`,
+  `tests/e2e/core/specs/navigation.spec.ts`
+- **Finding:** The core smoke suite still clicked layout buttons and sidebar
+  tabs by visible labels that are no longer always present. Hidden split
+  layouts now require the layout configurator before their toolbar buttons
+  appear, the file tab can render as an icon-only control with an aria-label,
+  and the editor panel is behind the dock toggle by default.
+- **Fix:** Teach the browser-pane layout helper to expose hidden layouts through
+  the configurator before selecting them, use the stable `aria-label="FILES"`
+  selector for file-tab navigation, and explicitly open the dock plus select the
+  Editor tab before waiting for the editor panel.
+- **Commit:** same commit as this entry
+
+### 28. Terminal E2E new-session selector matched the sidebar dialog trigger
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`
+- **Finding:** Terminal smoke specs clicked the first
+  `button[aria-label="New session"]` in the document. The workspace now has both
+  a sidebar New session button, which opens the dialog, and a tab-strip plus
+  button, which immediately creates a terminal session. The ambiguous selector
+  could hit the sidebar control, leaving the test waiting forever for a second
+  terminal pane that was never requested.
+- **Fix:** Scope terminal-session creation clicks to
+  `[data-testid="session-tabs"] button[aria-label="New session"]` so the specs
+  target the tab-strip plus control.
+- **Commit:** same commit as this entry
+
+### 29. Terminal E2E must complete the new-session dialog flow
+
+- **Source:** local-codex | PR #643 CI failure | 2026-07-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/shared/actions.ts`,
+  `tests/e2e/terminal/specs/multi-tab-isolation.spec.ts`,
+  `tests/e2e/terminal/specs/session-lifecycle.spec.ts`,
+  `tests/e2e/agent/specs/agent-runtime-regressions.spec.ts`
+- **Finding:** The terminal and agent smoke specs still treated "New session" as
+  a one-click session creation action. After the workspace moved creation
+  behind `NewSessionDialog`, the first click only opened the dialog, so tests
+  waited for a second PTY or bridge-enabled session that was never spawned.
+- **Fix:** Centralize E2E session creation in `createNewSessionWithDefaults`,
+  which clicks the sidebar trigger and then the visible "Create session"
+  confirmation. Updated affected specs to use the helper, and closed the
+  lifecycle test's spawned active session via the command palette `:close`
+  command before asserting the PTY count decrements.
+- **Commit:** same commit as this entry
+
+### 30. Verbose WDIO logs can fill the GitHub Actions runner after passing specs
+
+- **Source:** deterministic CI failure | PR #647 round 7 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `tests/e2e/{core,terminal,agent}/wdio.conf.ts`
+- **Finding:** The Linux E2E workflow passed all core, terminal, and agent specs
+  but failed during post-job cleanup with `No space left on device` while
+  writing the runner diagnostic log. The job log was dominated by INFO-level
+  WebDriver command payloads, including large key-action arrays and repeated
+  terminal-buffer reads.
+- **Fix:** Set each E2E WDIO config's `logLevel` to `warn`, preserving spec
+  reporter output and warnings/errors while suppressing high-volume command
+  traces that can exhaust the hosted runner's disk.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Final E2E suite should free bulky build intermediates before post-job cleanup
+
+- **Source:** deterministic CI failure | PR #647 round 8 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `package.json`, `scripts/run-e2e-agent.mjs`
+- **Finding:** The Linux E2E job concluded `failure` after the agent suite
+  started, while the step never received a normal failed conclusion and the run
+  log archive was incomplete. The job had already built the sidecar, leaving a
+  large `target/debug/{build,deps,incremental}` tree in place for GitHub
+  post-job cache and diagnostic phases even though the diagnostics artifact only
+  needs `target/debug/vimeflow-backend`.
+- **Fix:** Route the final agent E2E suite through a small Node runner that
+  preserves WDIO's exit status but, on CI, removes bulky Cargo intermediates
+  after the suite returns. The sidecar binary remains available for diagnostics
+  while post-job steps have materially more disk headroom.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Final E2E suite may need disk cleanup before running specs
+
+- **Source:** deterministic CI failure | PR #647 round 12 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `scripts/run-e2e-agent.mjs`
+- **Finding:** The Linux E2E job exhausted disk while the agent suite was still
+  running, before the after-suite Cargo cleanup could execute. The failing spec
+  could not create its app-data status file and then failed on the missing
+  `statusFile` assertion.
+- **Fix:** Run the same CI-only Cargo intermediate cleanup before launching the
+  agent WDIO suite, while preserving the after-suite cleanup for post-job
+  headroom.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. E2E Codex watcher seed must tolerate retried partial SQLite setup
+
+- **Source:** deterministic CI failure | PR #660 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** The Linux agent smoke suite retried `e2e_start_codex_watcher`
+  after a partial SQLite setup left `state.sqlite` initialized. The helper used
+  plain `CREATE TABLE` statements, so the retry failed with `table threads
+already exists` before the spec could assert agent status rendering.
+- **Fix:** Made the e2e-only Codex watcher seed idempotent with
+  `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and
+  `INSERT OR REPLACE` for the seeded thread row.
+- **Commit:** same commit as this entry
+
+### 34. E2E fixture refresh loops must not clobber test-owned state
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/fixtures/agents/fake-claude`
+- **Finding:** The fake Claude fixture rewrote its seeded status JSON every
+  second. Tests that intentionally overwrote the same status file could lose
+  their data before the UI assertion observed it, creating a fixture race.
+- **Fix:** Keep refreshing only while the status file is absent or still
+  contains the fixture-owned JSON; stop once external test content appears.
+- **Commit:** same commit as this entry
+
+### 35. E2E menu retry toggled an already-open menu closed
+
+- **Source:** github-codex-connector | PR #667 round 4 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/shared/actions.ts`
+- **Finding:** `waitForLayoutDisplayMenuItem` clicked the displayed-layouts
+  trigger on every retry. Because the trigger is a toggle, a slow first wait
+  could leave the menu open and the retry would close it before waiting again.
+- **Fix:** Check for the displayed-layouts menu before clicking the trigger, so
+  retrying waits against an already-open menu instead of toggling it closed.
+- **Commit:** same commit as this entry
+
+### 36. Platform-skipped specs must be wired into a matching platform CI job
+
+- **Source:** github-codex-connector | PR #667 round 5 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `package.json`
+- **Finding:** The native-overlay layering spec lived in the Linux core suite but skipped unless `process.platform === 'darwin'`. The macOS Ghostty workflow used an explicit `--spec` filter that only selected the terminal smoke spec, so the layering assertions never ran in CI.
+- **Fix:** Added the layering spec to the macOS Ghostty E2E npm script, which the workflow already runs with native Ghostty and native-overlay environment variables enabled.
 - **Commit:** same commit as this entry

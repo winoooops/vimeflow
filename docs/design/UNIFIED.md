@@ -19,7 +19,7 @@ order below.
 
 1. **This file** — layout, surfaces, the agent-state contract, component contracts, interactions.
 2. **`DESIGN.md`** — design philosophy, color/surface theory, typography scale, do/don'ts.
-3. **`src/theme/themes/*.ts`** — the runtime token SSoT: **Catppuccin** (dark, `obsidian-lens.ts`) + **Flexoki** (light, `flexoki.ts`). `tokens.css` / `tokens.ts` are kept only for the non-color scales (type/radius/motion/dimensions) and the `SessionState` / `stateToken` / `contextSmiley()` contract — **not** color values.
+3. **`src/theme/themes/*.ts`** — the runtime token SSoT: **Catppuccin** (dark default, `obsidian-lens.ts`), **Flexoki** (light baseline, `flexoki.ts`), Gruvbox Dark/Light, Tokyo Night, and Dracula. `tokens.css` / `tokens.ts` are kept only for the non-color scales (type/radius/motion/dimensions) and the `SessionState` / `stateToken` / `contextSmiley()` contract — **not** color values.
 4. **`archive/`** — first-draft Stitch screens + prototypes, visual reference only. This file always wins.
 
 ---
@@ -81,14 +81,14 @@ Separation is **tonal-first** with two planes:
 | `threeRight` | 3        | wide left + two stacked right |
 | `quad`       | 4        | 2×2                           |
 
-- **Grid invariant:** every track is `minmax(0,1fr)`, never `1fr` — the `minmax(0,…)` floor lets panes shrink below xterm's intrinsic width so the grid never overflows. `resolveGrid` injects an **8px divider track** between fr-pairs (both fr tracks always sum to 1).
+- **Grid invariant:** every track is `minmax(0,1fr)`, never `1fr` — the `minmax(0,…)` floor lets panes shrink below terminal intrinsic widths so the grid never overflows. `resolveGrid` injects an **8px divider track** between fr-pairs (both fr tracks always sum to 1).
 - **Dividers:** `SplitDividers` overlays draggable + keyboard-resizable `ResizeHandle`s (elastic, clamped 15–85%, commit-on-end; `Arrow`/`Home`/`End`, 20px / Shift 100px steps).
 - **Empty capacity slots** render an `EmptySlot` add-pane card (dashed `outline-variant`/35 border) → add a **Shell** or **Browser** pane.
 
 **`TerminalPane`** — a self-contained card (`bg-surface`, `radius 10`), `flex-col`:
 
 - **Header** (`font-mono` 10.5px, `border-b outline-variant/[0.18]`): agent chip (glyph + short name, `accentDim` bg / `accentSoft` border / `accent` text) · truncating title (`userLabel ?? agentTitle ?? session.name`) · metadata (`GitRefChip` · `+added/−removed` · relative time) · `HeaderActions` (burner · collapse · close, 22×22). Focused header gets an `accentDim` gradient wash.
-- **Body:** xterm.js, or `RestartAffordance` ("Session exited." + Restart) when the PTY exited.
+- **Body:** native Ghostty (`libghostty-spm` parented `NSView`) on packaged macOS arm64; xterm.js for Linux/dev fallback and native-load failure; or `RestartAffordance` ("Session exited." + Restart) when the PTY exited.
 - **Footer** (`font-mono` 11px, `border-t outline-variant/20`): click-to-focus prompt line (`>` in `accent` + state-aware placeholder).
 - **Focus ring:** absolute `inset-0` span — resting `1px outline-variant/22`; focused `2px agent.accent` border + `6px accentDim` glow.
 - Keyed by `pane.ptyId` (clean remount on PTY restart); slot wrapper keyed by `pane.id`.
@@ -281,6 +281,14 @@ Rules:
 - `bare` is reserved for rich interactive hover **cards** that define a complete surface of their own (canonical consumer: the activity-details card via `ACTIVITY_CARD_SURFACE`). Never use it for plain labels.
 - Icon-only triggers keep their `aria-label` — the tooltip is hover/focus-only and is not an accessible-name substitute.
 - Features must not hand-roll floating surfaces: `@floating-ui/react` is confined to `src/components/base/floating/**` (the substrate) and the grandfathered `src/components/Tooltip.tsx`. Features compose `Dropdown`, `Menu`, or `Popover` instead.
+
+> **In-pane tool layers (exception).** Absolutely-positioned surfaces that live
+> _inside_ a feature panel's subtree — the diff changed-files overlay (#645) and
+> the diff search popup (VIM-252) — are not floating surfaces in this contract's
+> sense: they are modeless, non-portaled, anchored to the panel (not a trigger),
+> and must stay inside the panel for keyboard-scope containment. They reuse the
+> glass recipe tokens directly and never import `@floating-ui`.
+
 - A trigger that is `disabled` swallows pointer events in Chromium — wrap it in a `<span className="inline-flex">` and let the span be the Tooltip child.
 
 ### 5.7 `Dropdown`
@@ -532,7 +540,7 @@ Rules:
 ## 6. Interactions & keyboard shortcuts
 
 - **Streaming:** terminal output is raw PTY. Agent structured output prefixes `∴` in `primary-container`; one event every ~1.3–2s while `running`, stopping the instant state leaves `running`.
-- **Shortcuts:** `Mod+1–4` focus panes · `Mod+\` cycle layout · `Mod+E` Editor · `Mod+G` Diff · `Mod+0` toggle dock · `Mod+B` (mac) / `Ctrl+Shift+B` toggle sidebar · `Ctrl/Cmd+;` command palette · `Ctrl/Cmd+L` browser address bar · `Esc` closes overlays.
+- **Shortcuts:** `Mod+1–4` focus panes · `Mod+\` cycle layout · `Mod+Z` toggle active-pane focus · `Mod+E` Editor · `Mod+G` Diff · `Mod+0` toggle dock · `Mod+B` (mac) / `Ctrl+Shift+B` toggle sidebar · `Ctrl/Cmd+;` command palette · `Ctrl/Cmd+L` browser address bar · `Esc` closes overlays.
 - **Approval:** `awaiting` surfaces an approval card (Approve gradient / Deny ghost); approving snaps to `running` and prepends a `user` event.
 - **Focus model:** `activeContainerId` routes shortcuts to the terminal vs the dock; the sidebar toggle has a focus guard so compact-close never drops focus to `<body>`.
 
@@ -566,7 +574,7 @@ If more density is needed, tighten _content_ (abbreviate, collapse), not the tok
 
 ## 9. Tokens & theming
 
-The token system is **multi-theme at runtime** (`src/theme/`): TypeScript `ThemeDefinition`s (`ui` / `effects` / `shadows` / `syntax` / `terminal` / `agents`) applied as `--color-*` / `--shadow-*` CSS variables on `documentElement`. Two themes ship under the design-system name **The Lens**: **Catppuccin** (dark, default — file/id `obsidian-lens`, on the Catppuccin Mocha palette) and **Flexoki** (light — file/id `flexoki`), both exposing identical token keys so `bg-surface` etc. resolve per active theme. The dark theme's file/id keeps the legacy `obsidian-lens` slug; its display `label` is `Catppuccin`. `themeService.apply(id)` writes the vars, sets `data-theme` + `colorScheme`, persists to `localStorage`, and notifies subscribers (xterm re-themes via `initTerminalThemeBridge`, since it renders to canvas).
+The token system is **multi-theme at runtime** (`src/theme/`): TypeScript `ThemeDefinition`s (`ui` / `effects` / `shadows` / `syntax` / `terminal` / `agents`) applied as `--color-*` / `--shadow-*` CSS variables on `documentElement`. The shipped themes are **Catppuccin** (dark default — file/id `obsidian-lens`, on the Catppuccin Mocha palette), **Flexoki** (light baseline — file/id `flexoki`), **Gruvbox Dark**, **Gruvbox Light**, **Tokyo Night**, and **Dracula**, all exposing identical token keys so `bg-surface` etc. resolve per active theme. The default dark theme's file/id keeps the legacy `obsidian-lens` slug; its display `label` is `Catppuccin`. `themeService.apply(id)` writes the vars, sets `data-theme` + `colorScheme`, persists to `localStorage`, and notifies subscribers; terminal renderers consume the same terminal token bridge (native Ghostty on macOS, xterm canvas fallback elsewhere).
 
 - **The runtime SSoT is `src/theme/themes/*.ts`** — not the dark-only tables in `DESIGN.md` / `tokens.css`. `theme.css` mirrors the Catppuccin (`obsidian-lens`) defaults (kept in sync by `themeCss.test.ts`; regenerate via `scripts/generate-theme-css.ts`).
 - `tokens.ts` / `tokens.css` remain for: the `SessionState` union + `stateToken` map + `contextSmiley()` breakpoints, and the non-color scales (type, radius `xl/lg/md/sm/full`, motion `ease-pane` + durations, layout dims). Treat their color tables as a historical snapshot.

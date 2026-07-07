@@ -205,12 +205,10 @@ pub(crate) async fn spawn_pty_inner(
             Err(e) => {
                 cleanup_generated_bridge_dir(cleanup_dir.as_deref());
                 cleanup_generated_bridge_dir(shim_cleanup.as_deref());
-                log::warn!(
-                    "Failed to generate statusline bridge for session {}: {}",
-                    request.session_id,
-                    e
-                );
-                (None, None, None)
+                return Err(format!(
+                    "failed to generate statusline bridge for session {}: {}",
+                    request.session_id, e
+                ));
             }
         }
     } else {
@@ -1650,6 +1648,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn spawn_pty_fails_when_requested_bridge_cannot_be_created() {
+        let (state, cache, events, temp_dir) = create_test_state_with_cache();
+        let cwd = temp_dir.path().join("workspace");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let session_id = "bridge-blocked".to_string();
+        let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
+        let bridge_dir = crate::terminal::bridge::session_bridge_dir(
+            temp_dir.path(),
+            &canonical_cwd,
+            &session_id,
+        );
+        std::fs::create_dir_all(bridge_dir.parent().expect("bridge parent"))
+            .expect("create bridge parent");
+        std::fs::write(&bridge_dir, "not a directory").expect("create bridge blocker");
+
+        let request = SpawnPtyRequest {
+            session_id: session_id.clone(),
+            cwd: cwd.to_string_lossy().to_string(),
+            shell: None,
+            env: None,
+            enable_agent_bridge: true,
+            ephemeral: false,
+        };
+
+        let result = spawn_pty_inner(state.clone(), cache, events, request, &[], true).await;
+
+        assert!(result.is_err(), "bridge-enabled spawn must fail closed");
+        assert!(
+            result
+                .unwrap_err()
+                .contains("failed to generate statusline bridge"),
+            "error should identify bridge generation"
+        );
+        assert!(
+            !state.contains(&session_id),
+            "failed bridge generation must not insert a PTY session"
+        );
+    }
+
+    #[tokio::test]
     async fn write_pty_fails_for_nonexistent_session() {
         let (state, _cache, _events, _temp_dir) = create_test_state_with_cache();
 
@@ -2519,6 +2557,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn should succeed");

@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-20
-ref_count: 5
+last_updated: 2026-07-05
+ref_count: 10
 ---
 
 # Type Contract Safety
@@ -96,3 +96,106 @@ expands.
 - **Finding:** `closeSignal?: unknown` allowed callers to pass object or array values even though the close effect compares the value by strict equality. Reference-unstable values could close the menu on every render or fail to communicate the intended numeric counter semantics.
 - **Fix:** Narrowed the public prop to `number | undefined`, matching the only supported usage pattern: incrementing a primitive counter when a consumer needs to request a close.
 - **Commit:** same commit as this entry
+
+### 9. Generic IPC payload guard returned implicit undefined for future variants
+
+- **Source:** github-claude | PR #630 round 1 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `isNativePayload` covered every current Ghostty payload kind but had no default arm. If a new kind were added without updating the guard and `noImplicitReturns` did not catch it, the runtime path would return `undefined` and reject otherwise valid payloads with a misleading invalid-payload error.
+- **Fix:** Added an explicit `default: return false` branch so unknown or future kinds fail closed at runtime.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Shared Ghostty string guard conflated identity and cwd semantics
+
+- **Source:** github-claude | PR #630 round 5 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-shared.ts`
+- **Finding:** The shared `isString` guard rejected empty strings and was reused for both identity fields and `cwd` in native Ghostty IPC update payloads. A valid startup update with `cwd: ''` could be rejected, causing the renderer to mark native Ghostty unavailable and fall back to xterm for that pane.
+- **Fix:** Split the guard into plain `isString` for path-like fields and `isNonEmptyString` for `sessionId`/`paneId`, then updated both helper and parent payload validators with regression coverage for empty cwd.
+- **Commit:** same commit as this entry
+
+### 11. Replay summary recent-call status cast trusted a backend invariant without a runtime guard
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** LOW
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** Replay-summary recent tool calls narrowed the generated
+  `AgentToolCallEvent.status` union with `as 'done' | 'failed'`. If the backend
+  accidentally emitted a `running` entry, the renderer would construct an invalid
+  `RecentToolCall` state object with no warning or fallback.
+- **Fix:** Replace the unchecked cast with a small runtime normalizer that maps failed
+  to failed and all other replay-summary statuses to done, with regression coverage
+  for a malformed running entry.
+- **Commit:** same commit as this entry
+
+### 12. Native Ghostty bridge singleton ignored mismatched dylib paths
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `EnsureBridge` cached the first loaded dylib handle but returned success
+  for all later calls regardless of the requested path. A dev hot-reload or build
+  artifact refresh could pass a new path while the addon silently kept using the old
+  bridge functions.
+- **Fix:** Store the loaded dylib path beside the handle and throw if a later request
+  asks for a different path, preserving the singleton while making the API contract
+  explicit.
+- **Commit:** same commit as this entry
+
+### 13. Preload exposed optional native IPC handlers when the main process had not registered them
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** LOW
+- **File:** `electron/preload.ts`
+- **Finding:** `window.vimeflow.ghosttyNative` was exposed unconditionally even
+  though the main process registers the native Ghostty IPC handlers only when a
+  native Ghostty feature flag is enabled. Current callers were guarded, but the
+  bridge contract allowed future callers to discover an API that could only
+  reject with a generic "No handler registered" IPC error.
+- **Fix:** Build the optional `ghosttyNative` preload bridge only when either
+  `VITE_GHOSTTY_NATIVE_MACOS` or `VITE_GHOSTTY_NATIVE_MACOS_PARENT` is enabled,
+  matching the main-process registration guard.
+- **Commit:** same commit as this entry
+
+### 14. Native overlay menu payload omitted `surfaceTone`
+
+- **Source:** github-claude | PR #638 round 1 | 2026-06-30
+- **Severity:** LOW
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The renderer-side native overlay payload included
+  `surfaceTone`, but the main-process `NativeOverlayMenuPayload` type and guard
+  only knew about `matchAnchorWidth`, leaving the protocol shape split across
+  process boundaries.
+- **Fix:** Added `surfaceTone?: string` to the Electron-side menu payload and
+  accepted string values in the runtime validator. Extended the themed overlay
+  controller test to pass the field through to the renderer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Preload exposed secondary native Ghostty capability in legacy helper mode
+
+- **Source:** github-codex-connector | PR #656 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/preload.ts`
+- **Finding:** The preload bridge exposed optional secondary Ghostty IPC methods
+  whenever either native Ghostty flag was enabled. In legacy helper mode, the main
+  process registers only the base helper IPC handlers, so renderer capability
+  detection could select native secondary burners and then hit missing handler
+  rejections.
+- **Fix:** Gate the secondary preload methods separately on
+  `VITE_GHOSTTY_NATIVE_MACOS_PARENT`, while keeping base native Ghostty methods
+  available for both helper and parent modes. Added focused preload tests for
+  parent-mode exposure and legacy helper omission.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Native N-API one-argument methods skipped argc validation
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `removeSecondary`, `focusSecondary`, `focus`, and `destroy`
+  read `args[0]` without first checking `argc >= 1`, so a bad JS call could
+  pass uninitialized stack memory into N-API and crash the main process.
+- **Fix:** Added one-argument guards matching the existing `SetFrame` and
+  `WriteSecondary` style before each `GetSurface(env, args[0])` access.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

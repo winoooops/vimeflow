@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-21
-ref_count: 69
+last_updated: 2026-07-05
+ref_count: 83
 ---
 
 # Async Race Conditions
@@ -499,6 +499,15 @@ prevent showing previous data.
 - **Trade-off (documented in stop_with_held_gate docstring):** Between gate release and the OLD tail actually observing stop_flag (at most one POLL_INTERVAL ≈ 500ms later), a concurrent `start_or_replace` can acquire the gate and spawn a fresh tail for the same session. Briefly there are two threads emitting events; the OLD thread exits at its next stop-flag check (within ≤ one poll iteration, typically ≤2 duplicate events). Frontend has no per-tool-call dedup; brief duplicates are an acceptable cost vs holding the gate for the full join. Code-review heuristic: when teardown involves both "stop the work" and "wait for the work to finish" steps, identify whether the gate needs to be held across BOTH or only the "stop" step. The "stop" usually only needs serialization with other state mutations; the "wait" can usually happen outside any lock as long as the to-be-joined work doesn't itself touch the state being protected. This pattern recurs: signal-under-lock + join-outside-lock is the right shape for most teardown-with-join scenarios.
 - **Commit:** _(PR #302 upsource cycle 11 fix commit)_
 
+### 53. Renderer overlay open failure must not evict a newer same-surface session
+
+- **Source:** github-codex-connector | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `src/components/base/floating/nativeOverlay.ts` L217-227
+- **Finding:** `openNativeOverlay` registered a session under `surfaceId`, awaited `nativeBridge.open`, then unconditionally deleted `sessions[surfaceId]` when the open was rejected or threw. If React cleanup and a rapid reopen installed a newer session for the same `surfaceId` during that await, the older failed open removed the newer session, leaving the visible native overlay unable to dispatch actions or close callbacks.
+- **Fix:** Guard both failed-open cleanup paths with `sessions.get(request.surfaceId) === session` before deleting, so only the open call that still owns the map entry can clean it up. Added `nativeOverlay.test.ts` regressions for older rejected and older thrown opens racing with a newer accepted open.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
 ### 51. Closing the in-flight-dispatch race with a per-handle `alive` token checked under the gate inside `start_or_replace`
 
 - **Source:** github-codex-connector | PR #302 round 10 | 2026-05-30
@@ -695,3 +704,283 @@ prevent showing previous data.
 - **Finding:** The opencode decoder removed an in-flight bash call when a completed `message.part.updated` arrived. If the later `tool.after` event carried the command output, test-run parsing no longer had the original command and silently skipped the snapshot.
 - **Fix:** Added a per-call metadata cache that survives display-state completion until `tool.after` runs, and covered the `tool.before` -> completed part update -> bash `tool.after` ordering with a regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 70. Open dialog form reset when initialization dependencies changed mid-edit
+
+- **Source:** github-claude | PR #624 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** The New Session dialog reset path/name/layout/command assignment whenever
+  `defaultCwd` or the layout registry changed while the dialog was already open.
+- **Fix:** Re-initialize only on the closed-to-open transition, reading the latest
+  `defaultCwd` and registry from refs so dependency changes do not wipe in-progress edits.
+- **Commit:** same commit as this entry
+
+### 71. Terminal focus requested before async session creation activated the target
+
+- **Source:** github-claude | PR #624 round 2 | 2026-06-26
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The New Session dialog queued `claimTerminal()` with `requestAnimationFrame` immediately after calling async `createSession`. PTY spawning commonly outlived the next frame, so focus could be requested for the previous active session and never re-requested after the new session became active.
+- **Fix:** Add an `onCreated` completion callback to `createSession`, commit the new active session synchronously in the success path, and request terminal focus from the dialog only after that callback fires.
+- **Commit:** same commit as this entry
+
+### 72. Ghostty restore replay registered pane-ready after unmount
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** `GhosttyBody` checked its cancellation flag after attaching native output,
+  but then awaited restored replay output before registering `onPaneReady`. If the pane
+  unmounted during that await, cleanup had no registered release function and the resumed
+  task could still install a stale drain callback for the dead pane.
+- **Fix:** Re-check cancellation after the restored replay send and again before draining
+  buffered events or registering pane readiness. Added regression coverage that unmounts
+  while replay output is still pending.
+- **Commit:** same commit as this entry
+
+### 73. Tool-call seen IDs persisted before deferred state flush
+
+- **Source:** github-claude | PR #630 round 6 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** Completed tool-call IDs were written to the persisted seen-ID set when
+  the IPC event arrived, but the state update was deferred to `requestAnimationFrame`.
+  If the hook unmounted before that frame, replay later treated the event as already
+  applied and dropped it from totals/recent activity.
+- **Fix:** Keep a non-persistent pending seen-ID set for same-frame duplicate filtering,
+  and persist completed IDs only inside the rAF flush that applies the corresponding
+  state update. Added regression coverage for unmount-before-flush.
+- **Commit:** same commit as this entry
+
+### 74. Native TSFN dispatch raced callback release during surface teardown
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `OnInput` and `OnResize` read shared `napi_threadsafe_function`
+  pointers while `ReleaseSurfaceCallbacks` could concurrently null and release
+  them during native surface destruction. A destroy-while-callback interleaving
+  could pass an invalid or null TSFN to Node-API and crash the Electron process.
+- **Fix:** Added an atomic callback-release guard plus a mutex-protected TSFN
+  acquire path. Input and resize callbacks now acquire a stable local TSFN before
+  dispatch and release that per-call reference after the nonblocking call.
+- **Commit:** same commit as this entry
+
+### 75. Native Ghostty IPC rejections bypassed xterm fallback
+
+- **Source:** github-claude | PR #630 round 8 | 2026-06-28
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty data and focus calls handled disabled responses,
+  but rejected IPC promises skipped `onUnavailable`. Startup, hot-reload, or
+  teardown races could leave the renderer in native mode with no working surface
+  instead of falling back to xterm.
+- **Fix:** Wrap native data/focus awaits in `try`/`catch` and call the existing
+  unavailable fallback on rejection, including the fire-and-forget output
+  forwarder and the imperative `TerminalBody` focus path. Added regression tests
+  for rejected data, focus, and output-forwarding IPC.
+- **Commit:** same commit as this entry
+
+### 76. Native finalizer bypassed mutex-protected TSFN release
+
+- **Source:** github-claude | PR #630 round 9 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `FinalizeSurface` still read, released, and nulled the input and
+  resize TSFN pointers directly even after explicit destroy moved to the
+  mutex-protected `ReleaseSurfaceCallbacks` helper. A Swift callback racing with
+  GC finalization could therefore access the same non-atomic TSFN fields without
+  synchronization and crash the Electron process during teardown.
+- **Fix:** Call `ReleaseSurfaceCallbacks(surface)` at the start of finalization
+  and remove the direct TSFN cleanup block, so both explicit destroy and GC
+  fallback use the same idempotent, mutex-protected release path.
+- **Commit:** same commit as this entry
+
+### 77. Stale native overlay close reset a newer active surface
+
+- **Source:** github-claude | PR #635 round 1 | 2026-06-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** `closeSurface` reset the shared overlay window without checking
+  whether the closing surface still owned `activeSurfaceId`. Two rapid opens
+  could both cross the async overlay-ready gap, then an older render timeout
+  could hide and clear the newer accepted overlay while the renderer still
+  believed native mode was active.
+- **Fix:** Gate active-surface bookkeeping, overlay clear/hide, always-on-top
+  reset, mouse-event reset, and owner focus restoration on
+  `record.activeSurfaceId === surfaceId`. Stale closes still delete their
+  surface record and settle pending ready promises, but they no longer disturb
+  a newer active surface.
+- **Commit:** same commit as this entry
+
+### 78. Native overlay restored focus reopened the dismissed menu
+
+- **Source:** github-claude | PR #638 round 2 | 2026-06-30
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/GitRefChip.tsx`
+- **Finding:** The Git ref chip opened its native overlay from `focus`, but
+  native overlay dismissal restores focus to the owner window asynchronously.
+  If that focus event arrived before the close IPC updated the local guard, the
+  just-dismissed overlay could reopen without user intent.
+- **Fix:** Disabled focus-triggered opens for the native overlay path and kept
+  explicit click, Enter, Space, and ArrowDown activation. Added regression
+  coverage that restored focus alone does not call the native overlay bridge.
+- **Commit:** same commit as this entry
+
+### 79. Pane wrapper mousedown activated inactive panes before controls clicked
+
+- **Source:** github-claude | PR #642 round 2 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** The pane wrapper activated inactive panes on every descendant
+  mousedown, while header controls only stopped click propagation. Clicking
+  Close or Collapse on a background pane could therefore activate that pane
+  before the control action ran, causing close-active-pane reassignment and
+  unexpected focus theft.
+- **Fix:** Added an interactive-descendant guard to the wrapper mousedown
+  handler so button, link, form, ARIA control, focusable, and contenteditable
+  targets keep their own event semantics without activating the pane first.
+  Added regression coverage for inactive-pane Close and Collapse clicks.
+- **Commit:** same commit as this entry
+
+### 80. Rapid dialog content updates race the single-slot overlay ready map
+
+- **Source:** github-claude | PR #644 round 1 | 2026-07-01
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** Native dialog payload changes started overlapping same-surface
+  overlay opens on every command-palette update. Those concurrent opens could
+  collide with main-process ready bookkeeping and let stale completions mark a
+  working native overlay as failed.
+- **Fix:** Serialized native dialog opens through a per-dialog promise queue and
+  guarded completions with a generation token. Superseded updates no longer
+  mutate local native state after a newer generation starts.
+- **Commit:** same commit as this entry
+
+### 81. Close pending native dialog when dismissal wins the race
+
+- **Source:** github-codex-connector | PR #644 round 1 | 2026-07-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** If the React dialog closed before its first native open resolved,
+  the immediate close request could be ignored before main registered the
+  surface. A late accepted open could leave the native command palette visible
+  after React state had dismissed it.
+- **Fix:** Reused the dialog generation guard to detect accepted stale opens
+  after dismissal or unmount and explicitly close that surface, while leaving
+  superseded same-surface content updates open for the queued replacement.
+- **Commit:** same commit as this entry
+
+### 82. Native menu payload updates must not share close lifecycle
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** The native menu open effect included the serialized payload key
+  in the same effect that closed the overlay during cleanup. Checkbox/state
+  updates therefore destroyed and recreated the native BrowserWindow surface
+  instead of updating it in place.
+- **Fix:** Split native menu lifecycle cleanup from payload updates. Payload
+  changes re-send the menu request for the same surface id, while close/unmount
+  remains the only path that closes the native overlay.
+- **Commit:** same commit as this entry
+
+### 83. Async native visibility calls need supersession guards
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** Rapid burner open/close toggles launched overlapping native
+  visibility/focus IPC chains. A slower earlier chain could resolve after a
+  newer state and focus/show the secondary surface for the wrong final state.
+- **Fix:** Added a monotonic visibility request token and dropped stale
+  completions before issuing focus.
+- **Commit:** same commit as this entry
+
+### 84. Native overlay open must re-check destroyed windows after awaits
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `electron/native-overlay.ts`
+- **Finding:** Menu and tooltip open paths awaited the overlay layer readiness
+  promise and then immediately touched BrowserWindow methods. If the parent
+  closed during first load, the overlay window could already be destroyed.
+- **Fix:** Added post-await parent/overlay `isDestroyed()` guards and return a
+  clean rejected open result instead of throwing through the IPC handler.
+- **Commit:** same commit as this entry
+
+### 85. Native anchored overlays need geometry refresh after resize
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`, `src/components/Tooltip.tsx`
+- **Finding:** Native menu and tooltip overlays sent a one-shot anchor rect
+  when they opened. Window resize or trigger layout changes could leave the
+  native surface detached from its React anchor.
+- **Fix:** Added window resize and trigger ResizeObserver refresh paths that
+  resend the same native surface id with the current anchor rect.
+- **Commit:** same commit as this entry
+
+### 86. Deferred tool-call flush survived local reset
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** `agent-tool-call` events were batched through
+  `requestAnimationFrame`, but a reset between enqueue and flush could not clear
+  the closure-local pending queue, letting stale tool calls reappear after the
+  reset state was applied.
+- **Fix:** Clear pending tool-call batches from the reset-generation path,
+  cancel any scheduled animation frame, and re-check the reset guard at flush
+  time before applying batched events.
+- **Commit:** same commit as this entry
+
+### 87. Native restore replay must drain before live attach
+
+- **Source:** github-claude | PR #667 round 3 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/GhosttyBody.tsx`
+- **Finding:** Native Ghostty restore awaited the live output subscription
+  before draining buffered restore events. A live PTY chunk could advance the
+  cursor during that await and make earlier restore bytes look stale.
+- **Fix:** Replay restored data and buffered events before attaching the live
+  native output listener, preserving the cursor ordering used by the DOM path.
+- **Commit:** same commit as this entry
+
+### 88. Native shortcut refocus used a stale surface after async dispatch
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `forwardShortcutToAppRenderer` checked that a native surface
+  existed before awaiting renderer JavaScript, but a pane destroy could run
+  during that await. The captured state still held the old surface handle, so
+  the post-dispatch refocus path could call `addon.focus` on a destroyed surface.
+- **Fix:** Re-checked that the pane key still maps to the same state after
+  `executeJavaScript` resolves before refocusing the native surface. Added a
+  regression test that destroys the pane while shortcut dispatch is pending.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Native menu reposition rejection kept the DOM fallback suppressed
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** After a native menu was active, resize and trigger-observer
+  reposition calls fired `openNativeOverlay` without awaiting the result. If
+  the native layer rejected a reposition, the component kept `nativeAttempt` as
+  active and continued hiding the DOM fallback.
+- **Fix:** Awaited the reposition result and moved `nativeAttempt` to `failed`
+  on rejection, guarded against late state updates after cleanup. Added a menu
+  regression test that rejects the second native open and expects the local menu.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Native overlay resize reopens survived dismissal
+
+- **Source:** github-claude | PR #667 round 8 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `src/components/Menu.tsx`, `src/components/Tooltip.tsx`
+- **Finding:** Native-overlay Menu and Tooltip resize effects could resolve an accepted `openNativeOverlay` request after the surface was dismissed, leaving stale native sessions alive after renderer cleanup.
+- **Fix:** Mirror the initial-open cancellation guard in resize resync effects: when the effect has been disposed and the pending request is accepted, close the native overlay by `surfaceId` and skip state updates. Added regression tests for menu and tooltip stale resize requests.
+- **Commit:** same commit as this entry

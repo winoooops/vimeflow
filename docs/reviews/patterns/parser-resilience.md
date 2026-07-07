@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-06-22
-ref_count: 8
+last_updated: 2026-07-05
+ref_count: 11
 ---
 
 # Parser Resilience
@@ -176,7 +176,7 @@ true` and drop the chunk.
 - **Finding:** `account_rate_limits_from_log_body` used `?` on both `header_f64(..., "x-codex-primary-used-percent")` and `header_u64(..., "x-codex-primary-reset-at")`. When the used-percent header was present but the reset-at header was absent (e.g. error responses or older header shapes), the `?` on the missing reset header made the entire function return `None`. The available usage percentage was lost and the sidebar showed the model-specific `0%` placeholder.
 - **Fix:** Changed the primary `five_hour` construction to require only `used_percentage` via `?`; `resets_at` now falls back to `0` (unknown reset) via `unwrap_or(0)`. Applied the same fallback to the optional `seven_day` block: `(Some(used), None) → Some(RateLimitInfo { used_percentage: used, resets_at: 0 })`. Added a regression test proving usage is preserved when reset headers are absent.
 
-### 6. Malformed pushShape IPC payload can poison the layout writer state
+### 8. Malformed pushShape IPC payload can poison the layout writer state
 
 - **Source:** github-codex-connector | PR #384 round 1 | 2026-06-07
 - **Severity:** MEDIUM
@@ -185,7 +185,7 @@ true` and drop the chunk.
 - **Fix:** Added a runtime guard in the IPC handler before calling `pushShape`: reject payloads that are not objects or lack an array `sessions` field. The fix also adds a regression test covering null, missing `sessions`, and wrong-type `sessions` payloads, plus a happy-path assertion that valid shapes still flow through.
 - **Commit:** same commit as this entry
 
-### 7. Renderer workspace-shape IPC guard must validate nested sessions and panes
+### 9. Renderer workspace-shape IPC guard must validate nested sessions and panes
 
 - **Source:** github-claude | PR #404 final review | 2026-06-08
 - **Severity:** MEDIUM
@@ -237,4 +237,77 @@ true` and drop the chunk.
 - **File:** `src/features/terminal/components/LayoutCreator/layoutCreatorModel.ts`
 - **Finding:** The hand-written YAML parser only supported `accepts: [browser, shell]`. A user-authored block list under `accepts:` was parsed as unrelated `- browser` slot-level lines, so the restriction was dropped without an error.
 - **Fix:** Added a narrow `accepts:` block-list state that accumulates following `- kind` scalars into the current slot restriction. The new test covers block-sequence YAML and verifies both values are preserved.
+- **Commit:** same commit as this entry
+
+### 15. Helper parser state survived pane teardown
+
+- **Source:** github-codex-connector | PR #630 round 4 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** Destroying the helper's current pane cleared pane identity and resize state but left partial stdout frame chunks buffered on the long-lived helper controller. A frame split across destroy and the next pane update could be completed under the new pane identity and route input or resize to the wrong PTY.
+- **Fix:** Clear the accumulated stdout parser buffer when destroying the matching current pane, while still keeping the helper process alive for later reuse.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Clearing a partial frame without resync made orphaned body bytes fatal
+
+- **Source:** github-claude | PR #630 round 7 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The native Ghostty helper correctly cleared partial stdout bytes when
+  destroying the current pane, but the next body bytes from that old frame could
+  still arrive on the long-lived helper stdout stream. The parser treated those
+  orphaned body bytes as a malformed frame header and killed the helper process,
+  causing avoidable restart latency during pane switches.
+- **Fix:** Added a resync mode entered on pane destroy. While resyncing, malformed
+  bytes are discarded until the next valid `Content-Length:` frame start is found,
+  preserving possible partial header prefixes across chunks. The regression test
+  now asserts stale bytes are not routed to the new pane, the helper is not killed,
+  and the following valid frame still parses.
+- **Commit:** same commit as this entry
+
+### 17. Helper destroy frame missed a newly required parser field
+
+- **Source:** github-claude | PR #651 round 1 | 2026-07-03
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** The standalone Ghostty helper parser started requiring
+  `backgroundColor` for every `set-frame` command, but the pane destroy path
+  still sent the previous minimal hide/reset frame. Swift rejected that command,
+  so destroying a pane could leave the helper window visible with stale content.
+- **Fix:** Added the same fallback background color used by normal update frames
+  to the destroy hide/reset payload and asserted the serialized destroy command
+  in the helper regression test.
+
+### 18. Truncated structured reply block drops a recoverable nonce
+
+- **Source:** github-claude | PR #659 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/reply.rs`
+- **Finding:** The truncated sentinel branch returned a malformed reply with `nonce: None` before trying the same best-effort nonce recovery used for schema-invalid blocks. A reply cut off after complete JSON but before the close sentinel would therefore be ignored by the frontend nonce gate instead of degrading to a user-visible raw note.
+- **Fix:** Normalize the trailing candidate payload and pass it through `best_effort_nonce` in the no-close-sentinel branch. Added a regression test proving parseable truncated JSON preserves its nonce.
+- **Commit:** same commit as this entry
+
+### 19. Quoted structured reply payload is parsed as malformed JSON
+
+- **Source:** github-codex-connector | PR #659 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/reply.rs`
+- **Finding:** The reply extractor passed the captured sentinel body directly to `serde_json`, so a valid machine block echoed with Markdown quote prefixes such as `> { ... }` failed parsing and lost structured per-comment replies.
+- **Fix:** Added a normalization step that strips optional leading Markdown quote markers from captured payload lines before validation or best-effort nonce parsing, while preserving the original raw sentinel text. Added a regression test for quoted payloads.
+- **Commit:** same commit as this entry
+
+### 20. Length-prefixed native frames must reject invalid lengths
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-helper/Sources/GhosttyNativeMacosSmoke/ElectronHostClient.swift`,
+  `native/ghostty-helper/Sources/GhosttyNativeMacosSmoke/VimeflowBackendClient.swift`,
+  `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The Swift stdio frame parsers accepted negative or huge
+  `Content-Length` values before computing `bodyStart + contentLength`, and the
+  native addon ignored `napi_get_value_string_utf8` status while converting JS
+  strings.
+- **Fix:** Added a 16 MiB frame cap, rejected negative lengths before slicing,
+  closed/disabled malformed streams, and made addon string conversion fail
+  explicitly on non-string or unreadable values.
 - **Commit:** same commit as this entry

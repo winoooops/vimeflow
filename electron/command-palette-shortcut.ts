@@ -2,7 +2,7 @@
 import { globalShortcut, type BrowserWindow } from 'electron'
 import { COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 
-interface ShortcutInput {
+export interface CommandPaletteShortcutInput {
   type: string
   key: string
   code?: string
@@ -272,7 +272,7 @@ export const COMMAND_PALETTE_GLOBAL_ACCELERATORS = acceleratorEntriesForConfig(
 const SHORTCUT_TOGGLE_DEDUPLICATION_MS = 100
 
 export const isCommandPaletteShortcutInput = (
-  input: ShortcutInput,
+  input: CommandPaletteShortcutInput,
   config: CommandPaletteShortcutConfig = commandPaletteShortcutConfigForPlatform(
     process.platform
   )
@@ -289,7 +289,7 @@ export const isCommandPaletteShortcutInput = (
     : input.key === config.key)
 
 export const commandPaletteShortcutSourceForInput = (
-  input: ShortcutInput,
+  input: CommandPaletteShortcutInput,
   config: CommandPaletteShortcutBindingsConfig = commandPaletteShortcutBindingsConfigForPlatform(
     process.platform
   )
@@ -392,6 +392,27 @@ export const setCommandPaletteShortcutBindings = (
   commandPaletteShortcutControllers.get(win)?.setBindings(bindings)
 }
 
+export const dispatchCommandPaletteShortcutForWindow = (
+  win: BrowserWindow,
+  input: CommandPaletteShortcutInput,
+  config: CommandPaletteShortcutBindingsConfig = commandPaletteShortcutBindingsConfigForWindow(
+    win
+  )
+): boolean => {
+  const source = commandPaletteShortcutSourceForInput(input, config)
+
+  if (source === null || captureActiveByWindow.get(win)) {
+    return false
+  }
+
+  if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+    win.webContents.focus()
+    commandPaletteToggleDispatcherForWindow(win)(source)
+  }
+
+  return true
+}
+
 export const installCommandPaletteShortcutOverride = (
   win: BrowserWindow,
   options: CommandPaletteShortcutOverrideOptions = {}
@@ -454,18 +475,9 @@ export const installCommandPaletteShortcutOverride = (
   })
 
   win.webContents.on('before-input-event', (event, input) => {
-    const source = commandPaletteShortcutSourceForInput(input, shortcutConfig)
-
-    if (source === null) {
-      return
+    if (dispatchCommandPaletteShortcutForWindow(win, input, shortcutConfig)) {
+      event.preventDefault()
     }
-
-    if (captureActiveByWindow.get(win)) {
-      return
-    }
-
-    event.preventDefault()
-    dispatchCommandPaletteToggle(source)
   })
 
   win.on('focus', registerFocusedLinuxShortcuts)

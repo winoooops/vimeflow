@@ -2,7 +2,10 @@
 
 Long-lived sidecar process spawned by Electron over LSP-framed JSON stdio IPC.
 Hosts PTY (`portable-pty`), filesystem, git (status / diff / watch), and agent
-observability (Claude Code + Codex CLI + Kimi Code adapters).
+observability (Claude Code + Codex CLI + Kimi Code + OpenCode adapters).
+The sidecar remains the terminal source of truth: built-in native Ghostty on
+macOS renders and captures input for sidecar-owned PTYs, while xterm.js remains
+the Linux/dev fallback renderer.
 
 - `src/bin/vimeflow-backend.rs` - sidecar binary entry point.
 - `src/runtime/` - `BackendState`, IPC router, `EventSink` trait.

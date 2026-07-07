@@ -11,6 +11,7 @@ import type {
   CommandPaletteShortcutSource,
 } from '../../../lib/backend'
 import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
+import { themeService } from '../../../theme'
 
 describe('useCommandPalette', () => {
   beforeEach(() => {
@@ -25,6 +26,7 @@ describe('useCommandPalette', () => {
       const activeElement = document.activeElement as HTMLElement
       activeElement.blur()
     }
+    themeService.apply('obsidian-lens')
   })
 
   afterEach(() => {
@@ -77,6 +79,106 @@ describe('useCommandPalette', () => {
       expect(result.current.state.currentNamespace).toBe(null)
       // filteredResults is derived from query ':' so it shows all default commands
       expect(result.current.filteredResults.length).toBeGreaterThan(0)
+    })
+
+    test('close() restores the theme active when the palette opened', () => {
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-flexoki',
+              label: 'Flexoki',
+              icon: 'palette',
+              preview: (): void => {
+                themeService.preview('flexoki')
+              },
+              execute: (): void => {
+                themeService.apply('flexoki')
+              },
+            },
+          ],
+        },
+      ]
+
+      themeService.apply('obsidian-lens')
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.executeSelected()
+      })
+
+      act(() => {
+        result.current.close()
+      })
+
+      expect(themeService.current().id).toBe('obsidian-lens')
+    })
+
+    test('close() restores the original theme after a non-theme command previews a theme leaf', () => {
+      const nonThemeExecute = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-flexoki',
+              label: 'Flexoki',
+              icon: 'palette',
+              preview: (): void => {
+                themeService.preview('flexoki')
+              },
+              execute: (): void => {
+                themeService.apply('flexoki')
+              },
+            },
+          ],
+        },
+        {
+          id: 'noop',
+          label: 'Flexible no-op',
+          icon: 'check',
+          execute: nonThemeExecute,
+        },
+      ]
+
+      themeService.apply('obsidian-lens')
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':flex')
+      })
+
+      // Fuzzy search surfaces the theme leaf without committing the theme.
+      expect(
+        result.current.filteredResults.some((cmd) => cmd.id === 'theme-flexoki')
+      ).toBe(true)
+      expect(themeService.current().id).toBe('obsidian-lens')
+
+      // Select and execute the non-theme leaf without any preview callback.
+      const noopIndex = result.current.filteredResults.findIndex(
+        (cmd) => cmd.id === 'noop'
+      )
+
+      expect(noopIndex).not.toBe(-1)
+
+      act(() => {
+        result.current.selectIndex(noopIndex)
+        result.current.executeSelected()
+      })
+
+      expect(nonThemeExecute).toHaveBeenCalled()
+      expect(themeService.current().id).toBe('obsidian-lens')
+      expect(themeService.displayed().id).toBe('obsidian-lens')
     })
 
     test('disabled palette rejects opens and closes current state', async () => {
@@ -1522,6 +1624,323 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
 
       consoleInfoSpy.mockRestore()
+    })
+  })
+
+  describe('executeAt', () => {
+    test('runs the command at the given index and closes', () => {
+      const execute = vi.fn()
+
+      const commands: Command[] = [
+        { id: 'a', label: ':alpha', icon: 'bolt', execute: vi.fn() },
+        { id: 'b', label: ':beta', icon: 'bolt', execute },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+      })
+
+      act(() => {
+        result.current.executeAt(1)
+      })
+
+      expect(execute).toHaveBeenCalledTimes(1)
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
+    test('keeps required-argument commands open until args are present', () => {
+      const execute = vi.fn()
+
+      const commands: Command[] = [
+        {
+          id: 'rename-pane',
+          label: ':rename-pane',
+          icon: 'edit',
+          requiresArgument: true,
+          execute,
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':r')
+        result.current.executeAt(0)
+      })
+
+      expect(execute).not.toHaveBeenCalled()
+      expect(result.current.state.query).toBe(':rename-pane ')
+      expect(result.current.state.isOpen).toBe(true)
+
+      act(() => {
+        result.current.setQuery(':rename-pane left')
+      })
+
+      act(() => {
+        result.current.executeSelected()
+      })
+
+      expect(execute).toHaveBeenCalledWith('left')
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
+    test('is a no-op for an out-of-bounds index', () => {
+      const execute = vi.fn()
+
+      const commands: Command[] = [
+        { id: 'a', label: ':alpha', icon: 'bolt', execute },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+      })
+
+      act(() => {
+        result.current.executeAt(5)
+      })
+
+      act(() => {
+        result.current.executeAt(-1)
+      })
+
+      expect(execute).not.toHaveBeenCalled()
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('drills into a namespace command without closing', () => {
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            {
+              id: 'theme-child',
+              label: 'Child',
+              icon: 'palette',
+              execute: vi.fn(),
+            },
+          ],
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+      })
+
+      act(() => {
+        result.current.executeAt(0)
+      })
+
+      expect(result.current.state.currentNamespace?.id).toBe('theme')
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('executeSelected delegates to the clamped index', () => {
+      const execute = vi.fn()
+
+      const commands: Command[] = [
+        { id: 'a', label: ':alpha', icon: 'bolt', execute },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.selectIndex(0)
+        result.current.executeSelected()
+      })
+
+      expect(execute).toHaveBeenCalledTimes(1)
+      expect(result.current.state.isOpen).toBe(false)
+    })
+  })
+
+  describe('keyboard navigation - Tab common-prefix completion', () => {
+    const renameCommands: Command[] = [
+      {
+        id: 'rename-session',
+        label: ':rename-session',
+        icon: 'edit',
+        execute: vi.fn(),
+      },
+      {
+        id: 'rename-pane',
+        label: ':rename-pane',
+        icon: 'edit',
+        execute: vi.fn(),
+      },
+    ]
+
+    test('completes the longest common prefix of matching verbs', () => {
+      const { result } = renderHook(() => useCommandPalette(renameCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':r')
+      })
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':rename-')
+    })
+
+    test('completes a single candidate fully', () => {
+      const { result } = renderHook(() => useCommandPalette(renameCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':rename-s')
+      })
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':rename-session')
+    })
+
+    test('completes a single fuzzy-only candidate fully', () => {
+      const focusCommands: Command[] = [
+        {
+          id: 'focus-terminal',
+          label: ':focus-terminal',
+          icon: 'terminal',
+          execute: vi.fn(),
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(focusCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':ft')
+      })
+
+      expect(result.current.filteredResults.map((cmd) => cmd.id)).toEqual([
+        'focus-terminal',
+      ])
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':focus-terminal')
+    })
+
+    test('completes the common prefix of multiple fuzzy-only candidates', () => {
+      const openCommands: Command[] = [
+        {
+          id: 'open-editor',
+          label: ':open-editor',
+          icon: 'code',
+          execute: vi.fn(),
+        },
+        {
+          id: 'open-diff',
+          label: ':open-diff',
+          icon: 'difference',
+          execute: vi.fn(),
+        },
+      ]
+
+      const { result } = renderHook(() => useCommandPalette(openCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':oe')
+      })
+
+      expect(result.current.filteredResults.map((cmd) => cmd.id)).toEqual([
+        'open-editor',
+        'open-diff',
+      ])
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':open-')
+    })
+
+    test('is a no-op when already at the common prefix', () => {
+      const { result } = renderHook(() => useCommandPalette(renameCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':rename-')
+      })
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':rename-')
+    })
+
+    test('is a no-op when no candidate matches the verb', () => {
+      const { result } = renderHook(() => useCommandPalette(renameCommands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':zzz')
+      })
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.query).toBe(':zzz')
+    })
+
+    test('does not close the palette', () => {
+      const { result } = renderHook(() => useCommandPalette(renameCommands))
+
+      act(() => {
+        result.current.open()
+      })
+
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('fully consumes the event to beat the focus trap', () => {
+      const { result } = renderHook(() => useCommandPalette(renameCommands))
+
+      act(() => {
+        result.current.open()
+      })
+
+      const event = new KeyboardEvent('keydown', {
+        key: 'Tab',
+        bubbles: true,
+        cancelable: true,
+      })
+      const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+
+      const stopImmediatePropagationSpy = vi.spyOn(
+        event,
+        'stopImmediatePropagation'
+      )
+
+      act(() => {
+        document.dispatchEvent(event)
+      })
+
+      expect(preventDefaultSpy).toHaveBeenCalled()
+      expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
   })
 

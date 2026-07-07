@@ -1,0 +1,1596 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>
+      Ghostty Split API Exploration — Burner Nested Pane | Ghostty 分屏 API 探索
+      —— Burner 嵌套窗格
+    </title>
+    <style>
+      :root {
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --surface0: #313244;
+        --surface1: #45475a;
+        --text: #cdd6f4;
+        --subtext: #a6adc8;
+        --overlay: #6c7086;
+        --green: #a6e3a1;
+        --red: #f38ba8;
+        --yellow: #f9e2af;
+        --peach: #fab387;
+        --blue: #89b4fa;
+        --mauve: #cba6f7;
+        --teal: #94e2d5;
+        --mono:
+          'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--base);
+        color: var(--text);
+        font:
+          15px/1.65 Inter,
+          -apple-system,
+          'PingFang SC',
+          'Hiragino Sans GB',
+          'Microsoft YaHei',
+          sans-serif;
+        padding: 0 0 80px;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 28px;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family:
+          Manrope,
+          Inter,
+          -apple-system,
+          'PingFang SC',
+          sans-serif;
+        line-height: 1.3;
+      }
+      h1 {
+        font-size: 26px;
+        margin: 8px 0 4px;
+      }
+      h2 {
+        font-size: 20px;
+        margin: 44px 0 12px;
+        color: var(--mauve);
+      }
+      h3 {
+        font-size: 16px;
+        margin: 26px 0 8px;
+        color: var(--blue);
+      }
+      p {
+        margin: 10px 0;
+      }
+      code,
+      .mono {
+        font-family: var(--mono);
+        font-size: 0.86em;
+      }
+      code {
+        background: var(--surface0);
+        padding: 1px 6px;
+        border-radius: 5px;
+        color: var(--teal);
+        white-space: nowrap;
+      }
+      pre {
+        background: var(--crust);
+        border-radius: 10px;
+        padding: 14px 18px;
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.6;
+        color: var(--subtext);
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        color: inherit;
+        white-space: pre;
+      }
+      a {
+        color: var(--blue);
+      }
+
+      /* language toggle */
+      .langbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: color-mix(in srgb, var(--mantle) 88%, transparent);
+        backdrop-filter: blur(10px);
+        padding: 10px 28px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-end;
+        margin-bottom: 28px;
+      }
+      .langbar span.hint {
+        margin-right: auto;
+        color: var(--overlay);
+        font-size: 12px;
+      }
+      .langbar button {
+        background: var(--surface0);
+        color: var(--subtext);
+        border: 0;
+        border-radius: 8px;
+        padding: 5px 14px;
+        font:
+          13px Inter,
+          'PingFang SC',
+          sans-serif;
+        cursor: pointer;
+      }
+      .langbar button.active {
+        background: var(--mauve);
+        color: var(--crust);
+        font-weight: 600;
+      }
+      body[data-lang='en'] .zh {
+        display: none;
+      }
+      body[data-lang='zh'] .en {
+        display: none;
+      }
+      body[data-lang='both'] .zh {
+        color: var(--subtext);
+      }
+      body[data-lang='both'] td .zh,
+      body[data-lang='both'] li .zh {
+        display: block;
+        margin-top: 2px;
+      }
+
+      .meta {
+        color: var(--overlay);
+        font-size: 13px;
+        margin-bottom: 22px;
+      }
+      .meta code {
+        color: var(--subtext);
+      }
+
+      .verdict {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin: 24px 0;
+      }
+      .verdict .card {
+        border-radius: 12px;
+        padding: 16px 18px;
+        background: var(--mantle);
+      }
+      .verdict .card.no {
+        box-shadow: inset 3px 0 0 var(--red);
+      }
+      .verdict .card.yes {
+        box-shadow: inset 3px 0 0 var(--green);
+      }
+      .verdict .card b.line {
+        display: block;
+        font-size: 15px;
+        margin-bottom: 6px;
+      }
+      .verdict .no b.line {
+        color: var(--red);
+      }
+      .verdict .yes b.line {
+        color: var(--green);
+      }
+      .verdict .card p {
+        font-size: 13.5px;
+        color: var(--subtext);
+        margin: 4px 0 0;
+      }
+
+      .badge {
+        display: inline-block;
+        border-radius: 20px;
+        padding: 2px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-align: 2px;
+        margin-left: 8px;
+      }
+      .badge.ok {
+        background: color-mix(in srgb, var(--green) 18%, transparent);
+        color: var(--green);
+      }
+      .badge.warn {
+        background: color-mix(in srgb, var(--yellow) 18%, transparent);
+        color: var(--yellow);
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 14px 0;
+        font-size: 13.5px;
+      }
+      th {
+        text-align: left;
+        color: var(--peach);
+        font-weight: 600;
+        padding: 8px 12px;
+        background: var(--mantle);
+      }
+      td {
+        padding: 9px 12px;
+        vertical-align: top;
+        border-top: 1px solid var(--surface0);
+        color: var(--subtext);
+      }
+      td:first-child,
+      th:first-child {
+        border-radius: 0;
+      }
+      tr td b {
+        color: var(--text);
+      }
+      td code {
+        white-space: normal;
+        word-break: break-all;
+      }
+
+      .callout {
+        border-radius: 10px;
+        background: var(--mantle);
+        padding: 14px 18px;
+        margin: 16px 0;
+        font-size: 14px;
+      }
+      .callout.good {
+        box-shadow: inset 3px 0 0 var(--green);
+      }
+      .callout.warn {
+        box-shadow: inset 3px 0 0 var(--yellow);
+      }
+      .callout.info {
+        box-shadow: inset 3px 0 0 var(--blue);
+      }
+      .callout b:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .sev {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 1px 8px;
+        white-space: nowrap;
+      }
+      .sev.high {
+        background: color-mix(in srgb, var(--red) 20%, transparent);
+        color: var(--red);
+      }
+      .sev.med {
+        background: color-mix(in srgb, var(--yellow) 20%, transparent);
+        color: var(--yellow);
+      }
+      .sev.low {
+        background: color-mix(in srgb, var(--blue) 20%, transparent);
+        color: var(--blue);
+      }
+
+      ol.plan {
+        padding-left: 20px;
+      }
+      ol.plan > li {
+        margin: 10px 0;
+        color: var(--subtext);
+      }
+      ol.plan > li b {
+        color: var(--text);
+      }
+      ol.plan code {
+        font-size: 0.82em;
+      }
+
+      footer {
+        margin-top: 56px;
+        color: var(--overlay);
+        font-size: 12.5px;
+        border-top: 1px solid var(--surface0);
+        padding-top: 16px;
+      }
+    </style>
+  </head>
+  <body data-lang="both">
+    <div class="langbar">
+      <span class="hint mono"
+        >docs/exploration/2026-07-04-ghostty-burner-side-pane</span
+      >
+      <button data-set="en">EN</button>
+      <button data-set="zh">中文</button>
+      <button data-set="both" class="active">EN + 中文</button>
+    </div>
+    <main>
+      <h1>
+        <span class="en"
+          >Ghostty Split API Exploration — Burner as a Nested Native Pane</span
+        >
+        <span class="zh">Ghostty 分屏 API 探索 —— Burner 作为嵌套原生窗格</span>
+      </h1>
+      <p class="meta">
+        2026-07-03 ·
+        <span class="en">Package under test:</span
+        ><span class="zh">被检包：</span>
+        <code>Lakr233/libghostty-spm 1.2.7</code> (rev <code>2b0e1b9d</code>,
+        <span class="en">pinned by</span><span class="zh">锁定于</span>
+        <code>native/ghostty-helper/Package.resolved</code>) ·
+        <span class="en"
+          >Method: 3 parallel source-reading agents + independent
+          <code>codex exec</code> re-verification</span
+        >
+        <span class="zh"
+          >方法：3 个并行源码阅读 agent + 独立
+          <code>codex exec</code> 复核</span
+        >
+      </p>
+
+      <div class="verdict">
+        <div class="card no">
+          <b class="line">
+            <span class="en"
+              >✗ Option A is dead: no host-controllable split API</span
+            >
+            <span class="zh">✗ 方案 A 不可行：不存在宿主可控的分屏 API</span>
+          </b>
+          <p>
+            <span class="en"
+              >libghostty-spm is strictly a single-surface, single-view
+              embedding API. Ghostty's real split logic (SplitTree, surface
+              tree, tabs) lives in the app shell that this package explicitly
+              strips out (<code>-Dapp-runtime=none</code>).</span
+            >
+            <span class="zh"
+              >libghostty-spm 严格上只是单 surface、单 view 的嵌入 API。Ghostty
+              真正的分屏逻辑（SplitTree、surface 树、标签页）位于其 App
+              外壳层，而该包在构建时显式剥离了这一层（<code>-Dapp-runtime=none</code>）。</span
+            >
+          </p>
+        </div>
+        <div class="card yes">
+          <b class="line">
+            <span class="en"
+              >✓ Option B is viable: two TerminalViews, host-owned layout</span
+            >
+            <span class="zh"
+              >✓ 方案 B 可行：两个 TerminalView，布局由宿主管理</span
+            >
+          </b>
+          <p>
+            <span class="en"
+              >Two independent <code>TerminalView</code> +
+              <code>InMemoryTerminalSession</code> pairs can safely coexist
+              inside one <code>EmbeddedGhosttySurface</code> NSView — provided
+              each gets its <b>own <code>TerminalController</code></b
+              >. Confirmed by codex.</span
+            >
+            <span class="zh"
+              >两个相互独立的 <code>TerminalView</code> +
+              <code>InMemoryTerminalSession</code> 可以安全共存于同一个
+              <code>EmbeddedGhosttySurface</code> NSView 内 —— 前提是每个 view
+              拥有<b>各自独立的 <code>TerminalController</code></b
+              >。已由 codex 复核确认。</span
+            >
+          </p>
+        </div>
+      </div>
+
+      <h2>
+        <span class="en"
+          >1 · Question 1 — Does the package expose a split-pane API?</span
+        ><span class="zh">1 · 问题一 —— 该包是否暴露分屏 API？</span>
+      </h2>
+      <p>
+        <span class="en"
+          >Verdict: <b>no — single-surface only</b>. The only split-related
+          public symbol in the entire package is
+          <code>TerminalSurfaceContext.split</code>, and it is not a layout
+          API:</span
+        >
+        <span class="zh"
+          >结论：<b>否 —— 仅支持单 surface</b>。整个包中唯一与 split
+          相关的公开符号是
+          <code>TerminalSurfaceContext.split</code>，且它并不是布局 API：</span
+        >
+      </p>
+      <table>
+        <tr>
+          <th><span class="en">Symbol</span><span class="zh">符号</span></th>
+          <th><span class="en">File</span><span class="zh">文件</span></th>
+          <th><span class="en">Finding</span><span class="zh">结论</span></th>
+        </tr>
+        <tr>
+          <td>
+            <b><code>TerminalSurfaceContext.split</code></b>
+          </td>
+          <td><code>Surface/TerminalSurfaceContext.swift:8</code></td>
+          <td>
+            <span class="en"
+              >Maps to <code>GHOSTTY_SURFACE_CONTEXT_SPLIT</code> — a
+              <b>creation-time hint</b> to the C engine about how the surface
+              was spawned (affects key-binding routing). It does <b>not</b> make
+              Ghostty own a split layout; the host still creates one surface per
+              view and controls all geometry.</span
+            >
+            <span class="zh"
+              >映射到 <code>GHOSTTY_SURFACE_CONTEXT_SPLIT</code> ——
+              仅是创建时传给 C 引擎的<b>提示</b>，说明该 surface
+              的来源（影响按键绑定路由）。它<b>不会</b>让 Ghostty
+              接管分屏布局；宿主仍然是每个 view 创建一个
+              surface，并掌控全部几何布局。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <b><code>TerminalView</code> / <code>AppTerminalView</code></b>
+          </td>
+          <td><code>Platform/AppKit/AppTerminalView.swift</code></td>
+          <td>
+            <span class="en"
+              >NSView subclass, one <code>CAMetalLayer</code> per instance,
+              surface bound 1:1 to the NSView. No split, pane, or layout
+              API.</span
+            >
+            <span class="zh"
+              >NSView 子类，每实例一个 <code>CAMetalLayer</code>，surface 与
+              NSView 一一绑定。没有任何 split／pane／布局 API。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <b><code>TerminalController</code></b>
+          </td>
+          <td><code>Controller/TerminalController.swift</code></td>
+          <td>
+            <span class="en"
+              >Owns <code>ghostty_app_t</code>, config, theme, surface creation.
+              No split API. Has a <code>.shared</code> singleton (line 46)
+              <i>and</i> a public designated init.</span
+            >
+            <span class="zh"
+              >持有 <code>ghostty_app_t</code>、配置、主题和 surface
+              创建。没有分屏 API。既提供 <code>.shared</code> 单例（第 46
+              行），<i>也</i>提供公开的指定构造器。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <b><code>TerminalSurface</code></b> /
+            <b><code>InMemoryTerminalSession</code></b>
+          </td>
+          <td>
+            <code>Surface/TerminalSurface.swift</code>, <code>InMemory/…</code>
+          </td>
+          <td>
+            <span class="en"
+              >One surface = one terminal grid; one session per surface, holding
+              a single <code>ghostty_surface_t</code>. No sub-surface /
+              child-surface / multiplexing API.</span
+            >
+            <span class="zh"
+              >一个 surface = 一个终端网格；每个 surface 一个
+              session，仅持有一个 <code>ghostty_surface_t</code>。没有子 surface
+              或多路复用 API。</span
+            >
+          </td>
+        </tr>
+      </table>
+      <div class="callout info">
+        <b
+          ><span class="en"
+            >Why the split machinery is absent — and why recompiling can't
+            restore it</span
+          ><span class="zh"
+            >为什么分屏机制不存在 —— 以及为什么重新编译也无法恢复</span
+          ></b
+        >
+        <span class="en"
+          >Upstream Ghostty implements splits (SplitTree, SurfaceView
+          arrangement, dividers, focus traversal) in its macOS
+          <i>application</i> layer — Swift source under <code>macos/</code> in
+          the ghostty repo. That code is not behind <code>-Dapp-runtime</code>;
+          it is not part of the Zig library at any flag setting. What
+          <code>-Dapp-runtime=none</code> strips is the action-callback plumbing
+          and the platform app shells —
+          <b>the layout engine was never in the library on any platform</b>.
+          (<code>-Dapp-runtime=gtk</code> builds a Linux GTK
+          <i>application</i> with its own splits — not an embeddable
+          library.)</span
+        >
+        <span class="zh"
+          >上游 Ghostty 的分屏（SplitTree、SurfaceView
+          排布、分隔线、焦点遍历）实现在其 macOS <i>应用程序</i>层 —— 即 ghostty
+          仓库 <code>macos/</code> 目录下的 Swift 源码。这些代码不受
+          <code>-Dapp-runtime</code> 控制；无论编译开关如何设置，它都不属于 Zig
+          库。<code>-Dapp-runtime=none</code> 剔除的只是 action 回调管线和各平台
+          App 外壳 —— <b>布局引擎在任何平台上都从未存在于库中</b>。（<code
+            >-Dapp-runtime=gtk</code
+          >
+          编出来的是带自身分屏实现的 Linux GTK
+          <i>应用程序</i>，并非可嵌入的库。）</span
+        >
+      </div>
+
+      <h3>
+        <span class="en"
+          >Addendum (2026-07-03) — even the full C API only
+          <i>requests</i> splits from the host</span
+        ><span class="zh"
+          >补充（2026-07-03）—— 即使完整 C API 也只是向宿主<i>请求</i>分屏</span
+        >
+      </h3>
+      <p>
+        <span class="en"
+          >Verified against upstream Ghostty v1.2.3 (the untrimmed embedded API
+          that real Ghostty.app itself links). Everything split-related in
+          <code>include/ghostty.h</code> is an <i>action</i>: the enums
+          <code>GHOSTTY_ACTION_NEW_SPLIT</code> / <code>GOTO_SPLIT</code> /
+          <code>RESIZE_SPLIT</code> / <code>EQUALIZE_SPLITS</code> /
+          <code>TOGGLE_SPLIT_ZOOM</code>, plus four functions such as
+          <code>ghostty_surface_split()</code>. In the core, that function is
+          pure request plumbing:</span
+        >
+        <span class="zh"
+          >已对照上游 Ghostty v1.2.3（真正的 Ghostty.app 所链接的未裁剪嵌入
+          API）验证。<code>include/ghostty.h</code>
+          中所有与分屏相关的内容都是<i>动作（action）</i>：枚举
+          <code>GHOSTTY_ACTION_NEW_SPLIT</code> / <code>GOTO_SPLIT</code> /
+          <code>RESIZE_SPLIT</code> / <code>EQUALIZE_SPLITS</code> /
+          <code>TOGGLE_SPLIT_ZOOM</code>，以及
+          <code>ghostty_surface_split()</code>
+          等四个函数。在核心实现中，该函数纯粹是请求转发：</span
+        >
+      </p>
+      <pre><code>// upstream src/apprt/embedded.zig:1843 (v1.2.3)
+export fn ghostty_surface_split(ptr: *Surface, direction: apprt.action.SplitDirection) void {
+    _ = ptr.app.performAction(.{ .surface = &amp;ptr.core_surface }, .new_split, direction) catch ...
+}
+// fires the .new_split action BACK OUT to the host's action callback.
+// The core never lays out two surfaces: one surface = one view = one Metal layer.</code></pre>
+      <div class="callout good">
+        <b
+          ><span class="en"
+            >Option B is not a workaround — it <i>is</i> the Ghostty
+            architecture</span
+          ><span class="zh"
+            >方案 B 不是权宜之计 —— 它<i>就是</i> Ghostty 的架构</span
+          ></b
+        >
+        <span class="en"
+          >Real Ghostty.app is itself a host that arranges multiple
+          single-surface views and answers <code>.new_split</code> requests (in
+          <code>SplitTree.swift</code>). Two <code>TerminalView</code>s under an
+          AppKit-owned divider put vimeflow in exactly the role Ghostty.app
+          plays — with the split tree deliberately capped at two children.</span
+        >
+        <span class="zh"
+          >真正的 Ghostty.app 本身就是一个“排布多个单 surface view、并响应
+          <code>.new_split</code> 请求”的宿主（实现在
+          <code>SplitTree.swift</code>）。在 AppKit 分隔线下承载两个
+          <code>TerminalView</code>，vimeflow 扮演的正是 Ghostty.app 的角色 ——
+          只是把分屏树刻意封顶为两个子节点。</span
+        >
+      </div>
+
+      <h2>
+        <span class="en"
+          >2 · Question 2 — Can two TerminalViews coexist in one surface
+          host?</span
+        ><span class="zh"
+          >2 · 问题二 —— 两个 TerminalView 能否共存于同一宿主？</span
+        >
+      </h2>
+      <p>
+        <span class="en"
+          >Yes, with one blocking constraint and two non-issues:</span
+        >
+        <span class="zh">可以，但有一个硬性约束，另外两点无碍：</span>
+      </p>
+      <table>
+        <tr>
+          <th>
+            <span class="en">Constraint</span><span class="zh">约束</span>
+          </th>
+          <th><span class="en">Evidence</span><span class="zh">证据</span></th>
+          <th><span class="en">Impact</span><span class="zh">影响</span></th>
+        </tr>
+        <tr>
+          <td>
+            <b
+              ><span class="en"
+                >One <code>TerminalController</code> per view</span
+              ><span class="zh"
+                >每个 view 必须有独立 <code>TerminalController</code></span
+              ></b
+            >
+            <span class="sev high">BLOCKING</span>
+          </td>
+          <td>
+            <code>TerminalController.swift:59-60</code>,
+            <code>TerminalSurfaceCoordinator.swift:138</code>
+          </td>
+          <td>
+            <span class="en"
+              ><code>onWakeup</code> / <code>shouldProcessWakeup</code> are
+              <b>single-slot closures</b>; each coordinator's
+              <code>rebuildIfReady()</code> unconditionally overwrites them. Two
+              views sharing one controller ⇒ only the last-attached view gets
+              render ticks — the other goes dark.</span
+            >
+            <span class="zh"
+              ><code>onWakeup</code> /
+              <code>shouldProcessWakeup</code> 是<b>单槽位闭包</b>；每个
+              coordinator 的
+              <code>rebuildIfReady()</code> 会无条件覆盖它们。两个 view 共享一个
+              controller ⇒ 只有最后挂载的 view 能收到渲染 tick ——
+              另一个会“黑掉”。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <b
+              ><span class="en"
+                >Avoid <code>TerminalController.shared</code></span
+              ><span class="zh"
+                >不要使用 <code>TerminalController.shared</code></span
+              ></b
+            >
+            <span class="sev med">HAZARD</span>
+          </td>
+          <td><code>TerminalController.swift:46</code></td>
+          <td>
+            <span class="en"
+              >Convenience singleton; naive use triggers the constraint above.
+              The designated init is public — just construct fresh
+              instances.</span
+            >
+            <span class="zh"
+              >便利单例；随手使用即触发上面的约束。指定构造器是公开的 ——
+              直接为每个 view 新建实例即可。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <b
+              ><span class="en">Process-global init &amp; rendering</span
+              ><span class="zh">进程级初始化与渲染</span></b
+            >
+            <span class="sev low">SAFE</span>
+          </td>
+          <td>
+            <code>TerminalController.swift:300</code>,
+            <code>AppTerminalView.swift:13</code>
+          </td>
+          <td>
+            <span class="en"
+              ><code>ghostty_init</code> is guarded one-shot (idempotent). Each
+              controller creates its own <code>ghostty_app_t</code>; callbacks
+              route via per-app/per-surface userdata, so nothing cross-routes.
+              Each view owns its own <code>CAMetalLayer</code>; the tick pump is
+              a per-coordinator main-queue schedule — no shared display
+              link.</span
+            >
+            <span class="zh"
+              ><code>ghostty_init</code> 有一次性守卫（幂等）。每个 controller
+              创建独立的 <code>ghostty_app_t</code>；回调经由 per-app /
+              per-surface 的 userdata 路由，不会串线。每个 view 拥有独立
+              <code>CAMetalLayer</code>；tick 泵为各自 coordinator 的主队列调度
+              —— 没有共享 display link。</span
+            >
+          </td>
+        </tr>
+      </table>
+      <div class="callout good">
+        <b
+          ><span class="en">Vimeflow already follows the required pattern</span
+          ><span class="zh">Vimeflow 现有代码已符合该模式</span></b
+        >
+        <span class="en"
+          ><code>EmbeddedGhosttySurface</code> creates a per-surface controller
+          today —
+          <code>private lazy var controller = TerminalController()</code>
+          (<code>GhosttyElectronBridge.swift:201</code>). Adding the burner
+          means adding a <i>second</i> controller + view + session inside the
+          same container, not restructuring anything.</span
+        >
+        <span class="zh"
+          ><code>EmbeddedGhosttySurface</code> 目前就是按 surface 创建独立
+          controller ——
+          <code>private lazy var controller = TerminalController()</code
+          >（<code>GhosttyElectronBridge.swift:201</code>）。加入 burner
+          只是在同一容器里再加<i>第二套</i> controller + view +
+          session，无需重构。</span
+        >
+      </div>
+
+      <h2>
+        <span class="en">3 · Codex re-verification</span
+        ><span class="zh">3 · Codex 复核</span
+        ><span class="badge ok">agrees = true</span>
+      </h2>
+      <p>
+        <span class="en"
+          >An independent <code>codex exec</code> pass over the same pinned
+          source confirmed all three core claims: (1) no library-owned
+          split-pane API; (2) two independent TerminalViews are safe with
+          separate controllers; (3) sharing one controller silences the earlier
+          view via the single-slot wakeup closures. Two refinements
+          surfaced:</span
+        >
+        <span class="zh"
+          >对同一锁定版本源码的独立
+          <code>codex exec</code>
+          复核确认了全部三条核心结论：（1）库不提供自有的分屏 API；（2）两个独立
+          TerminalView 在各自 controller 下是安全的；（3）共享 controller
+          会因单槽位 wakeup 闭包导致先挂载的 view
+          失效。复核补充了两点修正：</span
+        >
+      </p>
+      <ul>
+        <li>
+          <span class="en"
+            ><b>Tick pump precision</b> —
+            <code>startDisplayLink()</code> schedules a per-coordinator
+            main-queue tick; MSDisplayLink is imported but never shared. Whether
+            ticking is per-coordinator MSDisplayLink or raw
+            <code>DispatchQueue.main.async</code> does not change the verdict:
+            nothing is shared across views.</span
+          >
+          <span class="zh"
+            ><b>tick 泵表述精度</b> —— <code>startDisplayLink()</code> 为各自
+            coordinator 调度主队列 tick；MSDisplayLink 虽被引入但从不共享。无论
+            tick 实现是 per-coordinator 的 MSDisplayLink 还是裸
+            <code>DispatchQueue.main.async</code>，结论不变：view
+            之间不存在共享。</span
+          >
+        </li>
+        <li>
+          <span class="en"
+            ><b><code>retainedBridges</code> array</b>
+            (<code>TerminalController+Config.swift:64</code>) — one controller
+            <i>can</i> fan out config updates to multiple surfaces. This does
+            not lift the single-slot wakeup constraint (the render trigger is
+            still one closure), so the per-view-controller rule stands.</span
+          >
+          <span class="zh"
+            ><b><code>retainedBridges</code> 数组</b
+            >（<code>TerminalController+Config.swift:64</code>）—— 单个
+            controller <i>确实</i>能向多个 surface
+            广播配置更新。但这并不解除单槽位 wakeup
+            约束（渲染触发仍是一个闭包），因此“每 view 一个
+            controller”的规则依然成立。</span
+          >
+        </li>
+      </ul>
+
+      <h3>
+        <span class="en">Round 2 (2026-07-03) — risks &amp; spike order</span
+        ><span class="zh">第二轮（2026-07-03）—— 风险与 spike 顺序</span>
+      </h3>
+      <p>
+        <span class="en"
+          >A second <code>codex exec</code> pass reviewed §5 and §6 against the
+          actual code (via the markdown mirror of this note). Verdicts: R2/R4/R6
+          <b>confirmed</b>; R1/R3/R5 <b>incomplete</b> — corrections folded into
+          §5 (resize shares the PTY-identity path; the digit guard is at
+          Swift:475-480 and context-menu/rename attribution needs child
+          identity; the renderer's pending-buffer drain is owned by the mounted
+          Body). Codex also surfaced <b>four missing HIGH risks</b> (now in §5,
+          marked <i>codex round 2</i>) and a revised spike order (§6).</span
+        >
+        <span class="zh"
+          >第二轮 <code>codex exec</code> 依据本笔记的 markdown
+          镜像，对照实际代码复核了 §5 与 §6。判定：R2/R4/R6
+          <b>确认</b>；R1/R3/R5 <b>不完整</b> —— 修正已并入 §5（resize
+          与击键共用同一 PTY 身份路径；数字键守卫实际在
+          Swift:475-480，右键菜单/重命名归属需要携带子终端身份；渲染进程的待发缓冲排空由挂载的
+          Body 持有）。codex 还发现了 <b>4 个遗漏的高危风险</b>（已列入 §5，标注
+          <i>codex round 2</i>），并给出修订后的 spike 顺序（§6）。</span
+        >
+      </p>
+
+      <h2>
+        <span class="en">4 · What needs to change (Option B change map)</span
+        ><span class="zh">4 · 需要改什么（方案 B 变更图）</span>
+      </h2>
+      <p>
+        <span class="en"
+          >The pipeline today, and the identity fields flowing through it:</span
+        >
+        <span class="zh">现有管线及贯穿其中的标识字段：</span>
+      </p>
+      <pre><code>GhosttyBody.tsx ──▶ nativeGhosttyClient.ts ──▶ preload.ts ──▶ ghostty-native-parent.ts
+                                                                    │  surfaces: Map&lt;`${sessionId}:${paneId}`&gt;
+                                                                    ▼
+                                              ghostty_native_parent.cc (N-API, tsfn callbacks)
+                                                                    ▼
+                                              GhosttyElectronBridge.swift · EmbeddedGhosttySurface
+                                                 └─ container NSView ─ TerminalView + InMemoryTerminalSession
+
+sessionId = ptyId  (NOT the layout session id — GhosttyBody.tsx:193)
+burner adds:  childId: 'primary' | 'burner'   +   burnerPtyId
+paneKey stays `${sessionId}:${paneId}` — the burner shares its parent's surface state entry.</code></pre>
+
+      <h3>
+        <span class="en">Ordered minimal change plan (native-first)</span
+        ><span class="zh">最小变更计划（自原生层向上，按序）</span>
+      </h3>
+      <ol class="plan">
+        <li>
+          <b>Swift · <code>GhosttyElectronBridge.swift</code></b> —
+          <span class="en"
+            ><code>EmbeddedGhosttySurface</code> gains optional
+            <code>burnerTerminalView</code> / <code>burnerSession</code> /
+            <code>burnerCallbacks</code> (each with its
+            <b>own <code>TerminalController</code></b
+            >); <code>enum BurnerPlacement { right, bottom }</code>; a
+            <code>layoutChildren()</code> that splits
+            <code>container.bounds</code> by ratio (called from
+            <code>setFrame</code>); new <code>@_cdecl</code> exports
+            <code>vimeflow_ghostty_add_burner_child</code> /
+            <code>remove_burner_child</code> / <code>write_burner</code> /
+            <code>focus_burner</code>; fix
+            <code>shortcutMonitor.handleKeyDown</code> (line 441) to match
+            firstResponder against <i>either</i> terminal view.</span
+          >
+          <span class="zh"
+            ><code>EmbeddedGhosttySurface</code> 增加可选的
+            <code>burnerTerminalView</code> / <code>burnerSession</code> /
+            <code>burnerCallbacks</code>（各自持有<b
+              >独立 <code>TerminalController</code></b
+            >）；新增 <code>enum BurnerPlacement { right, bottom }</code>；新增
+            <code>layoutChildren()</code> 按比例切分
+            <code>container.bounds</code>（由 <code>setFrame</code> 调用）；新增
+            <code>@_cdecl</code> 导出
+            <code>vimeflow_ghostty_add_burner_child</code> /
+            <code>remove_burner_child</code> / <code>write_burner</code> /
+            <code>focus_burner</code>；修正
+            <code>shortcutMonitor.handleKeyDown</code>（441 行），使
+            firstResponder 判定同时匹配两个终端 view。</span
+          >
+        </li>
+        <li>
+          <b>N-API · <code>ghostty_native_parent.cc</code></b> —
+          <span class="en"
+            >load the four new dylib symbols in <code>EnsureBridge()</code>; add
+            a <code>BurnerContext</code> struct with its own threadsafe
+            functions (input/resize/focus) separate from the primary
+            <code>SurfaceHandle</code> for independent teardown; add
+            <code>AddBurnerChild</code> / <code>RemoveBurnerChild</code> /
+            <code>WriteBurner</code> / <code>FocusBurner</code>; extend
+            <code>ReleaseSurfaceCallbacks</code> to drain burner tsfns.</span
+          >
+          <span class="zh"
+            >在 <code>EnsureBridge()</code> 中加载四个新 dylib 符号；新增
+            <code>BurnerContext</code> 结构体，持有独立的 threadsafe
+            function（input/resize/focus），与主
+            <code>SurfaceHandle</code> 分离以便独立销毁；新增
+            <code>AddBurnerChild</code> / <code>RemoveBurnerChild</code> /
+            <code>WriteBurner</code> / <code>FocusBurner</code>；扩展
+            <code>ReleaseSurfaceCallbacks</code> 以清空 burner 的 tsfn。</span
+          >
+        </li>
+        <li>
+          <b>Channels · <code>electron/ghostty-native-channels.ts</code></b> —
+          <span class="en"
+            >add <code>GHOSTTY_NATIVE_ADD_BURNER</code> /
+            <code>GHOSTTY_NATIVE_REMOVE_BURNER</code>. Write/focus/destroy reuse
+            existing channels with a <code>childId</code> field.</span
+          >
+          <span class="zh"
+            >新增 <code>GHOSTTY_NATIVE_ADD_BURNER</code> /
+            <code>GHOSTTY_NATIVE_REMOVE_BURNER</code>。write/focus/destroy
+            复用现有通道，仅增加 <code>childId</code> 字段。</span
+          >
+        </li>
+        <li>
+          <b>Types · <code>electron/ghostty-native-shared.ts</code></b> —
+          <span class="en"
+            ><code>childId?: 'primary' | 'burner'</code> on
+            <code>GhosttyNativePaneRequest</code> (flows into update/data
+            requests); new
+            <code
+              >GhosttyNativeAddBurnerRequest { burnerPtyId, placement, ratio
+              }</code
+            >; the main-process <code>paneKey</code> must <b>not</b> include
+            <code>childId</code>.</span
+          >
+          <span class="zh"
+            >在 <code>GhosttyNativePaneRequest</code> 上加
+            <code>childId?: 'primary' | 'burner'</code>（自动传导到 update/data
+            请求）；新增
+            <code
+              >GhosttyNativeAddBurnerRequest { burnerPtyId, placement, ratio
+              }</code
+            >；主进程 <code>paneKey</code> <b>不得</b>包含
+            <code>childId</code>。</span
+          >
+        </li>
+        <li>
+          <b>Main · <code>electron/ghostty-native-parent.ts</code></b> —
+          <span class="en"
+            ><code>GhosttyNativeSurfaceState</code> gains
+            <code>burnerPtyId</code>; new IPC handlers for add/remove;
+            <code>sendData</code>/<code>focus</code> branch on
+            <code>childId</code>; the burner's <code>onInput</code>/<code
+              >onResize</code
+            >
+            callbacks route <code>write_pty</code>/<code>resize_pty</code> with
+            <b><code>burnerPtyId</code></b
+            >; <code>destroySurface</code> also removes the burner child.</span
+          >
+          <span class="zh"
+            ><code>GhosttyNativeSurfaceState</code> 增加
+            <code>burnerPtyId</code>；新增 add/remove 两个 IPC
+            handler；<code>sendData</code>/<code>focus</code> 按
+            <code>childId</code> 分支；burner 的 <code>onInput</code>/<code
+              >onResize</code
+            >
+            回调必须用 <b><code>burnerPtyId</code></b> 调用
+            <code>write_pty</code>/<code>resize_pty</code>；<code
+              >destroySurface</code
+            >
+            同时移除 burner 子终端。</span
+          >
+        </li>
+        <li>
+          <b>Preload · <code>electron/preload.ts</code></b> —
+          <span class="en"
+            >expose <code>addBurnerChild</code> /
+            <code>removeBurnerChild</code> invokes on the existing
+            <code>ghosttyNativeBridge</code>.</span
+          >
+          <span class="zh"
+            >在现有 <code>ghosttyNativeBridge</code> 上暴露
+            <code>addBurnerChild</code> / <code>removeBurnerChild</code> 两个
+            invoke。</span
+          >
+        </li>
+        <li>
+          <b
+            >Renderer client ·
+            <code>src/features/terminal/nativeGhosttyClient.ts</code></b
+          >
+          —
+          <span class="en"
+            ><code>childId</code> on <code>NativeGhosttyPaneRef</code>;
+            <code>NativeGhosttyAddBurnerRequest</code>; helper functions
+            following the existing enabled/disabled-sentinel pattern.</span
+          >
+          <span class="zh"
+            ><code>NativeGhosttyPaneRef</code> 加 <code>childId</code>；新增
+            <code>NativeGhosttyAddBurnerRequest</code>；按现有 enabled/disabled
+            哨兵模式补充 helper 函数。</span
+          >
+        </li>
+        <li>
+          <b
+            >React · <code>GhosttyBody.tsx</code> +
+            <code>useBurnerTerminals.ts</code></b
+          >
+          —
+          <span class="en"
+            ><code>childId</code> prop threaded into <code>paneRef</code> and
+            the <code>ghostty-native-input</code>/<code>-focus</code> event
+            filters (lines 574–634); the hook's <code>renderNode</code> popup
+            block (lines 537–575) is replaced by native attach/detach calls from
+            <code>show()</code>/<code>hide()</code> — every input the native
+            attach needs (<code>burnerPtyId</code>, visibility, cwd callbacks)
+            is already computed in that scope.</span
+          >
+          <span class="zh"
+            ><code>childId</code> prop 传入 <code>paneRef</code> 及
+            <code>ghostty-native-input</code>/<code>-focus</code>
+            事件过滤（574–634 行）；hook 中
+            <code>renderNode</code> 弹窗代码块（537–575 行）改为在
+            <code>show()</code>/<code>hide()</code> 中调用原生 attach/detach ——
+            原生挂载所需的全部输入（<code>burnerPtyId</code>、可见性、cwd
+            回调）在该作用域内均已就绪。</span
+          >
+        </li>
+      </ol>
+
+      <h3>
+        <span class="en">Burner lifecycle: keep vs retire</span
+        ><span class="zh">Burner 生命周期：保留 vs 淘汰</span>
+      </h3>
+      <table>
+        <tr>
+          <th>
+            <span class="en"
+              >Keep (presentation-agnostic — survives unchanged)</span
+            ><span class="zh">保留（与呈现方式无关 —— 原样保留）</span>
+          </th>
+          <th>
+            <span class="en">Retire (popup-only)</span
+            ><span class="zh">淘汰（仅服务于弹窗）</span>
+          </th>
+        </tr>
+        <tr>
+          <td>
+            <span class="en"
+              >The entire <code>useBurnerTerminals</code> PTY state machine:
+              ephemeral spawn (<code>{ ephemeral: true }</code>),
+              <code>paneKey</code> keying, show/toggle/hide intents, cwd align
+              (VIM-81, <code>CLEAR_LINE + cd</code> with the foreground-active
+              guard), OSC 7 <code>currentCwd</code> tracking, foreground cue
+              (VIM-71), self-exit (VIM-62), live-pane reconcile/kill, boot reap
+              via <code>killEphemeralPtys()</code>, the
+              <code>Mod+; `</code> chord, and the
+              <code>runningByPane</code>/<code>activeByPane</code> header
+              signals.</span
+            >
+            <span class="zh"
+              ><code>useBurnerTerminals</code> 的整套 PTY 状态机：临时
+              spawn（<code>{ ephemeral: true }</code>）、<code>paneKey</code>
+              键控、show/toggle/hide 意图、cwd 对齐（VIM-81，带前台命令守卫的
+              <code>CLEAR_LINE + cd</code>）、OSC 7
+              <code>currentCwd</code>
+              跟踪、前台命令提示（VIM-71）、自退出（VIM-62）、live-pane
+              对账/清理、启动时 <code>killEphemeralPtys()</code> 回收、<code
+                >Mod+; `</code
+              >
+              和弦快捷键，以及 <code>runningByPane</code>/<code
+                >activeByPane</code
+              >
+              头部信号。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              ><code>BurnerTerminalPopup/index.tsx</code> in full (overlay,
+              backdrop, focus trap, focus restore, 760×600 panel); the hook's
+              <code>renderNode</code> block + its return-type field; the
+              <code>{burnerTerminalNode}</code> render site
+              (<code>WorkspaceView.tsx:3031</code>); re-evaluate the
+              <code>burnerTerminalOpen</code> occlusion registration
+              (<code>WorkspaceView.tsx:2541-2545</code>) — a native nested child
+              is not a floating DOM overlay.</span
+            >
+            <span class="zh"
+              >整个
+              <code>BurnerTerminalPopup/index.tsx</code
+              >（浮层、backdrop、焦点陷阱、焦点恢复、760×600 面板）；hook 的
+              <code>renderNode</code> 代码块及其返回类型字段；<code
+                >{burnerTerminalNode}</code
+              >
+              渲染位点（<code>WorkspaceView.tsx:3031</code>）；重新评估
+              <code>burnerTerminalOpen</code>
+              遮挡注册（<code>WorkspaceView.tsx:2541-2545</code>）——
+              原生嵌套子终端不再是浮动 DOM 覆盖层。</span
+            >
+          </td>
+        </tr>
+      </table>
+
+      <h2>
+        <span class="en">5 · Risks, ranked</span
+        ><span class="zh">5 · 风险（按严重度排序）</span>
+      </h2>
+      <table>
+        <tr>
+          <th></th>
+          <th><span class="en">Risk</span><span class="zh">风险</span></th>
+          <th>
+            <span class="en">Mitigation</span><span class="zh">缓解</span>
+          </th>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>PTY identity mis-routing.</b> The burner's
+              <code>onInput</code> must call <code>write_pty</code> with
+              <code>burnerPtyId</code>, never
+              <code>state.pane.sessionId</code> — otherwise burner keystrokes
+              are injected into the primary (agent) PTY. <i>Codex round 2:</i>
+              <code>resize_pty</code> shares the same identity path
+              (ghostty-native-parent.ts:518-525) — route <b>both</b> write and
+              resize through the burner context.</span
+            >
+            <span class="zh"
+              ><b>PTY 身份串线。</b>burner 的 <code>onInput</code> 必须以
+              <code>burnerPtyId</code> 调用 <code>write_pty</code>，绝不能用
+              <code>state.pane.sessionId</code> —— 否则 burner
+              击键会注入主（agent）PTY。<i>codex 第二轮：</i
+              ><code>resize_pty</code>
+              走同一身份路径（ghostty-native-parent.ts:518-525）—— write 与
+              resize <b>都</b>必须经由 burner 上下文路由。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Separate callback context (<code>BurnerContext</code>)
+              end-to-end; an integration test that types into the burner and
+              asserts the primary PTY saw nothing.</span
+            >
+            <span class="zh"
+              >全链路使用独立回调上下文（<code>BurnerContext</code>）；集成测试：向
+              burner 输入并断言主 PTY 未收到任何数据。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>Teardown ordering.</b> <code>GhosttyBody</code> unmount
+              cleanup calls destroy unconditionally (line 691). A burner destroy
+              with a missing/misrouted <code>childId</code> must map to
+              <code>removeBurnerChild</code>, never
+              <code>destroySurface</code> — or the still-live primary dies with
+              it.</span
+            >
+            <span class="zh"
+              ><b>销毁顺序。</b><code>GhosttyBody</code> 卸载清理会无条件调用
+              destroy（691 行）。burner 的 destroy 若
+              <code>childId</code> 缺失或误路由，必须落到
+              <code>removeBurnerChild</code>，绝不能是
+              <code>destroySurface</code> ——
+              否则仍存活的主终端会被连带销毁。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Main-process branch on <code>childId</code> with a default-deny:
+              absent childId on a surface that has a burner never tears down the
+              whole surface implicitly.</span
+            >
+            <span class="zh"
+              >主进程按 <code>childId</code> 分支并默认保守：对持有 burner 的
+              surface，缺省 childId 的请求绝不隐式整体销毁。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>Shortcut/focus gating.</b> The window-level
+              <code>shortcutMonitor</code> checks firstResponder against the
+              primary view only (Swift:441-453; digits guard :475-480). With the
+              burner focused, Cmd+digit pane-switching is silently swallowed and
+              key routing can drop events. <i>Codex round 2:</i> the context
+              menu is also primary-only (Swift:425-438), and Electron emits
+              rename with
+              <code>state.pane</code> (ghostty-native-parent.ts:574-577) —
+              rename/context callbacks must carry child identity.</span
+            >
+            <span class="zh"
+              ><b>快捷键/焦点判定。</b>窗口级 <code>shortcutMonitor</code> 仅将
+              firstResponder 与主 view 比对（Swift:441-453，数字守卫
+              :475-480）。当 burner 获得焦点时，Cmd+数字
+              切换窗格会被静默吞掉，按键路由也可能丢事件。<i>codex 第二轮：</i
+              >右键菜单同样只识别主 view（Swift:425-438），且 Electron 发出
+              rename 时使用
+              <code>state.pane</code>（ghostty-native-parent.ts:574-577）——
+              rename/右键回调必须携带子终端身份。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Extend every firstResponder check to “descendant of primary
+              <i>or</i> burner view”; same for the context-menu monitor (rename
+              would otherwise mis-attribute to the host pane).</span
+            >
+            <span class="zh"
+              >所有 firstResponder 判定扩展为“主 view <i>或</i> burner view
+              的后代”；右键菜单监视器同理（否则重命名会误归属到宿主窗格）。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>Burner output has no subscriber.</b> Native output forwarding
+              is owned by the mounted
+              <code>GhosttyBody</code> (GhosttyBody.tsx:637-657) — a role the
+              popup Body currently plays for the burner
+              (useBurnerTerminals.ts:537-574). Retiring the popup without a
+              replacement leaves burner PTY output going nowhere.
+              <i>(codex round 2)</i></span
+            >
+            <span class="zh"
+              ><b>burner 输出无订阅者。</b>原生输出转发由挂载的
+              <code>GhosttyBody</code> 持有（GhosttyBody.tsx:637-657）——
+              目前弹窗中的 Body 为 burner
+              扮演该角色（useBurnerTerminals.ts:537-574）。若移除弹窗而不加替代，burner
+              的 PTY 输出将无处可去。<i>（codex 第二轮）</i></span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Add a forwarder owned by <code>useBurnerTerminals</code> on
+              native attach — <code>service.onData(burnerPtyId)</code> →
+              <code>sendNativeGhosttyData(childId: 'burner')</code> — and drain
+              the <code>registerPending</code> buffer into it.</span
+            >
+            <span class="zh"
+              >在原生挂载时由 <code>useBurnerTerminals</code> 持有转发器 ——
+              <code>service.onData(burnerPtyId)</code> →
+              <code>sendNativeGhosttyData(childId: 'burner')</code> —— 并把
+              <code>registerPending</code> 缓冲排空到该通道。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>Hide must not become destructive.</b> Today
+              <code>hide()</code> keeps the popup Body mounted
+              (<code>display:none</code>), so the shell and scrollback survive.
+              In the library, surface state is freed on coordinator teardown
+              (TerminalSurfaceCoordinator.swift:311-323) — implementing native
+              hide as remove/destroy kills scrollback.
+              <i>(codex round 2)</i></span
+            >
+            <span class="zh"
+              ><b>hide 不能变成销毁。</b>目前 <code>hide()</code> 保持弹窗 Body
+              挂载（<code>display:none</code>），shell
+              与回滚缓冲得以存活。而库中 surface 状态会在 coordinator
+              销毁时释放（TerminalSurfaceCoordinator.swift:311-323）—— 若把原生
+              hide 实现为 remove/destroy，回滚缓冲会丢失。<i
+                >（codex 第二轮）</i
+              ></span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Implement hide as AppKit <code>isHidden</code> on the burner view
+              (view + session stay alive); reserve
+              <code>removeBurnerChild</code> for kill.</span
+            >
+            <span class="zh"
+              >hide 实现为对 burner view 设置 AppKit <code>isHidden</code>（view
+              与 session 均存活）；<code>removeBurnerChild</code> 仅用于
+              kill。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>Callback-context use-after-free.</b> Swift's
+              <code>CallbackBox</code> holds the raw C++ context pointer
+              (GhosttyElectronBridge.swift:75-82) and invokes it on input/resize
+              (:101-119); C++ casts it back in the trampolines
+              (ghostty_native_parent.cc:177-184). Freeing the
+              <code>BurnerContext</code> before the Swift child is destroyed is
+              a UAF, not just a leak. <i>(codex round 2)</i></span
+            >
+            <span class="zh"
+              ><b>回调上下文悬垂指针（UAF）。</b>Swift 的
+              <code>CallbackBox</code> 持有裸 C++
+              上下文指针（GhosttyElectronBridge.swift:75-82）并在 input/resize
+              时调用（:101-119）；C++
+              在跳板函数中将其转回（ghostty_native_parent.cc:177-184）。若在
+              Swift 子终端销毁前释放 <code>BurnerContext</code>，就是
+              use-after-free，而不只是泄漏。<i>（codex 第二轮）</i></span
+            >
+          </td>
+          <td>
+            <span class="en"
+              ><code>RemoveBurnerChild</code> destroys the Swift child first,
+              then releases tsfns/context; mirror the primary's atomic
+              <code>released</code> flag.</span
+            >
+            <span class="zh"
+              ><code>RemoveBurnerChild</code> 先销毁 Swift 子终端，再释放
+              tsfn/上下文；沿用主 surface 的原子
+              <code>released</code> 标志。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev high">HIGH</span></td>
+          <td>
+            <span class="en"
+              ><b>Child frames in the wrong coordinate space.</b>
+              <code>setFrame</code> y-flips renderer coordinates via
+              <code>parentHeight</code> for the container
+              (GhosttyElectronBridge.swift:261-275); the primary then fills
+              <code>container.bounds</code> (:277). Child sub-rects must be
+              computed in the container's <i>local</i> bounds — a second
+              parent-height y-flip misplaces the burner.
+              <i>(codex round 2)</i></span
+            >
+            <span class="zh"
+              ><b>子 view 坐标系用错。</b><code>setFrame</code> 用
+              <code>parentHeight</code> 对渲染进程坐标做 y
+              翻转来定位容器（GhosttyElectronBridge.swift:261-275）；主终端随后填满
+              <code>container.bounds</code>（:277）。子矩形必须在容器的<i
+                >局部</i
+              >
+              bounds 中计算 —— 再做一次 parentHeight y 翻转会把 burner
+              放错位置。<i>（codex 第二轮）</i></span
+            >
+          </td>
+          <td>
+            <span class="en"
+              ><code>layoutChildren()</code> computes sub-rects purely from
+              <code>container.bounds</code> — no
+              <code>parentHeight</code> involvement.</span
+            >
+            <span class="zh"
+              ><code>layoutChildren()</code> 只基于
+              <code>container.bounds</code> 计算子矩形 —— 不涉及
+              <code>parentHeight</code>。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev med">MED</span></td>
+          <td>
+            <span class="en"
+              ><b>Split-geometry divergence.</b> Two renderer-driven
+              <code>update</code> paths plus the 120 ms resize quiet window
+              (<code>NATIVE_RESIZE_TRACKING_QUIET_MS</code>) can briefly
+              disagree, leaving a gap or overlap; overlapping sibling NSViews
+              also break hit-testing (top view steals clicks).</span
+            >
+            <span class="zh"
+              ><b>切分几何不一致。</b>两条渲染进程驱动的
+              <code>update</code> 路径叠加 120ms
+              缩放静默窗口（<code>NATIVE_RESIZE_TRACKING_QUIET_MS</code>）可能短暂不一致，产生缝隙或重叠；同级
+              NSView 重叠还会破坏点击测试（顶层 view 抢走点击）。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              ><b>Let Swift own the split</b>: one bounds source (the existing
+              per-pane <code>update</code>),
+              <code>layoutChildren()</code> computes both integer-rounded
+              sub-rects. This also satisfies the handoff's “nested divider must
+              be native/AppKit” requirement.</span
+            >
+            <span class="zh"
+              ><b>让 Swift 拥有切分权</b>：单一 bounds 来源（现有的按窗格
+              <code>update</code>），由
+              <code>layoutChildren()</code> 计算两个整数取整的子矩形。这同时满足
+              handoff 中“嵌套分隔线必须是原生/AppKit”的要求。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev med">MED</span></td>
+          <td>
+            <span class="en"
+              ><b>Pending-data race.</b> Main buffers PTY output in
+              <code>pendingData</code> when no surface exists yet
+              (ghostty-native-parent.ts:370-377); the burner needs the same
+              buffering between its PTY spawn and
+              <code>addBurnerChild</code> arrival, or early output is
+              lost.</span
+            >
+            <span class="zh"
+              ><b>待发数据竞态。</b>surface 尚未创建时主进程会把 PTY 输出缓存在
+              <code>pendingData</code
+              >（ghostty-native-parent.ts:370-377）；burner 在其 PTY 启动与
+              <code>addBurnerChild</code>
+              到达之间同样需要该缓存，否则早期输出会丢失。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Extend the pending-data tail per childId.
+              <i>Codex round 2:</i> the renderer's
+              <code>registerPending</code> buffer drains only when a mounted
+              Body calls <code>onPaneReady</code> (usePtyBufferDrain.ts:60-78) —
+              with the popup gone, the burner needs a new drain owner (see the
+              output-subscriber risk below).</span
+            >
+            <span class="zh"
+              >按 childId 扩展 pending-data 缓存。<i>codex 第二轮：</i
+              >渲染进程的 <code>registerPending</code> 缓冲只有在挂载的 Body
+              调用
+              <code>onPaneReady</code>
+              时才会排空（usePtyBufferDrain.ts:60-78）—— 弹窗移除后，burner
+              需要新的排空持有者（见下方“输出无订阅者”风险）。</span
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><span class="sev low">LOW</span></td>
+          <td>
+            <span class="en"
+              ><b>tsfn lifecycle leak.</b> If <code>BurnerContext</code> holds
+              its own threadsafe functions, the primary
+              <code>SurfaceHandle</code>'s finalizer must also release
+              them.</span
+            >
+            <span class="zh"
+              ><b>tsfn 生命周期泄漏。</b>若 <code>BurnerContext</code> 持有独立
+              threadsafe function，主 <code>SurfaceHandle</code> 的 finalizer
+              必须一并释放它们。</span
+            >
+          </td>
+          <td>
+            <span class="en"
+              >Drain burner tsfns in both <code>RemoveBurnerChild</code> and
+              <code>ReleaseSurfaceCallbacks</code
+              >/<code>FinalizeSurface</code>.</span
+            >
+            <span class="zh"
+              >在 <code>RemoveBurnerChild</code> 与
+              <code>ReleaseSurfaceCallbacks</code>/<code>FinalizeSurface</code>
+              两处都清空 burner 的 tsfn。</span
+            >
+          </td>
+        </tr>
+      </table>
+
+      <h2>
+        <span class="en">6 · Recommendation &amp; spike order</span
+        ><span class="zh">6 · 建议与 spike 顺序</span>
+      </h2>
+      <p>
+        <span class="en"
+          ><b>Proceed with HANDOFF Option B</b> — two <code>TerminalView</code>s
+          inside one <code>EmbeddedGhosttySurface</code>, AppKit-owned two-child
+          layout, max one burner, right split by default, bottom for narrow
+          panes. Option A is not a maybe, and recompiling cannot revive it: the
+          layout engine was never in the library (see the §1 addendum). The only
+          path to “Ghostty-owned splits” is vendoring Ghostty.app's Swift shell
+          (<code>SplitTree.swift</code> and its surface/controller machinery) —
+          thousands of app-coupled lines, tracked against a fast-moving app
+          repo, to obtain a recursive layout engine the spike constraints
+          explicitly forbid.</span
+        >
+        <span class="zh"
+          ><b>按 HANDOFF 方案 B 推进</b> —— 单个
+          <code>EmbeddedGhosttySurface</code> 内两个
+          <code>TerminalView</code>，由 AppKit 管理双子布局，最多一个
+          burner，默认右分屏，窄窗格用下分屏。方案 A
+          不是“或许可行”，重新编译也无法复活它：布局引擎从未存在于库中（见 §1
+          补充）。要获得“Ghostty 自有分屏”，唯一途径是把 Ghostty.app 的 Swift
+          外壳（<code>SplitTree.swift</code> 及其 surface/controller
+          机制）整体搬入 —— 数千行与 App
+          深度耦合的代码、还需持续跟进快速迭代的上游应用仓库，换来的却是 spike
+          约束明确禁止的递归布局引擎。</span
+        >
+      </p>
+      <ol class="plan">
+        <li>
+          <span class="en"
+            ><b>Swift-only spike first</b>: extend
+            <code>GhosttyNativeMacosSmoke</code> (today it proves exactly one
+            <code>TerminalView</code> — GhosttyNativeMacosSmoke.swift:121-135)
+            to exercise
+            <b>add/remove of a second view with its own controller</b>, plus
+            hide-vs-remove semantics — proves rendering, focus, input isolation,
+            and scrollback survival before touching any IPC.
+            <i>(order refined by codex round 2)</i></span
+          >
+          <span class="zh"
+            ><b>先做纯 Swift spike</b>：扩展
+            <code>GhosttyNativeMacosSmoke</code>（目前只验证一个
+            <code>TerminalView</code> ——
+            GhosttyNativeMacosSmoke.swift:121-135），实测<b
+              >第二个 view（独立 controller）的添加/移除</b
+            >及 hide 与 remove 的语义差异 —— 在不动任何 IPC
+            的前提下验证渲染、焦点、输入隔离与回滚缓冲存活。<i
+              >（顺序经 codex 第二轮修订）</i
+            ></span
+          >
+        </li>
+        <li>
+          <span class="en"
+            ><b>C++ N-API next, with its smoke</b>: new
+            symbols/contexts/finalizers in
+            <code>ghostty_native_parent.cc</code>, updating
+            <code>scripts/smoke-ghostty-native-parent.js</code> (it currently
+            checks only create/setFrame/write/focus/destroy) <b>before</b> any
+            Electron work. The build/codesign pipeline already exists
+            (<code>scripts/build-ghostty-native-parent.js</code>).</span
+          >
+          <span class="zh"
+            ><b>随后是 C++ N-API 及其冒烟测试</b>：在
+            <code>ghostty_native_parent.cc</code>
+            中新增符号/上下文/finalizer，并更新
+            <code>scripts/smoke-ghostty-native-parent.js</code>（目前只检查
+            create/setFrame/write/focus/destroy），<b>先于</b>任何 Electron
+            侧改动。构建/签名管线已就绪（<code>scripts/build-ghostty-native-parent.js</code>）。</span
+          >
+        </li>
+        <li>
+          <span class="en"
+            >Then Electron main (childId routing, burner output forwarding,
+            pending-buffer tests) → preload/native client → React hook swap —
+            keeping the <code>useBurnerTerminals</code> PTY lifecycle untouched
+            and replacing only the presentation layer. No Rust bindings regen
+            unless Rust command/types change.</span
+          >
+          <span class="zh"
+            >再推进 Electron 主进程（childId 路由、burner
+            输出转发、待发缓冲测试）→ preload/渲染端 client → React hook 替换 ——
+            完整保留 <code>useBurnerTerminals</code> 的 PTY
+            生命周期，仅替换呈现层。除非 Rust 命令/类型变更，无需重新生成 Rust
+            bindings。</span
+          >
+        </li>
+        <li>
+          <span class="en"
+            >Open questions from the handoff that are now <i>design</i> (not
+            feasibility) questions: focus-on-open policy, close-vs-hide
+            semantics, and user-toggleable placement.</span
+          >
+          <span class="zh"
+            >handoff
+            中剩余的开放问题现在均属<i>设计</i>问题而非可行性问题：打开时是否夺焦、close
+            与 hide 的语义、以及 placement 是否允许用户切换。</span
+          >
+        </li>
+      </ol>
+
+      <footer>
+        <span class="en">
+          Evidence base: libghostty-spm 1.2.7 source at rev
+          <code>2b0e1b9d</code> (materialized from the SwiftPM repo cache);
+          upstream ghostty v1.2.3 <code>include/ghostty.h</code> +
+          <code>src/apprt/embedded.zig</code> (recompile addendum); vimeflow
+          worktree <code>ghostty-burner-pane-spike</code> files —
+          <code>GhosttyElectronBridge.swift</code>,
+          <code>ghostty_native_parent.cc</code>,
+          <code>ghostty-native-parent.ts</code>,
+          <code>nativeGhosttyClient.ts</code>, <code>GhosttyBody.tsx</code>,
+          <code>useBurnerTerminals.ts</code>,
+          <code>BurnerTerminalPopup/index.tsx</code>. Produced by a 4-agent
+          exploration workflow (3 source readers + 1 codex verifier),
+          2026-07-03. Companion to <code>HANDOFF.md</code> in this directory.
+        </span>
+        <span class="zh">
+          证据基础：libghostty-spm 1.2.7 源码（rev <code>2b0e1b9d</code>，自
+          SwiftPM 仓库缓存物化）； 上游 ghostty v1.2.3
+          <code>include/ghostty.h</code> +
+          <code>src/apprt/embedded.zig</code>（重编译补充论证）； vimeflow
+          worktree <code>ghostty-burner-pane-spike</code> 中的
+          <code>GhosttyElectronBridge.swift</code
+          >、<code>ghostty_native_parent.cc</code>、<code>ghostty-native-parent.ts</code>、<code>nativeGhosttyClient.ts</code>、<code>GhosttyBody.tsx</code>、<code>useBurnerTerminals.ts</code>、<code>BurnerTerminalPopup/index.tsx</code>。
+          由 4-agent 探索工作流（3 个源码阅读 agent + 1 个 codex 复核
+          agent）产出，2026-07-03。与本目录 <code>HANDOFF.md</code> 配套阅读。
+        </span>
+      </footer>
+    </main>
+    <script>
+      const buttons = document.querySelectorAll('.langbar button')
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.body.dataset.lang = btn.dataset.set
+          buttons.forEach((b) => b.classList.toggle('active', b === btn))
+        })
+      })
+    </script>
+  </body>
+</html>

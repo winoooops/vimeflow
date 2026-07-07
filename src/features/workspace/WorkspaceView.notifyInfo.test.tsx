@@ -110,11 +110,9 @@ describe('WorkspaceView × notifyInfo banner', () => {
       expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
     })
 
-    await dispatchPaletteCommand(':split-vertical')
+    await dispatchPaletteCommand(':goto 99')
 
-    expect(
-      screen.getByText('Split panes not yet implemented')
-    ).toBeInTheDocument()
+    expect(screen.getByText(/No tab at position 99/)).toBeInTheDocument()
 
     act(() => {
       vi.advanceTimersByTime(5001)
@@ -122,7 +120,7 @@ describe('WorkspaceView × notifyInfo banner', () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByText('Split panes not yet implemented')
+        screen.queryByText(/No tab at position 99/)
       ).not.toBeInTheDocument()
     })
   })
@@ -135,16 +133,12 @@ describe('WorkspaceView × notifyInfo banner', () => {
       expect(screen.getAllByTestId('terminal-pane').length).toBeGreaterThan(0)
     })
 
-    await dispatchPaletteCommand(':split-horizontal')
+    await dispatchPaletteCommand(':goto 99')
 
-    expect(
-      screen.getByText('Split panes not yet implemented')
-    ).toBeInTheDocument()
+    expect(screen.getByText(/No tab at position 99/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /dismiss/i }))
 
-    expect(
-      screen.queryByText('Split panes not yet implemented')
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/No tab at position 99/)).not.toBeInTheDocument()
   })
 })

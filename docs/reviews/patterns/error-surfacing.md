@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-06-20
-ref_count: 44
+last_updated: 2026-07-05
+ref_count: 48
 ---
 
 # Error Surfacing
@@ -177,6 +177,15 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `plugins/harness/skills/github-review/references/commit-trailers.md`
 - **Finding:** Step 6.8's `gh api -X POST` reply calls (both the issue-comment branch and the thread-reply branch) had no `|| { ...; continue; }` guard, while Step 6.9's `resolveReviewThread` mutation was hardened in cycle 2. If a reply call failed transiently (network, rate-limit), Step 6.8 silently moved past it and Step 6.9 still resolved the thread for that finding — the human reading the resolved thread saw it closed with no explanation. Step 1's reconciliation only checks `isResolved`, so the missing reply was undetectable to the next cycle: thread was already resolved, exited the stale set, no recovery. Same family as findings #14–#15 (incomplete propagation of a hardening pattern across paired call sites): cycle 2 extended the loud-fail discipline to 6.9 but missed 6.8, leaving an asymmetric pair where the half that depends on the other half's success runs unconditionally.
 - **Fix:** Wrapped both Step 6.8 `gh api -X POST` calls in `|| { warn; continue; }`. On reply success, append `CYCLE_ID` to a new `REPLIED_FINDING_IDS` array. Step 6.9 now derives `ELIGIBLE_THREAD_IDS` from `FINDINGS_JSON` filtered by `cycle_id ∈ REPLIED_FINDING_IDS` — cycle-id-keyed, not thread-id-keyed, so a finding-row with missing/empty `thread_id` cannot leak past a thread-id-keyed skip filter. Also added a pre-reply guard: a threaded-branch finding with an absent or empty `thread_id` is treated as a data anomaly — warn loudly and skip both reply AND resolve so the next cycle's reconciliation can handle it. Required two retries in this very cycle: the first attempt used a thread-id skip-list that codex flagged for the data-anomaly hole; the second attempt's jq projection had a `.cycle_id` scope bug inside `select($replied | index(.cycle_id))` because `.` rebound to `$replied` after the `|` — codex caught it at HIGH. Final form binds `cycle_id` to a jq variable BEFORE the pipe (`.cycle_id as $cycle_id | select(... and ($replied | index($cycle_id)))`) so `index()` resolves correctly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Missing native addon throws through IPC instead of returning disabled
+
+- **Source:** github-claude | PR #630 round 3 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty parent controller lazy-loaded the N-API addon inside `ipcMain.handle` callbacks. When the feature flag was enabled but the addon artifacts had not been built, `loadAddon()` threw synchronously and surfaced as an IPC error instead of the graceful `{ enabled: false }` response used by the helper path.
+- **Fix:** Wrapped lazy addon access in a nullable helper and made update, data, focus, destroy, and dispose paths treat missing artifacts as disabled. Added regression coverage for all four IPC handlers.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 18. Human self-reply filter `contains("(github-review cycle ")` drops legit comments quoting prior replies
@@ -431,4 +440,52 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx` L875-884
 - **Finding:** After a failed save displayed the always-visible `saveError` banner, a successful code-panel Apply cleared only `codeError`. The draft updated correctly but the stale save banner stayed visible alongside valid layout state.
 - **Fix:** Clear `saveError` on the successful `applyCode` path alongside `codeError`, and add regression coverage that applying valid code removes a previously displayed save failure.
+- **Commit:** same commit as this entry
+
+### 45. Directory picker rejection escaped a fire-and-forget click handler
+
+- **Source:** github-claude | PR #624 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/NewSessionDialog/WorkingDirectoryField.tsx`
+- **Finding:** `void handleBrowse()` discarded rejections from the Electron directory-picker
+  IPC call, producing an unhandled rejection instead of a graceful no-op.
+- **Fix:** Catch picker rejections inside `handleBrowse` and leave the current path unchanged.
+- **Commit:** same commit as this entry
+
+### 46. Helper stdin stream error could crash Electron during shutdown
+
+- **Source:** github-codex-connector | PR #630 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-helper.ts`
+- **Finding:** `shutdownHelper` wrote to the Swift helper's stdin without a stream-level
+  error listener. If the helper had already exited but Node had not delivered the exit event,
+  the write could emit an unhandled `EPIPE` and terminate the Electron main process.
+- **Fix:** Register a warn-only stdin error handler immediately after spawn and wrap the
+  cooperative shutdown write in a best-effort try/catch before killing the helper.
+- **Commit:** same commit as this entry
+
+### 47. Native directory picker rejection escaped overlay action handler
+
+- **Source:** github-claude | PR #660 round 1 | 2026-07-05
+- **Severity:** LOW
+- **File:** `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** The native-overlay Browse action awaited the Electron directory picker
+  inside a fire-and-forget async IIFE with `finally` for overlay resume, but no
+  `catch`, so an IPC rejection could surface as an unhandled promise rejection.
+- **Fix:** Catch picker rejections inside the native Browse action and keep the
+  `finally` resume path intact. Added regression coverage that a rejected picker
+  still resumes the native overlay.
+- **Commit:** same commit as this entry
+
+### 48. Terminal spawn failures only reached developer logs
+
+- **Source:** github-codex-connector | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Bridge generation failures made `service.spawn` reject, but the
+  create, add-pane, and restart flows only logged warnings. A user could lose
+  the ability to open a terminal with no visible explanation.
+- **Fix:** Added an optional terminal-spawn error callback to `useSessionManager`
+  and wired `WorkspaceView` to the existing alert banner. Added hook coverage
+  for create/add/restart failures and a workspace-level banner regression test.
 - **Commit:** same commit as this entry

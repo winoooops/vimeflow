@@ -6,7 +6,16 @@ Project context for OpenAI Codex code review.
 
 Vimeflow is an Electron desktop application (Rust sidecar + React/TypeScript frontend) for managing terminal-first AI coding agent workspaces.
 
-**Current state:** The Rust backend crate exists under `crates/backend/` as the `vimeflow-backend` Electron sidecar with PTY, filesystem, git, and agent-observability modules for Claude Code, Codex CLI, Kimi Code, and OpenCode. The frontend is a workspace shell with terminal sessions, a multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked editor/diff panels, command palette, and the agent status panel. The UI handoff migration is in progress; see `docs/roadmap/progress.yaml`.
+**Current state:** The Rust backend crate exists under `crates/backend/` as the
+`vimeflow-backend` Electron sidecar with PTY, filesystem, git, and
+agent-observability modules for Claude Code, Codex CLI, Kimi Code, and
+OpenCode. The terminal feature uses the Rust PTY backend as the source of
+truth; packaged macOS arm64 builds ship built-in native Ghostty through
+`libghostty-spm` and a parented `NSView`, with xterm.js preserved for Linux/dev
+fallback. The frontend is a workspace shell with terminal sessions, a
+multi-pane `SplitView` terminal canvas, file/sidebar surfaces, docked
+editor/diff panels, command palette, and the agent status panel. The UI handoff
+migration is in progress; see `docs/roadmap/progress.yaml`.
 
 ## Architecture
 
@@ -22,7 +31,7 @@ src/
 ├── features/
 │   ├── sessions/               # Session tabs, pane model, layout state, lifecycle orchestration
 │   ├── workspace/              # Workspace assembly, shell components, DockPanel, focus state
-│   ├── terminal/               # xterm.js + DesktopTerminalService IPC bridge
+│   ├── terminal/               # Native Ghostty/xterm terminal surfaces + DesktopTerminalService IPC bridge
 │   ├── agent-status/           # Live agent observability panel
 │   ├── files/                  # File explorer data/services/components
 │   ├── editor/                 # CodeMirror editor, file buffers, vim mode
@@ -46,6 +55,23 @@ crates/backend/
 - **Generated bindings**: Rust `ts-rs` exports live in `src/bindings/`; use `npm run generate:bindings` after Rust type changes
 - **Workspace shell**: current top-level UI composition lives in `src/features/workspace/WorkspaceView.tsx`
 
+## Ghostty Native Debugging
+
+When investigating Ghostty native runtime, native overlays, or React DOM surfaces that align with native views, treat DOM rect and viewport conversion as the first fragile boundary.
+
+- DOM APIs such as `getBoundingClientRect()` return renderer CSS pixels
+- Electron/AppKit native view frames use window points
+- Compare `window.innerWidth`, `window.innerHeight`, `window.outerWidth`, and `window.outerHeight` before blaming React lifecycle, refresh rate, or AppKit z-order
+- Preserve debugging notes for native view registry, frame, and lifecycle issues in `docs/superpowers/plans/`; include DOM rect, renderer viewport metrics, Electron window/content bounds, and the native frame that was applied
+
+For renderer inspection, start Electron with an explicit remote debugging port:
+
+```bash
+VIMEFLOW_REMOTE_DEBUGGING_PORT=9223 VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 VITE_NATIVE_OVERLAY=1 npm run electron:dev -- --port 5175
+```
+
+Then open `http://127.0.0.1:9223/json/list` and attach a DevTools client to the renderer target. Keep this opt-in only; do not enable remote debugging by default.
+
 ## Code Style
 
 Quick reference: no semicolons, single quotes, trailing commas (es5), arrow-function components only, explicit return types on exports, no `console.log`, `test()` not `it()`, CSpell spell-checking, ESM-only.
@@ -65,7 +91,7 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 ## Design System
 
-"The Lens" — a multi-theme system: **Catppuccin** (dark, atmospheric dark on the Catppuccin Mocha palette) + **Flexoki** (light). No visible borders — use tonal depth and glassmorphism.
+"The Lens" — a multi-theme system. **Catppuccin** is the dark default, **Flexoki** is the light baseline, and Gruvbox Dark, Gruvbox Light, Tokyo Night, and Dracula also ship. No visible borders — use tonal depth and glassmorphism.
 
 Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces — `@floating-ui/react` belongs only in `src/components/`.
 
@@ -79,7 +105,7 @@ Button and grouped-control primitives are unified — the `vimeflow/no-raw-icon-
 
 - `docs/design/UNIFIED.md` — **authoritative, code-grounded UI SSoT** (3-zone shell + two-plane surfaces, agent-state contract, component contracts)
 - `docs/design/DESIGN.md` — design-system foundation (The Lens philosophy, typography, do/don'ts)
-- `src/theme/themes/*.ts` — runtime token values (Catppuccin dark [`obsidian-lens.ts`] + Flexoki light [`flexoki.ts`])
+- `src/theme/themes/*.ts` — runtime token values (Catppuccin [`obsidian-lens.ts`], Flexoki [`flexoki.ts`], Gruvbox Dark/Light, Tokyo Night, Dracula)
 - `docs/design/archive/` — historical handoffs / first-draft Stitch mockups / prototypes (reference only; UNIFIED wins)
 
 ## Lifeline Integration

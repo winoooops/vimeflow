@@ -10,7 +10,13 @@ import type { ReactElement, ReactNode } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
-import type { Session, SessionStatus, LayoutId } from '../sessions/types'
+import type { Session, SessionStatus, PaneLayoutId } from '../sessions/types'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
+} from '../terminal/layout-registry'
+import { SHOWN_LAYOUTS_STORAGE_KEY } from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import { SettingsProvider } from '../settings/SettingsProvider'
 
@@ -82,7 +88,7 @@ vi.mock('../editor/components/UnsavedChangesDialog', () => ({
 }))
 
 interface MockSessionOptions {
-  layout?: LayoutId
+  layout?: PaneLayoutId
   status?: SessionStatus
   agentType?: Session['agentType']
 }
@@ -172,7 +178,11 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       createSession: vi.fn(),
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
+      customPaneLayouts: [],
+      layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
+      setCustomPaneLayouts: vi.fn(),
       setSessionLayout: vi.fn(),
+      setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),
@@ -191,6 +201,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       notifyPaneReady: vi.fn(),
       registerPending: vi.fn(),
       dropAllForPty: vi.fn(),
+      clearPaneCacheHistory: vi.fn(),
     }
 
     const { useSessionManager } =
@@ -269,6 +280,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      fileExists: vi.fn().mockResolvedValue(true),
       renamePath: vi.fn().mockResolvedValue(undefined),
       deletePath: vi.fn().mockResolvedValue(undefined),
     })
@@ -462,11 +474,11 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     await setupSessionManager(mockSessions, 'session-2')
     render(<WorkspaceView />)
 
-    await user.click(screen.getByRole('button', { name: 'Quad' }))
+    await user.click(screen.getByRole('button', { name: '3x2 grid' }))
 
     expect(mockSessionManager.setSessionLayout).toHaveBeenCalledWith(
       'session-2',
-      'quad'
+      'grid3x2'
     )
     expect(mockSessionManager.addPane).not.toHaveBeenCalled()
     expect(mockSessionManager.removePane).not.toHaveBeenCalled()
@@ -496,6 +508,98 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(
       screen.queryByRole('button', { name: /keep top banner visible/i })
     ).toBeNull()
+  })
+
+  test('an over-capacity checked layout renders as a disabled pill instead of vanishing', async () => {
+    const user = userEvent.setup()
+
+    const baseSession = createMockSession('session-1', 'auth refactor', {
+      layout: 'grid3x2',
+    })
+
+    // Five panes exceed Quad's capacity (4) but fit 3x2 grid (6): Quad is
+    // blocked, grid3x2 is not.
+    const fivePaneSession: Session = {
+      ...baseSession,
+      panes: [0, 1, 2, 3, 4].map((index) => ({
+        id: `p${index}`,
+        ptyId: `pty-session-1-${index}`,
+        cwd: '/home/user',
+        agentType: 'claude-code',
+        status: 'running',
+        active: index === 0,
+      })),
+    }
+
+    await setupSessionManager([fivePaneSession], 'session-1')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify([SINGLE_PANE_FOCUS_LAYOUT_ID, 'quad', 'grid3x2'])
+    )
+    render(<WorkspaceView />)
+
+    const switcher = screen.getByTestId('layout-switcher')
+
+    // Quad still renders (visibility is decoupled from capacity) but is
+    // disabled with a reduce-panes explanation.
+    const quad = within(switcher).getByRole('button', {
+      name: 'Reduce panes to switch to Quad',
+    })
+    expect(quad).toHaveAttribute('aria-disabled', 'true')
+
+    const single = within(switcher).getByRole('button', {
+      name: SINGLE_PANE_FOCUS_LABEL,
+    })
+    expect(single).not.toHaveAttribute('aria-disabled', 'true')
+
+    // A layout that DOES fit the pane count stays enabled.
+    expect(
+      within(switcher).getByRole('button', { name: '3x2 grid' })
+    ).not.toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(single)
+    expect(mockSessionManager.setSessionLayout).toHaveBeenCalledWith(
+      'session-1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+  })
+
+  test('the layout display menu can hide a non-active layout pill from the pillar', async () => {
+    const user = userEvent.setup()
+
+    await setupSessionManager(mockSessions, 'session-2')
+    window.localStorage.setItem(
+      SHOWN_LAYOUTS_STORAGE_KEY,
+      JSON.stringify(['single', 'hsplit', 'grid3x2'])
+    )
+    render(<WorkspaceView />)
+
+    const switcher = screen.getByTestId('layout-switcher')
+    expect(
+      within(switcher).getByRole('button', { name: 'Horizontal split' })
+    ).toBeInTheDocument()
+
+    await user.click(
+      within(switcher).getByRole('button', {
+        name: 'Configure displayed layouts',
+      })
+    )
+
+    await user.click(
+      await screen.findByRole('menuitemcheckbox', { name: 'Horizontal split' })
+    )
+
+    expect(
+      within(screen.getByTestId('layout-switcher')).queryByRole('button', {
+        name: 'Horizontal split',
+      })
+    ).toBeNull()
+
+    expect(
+      within(screen.getByTestId('layout-switcher')).getByRole('button', {
+        name: '3x2 grid',
+      })
+    ).toBeInTheDocument()
   })
 
   test('the sidebar toggle is one persistent root control — it never relocates on collapse (J4)', () => {

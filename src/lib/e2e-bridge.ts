@@ -57,26 +57,26 @@ const findActivePane = (): HTMLElement | null => {
 //
 // Multi-pane sessions (post-5b): the session-level wrapper contains a
 // SplitView with N inner TerminalPanes, each carrying an xterm. Prefer
-// the focused pane's xterm (the active pane has `data-focused="true"`
+// the active pane's xterm (the active pane has `data-pane-active="true"`
 // on its inner wrapper) so callers reading by session id always get the
 // active pane's buffer instead of whichever pane happens to be first in
 // DOM. Falls back to the first `.xterm-rows` for single-pane sessions
-// and for the defensive case where no inner wrapper has `data-focused`.
+// and for the defensive case where no inner wrapper has `data-pane-active`.
 //
 // Exported for unit testing — production callers go through
 // `readVisibleTerminalBuffer` / `readTerminalBufferForSession`.
 //
 // `container` is any xterm ancestor element: the session-level
 // `terminal-pane` wrapper (preferred for multi-pane sessions —
-// triggers the `data-focused` first-pass), a single `split-view-slot`
+// triggers the `data-pane-active` first-pass), a single `split-view-slot`
 // (the pty-id lookup path), or any `terminal-pane-wrapper` directly.
 // Renamed from `pane` to remove the pre-5b "single-pane element"
 // connotation — post-5b the function handles all three DOM shapes.
 export const readPaneBuffer = (container: HTMLElement): string => {
-  const focusedWrapper = container.querySelector<HTMLElement>(
-    '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
+  const activeWrapper = container.querySelector<HTMLElement>(
+    '[data-testid="terminal-pane-wrapper"][data-pane-active="true"]'
   )
-  const scope = focusedWrapper ?? container
+  const scope = activeWrapper ?? container
 
   const rows = scope.querySelector<HTMLElement>('.xterm-rows')
   const domText = rows?.textContent ?? ''
@@ -137,15 +137,15 @@ const getVisiblePtyId = (): string | null => {
     return null
   }
 
-  const focusedWrapper = pane.querySelector<HTMLElement>(
-    '[data-testid="terminal-pane-wrapper"][data-focused="true"]'
+  const activeWrapper = pane.querySelector<HTMLElement>(
+    '[data-testid="terminal-pane-wrapper"][data-pane-active="true"]'
   )
 
-  const focusedSlot = focusedWrapper?.closest<HTMLElement>(
+  const activeSlot = activeWrapper?.closest<HTMLElement>(
     '[data-testid="split-view-slot"][data-pty-id]'
   )
-  if (focusedSlot?.dataset.ptyId) {
-    return focusedSlot.dataset.ptyId
+  if (activeSlot?.dataset.ptyId) {
+    return activeSlot.dataset.ptyId
   }
 
   const firstSlot = pane.querySelector<HTMLElement>(

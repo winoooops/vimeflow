@@ -1,8 +1,119 @@
 import { type ReactElement, createRef, useState } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import {
+  __resetNativeOverlayForTest,
+  type NativeOverlayMenuRequest,
+  type NativeOverlayRequest,
+} from '@/components/base/floating/nativeOverlay'
 import { Menu } from './Menu'
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  action: (event: unknown) => void
+  closed: (event: unknown) => void
+} => {
+  let actionListener: ((event: unknown) => void) | null = null
+  let closeListener: ((event: unknown) => void) | null = null
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+  const close = vi.fn().mockResolvedValue(undefined)
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close,
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn((callback: (event: unknown) => void) => {
+        actionListener = callback
+
+        return vi.fn()
+      }),
+      onClose: vi.fn((callback: (event: unknown) => void) => {
+        closeListener = callback
+
+        return vi.fn()
+      }),
+    },
+  }
+
+  return {
+    open,
+    close,
+    action: (event): void => {
+      actionListener?.(event)
+    },
+    closed: (event): void => {
+      closeListener?.(event)
+    },
+  }
+}
+
+const nativeMenuRequestAt = (
+  open: ReturnType<typeof vi.fn>,
+  index = 0
+): NativeOverlayMenuRequest => {
+  const request = open.mock.calls[index][0] as NativeOverlayRequest
+  expect(request.kind).toBe('menu')
+  expect(request.payload.kind).toBe('menu')
+
+  return request as NativeOverlayMenuRequest
+}
+
+const deferredNativeOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+} => {
+  let resolvePromise: ((value: { accepted: boolean }) => void) | null = null
+
+  const promise = new Promise<{ accepted: boolean }>((resolve) => {
+    resolvePromise = resolve
+  })
+
+  return {
+    promise,
+    resolve: (value): void => {
+      resolvePromise?.(value)
+    },
+  }
+}
+
+afterEach(() => {
+  __resetNativeOverlayForTest()
+  vi.unstubAllEnvs()
+  vi.clearAllMocks()
+  restorePlatform?.()
+  restorePlatform = null
+  document.documentElement.removeAttribute('style')
+  document.documentElement.removeAttribute('data-theme')
+  delete window.vimeflow
+})
 
 describe('Menu core', () => {
   test('renders the trigger and keeps the menu closed initially', () => {
@@ -678,6 +789,23 @@ describe('Menu.Context', () => {
     expect(screen.getByRole('menuitem', { name: 'Paste' })).toBeInTheDocument()
   })
 
+  test('renders above z-100 overlays like the burner terminal popup', () => {
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60 }}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Item onSelect={vi.fn()}>Paste</Menu.Item>
+      </Menu.Context>
+    )
+
+    expect(
+      screen.getByRole('menu', { name: 'Terminal actions' }).className
+    ).toContain('z-[110]')
+  })
+
   test('requests close via onOpenChange on Escape', async () => {
     const user = userEvent.setup()
     const onOpenChange = vi.fn<(open: boolean) => void>()
@@ -760,6 +888,719 @@ describe('Menu.Context', () => {
     // role queries. Non-modal leaves the outside button reachable.
     expect(screen.getByRole('menu')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'outside' })).toBeInTheDocument()
+  })
+
+  test('falls back locally when nativeOverlay is not requested', () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+
+    render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(nativeBridge.open).not.toHaveBeenCalled()
+  })
+
+  test('falls back locally when the feature flag is disabled', () => {
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+
+    render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(nativeBridge.open).not.toHaveBeenCalled()
+  })
+
+  test('falls back locally without the native overlay API', () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    window.vimeflow = {
+      invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+      listen: vi.fn(() => Promise.resolve(vi.fn())),
+    }
+
+    render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
+  test('falls back locally on non-macOS platforms', () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('Linux x86_64')
+    const nativeBridge = installNativeOverlayBridge()
+
+    render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(nativeBridge.open).not.toHaveBeenCalled()
+  })
+
+  test('sends a serializable native overlay request and dispatches action once', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onSelect = vi.fn()
+
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={onSelect}>
+          <span>Copy</span>
+          <kbd>⌘C</kbd>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeMenuRequestAt(nativeBridge.open)
+    const firstItem = request.payload.items?.[0]
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(request).toMatchObject({
+      surfaceId: expect.any(String),
+      kind: 'menu',
+      anchorRect: { x: 50, y: 60, width: 0, height: 0 },
+      placement: 'bottom-start',
+      payload: {
+        kind: 'menu',
+        ariaLabel: 'Terminal actions',
+        items: [
+          {
+            id: expect.any(String),
+            label: 'Copy',
+            shortcut: '⌘C',
+          },
+        ],
+      },
+    })
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: firstItem?.type === 'separator' ? '' : firstItem?.id,
+      })
+
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: firstItem?.type === 'separator' ? '' : firstItem?.id,
+      })
+    })
+
+    expect(onSelect).toHaveBeenCalledOnce()
+  })
+
+  test('falls back locally when native reposition is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+    nativeBridge.open
+      .mockResolvedValueOnce({ accepted: true })
+      .mockResolvedValueOnce({ accepted: false })
+
+    render(
+      <Menu trigger={<button type="button">Open actions</button>} nativeOverlay>
+        <Menu.Section label="Clipboard">
+          <Menu.Row label="Copy" onSelect={vi.fn()}>
+            <span>Copy</span>
+          </Menu.Row>
+        </Menu.Section>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open actions' }))
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+  })
+
+  test('closes accepted native reposition requests after unmount', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const pending = deferredNativeOpen()
+    nativeBridge.open
+      .mockResolvedValueOnce({ accepted: true })
+      .mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+
+    const { unmount } = render(
+      <Menu trigger={<button type="button">Open actions</button>} nativeOverlay>
+        <Menu.Section label="Clipboard">
+          <Menu.Row label="Copy" onSelect={vi.fn()}>
+            <span>Copy</span>
+          </Menu.Row>
+        </Menu.Section>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open actions' }))
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeMenuRequestAt(nativeBridge.open)
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    unmount()
+    const closeCountAfterUnmount = nativeBridge.close.mock.calls.length
+
+    await act(async () => {
+      pending.resolve({ accepted: true })
+      await pending.promise
+    })
+
+    expect(nativeBridge.close).toHaveBeenCalledTimes(closeCountAfterUnmount + 1)
+    expect(nativeBridge.close).toHaveBeenLastCalledWith({
+      surfaceId: request.surfaceId,
+      reason: 'renderer',
+    })
+  })
+
+  test('serializes context menu detail rows with anchor-width matching', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const root = document.documentElement
+    root.dataset.theme = 'flexoki'
+    root.style.colorScheme = 'light'
+    root.style.setProperty(
+      '--color-surface-container-high',
+      'var(--color-test-surface-high)'
+    )
+    root.style.setProperty('--shadow-menu', 'var(--shadow-test-menu)')
+
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60, width: 180, height: 22 }}
+        open
+        nativeOverlay
+        matchAnchorWidth
+        onOpenChange={vi.fn()}
+        aria-label="Git ref details"
+      >
+        <Menu.Row
+          label="Copy path"
+          nativeOverlayIcon="folder_open"
+          nativeOverlayDetail="/Users/will/projects/vimeflow"
+          nativeOverlayFeedback="copy"
+          onSelect={vi.fn()}
+        >
+          <span aria-hidden="true">folder_open</span>
+          <span>path</span>
+          <span>/Users/will/projects/vimeflow</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeMenuRequestAt(nativeBridge.open)
+
+    expect(request).toMatchObject({
+      anchorRect: { x: 50, y: 60, width: 180, height: 22 },
+      theme: {
+        id: 'flexoki',
+        colorScheme: 'light',
+        variables: {
+          '--color-surface-container-high': 'var(--color-test-surface-high)',
+          '--shadow-menu': 'var(--shadow-test-menu)',
+        },
+      },
+      payload: {
+        kind: 'menu',
+        ariaLabel: 'Git ref details',
+        matchAnchorWidth: true,
+        items: [
+          {
+            id: expect.any(String),
+            label: 'Copy path',
+            detail: '/Users/will/projects/vimeflow',
+            icon: 'folder_open',
+            feedback: 'copy',
+            closeOnSelect: false,
+          },
+        ],
+      },
+    })
+  })
+
+  test('native overlay outside close flows back through onOpenChange', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onOpenChange = vi.fn<(open: boolean) => void>()
+
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60 }}
+        open
+        nativeOverlay
+        onOpenChange={onOpenChange}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeMenuRequestAt(nativeBridge.open)
+
+    act(() => {
+      nativeBridge.closed({ surfaceId: request.surfaceId, reason: 'outside' })
+    })
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  test('anchored menus serialize checkboxes and keep them open for multi-select', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onToggle = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <Menu
+        trigger={<button type="button">Open layouts</button>}
+        placement="bottom-end"
+        aria-label="Displayed layouts"
+        nativeOverlay
+      >
+        <Menu.Section label="Displayed layouts">
+          <Menu.Checkbox
+            aria-label="Quad"
+            checked
+            icon="dashboard"
+            onChange={onToggle}
+          >
+            <span>
+              <span aria-hidden="true">ignored glyph</span>
+              <span>Quad</span>
+            </span>
+          </Menu.Checkbox>
+        </Menu.Section>
+      </Menu>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Open layouts' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      x: 11,
+      y: 22,
+      width: 33,
+      height: 44,
+      top: 22,
+      left: 11,
+      right: 44,
+      bottom: 66,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    await user.click(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeMenuRequestAt(nativeBridge.open)
+    const checkbox = request.payload.sections?.[0]?.items[0]
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(checkbox).toMatchObject({
+      type: 'checkbox',
+      id: expect.any(String),
+      label: 'Quad',
+      icon: 'dashboard',
+      checked: true,
+    })
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: checkbox?.type === 'checkbox' ? checkbox.id : '',
+      })
+    })
+
+    expect(onToggle).toHaveBeenCalledWith(false)
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: checkbox?.type === 'checkbox' ? checkbox.id : '',
+      })
+    })
+
+    expect(onToggle).toHaveBeenCalledTimes(2)
+  })
+
+  test('anchored native checkbox menus resync after state changes', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    const Harness = (): ReactElement => {
+      const [checked, setChecked] = useState(true)
+
+      return (
+        <Menu
+          trigger={<button type="button">Open layouts</button>}
+          aria-label="Displayed layouts"
+          nativeOverlay
+        >
+          <Menu.Section label="Displayed layouts">
+            <Menu.Checkbox
+              aria-label="Quad"
+              checked={checked}
+              onChange={setChecked}
+            >
+              Quad
+            </Menu.Checkbox>
+          </Menu.Section>
+        </Menu>
+      )
+    }
+
+    render(<Harness />)
+
+    const trigger = screen.getByRole('button', { name: 'Open layouts' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      x: 11,
+      y: 22,
+      width: 33,
+      height: 44,
+      top: 22,
+      left: 11,
+      right: 44,
+      bottom: 66,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    await user.click(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const firstRequest = nativeMenuRequestAt(nativeBridge.open)
+    const firstCheckbox = firstRequest.payload.sections?.[0]?.items[0]
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: firstRequest.surfaceId,
+        actionId: firstCheckbox?.type === 'checkbox' ? firstCheckbox.id : '',
+      })
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+
+    const secondRequest = nativeMenuRequestAt(nativeBridge.open, 1)
+
+    expect(secondRequest.surfaceId).toBe(firstRequest.surfaceId)
+    expect(nativeBridge.close).not.toHaveBeenCalled()
+    expect(secondRequest.payload.sections?.[0]?.items[0]).toMatchObject({
+      type: 'checkbox',
+      label: 'Quad',
+      checked: false,
+    })
+  })
+
+  test('anchored menus with unsupported content fall back locally for multi-select', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onToggle = vi.fn()
+    const onCreate = vi.fn()
+    const onOpenChange = vi.fn<(open: boolean) => void>()
+    const user = userEvent.setup()
+
+    render(
+      <Menu
+        trigger={<button type="button">Open layouts</button>}
+        placement="bottom-end"
+        aria-label="Displayed layouts"
+        nativeOverlay
+        onOpenChange={onOpenChange}
+      >
+        <Menu.Section label="Displayed layouts">
+          <Menu.Checkbox checked onChange={onToggle}>
+            <span>
+              <strong>unsupported glyph</strong>
+              <span>Quad</span>
+            </span>
+          </Menu.Checkbox>
+        </Menu.Section>
+        <Menu.Section>
+          <div />
+          <Menu.Item icon="dashboard_customize" onSelect={onCreate}>
+            Create custom layout
+          </Menu.Item>
+        </Menu.Section>
+      </Menu>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Open layouts' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      x: 11,
+      y: 22,
+      width: 33,
+      height: 44,
+      top: 22,
+      left: 11,
+      right: 44,
+      bottom: 66,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    await user.click(trigger)
+    const menu = await screen.findByRole('menu')
+
+    const checkbox = within(menu).getByRole('menuitemcheckbox', {
+      name: /Quad/,
+    })
+
+    expect(nativeBridge.open).not.toHaveBeenCalled()
+
+    await user.click(checkbox)
+
+    expect(onToggle).toHaveBeenCalledWith(false)
+    expect(onCreate).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenLastCalledWith(false)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
+  test('anchored menus serialize composite rows with trailing actions', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onPick = vi.fn()
+    const onDuplicate = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open layouts</button>} nativeOverlay>
+        <Menu.Section label="Custom">
+          <Menu.Row
+            label="Workspace layout"
+            nativeOverlayIcon="dashboard"
+            nativeOverlayActions={[
+              {
+                label: 'Duplicate Workspace layout',
+                icon: 'content_copy',
+                onSelect: onDuplicate,
+              },
+            ]}
+            onSelect={onPick}
+          >
+            <button type="button">Workspace layout</button>
+            <button type="button">Duplicate Workspace layout</button>
+          </Menu.Row>
+        </Menu.Section>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open layouts' }))
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeMenuRequestAt(nativeBridge.open)
+    const composite = request.payload.sections?.[0]?.items[0]
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(composite).toMatchObject({
+      type: 'composite',
+      id: expect.any(String),
+      label: 'Workspace layout',
+      icon: 'dashboard',
+      actions: [
+        {
+          id: expect.any(String),
+          label: 'Duplicate Workspace layout',
+          icon: 'content_copy',
+        },
+      ],
+    })
+
+    const duplicateAction =
+      composite?.type === 'composite' ? composite.actions[0] : undefined
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: duplicateAction?.id ?? '',
+      })
+    })
+
+    expect(onDuplicate).toHaveBeenCalledOnce()
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
+  test('native overlay stays open across parent rerenders with identical payload', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onPick = vi.fn()
+    const user = userEvent.setup()
+
+    const Harness = (): ReactElement => {
+      const [tick, setTick] = useState(0)
+
+      return (
+        <>
+          <button type="button" onClick={(): void => setTick(tick + 1)}>
+            Rerender {tick}
+          </button>
+          <Menu.Context
+            position={{ x: 50, y: 60 }}
+            open
+            nativeOverlay
+            onOpenChange={vi.fn()}
+            aria-label="Terminal actions"
+          >
+            <Menu.Row label="Copy" onSelect={onPick}>
+              <span>Copy</span>
+            </Menu.Row>
+          </Menu.Context>
+        </>
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeMenuRequestAt(nativeBridge.open)
+
+    await user.click(screen.getByRole('button', { name: 'Rerender 0' }))
+
+    expect(nativeBridge.open).toHaveBeenCalledOnce()
+    expect(nativeBridge.close).not.toHaveBeenCalled()
+
+    act(() => {
+      const item = request.payload.items?.[0]
+
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId:
+          item === undefined || item.type === 'separator' ? '' : item.id,
+      })
+    })
+
+    expect(onPick).toHaveBeenCalledOnce()
+  })
+
+  test('cancelled pending native opens send close after the open resolves', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const pending = deferredNativeOpen()
+    nativeBridge.open.mockReturnValueOnce(pending.promise)
+
+    const { unmount } = render(
+      <Menu.Context
+        position={{ x: 10, y: 20 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Terminal actions"
+      >
+        <Menu.Row label="Copy" onSelect={vi.fn()}>
+          <span>Copy</span>
+        </Menu.Row>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    unmount()
+
+    expect(nativeBridge.close).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      pending.resolve({ accepted: true })
+      await pending.promise
+    })
+
+    expect(nativeBridge.close).toHaveBeenCalledTimes(2)
+  })
+
+  test('anchored menus fall back locally when content cannot be serialized', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const user = userEvent.setup()
+
+    render(
+      <Menu trigger={<button type="button">Open layouts</button>} nativeOverlay>
+        <Menu.Section label="Custom">
+          <Menu.Row label="Workspace layout" onSelect={vi.fn()}>
+            <button type="button">Workspace layout</button>
+          </Menu.Row>
+        </Menu.Section>
+      </Menu>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open layouts' }))
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(nativeBridge.open).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith(
+      '[vimeflow:native-overlay] falling back to local floating surface: unsupported menu content'
+    )
+    warn.mockRestore()
   })
 })
 

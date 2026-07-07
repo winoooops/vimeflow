@@ -321,6 +321,7 @@ export const BurnerTerminalPopup = ({
                 // Lift above the z-[100] popup — the shared tooltip portals to
                 // body at z-50 and would otherwise paint behind the overlay.
                 className="!z-[110]"
+                nativeOverlay
               >
                 <IconButton
                   icon="sync"
@@ -338,14 +339,21 @@ export const BurnerTerminalPopup = ({
               </Tooltip>
             )}
 
-            <IconButton
-              icon="close"
-              label="Hide burner terminal"
-              showTooltip={TOOLTIP_SUPPRESSED} // popup already provides a z-lifted Tooltip
-              data-testid="burner-hide"
-              onClick={onHide}
-              className="h-[26px] w-[26px] rounded-[7px]"
-            />
+            <Tooltip
+              content="Hide burner terminal"
+              placement="bottom"
+              className="!z-[110]"
+              nativeOverlay
+            >
+              <IconButton
+                icon="close"
+                label="Hide burner terminal"
+                showTooltip={TOOLTIP_SUPPRESSED} // popup already provides a z-lifted Tooltip
+                data-testid="burner-hide"
+                onClick={onHide}
+                className="h-[26px] w-[26px] rounded-[7px]"
+              />
+            </Tooltip>
           </div>
         </header>
 

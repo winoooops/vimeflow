@@ -24,9 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::agent::adapter::base::TranscriptHandle;
-use crate::agent::adapter::traits::{
-    StateDecoder, TranscriptPathValidator, TranscriptStreamer,
-};
+use crate::agent::adapter::traits::{StateDecoder, TranscriptPathValidator, TranscriptStreamer};
 use crate::agent::adapter::types::{
     stamp_snapshot, LocatedStatusSource, ParsedStatus, RawPath, StatusSnapshot,
     TranscriptPathSource, ValidateTranscriptError,

@@ -309,6 +309,50 @@ pub struct AgentTurnEvent {
     pub num_turns: u32,
 }
 
+/// A structured reply the agent emitted for an inline diff review (VIM-283).
+/// `replies: None` is the malformed marker — the sentinel was present but the
+/// JSON failed schema validation; `raw_text` still carries the full reply so the
+/// frontend can degrade to a plain-text note.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Consumed by the frontend (PR-2 / VIM-249)
+pub struct AgentReplyEvent {
+    /// PTY session ID
+    pub session_id: String,
+    /// Echoed dispatch token; best-effort on malformed (None only if the JSON
+    /// between the sentinels is unparseable).
+    pub nonce: Option<String>,
+    /// The full reply text between the sentinels — the frontend degrade note.
+    pub raw_text: String,
+    /// Typed replies when the block is schema-valid; None is the malformed marker.
+    pub replies: Option<Vec<AgentReply>>,
+}
+
+/// One structured reply, keyed by the `[#n]` handle from the dispatch (VIM-283).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[allow(dead_code)]
+pub struct AgentReply {
+    pub id: u32,
+    pub status: AgentReplyStatus,
+    pub text: String,
+}
+
+/// Outcome the agent reports for a reviewed comment (VIM-283).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum AgentReplyStatus {
+    Answered,
+    Changed,
+    Skipped,
+}
+
 /// Tool call execution status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -369,6 +413,30 @@ pub struct AgentToolCallEvent {
     /// uses this to render the activity feed glyph and verb without
     /// needing to glob the path itself.
     pub is_test_file: bool,
+}
+
+/// One-shot summary of agent activity accumulated during transcript replay.
+///
+/// On resume, the codex/claude_code decoders replay the whole transcript and
+/// would otherwise emit one `agent-tool-call` / `agent-turn` / `agent-cwd`
+/// event per historical line — thousands of events that flood the IPC stdout
+/// queue and freeze the UI. Instead, during replay the per-line events are
+/// suppressed and their effect is accumulated; this single event is emitted
+/// once at the replay→live boundary (`on_caught_up`) carrying the aggregated
+/// state. Live events resume after the boundary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Used by frontend and future sub-specs
+pub struct AgentReplaySummaryEvent {
+    pub session_id: String,
+    pub num_turns: u32,
+    pub cwd: Option<String>,
+    pub tool_call_total: u32,
+    pub tool_call_by_type: std::collections::HashMap<String, u32>,
+    /// Completed tool calls accumulated during replay, newest-first, capped at 50.
+    pub recent_tool_calls: Vec<AgentToolCallEvent>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

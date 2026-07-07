@@ -1,8 +1,54 @@
 import { createRef } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { __resetNativeOverlayForTest } from '@/components/base/floating/nativeOverlay'
 import { Tooltip, type TooltipProps } from './Tooltip'
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+} => {
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+  const close = vi.fn().mockResolvedValue(undefined)
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close,
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return { open, close }
+}
 
 const rect = ({
   x,
@@ -26,6 +72,32 @@ const rect = ({
     bottom: y + height,
     toJSON: () => ({}),
   }) as DOMRect
+
+const deferredNativeOpen = (): {
+  promise: Promise<{ accepted: boolean }>
+  resolve: (value: { accepted: boolean }) => void
+} => {
+  let resolvePromise: ((value: { accepted: boolean }) => void) | null = null
+
+  const promise = new Promise<{ accepted: boolean }>((resolve) => {
+    resolvePromise = resolve
+  })
+
+  return {
+    promise,
+    resolve: (value): void => {
+      resolvePromise?.(value)
+    },
+  }
+}
+
+afterEach(() => {
+  restorePlatform?.()
+  restorePlatform = null
+  vi.unstubAllEnvs()
+  __resetNativeOverlayForTest()
+  delete window.vimeflow
+})
 
 describe('Tooltip', () => {
   test('returns children unchanged when disabled', () => {
@@ -274,6 +346,162 @@ describe('Tooltip', () => {
     await user.hover(screen.getByRole('button', { name: 'trigger' }))
     await screen.findByRole('tooltip')
     expect(screen.queryByTestId('tooltip-shortcut')).not.toBeInTheDocument()
+  })
+
+  test('sends plain text tooltip requests through native overlay when opted in', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip
+        content="collapse status"
+        delayMs={0}
+        placement="bottom"
+        maxWidth={180}
+        nativeOverlay
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(
+      rect({ x: 20, y: 30, width: 40, height: 12 })
+    )
+
+    await user.hover(trigger)
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeBridge.open.mock.calls[0][0] as { surfaceId: string }
+
+    expect(request).toMatchObject({
+      surfaceId: expect.stringMatching(/^tooltip:/),
+      kind: 'tooltip',
+      anchorRect: { x: 20, y: 30, width: 40, height: 12 },
+      placement: 'bottom',
+      payload: {
+        kind: 'tooltip',
+        text: 'collapse status',
+        maxWidth: 180,
+      },
+    })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    await user.unhover(trigger)
+
+    await waitFor(() => {
+      expect(nativeBridge.close).toHaveBeenCalledWith({
+        surfaceId: request.surfaceId,
+        reason: 'renderer',
+      })
+    })
+  })
+
+  test('resyncs native tooltip anchor geometry after resize', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip content="collapse status" delayMs={0} nativeOverlay>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+
+    const rectSpy = vi
+      .spyOn(trigger, 'getBoundingClientRect')
+      .mockReturnValueOnce(rect({ x: 20, y: 30, width: 40, height: 12 }))
+      .mockReturnValue(rect({ x: 50, y: 60, width: 70, height: 18 }))
+
+    await user.hover(trigger)
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const firstRequest = nativeBridge.open.mock.calls[0][0] as {
+      surfaceId: string
+    }
+
+    window.dispatchEvent(new Event('resize'))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    expect(nativeBridge.open.mock.calls[1][0]).toMatchObject({
+      surfaceId: firstRequest.surfaceId,
+      kind: 'tooltip',
+      anchorRect: { x: 50, y: 60, width: 70, height: 18 },
+    })
+
+    rectSpy.mockRestore()
+  })
+
+  test('closes accepted native tooltip resize requests after dismissal', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const pending = deferredNativeOpen()
+    nativeBridge.open
+      .mockResolvedValueOnce({ accepted: true })
+      .mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip content="collapse status" delayMs={0} nativeOverlay>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(
+      rect({ x: 50, y: 60, width: 70, height: 18 })
+    )
+
+    await user.hover(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    const request = nativeBridge.open.mock.calls[0][0] as { surfaceId: string }
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
+    await user.unhover(trigger)
+    const closeCountAfterDismiss = nativeBridge.close.mock.calls.length
+
+    await act(async () => {
+      pending.resolve({ accepted: true })
+      await pending.promise
+    })
+
+    expect(nativeBridge.close).toHaveBeenCalledTimes(closeCountAfterDismiss + 1)
+    expect(nativeBridge.close).toHaveBeenLastCalledWith({
+      surfaceId: request.surfaceId,
+      reason: 'renderer',
+    })
+  })
+
+  test('falls back locally when native tooltip overlay is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    nativeBridge.open.mockResolvedValue({ accepted: false })
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip content="collapse status" delayMs={0} nativeOverlay>
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'collapse status'
+    )
   })
 
   test('supports interactive floating content when requested', async () => {

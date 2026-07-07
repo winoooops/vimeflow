@@ -20,13 +20,15 @@ use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscr
 use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_session_title, emit_agent_tool_call, emit_agent_turn,
-    emit_lifecycle_on_change, record_lifecycle,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_session_title,
+    emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change, record_lifecycle,
+    record_tool_call, ReplayActivity,
 };
+use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
 use crate::agent::sanitize_title;
 use crate::agent::types::{
-    AgentCwdEvent, AgentPhase, AgentSessionTitleEvent, AgentToolCallEvent, AgentTurnEvent,
-    TitleSource, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentSessionTitleEvent, AgentToolCallEvent,
+    AgentTurnEvent, TitleSource, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -199,8 +201,7 @@ pub fn start_tailing(
     // file, so all lines belong to the current session. Replay catches any
     // tool calls written before tailing started (the transcript file is often
     // created seconds after the statusline first reports its path).
-    let decoder =
-        ClaudeTranscriptDecoder::new(events, session_id, cwd, claude_agent_session_id);
+    let decoder = ClaudeTranscriptDecoder::new(events, session_id, cwd, claude_agent_session_id);
     let service = TranscriptTailService::new(Box::new(decoder), "transcript");
 
     let join_handle = std::thread::spawn(move || {
@@ -248,6 +249,9 @@ struct ClaudeTranscriptDecoder {
     /// Settled phase accumulated silently during replay, flushed once at
     /// the replay->live boundary.
     replay_phase: Option<AgentPhase>,
+    /// Tool-call/turn/cwd activity accumulated silently during replay; flushed
+    /// once at the replay->live boundary as a single agent-replay-summary.
+    replay_activity: ReplayActivity,
     /// One-shot guard: false during replay, true after the first on_caught_up.
     replay_done: bool,
 }
@@ -272,6 +276,7 @@ impl ClaudeTranscriptDecoder {
             last_title_memo: None,
             last_phase: None,
             replay_phase: None,
+            replay_activity: ReplayActivity::default(),
             replay_done: false,
         }
     }
@@ -292,6 +297,7 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
             &mut self.last_title_memo,
             &mut self.last_phase,
             &mut self.replay_phase,
+            &mut self.replay_activity,
             self.replay_done,
         );
     }
@@ -310,7 +316,25 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
                     phase,
                 );
             }
-            emit_replay_in_flight_tool_calls(&self.session_id, &self.events, &self.in_flight);
+            for event in self.replay_activity.take_running() {
+                if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
+                    log::warn!("Failed to emit agent-tool-call event: {}", e);
+                }
+            }
+            // Flush the replay-accumulated tool-call/turn/cwd activity as one
+            // summary, replacing the thousands of per-line events suppressed
+            // during replay. Only emit if it carries something, to avoid a
+            // noisy empty summary for a fresh session.
+            let summary = std::mem::take(&mut self.replay_activity).into_summary(
+                self.session_id.clone(),
+                self.num_turns,
+                self.last_cwd.clone(),
+            );
+            if summary.tool_call_total > 0 || summary.num_turns > 0 || summary.cwd.is_some() {
+                if let Err(e) = emit_agent_replay_summary(self.events.as_ref(), &summary) {
+                    log::warn!("Failed to emit agent-replay-summary event: {}", e);
+                }
+            }
         }
         self.emitter.finish_replay();
     }
@@ -344,6 +368,7 @@ fn process_line(
     last_title_memo: &mut Option<String>,
     last_phase: &mut Option<AgentPhase>,
     replay_phase: &mut Option<AgentPhase>,
+    replay_activity: &mut ReplayActivity,
     replay_done: bool,
 ) {
     let dto: ClaudeTranscriptLineDto = match serde_json::from_str(line) {
@@ -359,16 +384,18 @@ fn process_line(
     // can mirror them into pane.cwd without depending on the interactive
     // shell emitting OSC 7.
     if let Some(observed) = dto.cwd.as_deref() {
-        if !observed.is_empty()
-            && last_cwd.as_deref().map_or(true, |seen| seen != observed)
-        {
-            let event = AgentCwdEvent {
-                session_id: session_id.to_string(),
-                cwd: observed.to_string(),
-            };
+        if !observed.is_empty() && last_cwd.as_deref().map_or(true, |seen| seen != observed) {
+            // During replay, suppress the per-line cwd event; last_cwd still
+            // accumulates so the summary carries the final cwd at the boundary.
+            if replay_done {
+                let event = AgentCwdEvent {
+                    session_id: session_id.to_string(),
+                    cwd: observed.to_string(),
+                };
 
-            if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
-                log::warn!("Failed to emit agent-cwd event: {}", e);
+                if let Err(e) = emit_agent_cwd(events.as_ref(), &event) {
+                    log::warn!("Failed to emit agent-cwd event: {}", e);
+                }
             }
             *last_cwd = Some(observed.to_string());
         }
@@ -387,7 +414,10 @@ fn process_line(
                 _ => None,
             }),
         Some("user")
-            if dto.message.as_ref().is_some_and(|m| is_user_prompt(&m.content)) =>
+            if dto
+                .message
+                .as_ref()
+                .is_some_and(|m| is_user_prompt(&m.content)) =>
         {
             Some(AgentPhase::Running)
         }
@@ -407,11 +437,28 @@ fn process_line(
 
     match dto.line_type.as_deref().unwrap_or("") {
         "assistant" => {
-            process_assistant_message(&dto, session_id, cwd, events, in_flight, replay_done);
+            process_assistant_message(
+                &dto,
+                session_id,
+                cwd,
+                events,
+                in_flight,
+                replay_activity,
+                replay_done,
+            );
+            emit_reply_if_present(&dto, session_id, events, replay_done);
         }
         "user" => {
             process_user_message(
-                &dto, session_id, cwd, events, emitter, in_flight, num_turns,
+                &dto,
+                session_id,
+                cwd,
+                events,
+                emitter,
+                in_flight,
+                num_turns,
+                replay_activity,
+                replay_done,
             );
         }
         "tool_result" => {
@@ -426,6 +473,8 @@ fn process_line(
                 emitter,
                 in_flight,
                 &timestamp,
+                replay_activity,
+                replay_done,
             );
         }
         "ai-title" => {
@@ -479,9 +528,7 @@ fn emit_title(
     let sanitized = sanitize_title(raw_title);
     let is_user_renamed = matches!(&source, TitleSource::UserRenamed);
     let (title, new_memo) = match sanitized {
-        Some(title)
-            if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed =>
-        {
+        Some(title) if last_title_memo.as_deref() == Some(title.as_str()) && !is_user_renamed => {
             return;
         }
         Some(title) => (title.clone(), Some(title)),
@@ -513,6 +560,64 @@ fn extract_timestamp(timestamp: Option<&str>) -> String {
     timestamp.map(str::to_string).unwrap_or_else(now_iso8601)
 }
 
+/// If a COMPLETED assistant turn's reply carries the VIM-283 sentinel block,
+/// extract it and emit `agent-reply`. Fires once per finished turn (gated on the
+/// terminal `stop_reason`), mirroring the Codex `emit_reply_if_present`.
+fn emit_reply_if_present(
+    dto: &ClaudeTranscriptLineDto,
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    replay_done: bool,
+) {
+    if !replay_done {
+        return;
+    }
+
+    let ended = matches!(
+        dto.message.as_ref().and_then(|m| m.stop_reason.as_deref()),
+        Some("end_turn" | "stop_sequence" | "max_tokens")
+    );
+    if !ended {
+        return;
+    }
+
+    let Some(blocks) = message_content_items(dto) else {
+        return;
+    };
+
+    // The completed reply prose is the assistant's `text` content blocks.
+    let reply_text = blocks
+        .iter()
+        .filter(|block| text_block_type(block) == Some("text"))
+        .filter_map(text_block_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let Some(outcome) = extract_agent_reply(&reply_text) else {
+        return;
+    };
+
+    let (raw_text, nonce, replies) = match outcome {
+        AgentReplyOutcome::Structured {
+            raw,
+            nonce,
+            replies,
+        } => (raw, Some(nonce), Some(replies)),
+        AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
+    };
+
+    let event = AgentReplyEvent {
+        session_id: session_id.to_string(),
+        nonce,
+        raw_text,
+        replies,
+    };
+
+    if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-reply event: {}", e);
+    }
+}
+
 /// Extract tool_use entries from an assistant message.
 fn process_assistant_message(
     dto: &ClaudeTranscriptLineDto,
@@ -520,6 +625,7 @@ fn process_assistant_message(
     cwd: Option<&Path>,
     events: &Arc<dyn EventSink>,
     in_flight: &mut InFlightToolCalls,
+    replay_activity: &mut ReplayActivity,
     replay_done: bool,
 ) {
     let content = match message_content_items(dto) {
@@ -578,26 +684,23 @@ fn process_assistant_message(
             },
         );
 
-        if replay_done {
-            let event = AgentToolCallEvent {
-                session_id: session_id.to_string(),
-                tool_use_id: id,
-                tool: name.to_string(),
-                args,
-                status: ToolCallStatus::Running,
-                timestamp: timestamp.clone(),
-                duration_ms: 0,
-                is_test_file,
-            };
+        let event = AgentToolCallEvent {
+            session_id: session_id.to_string(),
+            tool_use_id: id,
+            tool: name.to_string(),
+            args,
+            status: ToolCallStatus::Running,
+            timestamp: timestamp.clone(),
+            duration_ms: 0,
+            is_test_file,
+        };
 
-            if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
-                log::warn!("Failed to emit agent-tool-call event: {}", e);
-            }
-        }
+        record_tool_call(events, event, replay_activity, replay_done);
     }
 }
 
 /// Extract tool_result entries from a user message.
+#[allow(clippy::too_many_arguments)]
 fn process_user_message(
     dto: &ClaudeTranscriptLineDto,
     session_id: &str,
@@ -606,6 +709,8 @@ fn process_user_message(
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     num_turns: &mut u32,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     let content = match dto.message.as_ref().map(|m| &m.content) {
         Some(content) => content,
@@ -631,6 +736,8 @@ fn process_user_message(
                     emitter,
                     in_flight,
                     &timestamp,
+                    replay_activity,
+                    replay_done,
                 );
             }
         }
@@ -638,18 +745,24 @@ fn process_user_message(
 
     if is_user_prompt(content) {
         *num_turns = num_turns.saturating_add(1);
-        let event = AgentTurnEvent {
-            session_id: session_id.to_string(),
-            num_turns: *num_turns,
-        };
 
-        if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
-            log::warn!("Failed to emit agent-turn event: {}", e);
+        // During replay, suppress the per-turn event; num_turns still
+        // accumulates so the boundary summary carries the final count.
+        if replay_done {
+            let event = AgentTurnEvent {
+                session_id: session_id.to_string(),
+                num_turns: *num_turns,
+            };
+
+            if let Err(e) = emit_agent_turn(events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-turn event: {}", e);
+            }
         }
     }
 }
 
 /// Process a tool_result line and emit Done/Failed event
+#[allow(clippy::too_many_arguments)]
 fn process_tool_result(
     tool_use_id: Option<&str>,
     is_error: Option<bool>,
@@ -660,6 +773,8 @@ fn process_tool_result(
     emitter: &mut TestRunEmitter,
     in_flight: &mut InFlightToolCalls,
     timestamp: &str,
+    replay_activity: &mut ReplayActivity,
+    replay_done: bool,
 ) {
     let tool_use_id = match tool_use_id {
         Some(id) => id.to_string(),
@@ -741,32 +856,7 @@ fn process_tool_result(
         is_test_file,
     };
 
-    if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
-        log::warn!("Failed to emit agent-tool-call event: {}", e);
-    }
-}
-
-fn emit_replay_in_flight_tool_calls(
-    session_id: &str,
-    events: &Arc<dyn EventSink>,
-    in_flight: &InFlightToolCalls,
-) {
-    for (tool_use_id, call) in in_flight {
-        let event = AgentToolCallEvent {
-            session_id: session_id.to_string(),
-            tool_use_id: tool_use_id.clone(),
-            tool: call.tool.clone(),
-            args: call.args.clone(),
-            status: ToolCallStatus::Running,
-            timestamp: call.started_at_iso.clone(),
-            duration_ms: 0,
-            is_test_file: call.is_test_file,
-        };
-
-        if let Err(e) = emit_agent_tool_call(events.as_ref(), &event) {
-            log::warn!("Failed to emit agent-tool-call event: {}", e);
-        }
-    }
+    record_tool_call(events, event, replay_activity, replay_done);
 }
 
 fn message_content_items(dto: &ClaudeTranscriptLineDto) -> Option<&[Value]> {
@@ -1004,14 +1094,6 @@ mod tests {
             .collect()
     }
 
-    fn tool_call_payloads(sink: &FakeEventSink) -> Vec<Value> {
-        sink.recorded()
-            .into_iter()
-            .filter(|(name, _)| name == "agent-tool-call")
-            .map(|(_, payload)| payload)
-            .collect()
-    }
-
     #[test]
     fn claude_replay_flushes_only_the_settled_phase_once() {
         let sink = Arc::new(FakeEventSink::new());
@@ -1047,44 +1129,71 @@ mod tests {
     }
 
     #[test]
-    fn claude_replay_does_not_emit_running_for_settled_tool_calls() {
+    fn claude_replay_coalesces_tool_calls_then_live_emits_individually() {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder =
             ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
 
+        // Replay: a user prompt (turn) + one tool_use whose tool_result
+        // completes it. Both are suppressed during replay and folded into the
+        // boundary summary.
+        decoder.decode_line(r#"{"type":"user","message":{"content":"hi"}}"#);
         decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"src/main.ts"}}],"stop_reason":"tool_use"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/a.ts"}}]}}"#,
         );
-        assert_eq!(sink.count("agent-tool-call"), 0);
+        decoder.decode_line(
+            r#"{"type":"tool_result","tool_use_id":"t1","content":"ok","is_error":false}"#,
+        );
 
-        decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:02Z","type":"tool_result","tool_use_id":"toolu_1","content":"ok","is_error":false}"#,
-        );
+        assert_eq!(sink.count("agent-tool-call"), 0);
+        assert_eq!(sink.count("agent-turn"), 0);
+
         decoder.on_caught_up();
 
-        let payloads = tool_call_payloads(&sink);
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0]["toolUseId"], "toolu_1");
-        assert_eq!(payloads[0]["status"], "done");
+        assert_eq!(sink.count("agent-replay-summary"), 1);
+        let summaries: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-replay-summary")
+            .collect();
+        assert_eq!(summaries[0].1["numTurns"], 1);
+        assert_eq!(summaries[0].1["toolCallTotal"], 1);
+        assert_eq!(summaries[0].1["recentToolCalls"][0]["toolUseId"], "t1");
+        assert_eq!(summaries[0].1["recentToolCalls"][0]["status"], "done");
+
+        // After catch-up, a live tool_use/tool_result emits individual events.
+        decoder.decode_line(
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/b.ts"}}]}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"tool_result","tool_use_id":"t2","content":"ok","is_error":false}"#,
+        );
+        assert_eq!(sink.count("agent-tool-call"), 2);
+        assert_eq!(sink.count("agent-replay-summary"), 1);
     }
 
     #[test]
-    fn claude_replay_emits_running_for_unsettled_tool_call_at_catch_up() {
+    fn claude_replay_emits_running_tool_calls_at_catch_up() {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder =
             ClaudeTranscriptDecoder::new(sink.clone(), "sid".into(), None, "agent-1".into());
 
         decoder.decode_line(
-            r#"{"timestamp":"2026-05-04T10:00:01Z","type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"src/main.ts"}}],"stop_reason":"tool_use"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"npm test"}}],"stop_reason":"tool_use"}}"#,
         );
+
         assert_eq!(sink.count("agent-tool-call"), 0);
 
         decoder.on_caught_up();
 
-        let payloads = tool_call_payloads(&sink);
-        assert_eq!(payloads.len(), 1);
-        assert_eq!(payloads[0]["toolUseId"], "toolu_1");
-        assert_eq!(payloads[0]["status"], "running");
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].1["toolUseId"], "t1");
+        assert_eq!(tool_calls[0].1["status"], "running");
     }
 
     #[test]
@@ -1415,7 +1524,10 @@ mod tests {
         assert!(result.ends_with("..."));
         // Byte length is unbounded by design — sanity check it's larger
         // than max_len in chars, proving the char-count is the real cap.
-        assert!(result.len() > MAX_ARGS_LEN, "byte length should exceed char cap");
+        assert!(
+            result.len() > MAX_ARGS_LEN,
+            "byte length should exceed char cap"
+        );
     }
 
     #[test]
@@ -1541,7 +1653,10 @@ mod tests {
     // contract so future refactors can't silently regress it.
     #[test]
     fn extract_timestamp_uses_transcript_field_when_present() {
-        assert_eq!(extract_timestamp(Some("2026-04-22T10:30:00Z")), "2026-04-22T10:30:00Z");
+        assert_eq!(
+            extract_timestamp(Some("2026-04-22T10:30:00Z")),
+            "2026-04-22T10:30:00Z"
+        );
     }
 
     #[test]
@@ -1716,7 +1831,8 @@ mod tests {
             },
         );
 
-        let line = r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
+        let line =
+            r#"{"type":"tool_result","tool_use_id":"toolu_xyz","content":"ok","is_error":"oops"}"#;
         let mut last_title_memo: Option<String> = None;
         process_line(
             line,
@@ -1731,11 +1847,79 @@ mod tests {
             &mut last_title_memo,
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
         assert_eq!(concrete.count("agent-tool-call"), 1);
         assert!(in_flight.is_empty(), "matched tool_use should be removed");
+    }
+
+    fn drive_assistant_line(concrete: &Arc<FakeEventSink>, line: &str, replay_done: bool) {
+        let events: Arc<dyn EventSink> = concrete.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight: InFlightToolCalls = HashMap::new();
+        let mut num_turns = 0;
+        let mut last_cwd = None;
+        let mut last_title_memo: Option<String> = None;
+
+        process_line(
+            line,
+            "sess-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            "claude-agent-sid",
+            &mut last_title_memo,
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            replay_done,
+        );
+    }
+
+    #[test]
+    fn assistant_end_turn_with_reply_block_emits_agent_reply() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"because latency\"}]}\nVIMEFLOW_REPLY>>>"}],"stop_reason":"end_turn"}}"#;
+        drive_assistant_line(&concrete, line, true);
+
+        let replies: Vec<_> = concrete
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-reply")
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].1["sessionId"], "sess-1");
+        assert_eq!(replies[0].1["nonce"], "abc");
+        assert_eq!(replies[0].1["replies"][0]["id"], 1);
+    }
+
+    #[test]
+    fn assistant_end_turn_without_sentinel_emits_no_reply() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"just done"}],"stop_reason":"end_turn"}}"#;
+        drive_assistant_line(&concrete, line, true);
+
+        assert!(concrete
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-reply"));
+    }
+
+    #[test]
+    fn assistant_replay_with_reply_block_emits_no_reply() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"stale\",\"replies\":[{\"id\":1,\"status\":\"answered\",\"text\":\"old answer\"}]}\nVIMEFLOW_REPLY>>>"}],"stop_reason":"end_turn"}}"#;
+        drive_assistant_line(&concrete, line, false);
+
+        assert!(concrete
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-reply"));
     }
 
     /// Regression: `summarize_input` must preserve the absent vs present-null
@@ -1775,6 +1959,7 @@ mod tests {
             last_title_memo,
             &mut None,
             &mut None,
+            &mut ReplayActivity::default(),
             true,
         );
 
@@ -1878,14 +2063,22 @@ mod tests {
         // One valid tool_use assistant line, split mid-string-value so neither
         // side parses on its own: `..."tool_us` | `e"...`.
         let first: &[u8] = br#"{"type":"assistant","message":{"content":[{"type":"tool_us"#;
-        let second: &[u8] = b"e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
+        let second: &[u8] =
+            b"e\",\"id\":\"toolu_g3\",\"name\":\"Read\",\"input\":{\"file_path\":\"/a.ts\"}}]}}\n";
 
+        // A leading clean EOF (empty partial buffer) fires `on_caught_up` and
+        // ends replay BEFORE the split line arrives, so the rejoined `running`
+        // tool_use decodes on the LIVE path and emits an `agent-tool-call`
+        // (during replay a lone `running` event is folded into the summary and
+        // dropped — see record_tool_call). The split still straddles a
+        // NON-terminal EOF (partial buffer non-empty), exercising the rejoin.
         let stop = Arc::new(AtomicBool::new(false));
         TranscriptTailService::new(Box::new(decoder), "transcript")
             .with_poll_interval(std::time::Duration::ZERO)
             .run(
                 ScriptedReader::new(
                     vec![
+                        Step::Eof,
                         Step::Chunk(first),
                         Step::Eof,
                         Step::Chunk(second),

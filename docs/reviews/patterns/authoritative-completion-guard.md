@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-06-20
-ref_count: 2
+last_updated: 2026-07-05
+ref_count: 4
 ---
 
 # Authoritative Completion Guard
@@ -74,4 +74,51 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   after metadata cleanup so delayed terminal part updates stay suppressed. Added
   regression tests for completed part updates before and after non-zero
   `tool.after`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Tab completion ignored the only visible fuzzy result
+
+- **Source:** github-claude | PR #629 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/hooks/useCommandPalette.ts`
+- **Finding:** The command palette showed fuzzy matches, but Tab completion
+  re-filtered those results by strict prefix before computing a completion.
+  A query such as `:ft` could show `:focus-terminal` as the only actionable
+  result while Tab silently did nothing.
+- **Fix:** Kept prefix completion as the primary path, then fell back to the
+  sole visible fuzzy result when no prefix candidates exist and the user is not
+  typing args. Added a regression test for `:ft` completing to
+  `:focus-terminal`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Tab completion ignored multiple visible fuzzy results
+
+- **Source:** github-codex-connector | PR #629 round 1 | 2026-06-27
+- **Severity:** MEDIUM
+- **File:** `src/features/command-palette/hooks/useCommandPalette.ts`
+- **Finding:** Tab completion fell back to fuzzy-only results only when exactly
+  one visible result remained. Queries such as `:oe` could show multiple
+  actionable fuzzy matches like `:open-editor` and `:open-diff`, but pressing
+  Tab did nothing even though those visible results share the useful common
+  prefix `:open-`.
+- **Fix:** Kept strict prefix matches as the primary candidate set, then fell
+  back to all visible filtered results whenever strict prefix candidates are
+  empty and the user is not typing args. The existing longest-common-prefix
+  guard still no-ops when the fuzzy results do not share an extension. Added a
+  regression test for `:oe` completing to `:open-`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Agent replies consumed before attach succeeded
+
+- **Source:** github-codex-connector | PR #662 round 1 | 2026-07-05
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useAgentReply.ts`
+- **Finding:** The agent reply hook deleted a pending review handle and could
+  clear the pending record even when `addAnnotationForOwner` reported
+  `cap-reached`. A reply event that did not actually attach could therefore be
+  treated as complete, losing the agent answer.
+- **Fix:** Made successful attachment the authoritative completion signal:
+  matched handles are consumed only when the add returns `ok`, and agent-authored
+  annotations bypass the pending-comment cap because they are not user feedback
+  awaiting dispatch. Added regression coverage for cap-blocked replies.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -3,11 +3,24 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { AgentRenameError } from '../../../lib/backend'
 import {
   buildWorkspaceCommands,
-  type WorkspaceCommandDeps,
   type WorkspaceTab,
+  type WorkspaceCommandDeps,
 } from './buildWorkspaceCommands'
+import type { Command } from '../../command-palette/registry/types'
 import { fuzzyMatch } from '../../command-palette/registry/fuzzyMatch'
+import { isMacPlatform } from '../../command-palette/shortcutConfig'
+import {
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
+} from '../../terminal/layout-registry'
 import { themeService } from '../../../theme'
+
+vi.mock('../../command-palette/shortcutConfig', async (importActual) => {
+  const actual =
+    await importActual<typeof import('../../command-palette/shortcutConfig')>()
+
+  return { ...actual, isMacPlatform: vi.fn(() => false) }
+})
 
 describe('buildWorkspaceCommands - happy paths', () => {
   const mockSessions: WorkspaceTab[] = [
@@ -73,12 +86,14 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.preview?.()
     expect(themeService.current().id).toBe('gruvbox-light')
+    expect(themeService.displayed().id).toBe('tokyo-night')
 
     themeCmd?.children?.find((c) => c.id === 'theme-tokyo-night')?.execute?.('')
     expect(themeService.current().id).toBe('tokyo-night')
 
     themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.preview?.()
     expect(themeService.current().id).toBe('tokyo-night')
+    expect(themeService.displayed().id).toBe('dracula')
 
     themeCmd?.children?.find((c) => c.id === 'theme-dracula')?.execute?.('')
     expect(themeService.current().id).toBe('dracula')
@@ -249,6 +264,36 @@ describe('buildWorkspaceCommands - happy paths', () => {
       .map((c) => c.id)
 
     expect(matched).toEqual(['burner'])
+  })
+
+  test('marks commands with required palette args', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+      openFile: vi.fn(),
+    })
+
+    expect(
+      commands
+        .filter((command) => command.requiresArgument === true)
+        .map((command) => ({
+          id: command.id,
+          argumentPlaceholder: command.argumentPlaceholder,
+        }))
+    ).toEqual([
+      { id: 'rename-session', argumentPlaceholder: '<name>' },
+      { id: 'rename-pane', argumentPlaceholder: '<name>' },
+      { id: 'goto', argumentPlaceholder: '<position or name>' },
+      { id: 'open-file', argumentPlaceholder: '<absolute path>' },
+    ])
   })
 
   test(':rename-session command renames active session', () => {
@@ -971,7 +1016,7 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(setActiveSessionId).toHaveBeenCalledWith('session-4')
   })
 
-  test(':split-horizontal stub shows not-implemented message', () => {
+  test('split stub commands are no longer registered', () => {
     const commands = buildWorkspaceCommands({
       sessions: mockSessions,
       activeSessionId: 'session-1',
@@ -985,32 +1030,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
       notifyInfo,
     })
 
-    const splitHCmd = commands.find((c) => c.id === 'split-horizontal')
-    expect(splitHCmd).toBeDefined()
-
-    splitHCmd?.execute?.('')
-    expect(notifyInfo).toHaveBeenCalledWith('Split panes not yet implemented')
-  })
-
-  test(':split-vertical stub shows not-implemented message', () => {
-    const commands = buildWorkspaceCommands({
-      sessions: mockSessions,
-      activeSessionId: 'session-1',
-      createSession,
-      removeSession,
-      renameSession,
-      setPaneUserLabel,
-      renameAgentSession,
-      activePanePtyId: 'pty-active',
-      setActiveSessionId,
-      notifyInfo,
-    })
-
-    const splitVCmd = commands.find((c) => c.id === 'split-vertical')
-    expect(splitVCmd).toBeDefined()
-
-    splitVCmd?.execute?.('')
-    expect(notifyInfo).toHaveBeenCalledWith('Split panes not yet implemented')
+    expect(commands.find((c) => c.id === 'split-horizontal')).toBeUndefined()
+    expect(commands.find((c) => c.id === 'split-vertical')).toBeUndefined()
   })
 })
 
@@ -1770,5 +1791,321 @@ describe('buildWorkspaceCommands - vim aliases (VIM-104 B1)', () => {
 
     expect(commands.find((c) => c.id === 'vim-quit')?.match).toBeUndefined()
     expect(commands.find((c) => c.id === 'vim-quit-all')?.match).toBeUndefined()
+  })
+})
+
+const baseDeps = (): WorkspaceCommandDeps => ({
+  sessions: [{ id: 'session-1', name: 'main' }],
+  activeSessionId: 'session-1',
+  activePanePtyId: 'pty-active',
+  createSession: vi.fn(),
+  removeSession: vi.fn(),
+  renameSession: vi.fn(),
+  setPaneUserLabel: vi.fn(),
+  renameAgentSession: vi.fn().mockResolvedValue(undefined),
+  setActiveSessionId: vi.fn(),
+  notifyInfo: vi.fn(),
+})
+
+describe('buildWorkspaceCommands - net-new wired commands', () => {
+  beforeEach(() => {
+    vi.mocked(isMacPlatform).mockReturnValue(false)
+  })
+
+  test(':restart restarts the active session', () => {
+    const restartSession = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), restartSession })
+
+    const cmd = commands.find((c) => c.id === 'restart')
+    expect(cmd?.label).toBe(':restart')
+
+    cmd?.execute?.('')
+    expect(restartSession).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':restart with no active session notifies', () => {
+    const restartSession = vi.fn()
+    const notifyInfo = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      activeSessionId: null,
+      notifyInfo,
+      restartSession,
+    })
+
+    commands.find((c) => c.id === 'restart')?.execute?.('')
+    expect(restartSession).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('No active session to restart')
+  })
+
+  test(':open-editor opens the editor dock', () => {
+    const openEditor = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), openEditor })
+
+    commands.find((c) => c.id === 'open-editor')?.execute?.('')
+    expect(openEditor).toHaveBeenCalledOnce()
+  })
+
+  test(':open-diff opens the diff dock', () => {
+    const openDiff = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), openDiff })
+
+    commands.find((c) => c.id === 'open-diff')?.execute?.('')
+    expect(openDiff).toHaveBeenCalledOnce()
+  })
+
+  test(':toggle-dock toggles the dock', () => {
+    const toggleDock = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), toggleDock })
+
+    commands.find((c) => c.id === 'toggle-dock')?.execute?.('')
+    expect(toggleDock).toHaveBeenCalledOnce()
+  })
+
+  test(':toggle-activity toggles the activity panel', () => {
+    const toggleActivityPanel = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      toggleActivityPanel,
+    })
+
+    commands.find((c) => c.id === 'toggle-activity')?.execute?.('')
+    expect(toggleActivityPanel).toHaveBeenCalledOnce()
+  })
+
+  test(':show-sessions and :show-files select sidebar tabs', () => {
+    const showSidebarTab = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), showSidebarTab })
+
+    commands.find((c) => c.id === 'show-sessions')?.execute?.('')
+    expect(showSidebarTab).toHaveBeenCalledWith('sessions')
+
+    commands.find((c) => c.id === 'show-files')?.execute?.('')
+    expect(showSidebarTab).toHaveBeenCalledWith('files')
+  })
+
+  test(':focus-terminal focuses the terminal', () => {
+    const focusTerminal = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), focusTerminal })
+
+    commands.find((c) => c.id === 'focus-terminal')?.execute?.('')
+    expect(focusTerminal).toHaveBeenCalledOnce()
+  })
+
+  test(':open-file opens an absolute path, preserving spaces', () => {
+    const openFile = vi.fn()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), openFile })
+
+    commands.find((c) => c.id === 'open-file')?.execute?.('/tmp/notes file.md')
+    expect(openFile).toHaveBeenCalledWith('/tmp/notes file.md')
+  })
+
+  test(':open-file with no path notifies usage', () => {
+    const openFile = vi.fn()
+    const notifyInfo = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      notifyInfo,
+      openFile,
+    })
+
+    commands.find((c) => c.id === 'open-file')?.execute?.('   ')
+    expect(openFile).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith('Usage: :open-file <absolute path>')
+  })
+
+  test('net-new commands are omitted when their dep is absent', () => {
+    const commands = buildWorkspaceCommands(baseDeps())
+
+    const omitted = [
+      'restart',
+      'open-editor',
+      'open-diff',
+      'toggle-dock',
+      'layout',
+      'dock-position',
+      'toggle-activity',
+      'show-sessions',
+      'show-files',
+      'focus-terminal',
+      'open-file',
+    ]
+
+    for (const id of omitted) {
+      expect(commands.find((c) => c.id === id)).toBeUndefined()
+    }
+  })
+})
+
+describe('buildWorkspaceCommands - layout and dock-position namespaces', () => {
+  test(':layout is a namespace whose children pick a layout', () => {
+    const pickLayout = vi.fn(() => true)
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      pickLayout,
+      availableLayouts: [
+        { id: SINGLE_PANE_FOCUS_LAYOUT_ID, title: 'Single' },
+        { id: 'vsplit', title: 'Vertical Split' },
+      ],
+    })
+
+    const layout = commands.find((c) => c.id === 'layout')
+    expect(layout?.label).toBe(':layout')
+    expect(layout?.children?.map((c) => c.label)).toEqual([
+      SINGLE_PANE_FOCUS_LABEL,
+      'Vertical Split',
+    ])
+
+    layout?.children?.find((c) => c.id === 'layout-vsplit')?.execute?.('')
+    expect(pickLayout).toHaveBeenCalledWith('vsplit')
+  })
+
+  test(':layout child notifies when the layout cannot fit the panes', () => {
+    const pickLayout = vi.fn(() => false)
+    const notifyInfo = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      notifyInfo,
+      pickLayout,
+      availableLayouts: [{ id: SINGLE_PANE_FOCUS_LAYOUT_ID, title: 'Single' }],
+    })
+
+    const singleLayoutCommandId = `layout-${SINGLE_PANE_FOCUS_LAYOUT_ID}`
+
+    commands
+      .find((c) => c.id === 'layout')
+      ?.children?.find((c) => c.id === singleLayoutCommandId)
+      ?.execute?.('')
+
+    expect(notifyInfo).toHaveBeenCalledWith("Layout 'Single' needs fewer panes")
+  })
+
+  test(':layout single child advertises the active-pane focus shortcut', () => {
+    vi.mocked(isMacPlatform).mockReturnValue(false)
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      pickLayout: vi.fn(() => true),
+      availableLayouts: [
+        { id: SINGLE_PANE_FOCUS_LAYOUT_ID, title: 'Single' },
+        { id: 'vsplit', title: 'Vertical Split' },
+      ],
+    })
+
+    const layout = commands.find((c) => c.id === 'layout')
+    const singleLayoutCommandId = `layout-${SINGLE_PANE_FOCUS_LAYOUT_ID}`
+
+    expect(
+      layout?.children?.find((c) => c.id === singleLayoutCommandId)?.shortcut
+    ).toEqual(['Ctrl', 'Z'])
+
+    expect(
+      layout?.children?.find((c) => c.id === singleLayoutCommandId)?.description
+    ).toBe('Toggle active-pane focus')
+
+    expect(
+      layout?.children?.find((c) => c.id === 'layout-vsplit')?.shortcut
+    ).toBeUndefined()
+  })
+
+  test(':dock-position children move the dock and mark the current edge', () => {
+    const setDockPosition = vi.fn()
+
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      setDockPosition,
+      dockPosition: 'bottom',
+    })
+
+    const dock = commands.find((c) => c.id === 'dock-position')
+    expect(dock?.children?.map((c) => c.id)).toEqual([
+      'dock-position-bottom',
+      'dock-position-top',
+      'dock-position-left',
+      'dock-position-right',
+    ])
+
+    const bottom = dock?.children?.find((c) => c.id === 'dock-position-bottom')
+    expect(bottom?.description).toBe('Dock is at bottom')
+
+    dock?.children?.find((c) => c.id === 'dock-position-right')?.execute?.('')
+    expect(setDockPosition).toHaveBeenCalledWith('right')
+  })
+
+  test(':dock-position is omitted without setDockPosition', () => {
+    const commands = buildWorkspaceCommands({
+      ...baseDeps(),
+      dockPosition: 'bottom',
+    })
+
+    expect(commands.find((c) => c.id === 'dock-position')).toBeUndefined()
+  })
+})
+
+describe('buildWorkspaceCommands - shortcut chips', () => {
+  const chipDeps = (): WorkspaceCommandDeps => ({
+    ...baseDeps(),
+    toggleSidebar: vi.fn(),
+    openEditor: vi.fn(),
+    openDiff: vi.fn(),
+    toggleDock: vi.fn(),
+  })
+
+  const buildWithChips = (mac: boolean): Command[] => {
+    vi.mocked(isMacPlatform).mockReturnValue(mac)
+
+    return buildWorkspaceCommands(chipDeps())
+  }
+
+  const chip = (commands: Command[], id: string): string[] | undefined =>
+    commands.find((c) => c.id === id)?.shortcut
+
+  test('macOS chips match the wired accelerators', () => {
+    const commands = buildWithChips(true)
+    expect(chip(commands, 'new')).toEqual(['⌘', 'N'])
+    expect(chip(commands, 'toggle-sidebar')).toEqual(['⌘', 'B'])
+    expect(chip(commands, 'open-editor')).toEqual(['⌘', 'E'])
+    expect(chip(commands, 'open-diff')).toEqual(['⌘', 'G'])
+    expect(chip(commands, 'toggle-dock')).toEqual(['⌘', '0'])
+  })
+
+  test('Linux chips match the wired accelerators', () => {
+    const commands = buildWithChips(false)
+    expect(chip(commands, 'new')).toEqual(['Ctrl', '⇧', 'N'])
+    expect(chip(commands, 'toggle-sidebar')).toEqual(['Ctrl', '⇧', 'B'])
+    expect(chip(commands, 'open-editor')).toEqual(['Ctrl', 'E'])
+    expect(chip(commands, 'open-diff')).toEqual(['Ctrl', 'G'])
+    expect(chip(commands, 'toggle-dock')).toEqual(['Ctrl', '0'])
+  })
+
+  test('only the five accelerator commands carry chips', () => {
+    vi.mocked(isMacPlatform).mockReturnValue(true)
+
+    const commands = buildWorkspaceCommands({
+      ...chipDeps(),
+      restartSession: vi.fn(),
+      focusTerminal: vi.fn(),
+      toggleBurner: vi.fn(),
+    })
+
+    const withChips = commands
+      .filter((c) => c.shortcut !== undefined)
+      .map((c) => c.id)
+      .sort()
+
+    expect(withChips).toEqual(
+      [
+        'new',
+        'open-diff',
+        'open-editor',
+        'toggle-dock',
+        'toggle-sidebar',
+      ].sort()
+    )
   })
 })

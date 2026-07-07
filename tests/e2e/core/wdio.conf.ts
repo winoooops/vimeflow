@@ -16,6 +16,7 @@ const cacheDir = path.resolve(
 export const config: WebdriverIO.Config = {
   runner: 'local',
   framework: 'mocha',
+  logLevel: 'warn',
   reporters: ['spec'],
   cacheDir,
 
@@ -54,6 +55,7 @@ export const config: WebdriverIO.Config = {
   capabilities: [
     {
       browserName: 'electron',
+      'wdio:maxInstances': 1,
       'wdio:electronServiceOptions': {
         appEntryPoint,
         appArgs,

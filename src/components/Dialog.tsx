@@ -2,12 +2,31 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
+  useState,
   type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  closeNativeOverlay,
+  NATIVE_OVERLAY_KINDS,
+  nativeOverlayThemeSnapshot,
+  openNativeOverlay,
+  selectFloatingTransport,
+  type NativeOverlayActionHandler,
+  type NativeOverlayDialogPayload,
+  warnNativeOverlayFallback,
+} from '@/components/base/floating/nativeOverlay'
+
+export type {
+  NativeOverlayActionEvent,
+  NativeOverlayActionHandler,
+  NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayNewSessionDialogPayload,
+} from '@/components/base/floating/nativeOverlay'
 
 type DialogPlacement = 'center' | 'top'
 type DialogSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -27,6 +46,12 @@ interface DialogProps {
   'aria-describedby'?: string
   testId?: string
   backdropTestId?: string
+  /** Extra classes appended to the panel (e.g. a custom width). Last-wins over the size class. */
+  panelClassName?: string
+  nativeOverlay?: boolean
+  nativeOverlayPayload?: NativeOverlayDialogPayload
+  nativeOverlayActions?: ReadonlyMap<string, NativeOverlayActionHandler>
+  onNativeOverlayActiveChange?: (active: boolean) => void
   children: ReactNode
 }
 
@@ -55,6 +80,22 @@ const PANEL_SIZE_CLASSES: Record<DialogSize, string> = {
 const DIALOG_PANEL_CLASSES =
   'relative w-full mx-4 bg-surface-container/90 glass-panel rounded-2xl ' +
   'border border-outline-variant/30 shadow-2xl overflow-hidden'
+
+const EMPTY_NATIVE_OVERLAY_ACTIONS = new Map<
+  string,
+  NativeOverlayActionHandler
+>()
+
+const closeAcceptedNativeOverlayIfDismissed = (
+  surfaceId: string,
+  canAttemptNativeRef: RefObject<boolean>
+): void => {
+  if (canAttemptNativeRef.current) {
+    return
+  }
+
+  closeNativeOverlay(surfaceId)
+}
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -100,7 +141,7 @@ const getFocusableElements = (container: HTMLElement): HTMLElement[] =>
   )
 
 interface DialogLayer {
-  close: () => void
+  close: () => boolean
   container: HTMLDivElement
 }
 
@@ -114,8 +155,9 @@ const handleDocumentKeyDown = (event: KeyboardEvent): void => {
   const topLayer = dialogStack[dialogStack.length - 1]
 
   if (event.key === 'Escape') {
-    topLayer.close()
-    event.stopImmediatePropagation()
+    if (topLayer.close()) {
+      event.stopImmediatePropagation()
+    }
 
     return
   }
@@ -237,13 +279,145 @@ const DialogRoot = ({
   'aria-describedby': ariaDescribedBy = undefined,
   testId = undefined,
   backdropTestId = undefined,
+  panelClassName = undefined,
+  nativeOverlay = false,
+  nativeOverlayPayload = undefined,
+  nativeOverlayActions = EMPTY_NATIVE_OVERLAY_ACTIONS,
+  onNativeOverlayActiveChange = undefined,
   children,
 }: DialogProps): ReactElement | null => {
+  const surfaceId = useId()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
   const restoreFocusRef = useRef(restoreFocus)
+  const nativeOverlayQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const nativeOverlayGenerationRef = useRef(0)
+  const canAttemptNativeRef = useRef(false)
+
+  const [nativeAttempt, setNativeAttempt] = useState<
+    'idle' | 'pending' | 'active' | 'failed'
+  >('idle')
   restoreFocusRef.current = restoreFocus
+
+  const transport = selectFloatingTransport(nativeOverlay)
+
+  const nativeUnsupportedReason =
+    nativeOverlayPayload === undefined ? 'unsupported dialog content' : null
+
+  const canAttemptNative =
+    open && transport === 'native-overlay' && nativeUnsupportedReason === null
+  canAttemptNativeRef.current = canAttemptNative
+
+  const hideLocalForNative = canAttemptNative && nativeAttempt !== 'failed'
+  const nativeOverlayActive = canAttemptNative && nativeAttempt === 'active'
+
+  useEffect(() => {
+    onNativeOverlayActiveChange?.(nativeOverlayActive)
+  }, [nativeOverlayActive, onNativeOverlayActiveChange])
+
+  useEffect(() => {
+    if (
+      open &&
+      nativeOverlay &&
+      transport === 'native-overlay' &&
+      nativeUnsupportedReason !== null
+    ) {
+      warnNativeOverlayFallback(nativeUnsupportedReason)
+    }
+
+    if (
+      !open ||
+      !nativeOverlay ||
+      transport !== 'native-overlay' ||
+      nativeUnsupportedReason !== null
+    ) {
+      nativeOverlayGenerationRef.current += 1
+      closeNativeOverlay(surfaceId)
+      setNativeAttempt('idle')
+
+      return
+    }
+  }, [nativeOverlay, nativeUnsupportedReason, open, surfaceId, transport])
+
+  useEffect(
+    () => (): void => {
+      canAttemptNativeRef.current = false
+      nativeOverlayGenerationRef.current += 1
+      closeNativeOverlay(surfaceId)
+    },
+    [surfaceId]
+  )
+
+  useEffect(() => {
+    if (!canAttemptNative || nativeOverlayPayload === undefined) {
+      return
+    }
+
+    const generation = nativeOverlayGenerationRef.current + 1
+    const cancelled = { current: false }
+    nativeOverlayGenerationRef.current = generation
+    setNativeAttempt((current) => (current === 'active' ? 'active' : 'pending'))
+
+    const openAfterPrevious = async (): Promise<void> => {
+      const previousOpen = nativeOverlayQueueRef.current
+
+      await previousOpen
+
+      if (
+        cancelled.current ||
+        nativeOverlayGenerationRef.current !== generation
+      ) {
+        return
+      }
+
+      const accepted = await openNativeOverlay(
+        {
+          surfaceId,
+          kind: NATIVE_OVERLAY_KINDS.dialog,
+          anchorRect: {
+            x: 0,
+            y: 0,
+            width: window.innerWidth,
+            height: window.innerHeight,
+          },
+          placement,
+          payload: nativeOverlayPayload,
+          theme: nativeOverlayThemeSnapshot(),
+        },
+        {
+          actions: nativeOverlayActions,
+          onClose: (): void => onOpenChange(false),
+        }
+      )
+
+      if (nativeOverlayGenerationRef.current !== generation) {
+        if (accepted) {
+          closeAcceptedNativeOverlayIfDismissed(surfaceId, canAttemptNativeRef)
+        }
+
+        return
+      }
+
+      setNativeAttempt(accepted ? 'active' : 'failed')
+    }
+
+    const currentOpen = openAfterPrevious()
+
+    nativeOverlayQueueRef.current = currentOpen
+    void currentOpen
+
+    return (): void => {
+      cancelled.current = true
+    }
+  }, [
+    canAttemptNative,
+    nativeOverlayActions,
+    nativeOverlayPayload,
+    onOpenChange,
+    placement,
+    surfaceId,
+  ])
 
   const requestClose = useCallback((): void => {
     if (dismissDisabled) {
@@ -256,10 +430,17 @@ const DialogRoot = ({
   const requestCloseRef = useRef(requestClose)
   requestCloseRef.current = requestClose
 
+  const dismissDisabledRef = useRef(dismissDisabled)
+  dismissDisabledRef.current = dismissDisabled
+
   const closeOnEscapeRef = useRef(closeOnEscape)
   closeOnEscapeRef.current = closeOnEscape
 
   useEffect(() => {
+    if (hideLocalForNative) {
+      return
+    }
+
     if (open && !wasOpenRef.current) {
       previousFocusRef.current =
         document.activeElement instanceof HTMLElement
@@ -280,7 +461,7 @@ const DialogRoot = ({
 
       previousFocusRef.current = null
     }
-  }, [initialFocusRef, open, restoreFocus])
+  }, [hideLocalForNative, initialFocusRef, open, restoreFocus])
 
   useEffect(
     () => (): void => {
@@ -292,7 +473,7 @@ const DialogRoot = ({
   )
 
   useEffect(() => {
-    if (!open) {
+    if (!open || hideLocalForNative) {
       return undefined
     }
 
@@ -303,10 +484,14 @@ const DialogRoot = ({
     }
 
     const layer: DialogLayer = {
-      close: (): void => {
-        if (closeOnEscapeRef.current) {
-          requestCloseRef.current()
+      close: (): boolean => {
+        if (!closeOnEscapeRef.current || dismissDisabledRef.current) {
+          return false
         }
+
+        requestCloseRef.current()
+
+        return true
       },
       container: dialog,
     }
@@ -316,7 +501,7 @@ const DialogRoot = ({
     return (): void => {
       unregisterDialogLayer(layer)
     }
-  }, [open])
+  }, [hideLocalForNative, open])
 
   if (typeof document === 'undefined') {
     return null
@@ -329,12 +514,16 @@ const DialogRoot = ({
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
+          aria-hidden={hideLocalForNative ? 'true' : undefined}
+          inert={hideLocalForNative ? true : undefined}
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledBy}
           aria-describedby={ariaDescribedBy}
           tabIndex={-1}
           data-testid={testId}
-          className={`fixed inset-0 z-[100] flex ${PLACEMENT_CLASSES[placement]}`}
+          className={`fixed inset-0 z-[100] flex ${PLACEMENT_CLASSES[placement]}${
+            hideLocalForNative ? ' pointer-events-none opacity-0' : ''
+          }`}
         >
           <motion.div
             aria-hidden="true"
@@ -343,7 +532,7 @@ const DialogRoot = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="absolute inset-0 backdrop-blur-sm bg-surface-container-lowest/40"
+            className="absolute inset-0 backdrop-blur-sm bg-scrim/40"
             onClick={closeOnBackdrop ? requestClose : undefined}
           />
           <motion.div
@@ -351,7 +540,9 @@ const DialogRoot = ({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: -8 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className={`${DIALOG_PANEL_CLASSES} ${PANEL_SIZE_CLASSES[size]}`}
+            className={`${DIALOG_PANEL_CLASSES} ${PANEL_SIZE_CLASSES[size]}${
+              panelClassName !== undefined ? ` ${panelClassName}` : ''
+            }`}
           >
             {children}
           </motion.div>

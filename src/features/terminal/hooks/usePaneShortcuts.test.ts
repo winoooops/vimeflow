@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { emptyActivity } from '../../sessions/constants'
 import type { LayoutId, Session } from '../../sessions/types'
+import { SINGLE_PANE_FOCUS_LAYOUT_ID } from '../layout-registry'
 import {
   usePaneShortcuts,
   type UsePaneShortcutsOptions,
@@ -50,6 +51,9 @@ const codeFor = (key: string): string | undefined => {
   if (key === '\\') {
     return 'Backslash'
   }
+  if (key.toLowerCase() === 'z') {
+    return 'KeyZ'
+  }
 
   return undefined
 }
@@ -95,6 +99,31 @@ const renderPane = (
   }
 ): ReturnType<typeof renderHook> =>
   renderHook(() => usePaneShortcuts({ matches: ctrlMatches, ...options }))
+
+const modZPlatforms: readonly {
+  readonly label: string
+  readonly matches: UsePaneShortcutsOptions['matches']
+  readonly shortcutModifiers: Partial<KeyboardEventInit>
+  readonly oppositeModifiers: Partial<KeyboardEventInit>
+}[] = [
+  {
+    label: 'Linux',
+    matches: ctrlMatches,
+    shortcutModifiers: { ctrlKey: true },
+    oppositeModifiers: { metaKey: true },
+  },
+  {
+    label: 'macOS',
+    matches: metaMatches,
+    shortcutModifiers: { metaKey: true },
+    oppositeModifiers: { ctrlKey: true },
+  },
+]
+
+const shortcutModifiersFor = (
+  preferModifier: PlatformSuper
+): Partial<KeyboardEventInit> =>
+  preferModifier === 'meta' ? { metaKey: true } : { ctrlKey: true }
 
 describe('usePaneShortcuts', () => {
   test('Ctrl+\\ from single cycles to vsplit and prevents default (default modifier)', () => {
@@ -144,7 +173,7 @@ describe('usePaneShortcuts', () => {
     }
   })
 
-  test('Ctrl+\\ from quad wraps to single (default modifier)', () => {
+  test('Ctrl+\\ from quad advances to grid3x2 (default modifier)', () => {
     const setSessionLayout = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'quad', ['p0'])],
@@ -156,7 +185,258 @@ describe('usePaneShortcuts', () => {
     fire('\\', { ctrlKey: true })
 
     expect(setSessionLayout).toHaveBeenCalledOnce()
-    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'single')
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'grid3x2')
+  })
+
+  modZPlatforms.forEach(
+    ({ label, matches, shortcutModifiers, oppositeModifiers }) => {
+      test(`${label}: Mod+Z toggles a multi-pane layout to single and back`, () => {
+        const setSessionLayout = vi.fn()
+
+        const { rerender } = renderHook(
+          ({ session }) =>
+            usePaneShortcuts({
+              sessions: [session],
+              activeSessionId: 's1',
+              setSessionActivePane: vi.fn(),
+              setSessionLayout,
+              matches,
+            }),
+          {
+            initialProps: {
+              session: makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2'], 2),
+            },
+          }
+        )
+
+        const oppositeEvent = fire('z', oppositeModifiers)
+        expect(setSessionLayout).not.toHaveBeenCalled()
+        expect(oppositeEvent.preventDefaultSpy).not.toHaveBeenCalled()
+
+        const event = fire('z', shortcutModifiers)
+
+        expect(setSessionLayout).toHaveBeenCalledOnce()
+        expect(setSessionLayout).toHaveBeenCalledWith(
+          's1',
+          SINGLE_PANE_FOCUS_LAYOUT_ID
+        )
+        expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+        setSessionLayout.mockClear()
+        rerender({
+          session: makeSession(
+            's1',
+            SINGLE_PANE_FOCUS_LAYOUT_ID,
+            ['p0', 'p1', 'p2'],
+            2
+          ),
+        })
+
+        const restoreEvent = fire('z', shortcutModifiers)
+
+        expect(setSessionLayout).toHaveBeenCalledOnce()
+        expect(setSessionLayout).toHaveBeenCalledWith('s1', 'grid3x2')
+        expect(restoreEvent.preventDefaultSpy).toHaveBeenCalled()
+      })
+    }
+  )
+
+  test('Mod+Z keeps separate restore layouts for each session', () => {
+    const setSessionLayout = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ sessions, activeSessionId }) =>
+        usePaneShortcuts({
+          sessions,
+          activeSessionId,
+          setSessionActivePane: vi.fn(),
+          setSessionLayout,
+          matches: ctrlMatches,
+        }),
+      {
+        initialProps: {
+          sessions: [
+            makeSession('s1', 'grid3x2', ['s1-p0', 's1-p1', 's1-p2'], 1),
+            makeSession('s2', 'vsplit', ['s2-p0', 's2-p1'], 0),
+          ],
+          activeSessionId: 's1',
+        },
+      }
+    )
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenLastCalledWith(
+      's1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    rerender({
+      sessions: [
+        makeSession(
+          's1',
+          SINGLE_PANE_FOCUS_LAYOUT_ID,
+          ['s1-p0', 's1-p1', 's1-p2'],
+          1
+        ),
+        makeSession('s2', 'vsplit', ['s2-p0', 's2-p1'], 0),
+      ],
+      activeSessionId: 's2',
+    })
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenLastCalledWith(
+      's2',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    rerender({
+      sessions: [
+        makeSession(
+          's1',
+          SINGLE_PANE_FOCUS_LAYOUT_ID,
+          ['s1-p0', 's1-p1', 's1-p2'],
+          1
+        ),
+        makeSession('s2', SINGLE_PANE_FOCUS_LAYOUT_ID, ['s2-p0', 's2-p1'], 0),
+      ],
+      activeSessionId: 's1',
+    })
+
+    const restoreEvent = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).toHaveBeenLastCalledWith('s1', 'grid3x2')
+    expect(restoreEvent.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('Mod+Z restore falls through when the previous layout no longer fits', () => {
+    const setSessionLayout = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ session }) =>
+        usePaneShortcuts({
+          sessions: [session],
+          activeSessionId: 's1',
+          setSessionActivePane: vi.fn(),
+          setSessionLayout,
+          matches: ctrlMatches,
+        }),
+      {
+        initialProps: {
+          session: makeSession('s1', 'vsplit', ['p0', 'p1'], 1),
+        },
+      }
+    )
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenCalledWith(
+      's1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    setSessionLayout.mockClear()
+    rerender({
+      session: makeSession(
+        's1',
+        SINGLE_PANE_FOCUS_LAYOUT_ID,
+        ['p0', 'p1', 'p2'],
+        2
+      ),
+    })
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Mod+Z on single layout is a no-op and lets the event propagate', () => {
+    const setSessionLayout = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [
+          makeSession('s1', SINGLE_PANE_FOCUS_LAYOUT_ID, ['p0', 'p1'], 1),
+        ],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        matches: ctrlMatches,
+      })
+    )
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Mod+\\ clears pending Mod+Z restore state for the active session', () => {
+    const setSessionLayout = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ session }) =>
+        usePaneShortcuts({
+          sessions: [session],
+          activeSessionId: 's1',
+          setSessionActivePane: vi.fn(),
+          setSessionLayout,
+          matches: ctrlMatches,
+        }),
+      {
+        initialProps: {
+          session: makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2'], 2),
+        },
+      }
+    )
+
+    fire('z', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenCalledWith(
+      's1',
+      SINGLE_PANE_FOCUS_LAYOUT_ID
+    )
+
+    rerender({
+      session: makeSession(
+        's1',
+        SINGLE_PANE_FOCUS_LAYOUT_ID,
+        ['p0', 'p1', 'p2'],
+        2
+      ),
+    })
+    fire('\\', shortcutModifiersFor('ctrl'))
+    expect(setSessionLayout).toHaveBeenLastCalledWith('s1', 'vsplit')
+
+    setSessionLayout.mockClear()
+    rerender({
+      session: makeSession(
+        's1',
+        SINGLE_PANE_FOCUS_LAYOUT_ID,
+        ['p0', 'p1', 'p2'],
+        2
+      ),
+    })
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Shift+Mod+Z does not switch layout', () => {
+    const setSessionLayout = vi.fn()
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'grid3x2', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        matches: ctrlMatches,
+      })
+    )
+
+    const event = fire('z', { ...shortcutModifiersFor('ctrl'), shiftKey: true })
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
   test('Ctrl+2 with only one pane is a no-op AND lets the event propagate', () => {
@@ -414,6 +694,57 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
 
     removeFakeDock(dockElement)
+  })
+
+  test('Mod+Z from focused dock passes through to focused controls', () => {
+    const setSessionLayout = vi.fn()
+    const dockElement = attachFakeDock()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus: vi.fn(),
+        matches: ctrlMatches,
+      })
+    )
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    removeFakeDock(dockElement)
+  })
+
+  test('Mod+Z inside xterm helper textarea passes through to terminal input', () => {
+    const setSessionLayout = vi.fn()
+    const textarea = document.createElement('textarea')
+    textarea.className = 'xterm-helper-textarea'
+    document.body.appendChild(textarea)
+    textarea.focus()
+
+    renderHook(() =>
+      usePaneShortcuts({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+        activeSessionId: 's1',
+        setSessionActivePane: vi.fn(),
+        setSessionLayout,
+        isTerminalContainerActive: true,
+        onTerminalZoneFocus: vi.fn(),
+        matches: ctrlMatches,
+      })
+    )
+
+    const event = fire('z', shortcutModifiersFor('ctrl'))
+
+    expect(setSessionLayout).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(textarea)
   })
 
   test('Ctrl+1 from stale dock state outside dock passes through', () => {

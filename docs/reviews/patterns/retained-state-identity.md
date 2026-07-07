@@ -2,8 +2,8 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-15
-ref_count: 1
+last_updated: 2026-07-05
+ref_count: 4
 ---
 
 # Retained State Identity
@@ -22,3 +22,36 @@ When a React component renders retained (stale) content while fresh data for a n
 - **Finding:** During retained-body fetching, `bodySnapshotKey` referred to the previously rendered/source pane while `snapshotKey` referred to the current target pane. The `handleScroll` callback wrote user scroll events to `bodySnapshotKey`, so scrolling retained content during the refresh window overwrote the source pane's saved scroll position and caused it to reopen at the wrong offset later.
 - **Fix:** Added an identity guard before `writeStatusScrollAnchor` that returns early when `bodySnapshotKey !== snapshotKey`, and added `snapshotKey` to the `handleScroll` `useCallback` dependencies.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Retained burner entries kept a stale native host PTY after pane restart
+
+- **Source:** github-codex-connector | PR #656 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/useBurnerTerminals.ts`
+- **Finding:** Burner entries are intentionally retained by stable `${sessionId}:${paneId}` identity across pane restarts, but the native secondary request kept the old `hostPtyId`. When the host pane remounted with a new PTY, an open native burner stayed attached to the removed native surface until the user toggled it.
+- **Fix:** Threaded a live pane-key-to-PTY map from `WorkspaceView` into `useBurnerTerminals`, updated retained entries when the host PTY changes, and covered the reattach path with a native burner regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. Single focus-toggle restore slot is shared across sessions
+
+- **Source:** github-claude | PR #631 round 1 | 2026-06-28
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** The Mod+Z single-pane focus toggle stored the previous layout in
+  one ref for the whole hook. Toggling session A to focus and then toggling
+  session B overwrote A's restore layout, so returning to A left the keyboard
+  restore path as a silent no-op.
+- **Fix:** Replaced the single restore slot with a ref-held `Map` keyed by
+  session id, storing, reading, and deleting only the active session's restore
+  layout. Added a regression test covering two sessions toggled to focus mode
+  independently.
+- **Commit:** same commit as this entry
+
+### 4. Range-bar repaint can target a stale file container on file switch
+
+- **Source:** github-codex-connector | PR #654 round 1 | 2026-07-04
+- **Severity:** HIGH
+- **File:** `src/features/diff/hooks/useDiffRangeBars.ts`
+- **Finding:** The diff range-bar hook retained Pierre's last rendered shadow-DOM container but repainted whenever selected-file annotations changed. During file navigation, new-file spans could be combined with the previous file's retained container before Pierre posted the new file's render callback.
+- **Fix:** Passed the selected-file key into the hook, stored that key with the retained container, invalidated the container on file-key changes, and skipped repaint unless the stored container key still matches the active file key. Added a regression test that changes file keys with different spans and verifies the previous file host is not repainted.
+- **Commit:** same commit as this entry

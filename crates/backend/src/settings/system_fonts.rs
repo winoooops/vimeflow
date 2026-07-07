@@ -23,9 +23,9 @@ pub async fn list_system_fonts() -> Vec<SystemFont> {
     )
     .await
     .unwrap_or_default()
-        .into_iter()
-        .map(|family| SystemFont { family })
-        .collect()
+    .into_iter()
+    .map(|family| SystemFont { family })
+    .collect()
 }
 
 async fn list_system_monospace_font_families() -> Vec<String> {
@@ -95,13 +95,12 @@ async fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
         .spawn()
         .ok()?;
 
-    let output = match tokio::time::timeout(SYSTEM_FONT_COMMAND_TIMEOUT, child.wait_with_output())
-        .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(_)) => return None,
-        Err(_) => return None,
-    };
+    let output =
+        match tokio::time::timeout(SYSTEM_FONT_COMMAND_TIMEOUT, child.wait_with_output()).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(_)) => return None,
+            Err(_) => return None,
+        };
 
     if !output.status.success() {
         return None;
@@ -257,9 +256,8 @@ mod tests {
 
     #[test]
     fn parse_windows_registry_fonts_strips_font_suffixes() {
-        let families = parse_windows_registry_fonts(
-            "Cascadia Mono (TrueType)\nCourier New Bold (OpenType)\n",
-        );
+        let families =
+            parse_windows_registry_fonts("Cascadia Mono (TrueType)\nCourier New Bold (OpenType)\n");
 
         assert_eq!(
             families,
@@ -331,7 +329,12 @@ mod tests {
 
     #[test]
     fn monospace_heuristic_rejects_proportional_fira_and_input_variants() {
-        for family in ["Fira Sans", "Fira Sans Condensed", "Input Sans", "Input Serif"] {
+        for family in [
+            "Fira Sans",
+            "Fira Sans Condensed",
+            "Input Sans",
+            "Input Serif",
+        ] {
             assert!(!looks_like_monospace_family(family));
         }
     }

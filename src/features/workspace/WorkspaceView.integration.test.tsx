@@ -171,33 +171,36 @@ describe('WorkspaceView Integration Tests', () => {
       const sidebar = screen.getByTestId('sidebar')
       const terminalZone = screen.getByTestId('terminal-zone')
 
-      // Create a second session so we can test switching
+      // Create a second session so we can test switching. The button now
+      // opens the NewSessionDialog; the session is created by "Create session"
+      // (cwd '~' → derived name 'session') and becomes the active row.
       const newSessionButton = within(sidebar).getByRole('button', {
         name: 'New session',
       })
       await user.click(newSessionButton)
+      const dialog = await screen.findByRole('dialog', { name: /new session/i })
+      await user.click(
+        within(dialog).getByRole('button', { name: /create session/i })
+      )
 
-      // Wait for second session to appear
-      await screen.findByRole('button', { name: 'session 2' })
-
-      // Each row now carries hover-only edit/remove buttons in addition to
-      // the main click target. Filter by `session N` aria-label so the
-      // index is stable regardless of the per-row chrome count.
+      // Wait for the second session row to appear, then confirm there are two.
       const sessionList = within(sidebar).getByTestId('session-list')
+      await within(sessionList).findByRole('button', { name: 'session' })
 
-      const sessionButtons = within(sessionList).getAllByRole('button', {
-        name: /^session \d+$/,
+      const sessionRows = within(sessionList).getAllByTestId('session-row')
+      expect(sessionRows.length).toBeGreaterThan(1)
+
+      // Switch to the original 'session 1' row (the new 'session' is active
+      // after creation), then assert the highlight follows the click. J2: the
+      // session-tab strip is gone — the sidebar's highlighted card is the
+      // surface that reflects the active session.
+      const firstSession = within(sessionList).getByRole('button', {
+        name: 'session 1',
       })
+      await user.click(firstSession)
 
-      expect(sessionButtons.length).toBeGreaterThan(1)
-
-      const clickedSession = sessionButtons[1]
-      await user.click(clickedSession)
-
-      // J2: the session-tab strip is gone — the sidebar's highlighted card
-      // is the surface that reflects the active session.
       await waitFor(() => {
-        expect(clickedSession.closest('li')!.className).toContain(
+        expect(firstSession.closest('li')!.className).toContain(
           'bg-primary-container/15'
         )
       })
@@ -215,24 +218,29 @@ describe('WorkspaceView Integration Tests', () => {
 
       const sidebar = screen.getByTestId('sidebar')
 
-      // Create a second session so we can test switching
+      // Create a second session so we can test switching. The button opens the
+      // NewSessionDialog; "Create session" creates it (cwd '~' → name
+      // 'session').
       const newSessionButton = within(sidebar).getByRole('button', {
         name: 'New session',
       })
       await user.click(newSessionButton)
+      const dialog = await screen.findByRole('dialog', { name: /new session/i })
+      await user.click(
+        within(dialog).getByRole('button', { name: /create session/i })
+      )
 
-      // Wait for second session to appear
-      await screen.findByRole('button', { name: 'session 2' })
-
+      // Wait for the second session row to appear, then confirm there are two.
       const sessionList = within(sidebar).getByTestId('session-list')
+      await within(sessionList).findByRole('button', { name: 'session' })
 
-      const sessionButtons = within(sessionList).getAllByRole('button', {
-        name: /^session \d+$/,
-      })
+      const sessionRows = within(sessionList).getAllByTestId('session-row')
+      expect(sessionRows.length).toBeGreaterThan(1)
 
-      expect(sessionButtons.length).toBeGreaterThan(1)
-
-      await user.click(sessionButtons[1])
+      // Switch to the original 'session 1' row.
+      await user.click(
+        within(sessionList).getByRole('button', { name: 'session 1' })
+      )
 
       // Agent Status Panel should be present (content comes in sub-specs 5-7)
       expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()

@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-06-24
-ref_count: 2
+last_updated: 2026-07-05
+ref_count: 9
 ---
 
 # Transient UI Side Effects
@@ -95,4 +95,157 @@ to persistent state through a separate, explicit path.
 - **File:** `src/features/terminal/hooks/useTerminalClipboard.ts`
 - **Finding:** The terminal context menu reset `canPasteImage` to false and opened immediately while the clipboard image-type read was still pending. Fast reads produced a visible disabled-to-enabled transition for the Paste Image row.
 - **Fix:** Deferred menu open until a fast clipboard image check resolves, with a short fallback timer for slow or permission-gated reads. Cleanup now cancels pending fallback timers, and a regression test asserts the fast-read path opens with image state already settled.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Width-derived pane collapse applied after first paint
+
+- **Source:** github-claude | PR #627 round 1 | 2026-06-26
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/usePaneWidth.ts`
+- **Finding:** `usePaneWidth` measured the pane in `useEffect`, so panes that
+  mounted below the auto-collapse threshold first painted expanded chrome before
+  width state updated and collapsed the pane.
+- **Fix:** Switched the measurement and ResizeObserver setup to
+  `useLayoutEffect`, keeping the same width logic while applying the
+  layout-derived state before the browser paints.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Status collapse toggle stayed active while status bar was suppressed
+
+- **Source:** github-codex-connector | PR #627 round 1 | 2026-06-26
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** `PaneStatusBar` was suppressed in awaiting-restart mode, but
+  the header collapse toggle stayed interactive in wide panes. Clicking it
+  mutated retained collapse state for a surface that was not rendered, making
+  the action appear inert and carrying surprising state across restart.
+- **Fix:** Computed `hideCollapseToggle` from the same terminal-pane state that
+  suppresses the status bar and threaded it through `Header` to `HeaderActions`.
+  Added regression coverage for the awaiting-restart pane and header forwarding
+  behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Native overlay host retained stale theme variables
+
+- **Source:** github-claude | PR #638 round 1 | 2026-06-30
+- **Severity:** MEDIUM
+- **File:** `src/components/NativeOverlayHost.tsx`
+- **Finding:** `applyThemeSnapshot` returned immediately when a native overlay
+  render request omitted `theme`, leaving any prior CSS variables, `data-theme`,
+  and `colorScheme` on the persistent overlay document.
+- **Fix:** Reset theme-owned `--color-*` and `--shadow-*` inline properties plus
+  theme metadata before each render, then apply the new snapshot only when one
+  is present. Added regression coverage for a themed request followed by an
+  unthemed request in the same host window.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Split diff row navigation scrolled on no-op movement
+
+- **Source:** github-codex-connector | PR #633 round 1 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** Split-mode `j` navigation skipped paired deletion/addition
+  targets by row, but a single-row replacement diff could resolve the next
+  target back to the current deletion target. The selection did not move, yet
+  the scroll side effect still ran with a downward movement delta.
+- **Fix:** Added an early return when resolved keyboard navigation is a no-op,
+  before focus and scroll side effects run. Added a regression test covering a
+  single-row split replacement from the deletion side.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. Split side navigation reused vertical scroll positioning
+
+- **Source:** github-claude | PR #633 round 3 | 2026-06-29
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/DiffPanelContent.tsx`
+- **Finding:** Split-mode `h`/`l` side navigation passed `delta=0` through
+  scroll positioning written for `j`/`k`. The helper treated non-positive
+  deltas as upward navigation, so lateral moves on the only, first, or last
+  visual row could snap the viewport even though the user did not move
+  vertically.
+- **Fix:** Added an explicit `delta === 0` path that uses nearest-block
+  scrolling and sticky-header reveal without previous-row reservation. Added a
+  regression assertion for lateral movement on a single split replacement row.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Closing a review draft retained the prior category
+
+- **Source:** github-codex-connector | PR #657 round 1 | 2026-07-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useReviewCommentDraft.ts`
+- **Finding:** Closing a draft cleared the annotation target and text, but the
+  selected review category ref stayed on the previous value. The next new
+  comment could open as Question/Bug/Suggestion and dispatch the wrong intent.
+- **Fix:** Reset the category to the default from `closeCommentDraft`, and add a
+  hook regression test that closes a non-default draft before opening a new one.
+- **Commit:** same commit as this entry
+
+### 13. No-op native dock shortcuts left focus on the renderer proxy
+
+- **Source:** github-claude | PR #666 round 1 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native Ghostty shortcut forwarding used a static refocus
+  allowlist that excluded dock-opening shortcuts such as Cmd+G, Cmd+E, Cmd+N,
+  and Cmd+0. When React handled one of those chords as a no-op and left focus
+  on the hidden renderer proxy, the active Ghostty pane did not regain
+  keyboard focus.
+- **Fix:** Changed the post-dispatch probe to return both same-pane activity and
+  whether focus moved into the dock. Ghostty is refocused only when the same
+  pane remains active and the dock did not take focus, so no-op dock shortcuts
+  recover terminal focus without stealing it from successful dock opens.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Native dialog fallback visibility lagged first paint
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`
+- **Finding:** Native-overlay dialogs hid the local DOM fallback only after the
+  async native attempt state changed from `idle`, letting the DOM dialog flash
+  for one paint before the native surface took over.
+- **Fix:** Derived local hiding synchronously from `canAttemptNative` unless the
+  native attempt has failed, preserving fallback while eliminating first-paint
+  flicker.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Context-menu native payload updates shared close cleanup
+
+- **Source:** github-claude | PR #667 round 2 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Menu.tsx`
+- **Finding:** `MenuContextMenu` tied payload and position refreshes to an
+  effect whose cleanup always closed the native overlay, so live content
+  updates tore down and recreated the native window.
+- **Fix:** Split native context-menu lifetime cleanup from payload refreshes and
+  close the surface only when the menu can no longer use the native transport.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Inactive native terminal panes accepted imperative focus
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/TerminalPane/TerminalBody.tsx`
+- **Finding:** `TerminalBody.focusTerminal()` reused the xterm-era imperative
+  focus contract for native Ghostty without checking the pane `active` prop.
+  Browser focus on hidden xterm DOM was harmless, but native focus IPC can move
+  OS focus into a background pane the user cannot see.
+- **Fix:** Gated the native focus branch on `active` while preserving xterm's
+  existing fallback behavior. Added a regression test proving inactive native
+  panes do not call `focusNativeGhostty`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Local dialog controls followed requested native transport, not active transport
+
+- **Source:** local-codex | PR #667 round 4 | 2026-07-05
+- **Severity:** HIGH
+- **File:** `src/components/Dialog.tsx`,
+  `src/features/sessions/components/NewSessionDialog/NewSessionDialog.tsx`
+- **Finding:** New Session disabled the local Browse button whenever
+  `nativeOverlay` was requested, even if the native dialog was unsupported or
+  rejected and the DOM fallback was visible. The read-only path crumb then left
+  users with no working-directory edit action.
+- **Fix:** Exposed Dialog's actual accepted native-active state and disabled
+  Browse only while that state is active. Added a regression that rejects the
+  native dialog open and expects the local Browse button to stay enabled.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

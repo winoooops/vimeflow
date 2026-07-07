@@ -17,6 +17,7 @@ export interface PaneCandidate {
 export interface FeedbackDispatchTarget {
   candidates: PaneCandidate[]
   writePty: (ptyId: string, data: string) => Promise<void>
+  focusTerminal?: () => void
 }
 
 export interface ResolveCandidatesArgs {

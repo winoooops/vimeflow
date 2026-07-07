@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import './lib/e2e-bridge'
 import App from './App.tsx'
+import { NativeOverlayHost } from './components/NativeOverlayHost'
 import { themeService } from './theme'
 import { initTerminalThemeBridge } from './features/terminal/theme/themeBridge'
 
@@ -18,8 +19,24 @@ if (!rootElement) {
   throw new Error('Root element not found')
 }
 
+const nativeOverlayMode = new URLSearchParams(window.location.search).get(
+  'nativeOverlay'
+)
+
+const isNativeOverlayWindow =
+  nativeOverlayMode === '1' ||
+  nativeOverlayMode === 'menu' ||
+  nativeOverlayMode === 'tooltip'
+
+const nativeOverlayHostMode =
+  nativeOverlayMode === 'tooltip' ? 'tooltip' : 'menu'
+
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    {isNativeOverlayWindow ? (
+      <NativeOverlayHost mode={nativeOverlayHostMode} />
+    ) : (
+      <App />
+    )}
   </StrictMode>
 )

@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty ghostty
 import userEvent from '@testing-library/user-event'
 import {
   act,
@@ -15,6 +16,10 @@ import { usePaneRenameChord, type FocusedPaneRef } from './usePaneRenameChord'
 
 const mockRenameAgentSession = vi.hoisted(() => vi.fn())
 
+const mockFocusNativeGhostty = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve(true))
+)
+
 vi.mock('../../../lib/backend', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/backend')>()
 
@@ -23,6 +28,10 @@ vi.mock('../../../lib/backend', async (importOriginal) => {
     renameAgentSession: mockRenameAgentSession,
   }
 })
+
+vi.mock('../../terminal/nativeGhosttyClient', () => ({
+  focusNativeGhostty: mockFocusNativeGhostty,
+}))
 
 const makePane = (overrides: Partial<Pane> = {}): Pane => ({
   id: 'p0',
@@ -97,6 +106,7 @@ describe('usePaneRenameChord', () => {
   beforeEach(() => {
     chordRegistry._resetForTest()
     mockRenameAgentSession.mockReset()
+    mockFocusNativeGhostty.mockClear()
     mockSetPaneUserLabel.mockReset()
   })
 
@@ -122,6 +132,22 @@ describe('usePaneRenameChord', () => {
     })
 
     expect(result.current.renderNode).toBeNull()
+  })
+
+  test('openPaneRename opens rename input for an explicit pane', () => {
+    const focused = makeFocusedRef({ agentTitle: 'explicit title' })
+
+    const { result } = renderHook(() =>
+      usePaneRenameChord(() => null, mockSetPaneUserLabel)
+    )
+
+    act(() => {
+      expect(result.current.openPaneRename(focused)).toBe(true)
+    })
+
+    render(<>{result.current.renderNode}</>)
+
+    expect(screen.getByRole('textbox')).toHaveValue('explicit title')
   })
 
   test('onSubmit suppresses expected unsupported-agent failure for local-only panes', async () => {
@@ -180,6 +206,9 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: no live agent'
     )
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
+    expect(screen.getByRole('textbox')).toHaveAttribute('aria-invalid', 'true')
 
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith(
       'pty-claude',
@@ -224,6 +253,8 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
 
     expect(mockSetPaneUserLabel).toHaveBeenLastCalledWith('pty-1', undefined, {
       ifCurrentLabel: 'new-title',
@@ -236,9 +267,9 @@ describe('usePaneRenameChord', () => {
     })
 
     expect(screen.getByRole('textbox')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'failed to send /rename: pty write failed'
-    )
+    expect(screen.getByRole('textbox')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
 
     screen.getByRole('textbox').focus()
     await user.keyboard('{Escape}')
@@ -392,6 +423,8 @@ describe('usePaneRenameChord', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'failed to send /rename: pty write failed'
     )
+    expect(screen.getByRole('alert')).not.toHaveClass('sr-only')
+    expect(screen.getByRole('alert')).toHaveClass('text-error')
   })
 
   test('cancel clears the rename target', async () => {
@@ -407,6 +440,34 @@ describe('usePaneRenameChord', () => {
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(mockFocusNativeGhostty).toHaveBeenCalledWith({
+      sessionId: 'pty-1',
+      paneId: 'p0',
+    })
+  })
+
+  test('successful submit restores native pane focus', async () => {
+    const user = userEvent.setup()
+    mockRenameAgentSession.mockResolvedValueOnce(undefined)
+    const focused = makeFocusedRef({ ptyId: 'pty-submit' })
+
+    render(<Harness resolveFocusedPane={() => focused} />)
+    act(() => {
+      chordRegistry.dispatch({ key: 'r' } as KeyboardEvent)
+    })
+
+    const input = screen.getByRole('textbox')
+    await user.tripleClick(input)
+    await user.keyboard('renamed{Enter}')
+
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    expect(mockFocusNativeGhostty).toHaveBeenCalledWith({
+      sessionId: 'pty-submit',
+      paneId: 'p0',
+    })
   })
 
   test('shell pane asks backend and suppresses no-live-agent failure', async () => {

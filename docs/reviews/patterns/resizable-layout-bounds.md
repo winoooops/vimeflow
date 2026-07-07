@@ -3,7 +3,7 @@ id: resizable-layout-bounds
 category: correctness
 created: 2026-06-18
 last_updated: 2026-06-18
-ref_count: 1
+ref_count: 2
 ---
 
 # Resizable Layout Bounds

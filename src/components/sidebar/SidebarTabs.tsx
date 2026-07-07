@@ -38,6 +38,8 @@ export const SidebarTabs = <TId extends string = string>({
       value: tab.id,
       label: tab.label,
       icon: tab.icon,
+      tooltip: tab.tooltip,
+      shortcut: tab.shortcut,
     }))}
     onChange={onChange}
     style={{ width: SIDEBAR_TABS_W }}

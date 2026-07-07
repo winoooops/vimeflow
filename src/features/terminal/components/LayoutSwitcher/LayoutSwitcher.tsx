@@ -2,6 +2,8 @@ import { useMemo, type ReactElement, type ReactNode } from 'react'
 import type { PaneLayoutId } from '../../../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
   type LayoutShape,
 } from '../../layout-registry'
 import { LayoutGlyph } from './LayoutGlyph'
@@ -26,6 +28,17 @@ export interface LayoutSwitcherProps {
    * separate pin toggle to stand alone. Omit it and no divider renders.
    */
   trailing?: ReactNode
+  /**
+   * Stack the pills in a column instead of a row. The toolbar leaves this
+   * false (horizontal); the new-session dialog sets it so the picker fits the
+   * narrow Layout column. Arrow Up/Down already drive selection either way.
+   */
+  vertical?: boolean
+  /**
+   * Workspace chrome treats the `single` layout as the active-pane focus
+   * toggle. Generic layout pickers keep the plain layout name.
+   */
+  labelSingleAsFocusAction?: boolean
 }
 
 export const LayoutSwitcher = ({
@@ -37,6 +50,8 @@ export const LayoutSwitcher = ({
   blockedLayoutIds = [],
   onPick,
   trailing = undefined,
+  vertical = false,
+  labelSingleAsFocusAction = false,
 }: LayoutSwitcherProps): ReactElement => {
   const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
 
@@ -46,7 +61,9 @@ export const LayoutSwitcher = ({
   )
 
   const normalizedVisibleLayoutIds = layoutIds.filter(
-    (layoutId) => layoutId === 'single' || visibleLayoutIds.includes(layoutId)
+    (layoutId) =>
+      layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID ||
+      visibleLayoutIds.includes(layoutId)
   )
 
   const renderedLayoutIds = layoutIds.filter(
@@ -66,7 +83,11 @@ export const LayoutSwitcher = ({
       // sequence — adequate for this small picker.
       role="group"
       aria-label="Pane layout"
-      className="vf-app-no-drag inline-flex items-center gap-0.5 rounded-md bg-surface-container/60 p-0.5"
+      className={`vf-app-no-drag gap-0.5 rounded-md bg-surface-container/60 p-0.5 ${
+        vertical
+          ? 'flex w-full flex-col items-stretch'
+          : 'inline-flex items-center'
+      }`}
     >
       <SegmentedControl
         aria-label="Pane layout"
@@ -75,10 +96,16 @@ export const LayoutSwitcher = ({
         value={activeLayoutId}
         options={renderedLayoutIds.map((layoutId) => {
           const name = layoutById.get(layoutId)?.name ?? layoutId
+          const isSingleFocus = layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID
 
           const disabled =
             blockedLayoutIds.includes(layoutId) && layoutId !== activeLayoutId
-          const label = disabled ? `Reduce panes to switch to ${name}` : name
+
+          const label = disabled
+            ? `Reduce panes to switch to ${name}`
+            : isSingleFocus && labelSingleAsFocusAction
+              ? SINGLE_PANE_FOCUS_LABEL
+              : name
 
           return {
             value: layoutId,
@@ -88,16 +115,32 @@ export const LayoutSwitcher = ({
             // readers and on hover when the layout is blocked.
             ariaLabel: label,
             tooltip: label,
+            shortcut:
+              isSingleFocus && labelSingleAsFocusAction
+                ? ['Mod', 'Z']
+                : undefined,
             disabled,
           }
         })}
         onChange={onPick}
         skipActiveReselect
+        // Vertical mode fills the column as a grouped list: each row is a
+        // full-width glyph + name. Horizontal mode keeps the compact icon pill.
+        buttonClassName={
+          vertical
+            ? 'w-full h-8 justify-start gap-2 px-2 text-[12px] rounded-[7px]'
+            : undefined
+        }
         renderOption={(layout) => (
-          <LayoutGlyph
-            layoutId={layout.value}
-            definition={layoutById.get(layout.value)?.definition}
-          />
+          <>
+            <LayoutGlyph
+              layoutId={layout.value}
+              definition={layoutById.get(layout.value)?.definition}
+            />
+            {vertical && (
+              <span className="truncate font-medium">{layout.label}</span>
+            )}
+          </>
         )}
       />
       {trailing !== undefined && (
@@ -107,7 +150,9 @@ export const LayoutSwitcher = ({
           <span
             aria-hidden="true"
             data-testid="layout-switcher-divider"
-            className="mx-0.5 h-[14px] w-px shrink-0 bg-outline-variant/50"
+            className={`shrink-0 bg-outline-variant/50 ${
+              vertical ? 'my-0.5 h-px w-[14px]' : 'mx-0.5 h-[14px] w-px'
+            }`}
           />
           {trailing}
         </>

@@ -22,10 +22,12 @@ export const renderPalette = (
   close: ReturnType<typeof vi.fn>
   setQuery: ReturnType<typeof vi.fn>
   selectIndex: ReturnType<typeof vi.fn>
+  executeAt: ReturnType<typeof vi.fn>
 } => {
   const close = vi.fn()
   const setQuery = vi.fn()
   const selectIndex = vi.fn()
+  const executeAt = vi.fn()
 
   render(
     <CommandPalette
@@ -35,8 +37,9 @@ export const renderPalette = (
       close={close}
       setQuery={setQuery}
       selectIndex={selectIndex}
+      executeAt={executeAt}
     />
   )
 
-  return { close, setQuery, selectIndex }
+  return { close, setQuery, selectIndex, executeAt }
 }

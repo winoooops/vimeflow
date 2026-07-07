@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type {
+  CreateSessionOptions,
   LayoutSlotId,
+  NewPaneSpec,
   Pane,
   PaneKind,
   PaneLayoutId,
@@ -27,6 +29,7 @@ import type {
   RestoreData,
   PaneEventHandler,
   NotifyPaneReadyResult,
+  PTYSpawnResult,
 } from '../../terminal/types'
 import {
   registerPtySession,
@@ -60,6 +63,8 @@ import {
 } from '../utils/cacheHistoryStore'
 import { pushCacheReading } from '../../agent-status/utils/cacheRate'
 import { isBrowserPane, isShellPane } from '../utils/paneKind'
+import { commandToPane } from '../utils/commandToPane'
+import { deriveSessionName } from '../utils/sessionPaths'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
 import {
@@ -78,7 +83,7 @@ export interface SessionManager {
   sessions: Session[]
   activeSessionId: string | null
   setActiveSessionId: (id: string) => void
-  createSession: () => void
+  createSession: (opts?: CreateSessionOptions) => void
   createBrowserSession: () => void
   removeSession: (id: string) => void
   customPaneLayouts: readonly PaneLayoutDefinition[]
@@ -114,10 +119,10 @@ export interface SessionManager {
    * replaced with metadata for the new session — status flips to 'running'
    * and id is the new sessionId returned by spawn.
    *
-   * No-op if the id isn't in `sessions`. Surfaces spawn errors via
-   * console.warn — a future iteration may surface as a toast.
+   * No-op if the id isn't in `sessions`. Surfaces spawn errors via the
+   * configured terminal-spawn error callback.
    */
-  restartSession: (id: string) => void
+  restartSession: (id: string, paneId?: string) => void
   renameSession: (id: string, name: string) => void
   /**
    * Set a per-pane user label (overrides `pane.agentTitle` and
@@ -257,6 +262,13 @@ const browserSessionIdForSession = (session: Session): string => session.id
  */
 export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
+  onTerminalSpawnError?: (message: string) => void
+}
+
+const spawnErrorMessage = (action: string, error: unknown): string => {
+  const detail = error instanceof Error ? error.message : String(error)
+
+  return `${action}: ${detail}`
 }
 
 // Generated AgentPhase is lower-camel (serde rename_all camelCase).
@@ -272,7 +284,7 @@ export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
 ): SessionManager => {
-  const { autoCreateOnEmpty = true } = options
+  const { autoCreateOnEmpty = true, onTerminalSpawnError } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
 
@@ -820,90 +832,204 @@ export const useSessionManager = (
   const [pendingSpawns, setPendingSpawns] = useState(0)
   const pendingPaneOps = useRef<Set<string>>(new Set())
 
-  const createSession = useCallback((): void => {
-    setPendingSpawns((c) => c + 1)
-    void (async (): Promise<void> => {
-      try {
-        const result = await service.spawn({
-          cwd: '~',
-          env: {},
-          enableAgentBridge: true,
-        })
+  const createSession = useCallback(
+    (opts?: CreateSessionOptions): void => {
+      const layout: PaneLayoutId = opts?.layout ?? 'single'
+      const capacity = layoutRegistry.capacityFor(layout)
+      const requestedCwd = opts?.cwd ?? '~'
 
-        const now = new Date().toISOString()
-        const newSessionId = crypto.randomUUID()
+      // Exactly `capacity` slots: explicit picks override; missing slots = shell.
+      const specs: NewPaneSpec[] = Array.from(
+        { length: capacity },
+        (_, i) => opts?.panes?.[i] ?? { command: 'shell' }
+      )
 
-        const restoreData: RestoreData = {
-          sessionId: result.sessionId,
-          cwd: result.cwd,
-          pid: result.pid,
-          replayData: '',
-          replayEndOffset: 0,
-          bufferedEvents: [],
-        }
+      setPendingSpawns((c) => c + 1)
+      void (async (): Promise<void> => {
+        try {
+          // Spawn shell/agent PTYs concurrently + independently (one failure
+          // must not reject the rest). Browser slots need no PTY.
+          const spawned = await Promise.allSettled(
+            specs.map((spec) =>
+              commandToPane(spec.command).kind === 'browser'
+                ? Promise.resolve(null)
+                : service.spawn({
+                    cwd: requestedCwd,
+                    env: {},
+                    enableAgentBridge: true,
+                  })
+            )
+          )
 
-        // F4 (codex MEDIUM follow-up): the public `restoreData` Map is now
-        // a zombie — `pane.restoreData` is the live source. We keep only
-        // the React-Session.id key; the previous ptyId-keyed entry was
-        // never consumed after `usePtyBufferDrain.notifyPaneReady` started
-        // using `isStillTracked` instead of `restoreDataRef.has()`. Full
-        // removal of the Map deferred to a follow-up so existing tests
-        // keep their public-API contract.
-        restoreDataRef.current.set(newSessionId, restoreData)
-        registerPending(result.sessionId)
+          const now = new Date().toISOString()
+          const newSessionId = crypto.randomUUID()
 
-        flushSync(() => {
-          setSessions((prev) => {
-            const newSession: Session = {
-              id: newSessionId,
-              projectId: 'proj-1',
-              name: `session ${prev.length + 1}`,
-              status: 'running',
-              workingDirectory: result.cwd,
-              agentType: 'generic',
-              layout: 'single',
-              activityPanelCollapsed: false,
-              panes: [
-                {
-                  kind: 'shell',
-                  id: 'p0',
-                  ptyId: result.sessionId,
-                  cwd: result.cwd,
-                  shell: result.shell,
-                  agentType: 'generic',
-                  status: 'running',
-                  active: true,
-                  pid: result.pid,
-                  restoreData,
-                },
-              ],
-              createdAt: now,
-              lastActivityAt: now,
-              activity: { ...emptyActivity },
+          // Resolved baseline cwd: the path Rust echoes back for the chosen dir.
+          // Falls back to the requested cwd for an all-browser session (and
+          // defensively when a spawn result omits cwd — Rust always returns
+          // one, but minimal mocks may not).
+          const firstResolved = spawned.find(
+            (s): s is PromiseFulfilledResult<PTYSpawnResult> =>
+              s.status === 'fulfilled' && s.value !== null
+          )
+          const workingDirectory = firstResolved?.value.cwd ?? requestedCwd
+
+          const panes: Pane[] = []
+          const browserPaneIds: string[] = []
+          let shellSpawnFailure: unknown = null
+
+          specs.forEach((spec, i) => {
+            const mapped = commandToPane(spec.command)
+            const paneId = `p${panes.length}`
+
+            if (mapped.kind === 'browser') {
+              panes.push({
+                kind: 'browser',
+                id: paneId,
+                ptyId: `browser:${crypto.randomUUID()}`,
+                cwd: workingDirectory,
+                agentType: 'generic',
+                status: 'idle',
+                active: false,
+                browserUrl: DEFAULT_BROWSER_URL,
+                ...(mapped.userLabel ? { userLabel: mapped.userLabel } : {}),
+              })
+              browserPaneIds.push(paneId)
+
+              return
             }
 
-            return [...prev, newSession]
+            const settled = spawned[i]
+            if (settled.status !== 'fulfilled' || settled.value === null) {
+              log.warn(
+                'createSession: pane spawn failed',
+                settled.status === 'rejected' ? settled.reason : undefined
+              )
+              if (settled.status === 'rejected') {
+                shellSpawnFailure = settled.reason
+              }
+
+              return
+            }
+            const result = settled.value
+
+            const restoreData: RestoreData = {
+              sessionId: result.sessionId,
+              cwd: result.cwd,
+              pid: result.pid,
+              replayData: '',
+              replayEndOffset: 0,
+              bufferedEvents: [],
+            }
+            registerPending(result.sessionId)
+            registerPtySession(result.sessionId, result.sessionId, result.cwd)
+            panes.push({
+              kind: 'shell',
+              id: paneId,
+              ptyId: result.sessionId,
+              cwd: result.cwd,
+              shell: result.shell,
+              agentType: 'generic',
+              status: 'running',
+              active: false,
+              pid: result.pid,
+              restoreData,
+              ...(mapped.userLabel ? { userLabel: mapped.userLabel } : {}),
+            })
           })
-        })
 
-        // Cache ordering is persisted by `usePushWorkspaceGrouping` on the
-        // sessions[] change above — `set_workspace_sessions` now rebuilds
-        // `session_order` atomically with the grouping write, so we no
-        // longer need (and previously erroneously used) the legacy
-        // `reorder_sessions` IPC here. That IPC's permutation check
-        // expected ALL PTY ids while this site sent only active-per-
-        // workspace ids, which silently rejected as soon as any other
-        // workspace had >1 pane — see PR #290 review thread.
+          if (panes.length === 0) {
+            log.warn('createSession: no panes spawned; session not created')
+            onTerminalSpawnError?.(
+              shellSpawnFailure === null
+                ? 'Failed to create terminal'
+                : spawnErrorMessage(
+                    'Failed to create terminal',
+                    shellSpawnFailure
+                  )
+            )
 
-        setActiveSessionId(newSessionId)
-        registerPtySession(result.sessionId, result.sessionId, result.cwd)
-      } catch (err) {
-        log.warn('spawn failed', err)
-      } finally {
-        setPendingSpawns((c) => c - 1)
-      }
-    })()
-  }, [registerPending, service, setActiveSessionId])
+            return
+          }
+          if (shellSpawnFailure !== null) {
+            onTerminalSpawnError?.(
+              spawnErrorMessage(
+                'Failed to create one or more terminal panes',
+                shellSpawnFailure
+              )
+            )
+          }
+          panes[0] = { ...panes[0], active: true }
+
+          // Mirror the single-pane path's public restoreData contract.
+          const firstRestore = panes.find((p) => p.restoreData)?.restoreData
+          if (firstRestore) {
+            restoreDataRef.current.set(newSessionId, firstRestore)
+          }
+
+          const hasShell = panes.some((p) => p.kind !== 'browser')
+          const name = opts?.name ?? deriveSessionName(workingDirectory)
+
+          flushSync(() => {
+            setSessions((prev) => {
+              const newSession: Session = {
+                id: newSessionId,
+                projectId: 'proj-1',
+                name,
+                status: hasShell ? 'running' : 'idle',
+                workingDirectory,
+                agentType: 'generic',
+                layout,
+                activityPanelCollapsed: false,
+                panes,
+                createdAt: now,
+                lastActivityAt: now,
+                activity: { ...emptyActivity },
+              }
+
+              return [...prev, newSession]
+            })
+          })
+
+          flushSync(() => {
+            setActiveSessionId(newSessionId)
+          })
+          opts?.onCreated?.(newSessionId)
+
+          // Browser panes: create the WebContents after state is committed
+          // (guarded — a startup/shutdown rejection must not surface).
+          for (const paneId of browserPaneIds) {
+            void (async (): Promise<void> => {
+              try {
+                await createBrowserPane({
+                  sessionId: newSessionId,
+                  paneId,
+                  workspaceId: 'proj-1',
+                  initialUrl: DEFAULT_BROWSER_URL,
+                })
+              } catch (err) {
+                log.warn('createSession: createBrowserPane failed', err)
+              }
+            })()
+          }
+        } catch (err) {
+          log.warn('createSession failed', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to create terminal', err)
+          )
+        } finally {
+          setPendingSpawns((c) => c - 1)
+        }
+      })()
+    },
+    [
+      layoutRegistry,
+      onTerminalSpawnError,
+      registerPending,
+      service,
+      setActiveSessionId,
+    ]
+  )
 
   // Create a browser-only session from scratch (spec §6.2): one runtime browser
   // pane, NO PTY spawn. Main creates the WebContents seeded with the default
@@ -1506,6 +1632,9 @@ export const useSessionManager = (
           registerPtySession(result.sessionId, result.sessionId, result.cwd)
         } catch (err) {
           log.warn('addPane: spawn failed', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to add terminal pane', err)
+          )
         } finally {
           setPendingSpawns((count) => count - 1)
           pendingPaneOps.current.delete(sessionId)
@@ -1516,6 +1645,7 @@ export const useSessionManager = (
       activeSessionIdRef,
       dropAllForPty,
       layoutRegistry,
+      onTerminalSpawnError,
       registerPending,
       service,
     ]
@@ -1667,7 +1797,7 @@ export const useSessionManager = (
   // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
   // id and useTerminal mounts a fresh attach lifecycle.
   const restartSession = useCallback(
-    (sessionId: string): void => {
+    (sessionId: string, paneId?: string): void => {
       void (async (): Promise<void> => {
         const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
         if (!oldSession) {
@@ -1676,14 +1806,28 @@ export const useSessionManager = (
           return
         }
 
-        // Restart the active shell when one is focused; only fall back to
-        // another shell when the active pane is a browser (so a browser-active
-        // session is still restartable without targeting the wrong PTY).
-        const activePane = getActivePane(oldSession)
+        const requestedPane =
+          paneId !== undefined
+            ? oldSession.panes.find((pane) => pane.id === paneId)
+            : undefined
 
-        const oldPane = isShellPane(activePane)
-          ? activePane
-          : oldSession.panes.find(isShellPane)
+        if (paneId !== undefined && requestedPane === undefined) {
+          log.warn(`restartSession: no pane ${paneId} in session ${sessionId}`)
+
+          return
+        }
+
+        // Restart the explicitly requested shell when one is supplied by pane
+        // chrome. Legacy callers without a pane id keep the active-pane
+        // behavior, falling back to another shell only when a browser is active.
+        const activePane =
+          paneId === undefined ? getActivePane(oldSession) : null
+
+        const oldPane =
+          requestedPane ??
+          (activePane !== null && isShellPane(activePane)
+            ? activePane
+            : oldSession.panes.find(isShellPane))
         if (!oldPane || !isShellPane(oldPane)) {
           log.warn('restartSession: no shell pane found')
 
@@ -1705,6 +1849,9 @@ export const useSessionManager = (
           })
         } catch (err) {
           log.warn('restartSession: spawn failed; old session preserved', err)
+          onTerminalSpawnError?.(
+            spawnErrorMessage('Failed to restart terminal', err)
+          )
 
           return
         }
@@ -1790,12 +1937,15 @@ export const useSessionManager = (
               userLabel: undefined,
               cacheHistory: [],
             }
+            const restartedActivePane = oldPane.active
 
             next[idx] = {
               ...current,
               status: 'running',
-              workingDirectory: result.cwd,
-              agentType: 'generic',
+              workingDirectory: restartedActivePane
+                ? result.cwd
+                : current.workingDirectory,
+              agentType: restartedActivePane ? 'generic' : current.agentType,
               panes: current.panes.map((pane) =>
                 pane.id === oldPane.id ? replacementPane : pane
               ),
@@ -1826,6 +1976,7 @@ export const useSessionManager = (
     [
       activeSessionIdRef,
       dropAllForPty,
+      onTerminalSpawnError,
       registerPending,
       service,
       setActiveSessionId,

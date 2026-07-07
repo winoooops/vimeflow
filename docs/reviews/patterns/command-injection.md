@@ -2,8 +2,8 @@
 id: command-injection
 category: security
 created: 2026-04-09
-last_updated: 2026-05-02
-ref_count: 3
+last_updated: 2026-07-05
+ref_count: 4
 ---
 
 # Command Injection
@@ -107,3 +107,16 @@ Beyond the general "no template-string shell commands" rule:
 - **Finding:** version_from_kimi_binary spawned <effective_home>/bin/kimi --version when metadata was missing; effective_home is derived from the attached process's KIMI_CODE_HOME, which can point to a writable directory containing an arbitrary executable, causing Vimeflow to run attacker-controlled code during a usage fetch.
 - **Fix:** Removed the binary-execution fallback; version discovery is now metadata-only and falls back to FALLBACK_VERSION instead of executing a file from a user-controlled path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Validate native library paths before `dlopen`
+
+- **Source:** github-claude | PR #667 round 1 | 2026-07-05
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native Ghostty addon accepted a JS-supplied dylib path and
+  passed it directly to `dlopen`, which executes native initializers before any
+  symbol checks.
+- **Fix:** Resolve the candidate path with `realpath`, require the expected
+  `libGhosttyElectronBridge.dylib` filename, and require it to live beside the
+  loaded native addon before calling `dlopen`.
+- **Commit:** same commit as this entry

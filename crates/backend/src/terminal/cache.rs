@@ -319,7 +319,10 @@ mod tests {
         assert_eq!(cache.app_data_dir(), Some(app_data_dir));
         // The cache file lives in a subdirectory, but the reported data root
         // is the explicit app_data_dir — not the cache file's immediate parent.
-        assert_ne!(cache.app_data_dir(), cache_path.parent().map(Path::to_path_buf));
+        assert_ne!(
+            cache.app_data_dir(),
+            cache_path.parent().map(Path::to_path_buf)
+        );
     }
 
     #[test]

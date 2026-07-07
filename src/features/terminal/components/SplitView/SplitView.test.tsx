@@ -6,9 +6,16 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
-import { SplitView, canClosePane, type SplitViewHandle } from './SplitView'
+import {
+  SplitView,
+  canClosePane,
+  getSlotOrderedPaneIds,
+  type SplitViewHandle,
+} from './SplitView'
 import type { LayoutId, Pane, Session } from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
+import { LAYOUTS } from '../../layout-registry'
+import { resolvePanePlacement } from '../../../sessions/utils/panePlacements'
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -57,6 +64,34 @@ vi.mock('../TerminalPane/Body', async () => {
     terminalCache: new Map<string, unknown>(),
     clearTerminalCache: (): void => undefined,
     disposeTerminalSession: (): void => undefined,
+  }
+})
+
+// BrowserPane pulls in the native-surface overlay stack (OverlayStackProvider)
+// and Electron browser bridge — neither is mounted in this harness. Stub it
+// with a minimal element so the drag-into-slot accepts test can render a
+// browser-kind pane. focusBrowserPane stays a no-op fn for the focus handle.
+vi.mock('../../../browser', async () => {
+  const React = await import('react')
+
+  return {
+    BrowserPane: ({
+      shortcutHint = undefined,
+    }: {
+      shortcutHint?: string
+    }): React.ReactElement =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'browser-pane-mock' },
+        shortcutHint
+          ? React.createElement(
+              'span',
+              { 'data-testid': 'pane-shortcut-hint' },
+              shortcutHint
+            )
+          : null
+      ),
+    focusBrowserPane: vi.fn(() => Promise.resolve(undefined)),
   }
 })
 
@@ -235,7 +270,7 @@ describe('SplitView - multi-pane layouts', () => {
     ])
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv p1"',
+      gridTemplateAreas: '"p0 vdiv-c0 p1"',
     })
   })
 
@@ -249,7 +284,7 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0" "hdiv" "p1"',
+      gridTemplateAreas: '"p0" "hdiv-r0" "p1"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
@@ -264,7 +299,8 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv p1" "p0 vdiv hdiv" "p0 vdiv p2"',
+      gridTemplateAreas:
+        '"p0 vdiv-c0 p1" "p0 vdiv-c0 hdiv-r0-c1" "p0 vdiv-c0 p2"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(3)
   })
@@ -279,7 +315,8 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
+      gridTemplateAreas:
+        '"p0 vdiv-c0-r0 p1" "hdiv-r0 hdiv-r0 hdiv-r0" "p2 vdiv-c0-r1 p3"',
     })
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(4)
   })
@@ -406,6 +443,45 @@ describe('SplitView - multi-pane layouts', () => {
     expect(slots[3]).toHaveStyle({ gridArea: 'p3' })
   })
 
+  test('explicit placements choose grid areas independently of pane order', () => {
+    const session = {
+      ...makeSession('quad', 2),
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p3' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ],
+    } satisfies Session
+
+    render(<SplitView session={session} service={makeMockService()} isActive />)
+
+    const slots = screen.getAllByTestId('split-view-slot')
+
+    expect(slots[0]).toHaveAttribute('data-pane-id', 'p0')
+    expect(slots[0]).toHaveStyle({ gridArea: 'p3' })
+    expect(slots[1]).toHaveAttribute('data-pane-id', 'p1')
+    expect(slots[1]).toHaveStyle({ gridArea: 'p0' })
+  })
+
+  test('shortcut pane ids follow slot order when placements reorder panes', () => {
+    const session = {
+      ...makeSession('quad', 2),
+      placements: [
+        { paneId: 'p0', slotId: 'slot:p3' },
+        { paneId: 'p1', slotId: 'slot:p0' },
+      ],
+    } satisfies Session
+
+    const resolution = resolvePanePlacement(
+      session.panes,
+      LAYOUTS.quad,
+      session.placements
+    )
+
+    expect(getSlotOrderedPaneIds(resolution.assignments, LAYOUTS.quad)).toEqual(
+      ['p1', 'p0']
+    )
+  })
+
   test('focus marker follows pane.active and inactive panes are dimmed', () => {
     render(
       <SplitView
@@ -425,26 +501,6 @@ describe('SplitView - multi-pane layouts', () => {
     expect(inactiveWrapper).not.toHaveAttribute('data-focused')
     expect(inactiveWrapper).toHaveStyle({ opacity: '0.78' })
     expect(activeWrapper).toHaveAttribute('data-focused', 'true')
-    expect(activeWrapper).toHaveStyle({ opacity: '1' })
-  })
-
-  test('showPaneFocusHighlight=false suppresses active pane marker without dimming active pane', () => {
-    const showPaneFocusHighlight = false
-
-    render(
-      <SplitView
-        session={makeSession('vsplit', 2, 1)}
-        service={makeMockService()}
-        isActive
-        showPaneFocusHighlight={showPaneFocusHighlight}
-      />
-    )
-
-    const activeWrapper = within(
-      screen.getAllByTestId('split-view-slot')[1]
-    ).getByTestId('terminal-pane-wrapper')
-
-    expect(activeWrapper).not.toHaveAttribute('data-focused')
     expect(activeWrapper).toHaveStyle({ opacity: '1' })
   })
 })
@@ -473,7 +529,8 @@ describe('SplitView - under-capacity', () => {
     )
 
     expect(screen.getByTestId('split-view')).toHaveStyle({
-      gridTemplateAreas: '"p0 vdiv0 p1" "hdiv hdiv hdiv" "p2 vdiv1 p3"',
+      gridTemplateAreas:
+        '"p0 vdiv-c0-r0 p1" "hdiv-r0 hdiv-r0 hdiv-r0" "p2 vdiv-c0-r1 p3"',
     })
   })
 
@@ -561,7 +618,7 @@ describe('SplitView - under-capacity', () => {
     await user.click(screen.getByRole('button', { name: 'add shell pane' }))
 
     expect(onAddPane).toHaveBeenCalledOnce()
-    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell')
+    expect(onAddPane).toHaveBeenCalledWith('sess-fix', 'shell', 'slot:p1')
   })
 })
 
@@ -684,9 +741,7 @@ describe('SplitView - click-to-focus', () => {
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
 
-  test('hovering an inactive pane shows a focus tooltip with the Mod+N shortcut chip', async () => {
-    const user = userEvent.setup()
-
+  test('renders visible pane shortcut hints instead of focus tooltips', async () => {
     render(
       <SplitView
         session={makeSession('vsplit', 2)}
@@ -695,14 +750,46 @@ describe('SplitView - click-to-focus', () => {
       />
     )
 
+    expect(screen.getAllByTestId('pane-shortcut-hint')).toHaveLength(2)
+    expect(screen.getAllByTestId('pane-shortcut-hint')[0]).toHaveTextContent(
+      '1'
+    )
+
+    expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
+      '2'
+    )
+
+    const user = userEvent.setup()
     const inners = screen.getAllByTestId('split-view-slot-inner')
     await user.hover(inners[1])
 
-    const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('Focus pane 2')
-    // Assertion is platform-safe: `formatShortcut` renders `⌘2` on
-    // macOS and `Ctrl+2` elsewhere — both contain the digit.
-    expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('2')
+    await new Promise((resolve) => {
+      setTimeout(resolve, 300)
+    })
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('passes visible pane shortcut hints to browser panes', () => {
+    const session = {
+      ...makeSession('vsplit', 2),
+      panes: [
+        { ...makeSession('vsplit', 2).panes[0], active: false },
+        {
+          ...makeSession('vsplit', 2).panes[1],
+          kind: 'browser',
+          active: true,
+          browserUrl: 'https://example.com/',
+        },
+      ],
+    } satisfies Session
+
+    render(<SplitView session={session} service={makeMockService()} isActive />)
+
+    expect(screen.getByTestId('browser-pane-mock')).toBeInTheDocument()
+    expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
+      '2'
+    )
   })
 
   test('hovering the active pane does not show a focus tooltip', async () => {

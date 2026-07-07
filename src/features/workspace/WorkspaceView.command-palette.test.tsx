@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty ghostty
 import {
   render as rtlRender,
   screen,
@@ -6,7 +7,15 @@ import {
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { useState, type ReactElement, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import { SettingsProvider, SettingsContext } from '../settings/SettingsProvider'
 import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
@@ -14,7 +23,12 @@ import type { AppSettings } from '../../bindings/AppSettings'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
-import type { TerminalZoneProps } from './components/TerminalZone'
+import type {
+  TerminalZoneHandle,
+  TerminalZoneProps,
+} from './components/TerminalZone'
+import type { WorkspaceOverlayRegistrationsProps } from './overlays/WorkspaceOverlayRegistrations'
+import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -45,6 +59,12 @@ const VimKeymapProvider = ({
 }
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
+const overlayRegistrationPropsSpy = vi.hoisted(() => vi.fn())
+const terminalFocusActivePaneSpy = vi.hoisted(() => vi.fn())
+
+const backendListeners = vi.hoisted(
+  () => new Map<string, (payload: unknown) => void>()
+)
 
 // Mock all WorkspaceView dependencies
 vi.mock('../sessions/hooks/useSessionManager')
@@ -53,11 +73,13 @@ vi.mock('../../lib/backend', () => ({
   // Stubs for any other backend functions imported by the workspace tree.
   // listen/invoke return inert no-ops so the WorkspaceView mount under
   // jsdom doesn't try to reach a real bridge.
-  listen: vi.fn(() =>
-    Promise.resolve(() => {
-      /* no-op unlisten */
+  listen: vi.fn((event: string, callback: (payload: unknown) => void) => {
+    backendListeners.set(event, callback)
+
+    return Promise.resolve(() => {
+      backendListeners.delete(event)
     })
-  ),
+  }),
   invoke: vi.fn().mockResolvedValue(null),
   // useCommandPalette subscribes to the Electron main-process palette toggle
   // override on mount; return a synchronous no-op unlisten so the
@@ -93,21 +115,59 @@ vi.mock('../terminal/hooks/useBurnerTerminals', () => ({
 // Mock child components to keep test focused on command dispatch while still
 // rendering sidebar chrome needed by WorkspaceView.
 vi.mock('@/components/sidebar/Sidebar', () => ({
-  Sidebar: ({ topBar = undefined }: { topBar?: ReactNode }): ReactElement => (
-    <div data-testid="sidebar">{topBar}</div>
+  Sidebar: ({
+    topBar = undefined,
+    content = undefined,
+  }: {
+    topBar?: ReactNode
+    content?: ReactNode
+  }): ReactElement => (
+    <div data-testid="sidebar">
+      {topBar}
+      {content}
+    </div>
   ),
 }))
 
 vi.mock('./components/TerminalZone', () => ({
-  TerminalZone: (props: TerminalZoneProps): ReactElement => {
-    terminalZonePropsSpy(props)
+  TerminalZone: forwardRef<TerminalZoneHandle, TerminalZoneProps>(
+    function MockTerminalZone(props, ref): ReactElement {
+      const nodeRef = useRef<HTMLDivElement>(null)
 
-    return <div data-testid="terminal-zone" />
+      useImperativeHandle(
+        ref,
+        () => ({
+          focusActivePane: (): boolean => {
+            terminalFocusActivePaneSpy()
+            nodeRef.current?.focus()
+
+            return nodeRef.current !== null
+          },
+        }),
+        []
+      )
+
+      terminalZonePropsSpy(props)
+
+      return <div ref={nodeRef} data-testid="terminal-zone" tabIndex={-1} />
+    }
+  ),
+}))
+
+vi.mock('./overlays/WorkspaceOverlayRegistrations', () => ({
+  WorkspaceOverlayRegistrations: (
+    props: WorkspaceOverlayRegistrationsProps
+  ): null => {
+    overlayRegistrationPropsSpy(props)
+
+    return null
   },
 }))
 
 vi.mock('./components/DockPanel', () => ({
-  default: (): ReactElement => <div data-testid="dock-panel" />,
+  default: ({ tab }: { tab: string }): ReactElement => (
+    <div data-testid="dock-panel" data-tab={tab} />
+  ),
 }))
 
 vi.mock('../agent-status/components/AgentStatusPanel', () => ({
@@ -120,10 +180,37 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
 vi.mock('../editor/components/UnsavedChangesDialog', () => ({
   UnsavedChangesDialog: ({
     isOpen,
+    onSave,
+    onDiscard,
+    onCancel,
   }: {
     isOpen: boolean
-  }): ReactElement | null =>
-    isOpen ? <div data-testid="unsaved-changes-dialog" /> : null,
+    onSave: () => void
+    onDiscard: () => void
+    onCancel: () => void
+  }): ReactElement | null => {
+    const saveRef = useRef<HTMLButtonElement>(null)
+
+    useEffect(() => {
+      if (isOpen) {
+        saveRef.current?.focus()
+      }
+    }, [isOpen])
+
+    return isOpen ? (
+      <div data-testid="unsaved-changes-dialog" role="dialog">
+        <button ref={saveRef} type="button" onClick={onSave}>
+          Save
+        </button>
+        <button type="button" onClick={onDiscard}>
+          Discard
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    ) : null
+  },
 }))
 
 const createMockSession = (id: string, name: string): Session => ({
@@ -200,6 +287,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
     // Reset all mocks
     vi.clearAllMocks()
     terminalZonePropsSpy.mockClear()
+    overlayRegistrationPropsSpy.mockClear()
+    backendListeners.clear()
+    window.vimeflow = {} as typeof window.vimeflow
 
     // Create mock sessions
     mockSessions = [
@@ -216,7 +306,11 @@ describe('WorkspaceView - Command Palette Integration', () => {
       createSession: vi.fn(),
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
+      customPaneLayouts: [],
+      layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
+      setCustomPaneLayouts: vi.fn(),
       setSessionLayout: vi.fn(),
+      setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),
@@ -235,6 +329,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       notifyPaneReady: vi.fn(),
       registerPending: vi.fn(),
       dropAllForPty: vi.fn(),
+      clearPaneCacheHistory: vi.fn(),
     }
 
     // Mock useSessionManager
@@ -302,6 +397,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      fileExists: vi.fn().mockResolvedValue(true),
       renamePath: vi.fn().mockResolvedValue(undefined),
       deletePath: vi.fn().mockResolvedValue(undefined),
     })
@@ -339,9 +435,12 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(useBurnerTerminals).mockReturnValue({
       renderNode: null,
       toggle: vi.fn().mockResolvedValue(undefined),
+      syncToPaneCwd: vi.fn(),
       runningByPane: new Map(),
       activeByPane: new Map(),
+      outOfSyncByPane: new Map(),
       hasVisibleBurner: false,
+      visibleBurnerPaneKey: null,
     })
   })
 
@@ -361,16 +460,17 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   }
 
-  const latestTerminalZoneProps = (): TerminalZoneProps => {
-    const call = terminalZonePropsSpy.mock.calls[
-      terminalZonePropsSpy.mock.calls.length - 1
-    ] as [TerminalZoneProps] | undefined
-    if (!call) {
-      throw new Error('TerminalZone was not rendered')
-    }
+  const latestOverlayRegistrationProps =
+    (): WorkspaceOverlayRegistrationsProps => {
+      const call = overlayRegistrationPropsSpy.mock.calls[
+        overlayRegistrationPropsSpy.mock.calls.length - 1
+      ] as [WorkspaceOverlayRegistrationsProps] | undefined
+      if (!call) {
+        throw new Error('WorkspaceOverlayRegistrations was not rendered')
+      }
 
-    return call[0]
-  }
+      return call[0]
+    }
 
   test('syncs separate palette and leader bindings to Electron', async () => {
     const setCommandPaletteBindings = vi.fn()
@@ -435,6 +535,45 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
+  test('sidebar new-session button opens the dialog without instant-creating', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByRole('dialog', { name: /new session/i })
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('sidebar-new-session'))
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('dialog', { name: /new session/i })
+      ).toBeInTheDocument()
+    })
+    // Opening the dialog must NOT create a session — that only happens on Create.
+    expect(mockSessionManager.createSession).not.toHaveBeenCalled()
+  })
+
+  test('the new-session chord opens the dialog without instant-creating', async () => {
+    // The harness sets navigator.platform to Linux, so preferModifier is
+    // 'ctrl' and the reserved chord is Ctrl+⇧N.
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByRole('dialog', { name: /new session/i })
+    ).not.toBeInTheDocument()
+
+    await user.keyboard('{Control>}{Shift>}n{/Shift}{/Control}')
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('dialog', { name: /new session/i })
+      ).toBeInTheDocument()
+    })
+    expect(mockSessionManager.createSession).not.toHaveBeenCalled()
+  })
+
   test('forwards pane lifecycle handlers to TerminalZone', () => {
     render(<WorkspaceView />)
 
@@ -449,12 +588,12 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test('occludes browser panes while the command palette is open', async () => {
     render(<WorkspaceView />)
 
-    expect(latestTerminalZoneProps().areBrowserPanesOccluded).toBe(false)
+    expect(latestOverlayRegistrationProps().commandPaletteOpen).toBe(false)
 
     openPalette()
 
     await waitFor(() => {
-      expect(latestTerminalZoneProps().areBrowserPanesOccluded).toBe(true)
+      expect(latestOverlayRegistrationProps().commandPaletteOpen).toBe(true)
     })
   })
 
@@ -464,14 +603,17 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(useBurnerTerminals).mockReturnValue({
       renderNode: <div data-testid="burner-terminal-popup" />,
       toggle: vi.fn().mockResolvedValue(undefined),
+      syncToPaneCwd: vi.fn(),
       runningByPane: new Map(),
       activeByPane: new Map(),
+      outOfSyncByPane: new Map(),
       hasVisibleBurner: true,
+      visibleBurnerPaneKey: 'session-1:p0',
     })
 
     render(<WorkspaceView />)
 
-    expect(latestTerminalZoneProps().areBrowserPanesOccluded).toBe(true)
+    expect(latestOverlayRegistrationProps().burnerTerminalOpen).toBe(true)
   })
 
   test('records detected agent type on the active session', async () => {
@@ -816,6 +958,100 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
   })
 
+  test(':open-file respects the dirty-buffer guard', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    terminalFocusActivePaneSpy.mockClear()
+    await user.clear(input)
+    await user.type(input, ':open-file /tmp/notes.md')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Command palette' })
+      ).toBeNull()
+    })
+    expect(terminalFocusActivePaneSpy).not.toHaveBeenCalled()
+    expect(openFile).not.toHaveBeenCalled()
+  })
+
+  test(':open-file surfaces the editor after dirty-buffer save', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    render(<WorkspaceView />)
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':open-file /tmp/notes.md')
+    await user.keyboard('{Enter}')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(openFile).toHaveBeenCalledWith('/tmp/notes.md')
+    })
+
+    expect(screen.getByTestId('dock-panel')).toHaveAttribute(
+      'data-tab',
+      'editor'
+    )
+  })
+
   test('does not open the palette while the unsaved dialog is active', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn(() => true)
@@ -925,6 +1161,34 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.renameSession).not.toHaveBeenCalled()
   })
 
+  test('native Ghostty rename event opens the pane rename editor', async () => {
+    render(<WorkspaceView />)
+
+    await waitFor(() => {
+      expect(backendListeners.has('ghostty-native-rename-pane')).toBe(true)
+    })
+
+    act(() => {
+      backendListeners.get('ghostty-native-rename-pane')?.({
+        sessionId: 'pty-session-1',
+        paneId: 'p0',
+      })
+    })
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-1'
+    )
+
+    expect(mockSessionManager.setSessionActivePane).toHaveBeenCalledWith(
+      'session-1',
+      'p0'
+    )
+
+    expect(screen.getByRole('textbox', { name: 'Pane name' })).toHaveValue(
+      'main'
+    )
+  })
+
   test(':next command switches to next session', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
@@ -1003,6 +1267,70 @@ describe('WorkspaceView - Command Palette Integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
+  })
+
+  test(':show-sessions opens the sidebar drawer on a compact viewport', async () => {
+    const user = userEvent.setup()
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: (): void => {
+          // No-op
+        },
+        removeListener: (): void => {
+          // No-op
+        },
+        addEventListener: (): void => {
+          // No-op
+        },
+        removeEventListener: (): void => {
+          // No-op
+        },
+        dispatchEvent: (): boolean => false,
+      }),
+    })
+
+    try {
+      render(<WorkspaceView />)
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('dialog', { name: 'Sidebar' })
+        ).not.toBeInTheDocument()
+      })
+
+      openPalette()
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('dialog', { name: 'Command palette' })
+        ).toBeInTheDocument()
+      })
+
+      const input = screen.getByRole('combobox', {
+        name: 'Command palette search',
+      })
+      await user.clear(input)
+      await user.type(input, ':show-sessions')
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('dialog', { name: 'Sidebar' })
+        ).toBeInTheDocument()
+      })
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      })
+    }
   })
 
   test('status-bar command button opens the palette', async () => {

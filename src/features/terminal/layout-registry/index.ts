@@ -4,8 +4,11 @@ export {
   LAYOUTS,
   MAX_BUILTIN_PANE_COUNT,
   PaneLayoutRegistry,
+  SINGLE_PANE_FOCUS_LABEL,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
   VISIBLE_LAYOUTS,
   autoShrinkLayoutFor,
+  canSelectLayoutOverCapacity,
   isKnownLayoutId,
   type RuntimePaneLayoutRegistrySnapshot,
 } from './layoutRegistry'

@@ -712,6 +712,7 @@ describe('DiffChipToolbar', () => {
       name: /finish feedback \(3\)/i,
     })
     expect(finish).toBeInTheDocument()
+    expect(finish).toHaveAttribute('aria-keyshortcuts', 'Y')
     // The count pill surfaces the number on the button text.
     expect(finish).toHaveTextContent('3')
 
@@ -756,6 +757,26 @@ describe('DiffChipToolbar', () => {
       screen.getByRole('button', { name: /discard all feedback/i })
     )
     expect(onDiscardFeedback).toHaveBeenCalledTimes(1)
+  })
+
+  test('renders active-file refresh as a pinned toolbar action', async () => {
+    const user = userEvent.setup()
+    const onRefresh = vi.fn<() => void>()
+
+    renderToolbar({
+      onRefreshActiveFile: onRefresh,
+    })
+
+    const refresh = screen.getByRole('button', { name: 'refresh diff' })
+    expect(refresh).toHaveTextContent('Refresh diff')
+    expect(refresh).toHaveAttribute('aria-keyshortcuts', 'r')
+    expect(within(refresh).getByText('r')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+
+    await user.click(refresh)
+    expect(onRefresh).toHaveBeenCalledTimes(1)
   })
 
   test('the pinned feedback actions render outside PriorityPlus (never overflow)', () => {

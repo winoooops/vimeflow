@@ -9,6 +9,7 @@ export interface BrowserTabBarProps {
   onActivate: (tabId: string) => void
   onClose: (tabId: string) => void
   onNewTab: () => void
+  shortcutHint?: string
   onClosePane?: () => void
 }
 
@@ -20,6 +21,7 @@ export const BrowserTabBar = ({
   onActivate,
   onClose,
   onNewTab,
+  shortcutHint = undefined,
   onClosePane = undefined,
 }: BrowserTabBarProps): ReactElement => {
   const canCloseTabs = tabs.length > 1
@@ -48,6 +50,15 @@ export const BrowserTabBar = ({
         </span>
         {BROWSER_IDENTITY.short}
       </span>
+
+      {shortcutHint ? (
+        <span
+          data-testid="pane-shortcut-hint"
+          className="shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-on-surface-variant"
+        >
+          {shortcutHint}
+        </span>
+      ) : null}
 
       <div
         role="tablist"

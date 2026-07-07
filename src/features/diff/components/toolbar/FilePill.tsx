@@ -46,7 +46,7 @@ export const FilePill = ({
 
   return (
     <span className="inline-flex items-center gap-0.5">
-      <Tooltip content="Previous file">
+      <Tooltip content="Previous file" shortcut="p">
         <IconButton
           icon="chevron_left"
           label="previous file"
@@ -82,7 +82,7 @@ export const FilePill = ({
           className="h-7 gap-2 rounded-md bg-primary/10 px-3 ring-1 ring-inset ring-primary/20"
         />
       </Tooltip>
-      <Tooltip content="Next file">
+      <Tooltip content="Next file" shortcut="n">
         <IconButton
           icon="chevron_right"
           label="next file"

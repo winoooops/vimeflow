@@ -80,6 +80,22 @@ describe('DockTab', () => {
     ).toBeInTheDocument()
   })
 
+  test('compact pending badge does not intercept pointer events', () => {
+    render(
+      <DockTab
+        tab="editor"
+        onTabChange={vi.fn()}
+        onClose={vi.fn()}
+        compactActions
+        hasCompactMenuBadge
+      />
+    )
+
+    expect(screen.getByTestId('dock-actions-badge')).toHaveClass(
+      'pointer-events-none'
+    )
+  })
+
   test('compact menu closes when clicking outside', async () => {
     const user = userEvent.setup()
     render(

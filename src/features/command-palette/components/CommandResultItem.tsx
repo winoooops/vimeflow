@@ -1,33 +1,38 @@
-import type { ReactElement } from 'react'
+import { forwardRef, type ReactElement } from 'react'
 import type { Command } from '../types'
+import { KeyCap } from './KeyCap'
 
 interface CommandResultItemProps {
   id: string
   command: Command
   isSelected: boolean
   onSelect: () => void
+  onExecute: () => void
 }
 
-export const CommandResultItem = ({
-  id,
-  command,
-  isSelected,
-  onSelect,
-}: CommandResultItemProps): ReactElement => (
-  <div
-    id={id}
-    role="option"
-    aria-selected={isSelected}
-    onClick={onSelect}
-    className={`
-        group px-3 py-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border-l-2
-        ${isSelected ? 'bg-primary-container/10 border-primary-container' : 'border-transparent hover:bg-surface-container-highest/50'}
-      `}
-  >
-    <div className="flex items-center gap-3">
-      {/* Icon - filled if selected, outlined if not */}
+export const CommandResultItem = forwardRef<
+  HTMLDivElement,
+  CommandResultItemProps
+>(
+  ({ id, command, isSelected, onSelect, onExecute }, ref): ReactElement => (
+    <div
+      ref={ref}
+      id={id}
+      role="option"
+      aria-selected={isSelected}
+      onMouseEnter={onSelect}
+      // Keep input focus on click so namespace drilling stays typeable.
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onExecute}
+      className={`group flex items-center gap-[12px] px-[12px] py-[9px] my-[2px] rounded-[8px] border transition-colors cursor-pointer ${
+        isSelected
+          ? 'bg-primary-container/10 border-primary-container/25'
+          : 'border-transparent hover:bg-surface-container-high/40'
+      }`}
+    >
+      {/* Icon - filled + accent when selected, muted outline otherwise */}
       <span
-        className={`material-symbols-outlined text-lg ${isSelected ? 'text-primary-container' : 'text-on-surface-variant'}`}
+        className={`material-symbols-outlined text-[15px] shrink-0 ${isSelected ? 'text-primary' : 'text-on-surface-muted'}`}
         style={{
           fontVariationSettings: isSelected ? '"FILL" 1' : '"FILL" 0',
         }}
@@ -35,31 +40,38 @@ export const CommandResultItem = ({
         {command.icon}
       </span>
 
-      {/* Label and description */}
-      <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium text-on-surface">
-          {command.label}
-        </span>
-        {command.description && (
-          <span className="text-sm text-on-surface-variant ml-2">
-            {command.description}
-          </span>
-        )}
-      </div>
-    </div>
-
-    {/* Enter badge - matches design: icon + text */}
-    <div
-      className={`
-          flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container-highest text-[10px] text-on-surface-variant font-bold uppercase
-          ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
-          transition-opacity
-        `}
-    >
-      <span className="material-symbols-outlined text-[12px]">
-        keyboard_return
+      {/* Verb - accent mono, fixed-width column so labels align (fits the longest verb) */}
+      <span className="font-mono text-[11.5px] text-primary w-[120px] shrink-0 truncate">
+        {command.label}
       </span>
-      <span>Enter</span>
+
+      {/* Label - the action name, fills remaining width */}
+      <span className="text-[12.5px] text-on-surface flex-1 min-w-0 truncate">
+        {command.description}
+      </span>
+
+      {/* Hint - dim tertiary detail */}
+      {command.hint && (
+        <span className="hidden text-[11px] text-on-surface-muted truncate sm:block">
+          {command.hint}
+        </span>
+      )}
+
+      {/* Shortcut chips - only when a real accelerator exists */}
+      {command.shortcut && command.shortcut.length > 0 && (
+        <div
+          className="flex items-center gap-[3px] shrink-0"
+          data-testid="command-shortcut"
+        >
+          {command.shortcut.map((key, index) => (
+            <KeyCap key={`${command.id}-kc-${index}`} active={isSelected}>
+              {key}
+            </KeyCap>
+          ))}
+        </div>
+      )}
     </div>
-  </div>
+  )
 )
+
+CommandResultItem.displayName = 'CommandResultItem'

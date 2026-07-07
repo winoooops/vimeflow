@@ -4,7 +4,6 @@ export {}
 
 declare global {
   type BrowserPaneBoundsCapture = BrowserPaneBoundsCaptureSource
-
   interface Window {
     __VIMEFLOW_E2E__?: {
       getTerminalBuffer(): string

@@ -250,6 +250,19 @@ describe('BrowserPane', () => {
     })
   })
 
+  test('renders visible pane shortcut hint when provided', () => {
+    render(
+      <BrowserPaneHarness
+        session={session}
+        pane={browserPane}
+        isActive
+        shortcutHint="⌘2"
+      />
+    )
+
+    expect(screen.getByTestId('pane-shortcut-hint')).toHaveTextContent('⌘2')
+  })
+
   test('updates bounds when the content position changes without resize or rerender', async () => {
     let frameCallback: FrameRequestCallback | null = null
     let nextFrameId = 1

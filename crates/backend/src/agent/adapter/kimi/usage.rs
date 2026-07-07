@@ -127,7 +127,7 @@ mod tests {
         let weekly = limits.seven_day.expect("weekly present");
         assert_eq!(weekly.used_percentage, 40.0);
         assert_eq!(weekly.resets_at, 1781690446); // 2026-06-17T10:00:46Z
-        // 5-hour ← the 300-minute window: 17/100 = 17%
+                                                  // 5-hour ← the 300-minute window: 17/100 = 17%
         assert_eq!(limits.five_hour.used_percentage, 17.0);
         assert_eq!(limits.five_hour.resets_at, 1781424046); // 2026-06-14T08:00:46Z
     }

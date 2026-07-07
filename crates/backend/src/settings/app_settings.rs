@@ -40,9 +40,7 @@ pub struct AppSettings {
 /// file is already valid JSON by the time this runs, so `Value::deserialize`
 /// never errors — a wrong-shaped value yields an empty map, and non-string
 /// entries are dropped rather than rejected.
-fn lenient_string_map<'de, D>(
-    deserializer: D,
-) -> Result<HashMap<String, String>, D::Error>
+fn lenient_string_map<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -319,7 +317,10 @@ mod tests {
         let loaded = AppSettingsCache::new(path).load();
         assert_eq!(loaded.close_with_no_tabs, "close"); // other settings survived
         assert_eq!(
-            loaded.custom_keybindings.get("dock-toggle").map(String::as_str),
+            loaded
+                .custom_keybindings
+                .get("dock-toggle")
+                .map(String::as_str),
             Some("Mod+KeyK")
         );
         assert!(!loaded.custom_keybindings.contains_key("bad")); // non-string dropped

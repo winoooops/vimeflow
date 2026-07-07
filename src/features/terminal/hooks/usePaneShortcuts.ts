@@ -3,6 +3,7 @@ import type { PaneLayoutId, Session } from '../../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   LAYOUT_CYCLE,
+  SINGLE_PANE_FOCUS_LAYOUT_ID,
   type PaneLayoutRegistry,
   isKnownLayoutId,
 } from '../layout-registry/layoutRegistry'
@@ -11,7 +12,6 @@ import {
   DIALOG_SELECTOR,
   DOCK_CONTAINER_ID,
 } from '../../workspace/containerIds'
-import { LAYOUTS, type LayoutShape } from '../components/SplitView/layouts'
 import {
   resolveDirectionalPane,
   type PaneDirection,
@@ -49,6 +49,10 @@ export const usePaneShortcuts = ({
   const onTerminalZoneFocusRef = useRef(onTerminalZoneFocus)
   const isTerminalContainerActiveRef = useRef(isTerminalContainerActive)
   const layoutRegistryRef = useRef(layoutRegistry)
+  const lastSingleToggleLayoutBySessionRef = useRef(
+    new Map<string, PaneLayoutId>()
+  )
+
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   matchesRef.current = matches
@@ -72,6 +76,69 @@ export const usePaneShortcuts = ({
         (session) => session.id === activeId
       )
       if (!activeSession) {
+        return
+      }
+
+      if (match(event, 'single-pane-focus')) {
+        if (document.querySelector(DIALOG_SELECTOR)) {
+          return
+        }
+
+        if (isTerminalContainerActiveRef.current === false) {
+          return
+        }
+
+        const activeElement = document.activeElement
+        if (
+          activeElement?.closest(
+            'input, textarea, select, [contenteditable=""], [contenteditable="true"], .xterm-helper-textarea'
+          )
+        ) {
+          return
+        }
+
+        if (activeSession.layout === SINGLE_PANE_FOCUS_LAYOUT_ID) {
+          const previousLayoutId =
+            lastSingleToggleLayoutBySessionRef.current.get(activeSession.id) ??
+            null
+
+          const previousLayout =
+            previousLayoutId === null
+              ? null
+              : layoutRegistryRef.current.getLayout(previousLayoutId)
+
+          if (
+            previousLayout === null ||
+            activeSession.panes.length > previousLayout.capacity
+          ) {
+            lastSingleToggleLayoutBySessionRef.current.delete(activeSession.id)
+
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          lastSingleToggleLayoutBySessionRef.current.delete(activeSession.id)
+          setSessionLayout(activeSession.id, previousLayout.id)
+
+          return
+        }
+
+        const currentLayout = layoutRegistryRef.current.getLayout(
+          activeSession.layout
+        )
+        if (currentLayout === null) {
+          return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+        lastSingleToggleLayoutBySessionRef.current.set(
+          activeSession.id,
+          currentLayout.id
+        )
+        setSessionLayout(activeSession.id, SINGLE_PANE_FOCUS_LAYOUT_ID)
+
         return
       }
 
@@ -116,7 +183,10 @@ export const usePaneShortcuts = ({
             return
           }
 
-          if (target?.active && !activeElement?.closest('.xterm-helper-textarea')) {
+          if (
+            target?.active &&
+            !activeElement?.closest('.xterm-helper-textarea')
+          ) {
             focusTerminal()
             event.preventDefault()
             event.stopPropagation()
@@ -149,6 +219,7 @@ export const usePaneShortcuts = ({
         event.preventDefault()
         event.stopPropagation()
         const nextIndex = (currentIndex + 1) % LAYOUT_CYCLE.length
+        lastSingleToggleLayoutBySessionRef.current.delete(activeSession.id)
         setSessionLayout(activeSession.id, LAYOUT_CYCLE[nextIndex])
 
         return
@@ -168,10 +239,9 @@ export const usePaneShortcuts = ({
         return
       }
 
-      const shape = LAYOUTS[activeSession.layout] as LayoutShape | undefined
-      if (shape === undefined) {
-        return
-      }
+      const shape = layoutRegistryRef.current.getFallbackLayout(
+        activeSession.layout
+      )
 
       const visiblePanes = selectVisiblePanes(
         activeSession.panes,

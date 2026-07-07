@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 
 interface SegmentedProps<T extends string | number> {
   value: T
@@ -9,6 +10,7 @@ interface SegmentedProps<T extends string | number> {
   // option value, e.g. `{ split: 'vertical_split', unified: 'view_headline' }`).
   // Options without an entry render label-only.
   icons?: Partial<Record<string, string>>
+  shortcuts?: Partial<Record<string, ShortcutInput>>
 }
 
 // Segmented control on a recessed track: the active option rides an accent
@@ -22,6 +24,7 @@ export const Segmented = <T extends string | number>({
   options,
   onChange,
   icons = undefined,
+  shortcuts = undefined,
 }: SegmentedProps<T>): ReactElement => (
   <SegmentedControl
     aria-label="Diff view mode"
@@ -30,6 +33,8 @@ export const Segmented = <T extends string | number>({
       value: option,
       label: String(option),
       icon: icons?.[String(option)],
+      tooltip: 'Toggle split/unified view',
+      shortcut: shortcuts?.[String(option)],
     }))}
     onChange={onChange}
     className="rounded-lg bg-surface-container p-0.5 ring-1 ring-inset ring-outline-variant/35"
