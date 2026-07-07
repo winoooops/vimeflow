@@ -545,3 +545,5 @@ Migrates the shipped `AgentReplyStatus` → the `outcome` axis and adds the repl
 - **Kimi / OpenCode** review capture (streaming adapters — same deferral as VIM-293).
 - **VIM-298 / VIM-297** — the multi-turn thread UI + the user's single-turn reply dispatch (this plan places the turns; those render + send them).
 - **Dispatch-time snapshot precision** — per-finding staged side; content-drift detection.
+
+<!-- codex-reviewed: 2026-07-07T14:42:47Z -->
