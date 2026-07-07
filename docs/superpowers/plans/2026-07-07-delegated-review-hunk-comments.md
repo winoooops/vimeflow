@@ -138,6 +138,19 @@ mod tests {
     }
 
     #[test]
+    fn valid_range_finding_is_structured() {
+        let t = block(r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[{"scope":"range","path":"a.ts","side":"additions","startLine":88,"endLine":94,"category":"suggestion","text":"x"}]}"#);
+        match extract_agent_review(&t) {
+            Some(AgentReviewOutcome::Structured { findings, .. }) => {
+                assert_eq!(findings[0].scope, ReviewFindingScope::Range);
+                assert_eq!(findings[0].start_line, Some(88));
+                assert_eq!(findings[0].end_line, Some(94));
+            }
+            other => panic!("expected Structured, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn empty_findings_is_clean_structured() {
         let t = block(r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[]}"#);
         assert!(matches!(extract_agent_review(&t), Some(AgentReviewOutcome::Structured { ref findings, .. }) if findings.is_empty()));
@@ -181,6 +194,7 @@ mod tests {
 #[derive(Deserialize)]
 struct BlockDto { v: Option<i64>, nonce: Option<String>, reviewer: Option<String>, findings: Option<Vec<FindingDto>> }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")] // the wire sends startLine / endLine
 struct FindingDto {
     scope: Option<String>, path: Option<String>, side: Option<String>,
     line: Option<i64>, start_line: Option<i64>, end_line: Option<i64>,
@@ -326,8 +340,8 @@ Add a shared `map_review_outcome(session_id, AgentReviewOutcome) -> AgentReviewE
 
 ### Task 6: Bindings + full backend gate
 
-- [ ] **Step 1:** `npm run generate:bindings` — new `AgentReviewEvent.ts` / `AgentReviewFinding.ts` / `ReviewFinding{Scope,Side,Category}.ts` appear.
-- [ ] **Step 2:** Hand-add the exports to `src/bindings/index.ts` (it is hand-maintained — beside the `AgentReply*` exports):
+- [ ] **Step 1:** `npm run generate:bindings` — new `AgentReviewEvent.ts` / `AgentReviewFinding.ts` / `ReviewFinding{Scope,Side,Category}.ts` appear. **These individual files are gitignored** (`/src/bindings/*.ts` except `index.ts`) — do **not** commit them; `generate:bindings:if-missing` (run by `lint` / `test` / CI, and always in CI) regenerates any file referenced by `index.ts` on a fresh checkout. Only `index.ts` is committed — the established pattern (see the shipped `AgentReply*` bindings).
+- [ ] **Step 2:** Hand-add the exports to `src/bindings/index.ts` (it is hand-maintained — beside the `AgentReply*` exports). These import lines are what drives `if-missing` regeneration:
 
 ```ts
 export type { AgentReviewEvent } from './AgentReviewEvent'
@@ -413,10 +427,22 @@ const store = new Map<string, PendingReviewRequest>()
 export const setPendingReviewRequest = (r: PendingReviewRequest): void => { store.set(r.nonce, r) }
 export const getPendingReviewRequest = (nonce: string): PendingReviewRequest | undefined => store.get(nonce)
 export const clearPendingReviewRequest = (nonce: string): void => { store.delete(nonce) }
+
+// Unplaceable findings + malformed reviewer notes have no (path, staged) row;
+// they live here, grouped by ownerKey, for the review-level surface (Task 11).
+// Defined NOW so Task 10 (useAgentReview) has a write target before Task 11 renders it.
+export interface ReviewLevelNote { commentId: string; reviewer: string; text: string; nonce: string }
+const reviewLevelByOwner = new Map<string, ReviewLevelNote[]>()
+export const addReviewLevelNote = (ownerKey: string, note: ReviewLevelNote): void => {
+  reviewLevelByOwner.set(ownerKey, [...(reviewLevelByOwner.get(ownerKey) ?? []), note])
+}
+export const reviewLevelNotes = (ownerKey: string): ReviewLevelNote[] => reviewLevelByOwner.get(ownerKey) ?? []
+export const clearReviewLevelNotes = (ownerKey: string): void => { reviewLevelByOwner.delete(ownerKey) }
 ```
 
-- [ ] **Step 4: Run to verify pass.**
-- [ ] **Step 5: Commit** — `git commit -am "feat(diff): pending-review-request store (VIM-304)"`
+- [ ] **Step 4:** Add a test that `addReviewLevelNote` / `reviewLevelNotes` round-trip per owner.
+- [ ] **Step 5: Run to verify pass.**
+- [ ] **Step 6: Commit** — `git commit -am "feat(diff): pending-review-request + review-level notes store (VIM-304)"`
 
 ### Task 9: Snapshot builder + Request-review dispatch
 
@@ -434,7 +460,7 @@ export const clearPendingReviewRequest = (nonce: string): void => { store.delete
 
 - [ ] **Step 1: Write the failing tests** — the Section-3 matrix: session+nonce gate; line/range/file placement as `author:'reviewer'` with reviewer+category; staged routing; line-OOR → file-level; path-not-in-snapshot → review-level; `findings:null` → one rawText note named `reviewer ?? 'Reviewer'`; empty findings → nothing placed + request cleared; idempotent replay.
 - [ ] **Step 2: Run to verify failure** (module not found).
-- [ ] **Step 3: Implement** — `listen('agent-review')`; gate on `getPendingReviewRequest(event.nonce)` + `event.sessionId === request.ptyId`; resolve each finding's anchor against `request.diffSnapshot` (path present? line/range inside a hunk range for that side?); place via `addAnnotationForOwner(request.ownerKey, request.cwd, path, request.staged, annotation)` — line→`{lineNumber, side, metadata}`, range→`target:{scope:'range',...}`, file→`target:{scope:'file'}`, OOR→file-level, off-snapshot→review-level surface; `findings:null`→one reviewer note; **clear the request** after processing.
+- [ ] **Step 3: Implement** — `listen('agent-review')`; gate on `getPendingReviewRequest(event.nonce)` + `event.sessionId === request.ptyId`; resolve each finding's anchor against `request.diffSnapshot` (path present? line/range inside a hunk range for that side?); place via `addAnnotationForOwner(request.ownerKey, request.cwd, path, request.staged, annotation)` — line→`{lineNumber, side, metadata}`, range→`target:{scope:'range',...}`, file→`target:{scope:'file'}`, OOR→file-level. **Off-snapshot** findings and the **`findings:null`** degrade note go to `addReviewLevelNote(request.ownerKey, { commentId, reviewer: event.reviewer ?? 'Reviewer', text, nonce })` (the Task-8 store). **Clear the request** after processing.
 - [ ] **Step 4: Run to verify pass** — Expected: PASS.
 - [ ] **Step 5: Commit** — `git commit -am "feat(diff): useAgentReview — capture, place, degrade (VIM-304)"`
 
@@ -444,7 +470,7 @@ export const clearPendingReviewRequest = (nonce: string): void => { store.delete
 
 - [ ] **Step 1: Write the failing test** — a `author:'reviewer'` comment renders the reviewer name + category chip, distinct from "Agent reply"; the review-level surface lists unplaceable findings.
 - [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement** — in `ReviewCommentRow`, add `const isReviewer = author === 'reviewer'`; render the `reviewer` name (or `'Reviewer'`) + category chip, read-only, visually distinct. Build the review-level surface (collapsible "Review — N findings, M unplaceable"). Mount `useAgentReview({ addAnnotationForOwner, nextCommentId })` in WorkspaceView beside `useAgentReply`.
+- [ ] **Step 3: Implement** — in `ReviewCommentRow`, add `const isReviewer = author === 'reviewer'`; render the `reviewer` name (or `'Reviewer'`) + category chip, read-only, visually distinct. Build the review-level surface (a collapsible "Review — N unplaceable" section) that renders `reviewLevelNotes(ownerKey)` from the Task-8 store. Mount `useAgentReview({ addAnnotationForOwner, nextCommentId })` in WorkspaceView beside `useAgentReply`.
 - [ ] **Step 4: Run to verify pass** — `npx vitest run src/features/diff src/features/workspace` · Expected: green.
 - [ ] **Step 5: Commit** — `git commit -am "feat(diff): reviewer row + review-level surface + mount (VIM-304)"`
 
@@ -476,7 +502,7 @@ Migrates the shipped `AgentReplyStatus` → the `outcome` axis and adds the repl
 
 - [ ] **Step 1: Write the failing test** — a `{"target":"finding","id":1,"status":"resolved","text":"…"}` reply parses with `target = Finding`; an entry with no `target` defaults to `Comment` (regression).
 - [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement** — add `pub target: AgentReplyTarget` (enum `Comment | Finding`, serde lowercase, `#[serde(default)]` → `Comment`) to `AgentReply`; parse in `reply.rs`. Regenerate binding.
+- [ ] **Step 3: Implement** — add `pub target: AgentReplyTarget` (enum `Comment | Finding`, serde lowercase, `#[serde(default)]` → `Comment`) to `AgentReply`; parse in `reply.rs`. Regenerate + hand-export `AgentReplyTarget` in `index.ts` (individual file gitignored, per Task 6).
 - [ ] **Step 4: Run to verify pass.**
 - [ ] **Step 5: Commit** — `git commit -am "feat(agent): reply target discriminator (VIM-304)"`
 
@@ -496,7 +522,7 @@ Migrates the shipped `AgentReplyStatus` → the `outcome` axis and adds the repl
 
 - [ ] **Step 1: Write the failing tests** — a `target:'finding'` reply (gated by `sessionId===ptyId` + nonce) attaches an `author:'agent'` annotation carrying `outcome` at the addressed finding; a `target:'comment'`/absent reply preserves the existing `[#n]` path (regression); a `clarify` marks awaiting-user.
 - [ ] **Step 2: Run to verify failure.**
-- [ ] **Step 3: Implement** — add `outcome?: 'reply'|'clarify'|'resolved'|'deferred'|'rejected'` to `ReviewComment`; in `useAgentReply`, branch on `reply.target`: `'comment'`→existing `pendingReviews` `[#n]` path; `'finding'`→resolve `(sessionId, nonce, ordinal)` against `findingThreadRecords`, attach at the target (anchored or review-level) carrying `outcome`.
+- [ ] **Step 3: Implement** — add `outcome?: 'reply'|'clarify'|'resolved'|'deferred'|'rejected'` to `ReviewComment`; in `useAgentReply`, branch on `reply.target`: `'comment'`→existing `pendingReviews` `[#n]` path; `'finding'`→resolve `(sessionId, nonce, ordinal)` against `findingThreadRecords`, attach at the target (anchored or review-level) carrying `outcome`. **Also update `feedbackDispatch.ts`'s reply-block instruction** — the `"status":"answered"` example and any `answered`/`changed`/`skipped` wording — to the new outcome vocabulary (`reply`/`clarify`/`resolved`/`deferred`/`rejected`), so the agent-facing prompt matches the migrated parser (Task 13). Without this the migration is only half-executed.
 - [ ] **Step 4: Run to verify pass.**
 - [ ] **Step 5: Commit** — `git commit -am "feat(diff): useAgentReply finding-thread routing + outcome (VIM-304)"`
 
