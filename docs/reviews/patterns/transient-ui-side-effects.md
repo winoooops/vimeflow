@@ -2,7 +2,7 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-07-05
+last_updated: 2026-07-07
 ref_count: 9
 ---
 
@@ -248,4 +248,19 @@ to persistent state through a separate, explicit path.
 - **Fix:** Exposed Dialog's actual accepted native-active state and disabled
   Browse only while that state is active. Added a regression that rejects the
   native dialog open and expects the local Browse button to stay enabled.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Native tooltip shortcut arrays retriggered overlay lifetime effects
+
+- **Source:** github-claude | PR #671 round 1 | 2026-07-07
+- **Severity:** HIGH
+- **File:** `src/components/Tooltip.tsx`
+- **Finding:** Native tooltip requests depended on the raw `shortcut` prop.
+  Callers that passed inline chord arrays allocated a new array on each render,
+  so an unchanged shortcut could still recreate the native request callback and
+  make the open/close effect tear down and reopen the visible overlay.
+- **Fix:** Formatted shortcuts once into a primitive string and used that value
+  in the native payload and effect dependencies. Added regression coverage that
+  rerenders an open native tooltip with a fresh inline shortcut array without
+  closing or reopening the overlay.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

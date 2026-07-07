@@ -148,6 +148,7 @@ interface SegmentedControlProps<
   showActiveThumb?: boolean
   thumbTestId?: string
   style?: CSSProperties
+  nativeOverlayTooltips?: boolean
 }
 
 const keyToOffset = (key: string): number | 'first' | 'last' | null => {
@@ -228,6 +229,7 @@ export const SegmentedControl = <T extends string | number>({
   showActiveThumb = variant === 'sidebar',
   thumbTestId = undefined,
   style = undefined,
+  nativeOverlayTooltips = false,
 }: SegmentedControlProps<T>): ReactElement => {
   const activeIndex = options.findIndex((option) => option.value === value)
   const focusIndex = Math.max(0, activeIndex)
@@ -353,6 +355,7 @@ export const SegmentedControl = <T extends string | number>({
             content={option.tooltip}
             shortcut={option.shortcut}
             placement="bottom"
+            nativeOverlay={nativeOverlayTooltips}
           >
             {button}
           </Tooltip>

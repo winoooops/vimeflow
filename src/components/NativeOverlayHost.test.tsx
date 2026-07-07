@@ -150,6 +150,16 @@ const tooltipRequest: NativeOverlayRequest = {
   },
 }
 
+const shortcutTooltipRequest: NativeOverlayRequest = {
+  ...tooltipRequest,
+  surfaceId: 'tooltip-2',
+  payload: {
+    kind: 'tooltip',
+    text: 'Diff Viewer',
+    shortcut: '⌘G',
+  },
+}
+
 const commandPaletteRequest: NativeOverlayRequest = {
   surfaceId: 'dialog-1',
   kind: 'dialog',
@@ -407,6 +417,19 @@ describe('NativeOverlayHost', () => {
     bridge.emitClear()
 
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  test('renders a shortcut chip for native overlay tooltip requests', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost mode="tooltip" />)
+
+    bridge.emitRender(shortcutTooltipRequest)
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('Diff Viewer')
+    expect(
+      within(tooltip).getByTestId('native-overlay-tooltip-shortcut')
+    ).toHaveTextContent('⌘G')
   })
 
   test('renders command palette dialog requests on the menu layer', async () => {

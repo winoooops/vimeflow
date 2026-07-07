@@ -113,6 +113,7 @@ interface NativeOverlayMenuPayload {
 interface NativeOverlayTooltipPayload {
   kind: 'tooltip'
   text: string
+  shortcut?: string
   maxWidth?: number
 }
 
@@ -489,6 +490,7 @@ const isTooltipPayload = (
   isRecord(value) &&
   value.kind === 'tooltip' &&
   isString(value.text) &&
+  (value.shortcut === undefined || isString(value.shortcut)) &&
   (value.maxWidth === undefined || isFiniteNumber(value.maxWidth))
 
 const isCommandPaletteItem = (

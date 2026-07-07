@@ -1048,7 +1048,19 @@ export const NativeOverlayHost = ({
         className={OVERLAY_TOOLTIP_CLASSES}
         style={tooltipStyleForRequest(request)}
       >
-        {request.payload.text}
+        {request.payload.shortcut === undefined ? (
+          request.payload.text
+        ) : (
+          <span className="flex items-center gap-3">
+            <span className="min-w-0 flex-1">{request.payload.text}</span>
+            <kbd
+              data-testid="native-overlay-tooltip-shortcut"
+              className={OVERLAY_MENU_SHORTCUT_CLASSES}
+            >
+              {request.payload.shortcut}
+            </kbd>
+          </span>
+        )}
       </div>
     )
   }

@@ -256,6 +256,7 @@ const tooltipRequest = {
   payload: {
     kind: 'tooltip',
     text: 'collapse status',
+    shortcut: '⌘0',
     maxWidth: 320,
   },
 } as const
