@@ -152,6 +152,7 @@ export const DockTab = ({
         options={DOCK_TAB_OPTIONS}
         onChange={onTabChange}
         buttonClassName={compactActions ? 'w-[30px] px-0' : 'gap-1.5'}
+        nativeOverlayTooltips
         renderOption={(option, active) => (
           <>
             <span className={tabIconClass(active)} aria-hidden="true">
@@ -170,6 +171,7 @@ export const DockTab = ({
             content="More dock actions"
             placement="bottom"
             disabled={actionsOpen}
+            nativeOverlay
           >
             <IconButton
               ref={triggerRef}
@@ -209,6 +211,7 @@ export const DockTab = ({
                   content="Collapse panel"
                   shortcut={['Mod', '0']}
                   placement="bottom"
+                  nativeOverlay
                 >
                   <IconButton
                     icon="minimize"
@@ -231,6 +234,7 @@ export const DockTab = ({
               content="Collapse panel"
               shortcut={['Mod', '0']}
               placement="bottom"
+              nativeOverlay
             >
               <IconButton
                 icon="minimize"

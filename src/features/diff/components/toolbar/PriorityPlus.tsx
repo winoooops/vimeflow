@@ -244,7 +244,10 @@ const OverflowMenu = ({
 
   return (
     <>
-      <Tooltip content={`Show ${hiddenItems.length} more controls`}>
+      <Tooltip
+        content={`Show ${hiddenItems.length} more controls`}
+        nativeOverlay
+      >
         <IconButton
           ref={setAnchor}
           icon="more_horiz"
@@ -263,7 +266,7 @@ const OverflowMenu = ({
         anchor={anchor}
         open={open}
         onOpenChange={setOpen}
-        placement="bottom-end"
+        placement="bottom-start"
         aria-label="More controls"
       >
         <div className="flex flex-col gap-2 p-3 max-w-[320px]">

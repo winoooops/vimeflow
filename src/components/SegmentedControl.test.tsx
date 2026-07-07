@@ -1,12 +1,66 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { __resetNativeOverlayForTest } from '@/components/base/floating/nativeOverlay'
 import { SegmentedControl } from './SegmentedControl'
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+} => {
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+  const close = vi.fn().mockResolvedValue(undefined)
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close,
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return { open, close }
+}
 
 const OPTIONS = [
   { value: 'split', label: 'Split' },
   { value: 'unified', label: 'Unified' },
 ] as const
+
+afterEach(() => {
+  restorePlatform?.()
+  restorePlatform = null
+  vi.unstubAllEnvs()
+  __resetNativeOverlayForTest()
+  delete window.vimeflow
+})
 
 describe('SegmentedControl', () => {
   test('renders options as pressed buttons inside a named group', () => {
@@ -199,6 +253,45 @@ describe('SegmentedControl', () => {
         name: 'Reduce panes to switch to Unified',
       })
     ).toBeInTheDocument()
+  })
+
+  test('can route option tooltips through native overlay', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    render(
+      <SegmentedControl
+        aria-label="Dock tab"
+        variant="dock"
+        value="editor"
+        options={[
+          {
+            value: 'diff',
+            label: 'Diff Viewer',
+            tooltip: 'Diff Viewer',
+            shortcut: ['Mod', 'G'] as const,
+          },
+          { value: 'editor', label: 'Editor' },
+        ]}
+        onChange={vi.fn()}
+        nativeOverlayTooltips
+      />
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'Diff Viewer' }))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(nativeBridge.open.mock.calls[0][0]).toMatchObject({
+      kind: 'tooltip',
+      payload: {
+        kind: 'tooltip',
+        text: 'Diff Viewer',
+        shortcut: '⌘G',
+      },
+    })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
   test('arrow-key navigation skips a disabled option', async () => {

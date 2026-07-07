@@ -399,6 +399,37 @@ describe('Tooltip', () => {
     })
   })
 
+  test('sends shortcut chips through native tooltip overlay', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    render(
+      <Tooltip
+        content="Open diff"
+        delayMs={0}
+        shortcut={['Mod', 'G']}
+        nativeOverlay
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'trigger' }))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(nativeBridge.open.mock.calls[0][0]).toMatchObject({
+      kind: 'tooltip',
+      payload: {
+        kind: 'tooltip',
+        text: 'Open diff',
+        shortcut: '⌘G',
+      },
+    })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
   test('resyncs native tooltip anchor geometry after resize', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')

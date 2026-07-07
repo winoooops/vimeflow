@@ -94,6 +94,7 @@ export interface NativeOverlayMenuPayload {
 export interface NativeOverlayTooltipPayload {
   kind: 'tooltip'
   text: string
+  shortcut?: string
   maxWidth?: number
 }
 

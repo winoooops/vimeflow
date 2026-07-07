@@ -144,9 +144,7 @@ export const Tooltip = ({
         ? 'interactive tooltip native overlay is not in v0'
         : bare
           ? 'bare tooltip native overlay is not in v0'
-          : shortcut !== undefined
-            ? 'shortcut tooltip native overlay is not in v0'
-            : null
+          : null
 
   const canUseNativeOverlay =
     open && transport === 'native-overlay' && nativeUnsupportedReason === null
@@ -210,6 +208,9 @@ export const Tooltip = ({
 
     const rect = reference.getBoundingClientRect()
 
+    const nativeShortcut =
+      shortcut === undefined ? undefined : formatShortcut(shortcut)
+
     return openNativeOverlay(
       {
         surfaceId: nativeSurfaceId,
@@ -224,6 +225,7 @@ export const Tooltip = ({
         payload: {
           kind: 'tooltip',
           text: nativeTooltipText,
+          ...(nativeShortcut === undefined ? {} : { shortcut: nativeShortcut }),
           maxWidth,
         },
         theme: nativeOverlayThemeSnapshot(),
@@ -233,7 +235,14 @@ export const Tooltip = ({
         onClose: () => setOpen(false),
       }
     )
-  }, [maxWidth, nativeSurfaceId, nativeTooltipText, placement, refs.reference])
+  }, [
+    maxWidth,
+    nativeSurfaceId,
+    nativeTooltipText,
+    placement,
+    refs.reference,
+    shortcut,
+  ])
 
   useEffect(() => {
     if (!canUseNativeOverlay || nativeTooltipText === null) {
