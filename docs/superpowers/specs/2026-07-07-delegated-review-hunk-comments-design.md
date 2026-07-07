@@ -378,3 +378,5 @@ Rust unit tests over `extract_agent_review` + the emit path:
 - no sentinel → `None`;
 - multi-line `text` round-trips; a block wrapped in a markdown fence or `> `-prefixed still extracts;
 - a Codex `task_complete` / a completed Claude turn (`end_turn` / `stop_sequence` / `max_tokens`) carrying a review block emits `agent-review` (asserts `sessionId` / `nonce` / `reviewer` / findings); a turn without a review block emits nothing.
+
+<!-- codex-reviewed: 2026-07-07T14:28:02Z -->
