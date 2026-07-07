@@ -3038,6 +3038,7 @@ const WorkspaceViewContent = (): ReactElement => {
               blockedLayoutIds={blockedLayoutIds}
               onPick={handlePickLayout}
               labelSingleAsFocusAction
+              nativeOverlayTooltips
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}

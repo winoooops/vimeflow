@@ -1,8 +1,58 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { SINGLE_PANE_FOCUS_LABEL } from '../../layout-registry'
 import { LayoutSwitcher } from './LayoutSwitcher'
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+} => {
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close: vi.fn(() => Promise.resolve()),
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return { open }
+}
+
+afterEach(() => {
+  restorePlatform?.()
+  restorePlatform = null
+  vi.unstubAllEnvs()
+  delete window.vimeflow
+})
 
 describe('LayoutSwitcher', () => {
   test('renders 6 buttons (one per LayoutId)', () => {
@@ -242,5 +292,32 @@ describe('LayoutSwitcher', () => {
     expect(within(focusTip).getByTestId('tooltip-shortcut')).toHaveTextContent(
       'Z'
     )
+  })
+
+  test('can route layout pill tooltips through native overlay', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        onPick={vi.fn()}
+        nativeOverlayTooltips
+      />
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'Quad' }))
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(nativeBridge.open.mock.calls[0][0]).toMatchObject({
+      kind: 'tooltip',
+      payload: {
+        kind: 'tooltip',
+        text: 'Quad',
+      },
+    })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 })
