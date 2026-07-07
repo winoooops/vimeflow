@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-05
-ref_count: 9
+last_updated: 2026-07-07
+ref_count: 10
 ---
 
 # Keyboard Shortcut Guards
@@ -451,4 +451,18 @@ against three classes of false-fire:
 - **Fix:** Forwarded `shortcutKey` as the synthetic keyboard event key and added
   a focused regression assertion that both `key` and `code` are present in the
   renderer dispatch script.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Native Ghostty shortcut refocus outlived overlay guards
+
+- **Source:** github-codex-connector | PR #670 round 1 | 2026-07-07
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty shortcut path checked the interactive overlay
+  guard before dispatching the synthetic key event into the renderer, but the
+  delayed post-dispatch refocus branch could still run after that renderer
+  shortcut opened a native overlay.
+- **Fix:** Rechecked `inputBlocked(win)` immediately before `addon.focus(currentSurface)`
+  in the async refocus branch and added regression coverage for an overlay opening
+  while shortcut dispatch is pending.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1519,6 +1519,88 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('does not refocus when an overlay opens during shortcut dispatch', async () => {
+    const callbacks: {
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean,
+        repeat: boolean
+      ) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+    let overlayOpen = false
+    let resolveDispatch: (value: unknown) => void = () => {
+      throw new Error('Shortcut dispatch resolver was not initialized')
+    }
+
+    const pendingDispatch = new Promise<unknown>((resolve) => {
+      resolveDispatch = resolve
+    })
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, _resize, _focus, shortcut, _renamePane) => {
+          void _renamePane
+          callbacks.onShortcut = shortcut
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+    const inputBlocked = vi.fn(() => overlayOpen)
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+      inputBlocked,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    webContentsExecuteJavaScript.mockReturnValueOnce(pendingDispatch)
+    callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, false)
+
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    overlayOpen = true
+
+    resolveDispatch({ activeGhosttyPane: true, dockHasFocus: false })
+    await pendingDispatch
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(inputBlocked).toHaveBeenCalledTimes(2)
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
   test('opens command palette directly from native Ghostty shortcut', () => {
     const callbacks: {
       onShortcut?: (

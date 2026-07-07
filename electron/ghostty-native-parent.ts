@@ -1052,7 +1052,7 @@ export class GhosttyNativeParentController {
         const currentSurface =
           currentState === state ? currentState.surface : null
 
-        if (currentSurface) {
+        if (currentSurface && !this.inputBlocked(win)) {
           addon.focus(currentSurface)
         }
       }
