@@ -10,6 +10,7 @@ playwright-report
 *.d.ts
 docs/design/**/*.html
 !docs/design/activity-panel-hot-reload-analysis.html
+docs/decisions/*.html
 docs/diagrams/*.html
 docs/explorations/*.html
 docs/opencode/**/*.html
