@@ -259,6 +259,27 @@ export const DiffChipToolbar = ({
   const [discardAllAnchor, setDiscardAllAnchor] =
     useState<HTMLButtonElement | null>(null)
 
+  const [toolbarAnchor, setToolbarAnchor] = useState<HTMLDivElement | null>(
+    null
+  )
+
+  const discardAllPopoverAnchor =
+    discardAllAnchor !== null && discardAllAnchor.offsetParent !== null
+      ? discardAllAnchor
+      : toolbarAnchor
+
+  const openDiscardAllConfirmation = (): void => {
+    if (!staging) {
+      setDiscardAllOpen(true)
+    }
+  }
+
+  const toggleDiscardAllConfirmation = (): void => {
+    if (!staging) {
+      setDiscardAllOpen((prev) => !prev)
+    }
+  }
+
   // Counter copy: `1/N` when there is at least one hunk, `0/0` otherwise.
   // Shows the current focused index as `focusedHunkIndex + 1` so the counter
   // is consistent with PR3 once prev/next start mutating the index.
@@ -315,14 +336,10 @@ export const DiffChipToolbar = ({
                 ? WELL_DISABLED_BUTTON_CLASSES
                 : WELL_DANGER_BUTTON_CLASSES
             }
-            onClick={(): void => {
-              if (!staging) {
-                setDiscardAllOpen((prev) => !prev)
-              }
-            }}
+            onClick={toggleDiscardAllConfirmation}
           />
           <Popover
-            anchor={discardAllAnchor}
+            anchor={discardAllPopoverAnchor}
             open={discardAllOpen}
             onOpenChange={setDiscardAllOpen}
             placement="bottom-end"
@@ -563,9 +580,10 @@ export const DiffChipToolbar = ({
           {onDiscardAll !== undefined ? (
             <Menu.Row
               label="Discard all changes"
-              disabled
+              disabled={staging}
               nativeOverlayIcon="delete_sweep"
               nativeOverlayDetail="Confirmation required"
+              onSelect={openDiscardAllConfirmation}
             >
               <span>Discard all changes</span>
             </Menu.Row>
@@ -697,6 +715,7 @@ export const DiffChipToolbar = ({
 
   return (
     <div
+      ref={setToolbarAnchor}
       role="toolbar"
       aria-label="Diff toolbar"
       className="flex min-h-[46px] items-center px-3 bg-surface-container-lowest border-b border-outline-variant/45"
