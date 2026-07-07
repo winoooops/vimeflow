@@ -763,6 +763,14 @@ export class NativeOverlayController {
     this.surfaces.clear()
   }
 
+  hasActiveInteractiveOverlaySurface(parent: BrowserWindow): boolean {
+    const record = this.overlays.get(parent.id)
+
+    return (
+      record?.activeSurfaceId !== null && record?.activeSurfaceId !== undefined
+    )
+  }
+
   private readonly handleOpen = async (
     event: IpcMainInvokeEvent,
     payload: unknown

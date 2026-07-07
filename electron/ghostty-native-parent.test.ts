@@ -978,6 +978,84 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('drops native Ghostty input while an interactive overlay is active', () => {
+    const callbacks: {
+      onInput?: (data: string) => void
+      onFocus?: () => void
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean,
+        repeat: boolean
+      ) => void
+      onRenamePane?: () => void
+    } = {}
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, input, _resize, focus, shortcut, renamePane) => {
+          void _resize
+          callbacks.onInput = input
+          callbacks.onFocus = focus
+          callbacks.onShortcut = shortcut
+          callbacks.onRenamePane = renamePane
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const inputBlocked = vi.fn(() => true)
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+      inputBlocked,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    callbacks.onInput?.('secret')
+    callbacks.onFocus?.()
+    callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, false)
+    callbacks.onRenamePane?.()
+
+    expect(inputBlocked).toHaveBeenCalled()
+    expect(sidecar.invoke).not.toHaveBeenCalled()
+    expect(webContentsSend).not.toHaveBeenCalled()
+    expect(webContentsFocus).not.toHaveBeenCalled()
+    expect(webContentsExecuteJavaScript).not.toHaveBeenCalled()
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
   test('attaches secondary child and routes input plus resize to its PTY', () => {
     const callbacks: {
       onInput?: (data: string) => void
@@ -1436,6 +1514,88 @@ describe('ghostty native parent', () => {
     })
 
     expect(addon.destroy).toHaveBeenCalledWith(surface)
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
+  test('does not refocus when an overlay opens during shortcut dispatch', async () => {
+    const callbacks: {
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean,
+        repeat: boolean
+      ) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+    let overlayOpen = false
+    let resolveDispatch: (value: unknown) => void = () => {
+      throw new Error('Shortcut dispatch resolver was not initialized')
+    }
+
+    const pendingDispatch = new Promise<unknown>((resolve) => {
+      resolveDispatch = resolve
+    })
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, _resize, _focus, shortcut, _renamePane) => {
+          void _renamePane
+          callbacks.onShortcut = shortcut
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+    const inputBlocked = vi.fn(() => overlayOpen)
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+      inputBlocked,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    webContentsExecuteJavaScript.mockReturnValueOnce(pendingDispatch)
+    callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, false)
+
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    overlayOpen = true
+
+    resolveDispatch({ activeGhosttyPane: true, dockHasFocus: false })
+    await pendingDispatch
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(inputBlocked).toHaveBeenCalledTimes(2)
     expect(addon.focus).not.toHaveBeenCalled()
 
     controller.dispose()

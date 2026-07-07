@@ -459,6 +459,9 @@ const setupApp = async (): Promise<void> => {
     ghosttyNativeController = setupGhosttyNativeParent({
       sidecar: spawnedSidecar,
       packaged: app.isPackaged,
+      inputBlocked: (win) =>
+        nativeOverlayController?.hasActiveInteractiveOverlaySurface(win) ===
+        true,
     })
   } else if (ghosttyNativeHelperEnabled) {
     ghosttyNativeController = setupGhosttyNativeHelper({
