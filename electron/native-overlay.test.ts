@@ -453,6 +453,84 @@ describe('NativeOverlayController', () => {
     expect(menuWindow.hide).not.toHaveBeenCalled()
   })
 
+  test('closes active tooltip before opening an interactive menu', async () => {
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    const tooltipWindow = finishOverlayLoad(1)
+
+    await Promise.resolve()
+    await acknowledgeOverlayReady(tooltipWindow, tooltipRequest.surfaceId)
+    await tooltipOpenPromise
+
+    tooltipWindow.webContents.send.mockClear()
+    tooltipWindow.hide.mockClear()
+    electronMock.owner.webContents.send.mockClear()
+
+    const menuOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+
+    await Promise.resolve()
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(tooltipWindow.hide).toHaveBeenCalledOnce()
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      { surfaceId: tooltipRequest.surfaceId, reason: 'replaced' }
+    )
+
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      request
+    )
+
+    await acknowledgeOverlayReady(menuWindow)
+    await expect(menuOpenPromise).resolves.toEqual({ accepted: true })
+  })
+
+  test('settles a pending tooltip open before opening an interactive menu', async () => {
+    const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      tooltipRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    const tooltipWindow = finishOverlayLoad(1)
+
+    await Promise.resolve()
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      tooltipRequest
+    )
+
+    const menuOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+
+    await Promise.resolve()
+    await expect(tooltipOpenPromise).resolves.toEqual({
+      accepted: false,
+      reason: 'render-timeout',
+    })
+
+    expect(tooltipWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLEAR
+    )
+    expect(tooltipWindow.hide).toHaveBeenCalledOnce()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      request
+    )
+
+    await acknowledgeOverlayReady(menuWindow)
+    await expect(menuOpenPromise).resolves.toEqual({ accepted: true })
+  })
+
   test('updates the active tooltip surface without closing its owner session', async () => {
     const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },

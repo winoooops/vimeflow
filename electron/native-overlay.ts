@@ -795,6 +795,10 @@ export class NativeOverlayController {
     record: NativeOverlayRecord,
     payload: NativeOverlayRequest
   ): Promise<NativeOverlayOpenResult> {
+    if (record.activeTooltipSurfaceId !== null) {
+      this.closeSurface(record.activeTooltipSurfaceId, 'replaced', true, false)
+    }
+
     if (
       record.activeSurfaceId !== null &&
       record.activeSurfaceId !== payload.surfaceId
