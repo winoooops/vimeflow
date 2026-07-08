@@ -40,13 +40,20 @@ export interface ReviewComment {
   id: string
   text: string
   /**
-   * 'self' = a user comment; 'agent' = a coding-agent reply (VIM-256), which
-   * renders distinctly and is never dispatched or counted as pending.
+   * 'self' = a user comment; 'agent' = the primary coding-agent's reply
+   * (VIM-256); 'reviewer' = a delegated review agent's finding (VIM-304).
+   * Only 'self' comments are ever pending, dispatched, or counted at the cap;
+   * 'agent' and 'reviewer' render distinctly and read-only.
    */
-  author: 'self' | 'agent'
+  author: 'self' | 'agent' | 'reviewer'
   /**
-   * The user's category tag (VIM-256/253). Absent →
-   * DEFAULT_REVIEW_COMMENT_CATEGORY. Not set on agent replies.
+   * The delegated reviewer's self-reported name (VIM-304), set when
+   * `author === 'reviewer'`. The row renders it as the finding's identity.
+   */
+  reviewer?: string
+  /**
+   * The user's category tag (VIM-256/253), or the delegated finding's category
+   * (VIM-304). Absent → DEFAULT_REVIEW_COMMENT_CATEGORY. Not set on agent replies.
    */
   category?: ReviewCommentCategory
   createdAt: number
@@ -142,13 +149,13 @@ export const reviewCommentCategory = (
  * A comment is *pending* until it is dispatched to an agent. Pending comments
  * are the review the user is still assembling; dispatched ones stay in the hunk
  * as thread anchors but are never re-sent, counted as unfinished, or discarded.
- * Agent replies are never pending — they are the agent's output, not the user's
- * unsent feedback.
+ * Only the user's own not-yet-dispatched comments are pending — `agent` replies
+ * and `reviewer` findings are agent output, never the user's unsent feedback.
  */
 export const isPendingReviewAnnotation = (
   annotation: DiffLineAnnotation<ReviewComment>
 ): boolean =>
-  !isAgentReviewAnnotation(annotation) &&
+  annotation.metadata.author === 'self' &&
   annotation.metadata.dispatchedAt === undefined
 
 const countAnnotationsInBatch = (batch: FeedbackBatch): number => {
@@ -423,7 +430,7 @@ export const useFeedbackBatchStore = (
         optimisticBatchesRef.current.get(targetOwnerKey) ?? EMPTY_BATCH
 
       if (
-        annotation.metadata.author !== 'agent' &&
+        annotation.metadata.author === 'self' &&
         countPendingInBatch(optimisticBatch) >= SOFT_CAP
       ) {
         addAnnotationResultRef.current = 'cap-reached'
@@ -444,7 +451,7 @@ export const useFeedbackBatchStore = (
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(targetOwnerKey) ?? EMPTY_BATCH
         if (
-          annotation.metadata.author !== 'agent' &&
+          annotation.metadata.author === 'self' &&
           countPendingInBatch(currentBatch) >= SOFT_CAP
         ) {
           addAnnotationResultRef.current = 'cap-reached'
