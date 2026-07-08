@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-08
-ref_count: 83
+ref_count: 84
 ---
 
 # Async Race Conditions
@@ -996,4 +996,18 @@ prevent showing previous data.
 - **Fix:** Track whether a local update happened while the initial load was
   pending and skip applying that stale load result. Added a provider regression
   test that keeps the in-flight update visible after the delayed load resolves.
+
+### 92. Native Ghostty reparent left a stale resize debounce
+
+- **Source:** github-claude | PR #674 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty reparent path destroyed the old surface but
+  left any pending primary resize debounce alive on the retained pane state.
+  That stale timer could later forward the old grid size after the pane had
+  been attached to a different BrowserWindow.
+- **Fix:** Clear pending primary resize state when destroying the old surface
+  during reparenting. Added a regression test that queues a resize, reparents
+  the pane, advances the debounce timer, and asserts only the original resize
+  reached the sidecar.
 - **Commit:** same commit as this entry
