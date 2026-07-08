@@ -1443,6 +1443,122 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('reattaches secondary child after primary surface recreation', () => {
+    const callbacks: {
+      onInput?: (data: string) => void
+      onResize?: (cols: number, rows: number) => void
+      onFocus?: () => void
+    }[] = []
+    const firstSurface = { id: 'surface-1' }
+    const secondSurface = { id: 'surface-2' }
+
+    const addon = {
+      create: vi.fn(() =>
+        callbacks.length === 0 ? firstSurface : secondSurface
+      ),
+      addSecondary: vi.fn((_surface, input, resize, focus) => {
+        callbacks.push({
+          onInput: input,
+          onResize: resize,
+          onFocus: focus,
+        })
+      }),
+      setSecondaryVisible: vi.fn(),
+      removeSecondary: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      writeSecondary: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+      }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_VISIBLE)?.(
+      {},
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+        visible: false,
+      }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+      {},
+      { sessionId: 'host-pty', paneId: 'pane-1' }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_DATA)?.(
+      {},
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+        data: 'after-destroy',
+      }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.destroy).toHaveBeenCalledWith(firstSurface)
+    expect(addon.create).toHaveBeenCalledTimes(2)
+    expect(addon.addSecondary).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function)
+    )
+
+    expect(addon.setSecondaryVisible).toHaveBeenLastCalledWith(
+      secondSurface,
+      false
+    )
+
+    expect(addon.writeSecondary).toHaveBeenCalledWith(
+      secondSurface,
+      'after-destroy'
+    )
+
+    callbacks[1]?.onInput?.('b')
+    expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
+      request: { sessionId: 'burner-pty', data: 'b' },
+    })
+
+    controller.dispose()
+  })
+
   test('forwards native app shortcuts into the app renderer', async () => {
     const callbacks: {
       onShortcut?: (
