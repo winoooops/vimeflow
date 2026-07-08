@@ -21,6 +21,7 @@ Merges dormant-live: no agent emits the review block until PR-2 dispatches the i
 ### Task 1: Review event types (`types.rs`)
 
 **Files:**
+
 - Modify: `crates/backend/src/agent/types.rs` (add after `AgentReplyStatus`, ~line 355)
 
 - [ ] **Step 1: Add the types**
@@ -88,6 +89,7 @@ pub enum ReviewFindingCategory { Bug, Suggestion, Change, Question }
 ### Task 2: Extraction + validation helper (`review.rs`)
 
 **Files:**
+
 - Create: `crates/backend/src/agent/review.rs`
 - Modify: `crates/backend/src/agent/mod.rs` (add `pub(crate) mod review;` beside `mod reply;`)
 
@@ -409,8 +411,15 @@ Update the two `annotation.metadata.author !== 'agent'` guards (~426, ~447) to `
 ```ts
 import type { AnnotationSide } from '@pierre/diffs'
 
-export interface HunkRange { start: number; end: number }
-export interface ReviewedFile { path: string; additions: HunkRange[]; deletions: HunkRange[] }
+export interface HunkRange {
+  start: number
+  end: number
+}
+export interface ReviewedFile {
+  path: string
+  additions: HunkRange[]
+  deletions: HunkRange[]
+}
 
 export interface PendingReviewRequest {
   nonce: string
@@ -424,20 +433,40 @@ export interface PendingReviewRequest {
 
 // ponytail: module-singleton keyed by nonce (forward-compatible with VIM-297).
 const store = new Map<string, PendingReviewRequest>()
-export const setPendingReviewRequest = (r: PendingReviewRequest): void => { store.set(r.nonce, r) }
-export const getPendingReviewRequest = (nonce: string): PendingReviewRequest | undefined => store.get(nonce)
-export const clearPendingReviewRequest = (nonce: string): void => { store.delete(nonce) }
+export const setPendingReviewRequest = (r: PendingReviewRequest): void => {
+  store.set(r.nonce, r)
+}
+export const getPendingReviewRequest = (
+  nonce: string
+): PendingReviewRequest | undefined => store.get(nonce)
+export const clearPendingReviewRequest = (nonce: string): void => {
+  store.delete(nonce)
+}
 
 // Unplaceable findings + malformed reviewer notes have no (path, staged) row;
 // they live here, grouped by ownerKey, for the review-level surface (Task 11).
 // Defined NOW so Task 10 (useAgentReview) has a write target before Task 11 renders it.
-export interface ReviewLevelNote { commentId: string; reviewer: string; text: string; nonce: string }
-const reviewLevelByOwner = new Map<string, ReviewLevelNote[]>()
-export const addReviewLevelNote = (ownerKey: string, note: ReviewLevelNote): void => {
-  reviewLevelByOwner.set(ownerKey, [...(reviewLevelByOwner.get(ownerKey) ?? []), note])
+export interface ReviewLevelNote {
+  commentId: string
+  reviewer: string
+  text: string
+  nonce: string
 }
-export const reviewLevelNotes = (ownerKey: string): ReviewLevelNote[] => reviewLevelByOwner.get(ownerKey) ?? []
-export const clearReviewLevelNotes = (ownerKey: string): void => { reviewLevelByOwner.delete(ownerKey) }
+const reviewLevelByOwner = new Map<string, ReviewLevelNote[]>()
+export const addReviewLevelNote = (
+  ownerKey: string,
+  note: ReviewLevelNote
+): void => {
+  reviewLevelByOwner.set(ownerKey, [
+    ...(reviewLevelByOwner.get(ownerKey) ?? []),
+    note,
+  ])
+}
+export const reviewLevelNotes = (ownerKey: string): ReviewLevelNote[] =>
+  reviewLevelByOwner.get(ownerKey) ?? []
+export const clearReviewLevelNotes = (ownerKey: string): void => {
+  reviewLevelByOwner.delete(ownerKey)
+}
 ```
 
 - [ ] **Step 4:** Add a test that `addReviewLevelNote` / `reviewLevelNotes` round-trip per owner.
