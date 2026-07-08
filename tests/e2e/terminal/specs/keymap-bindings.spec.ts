@@ -6,9 +6,9 @@ type ElectronModule = typeof import('electron')
  * VIM-104 end-to-end verification of the keymap + opt-in Vim mode keybindings,
  * driven against the real Electron app.
  *
- * App-level shortcuts are `document` capture-phase keydown listeners, so we
- * trigger them by dispatching synthetic KeyboardEvents to `document` (the same
- * shape the unit tests use).
+ * Most app-level shortcuts are `document` capture-phase keydown listeners.
+ * The command palette shortcut is owned by Electron before-input-event /
+ * focused-window accelerator plumbing, so this spec drives that path directly.
  */
 
 interface KeyInit {
@@ -18,6 +18,10 @@ interface KeyInit {
   metaKey?: boolean
   ctrlKey?: boolean
   shiftKey?: boolean
+}
+
+interface ElectronBeforeInputEvent {
+  preventDefault: () => void
 }
 
 // The app uses Meta (⌘) on macOS and Ctrl on Linux/Windows for the
@@ -86,6 +90,30 @@ const fireTerminalZoneKey = async (init: KeyInit): Promise<void> => {
   }, init)
 }
 
+const fireCommandPaletteShortcutInput = async (): Promise<void> => {
+  await browser.electron.execute((electron: ElectronModule) => {
+    const win = electron.BrowserWindow.getAllWindows()[0]
+    const platform = process.platform
+    const isMac = platform === 'darwin'
+    win?.focus()
+    win?.webContents.focus()
+    win?.webContents.emit(
+      'before-input-event',
+      { preventDefault: () => undefined } satisfies ElectronBeforeInputEvent,
+      {
+        type: 'keyDown',
+        key: ';',
+        code: 'Semicolon',
+        control: !isMac,
+        meta: isMac,
+        alt: false,
+        shift: false,
+        isAutoRepeat: false,
+      }
+    )
+  })
+}
+
 // Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it
 // and pressing Enter.
 const runExCommand = async (command: string): Promise<void> => {
@@ -116,14 +144,14 @@ const openCommandPalette = async (): Promise<void> => {
         return true
       }
 
-      await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
-      await browser.pause(50)
+      await fireCommandPaletteShortcutInput()
+      await browser.pause(150)
       if (await isPaletteOpen()) {
         return true
       }
 
-      await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
-      await browser.pause(50)
+      await fireCommandPaletteShortcutInput()
+      await browser.pause(150)
 
       return isPaletteOpen()
     },
