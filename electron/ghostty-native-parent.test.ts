@@ -592,8 +592,17 @@ describe('ghostty native parent', () => {
         destroy: vi.fn(),
       }
 
+      const invoke = vi.fn()
+
       const sidecar = {
-        invoke: vi.fn(<T>(): Promise<T> => Promise.resolve(undefined as T)),
+        invoke: <T>(
+          method: string,
+          args?: Record<string, unknown>
+        ): Promise<T> => {
+          invoke(method, args)
+
+          return Promise.resolve(undefined as T)
+        },
         onEvent: vi.fn(() => vi.fn()),
         shutdown: vi.fn(() => Promise.resolve()),
       } satisfies Sidecar
@@ -646,8 +655,8 @@ describe('ghostty native parent', () => {
 
       expect(addon.destroy).toHaveBeenCalledWith(firstSurface)
       expect(addon.create).toHaveBeenCalledTimes(2)
-      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
-      expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(invoke).toHaveBeenCalledWith('resize_pty', {
         request: {
           sessionId: 'pty-1',
           cols: 80,
