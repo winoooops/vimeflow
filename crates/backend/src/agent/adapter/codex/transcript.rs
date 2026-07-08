@@ -553,8 +553,36 @@ fn process_event_msg(
                 replay_done,
             );
             emit_reply_if_present(payload, session_id, events, replay_done);
+            emit_review_if_present(payload, session_id, events, replay_done);
         }
         _ => {}
+    }
+}
+
+/// If the completed reply on a `task_complete` carries the VIM-304 review
+/// sentinel block, extract it and emit `agent-review`. Same `replay_done` gate
+/// as the reply path. No sentinel → no event.
+fn emit_review_if_present(
+    payload: &CodexPayloadDto,
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    replay_done: bool,
+) {
+    if !replay_done {
+        return;
+    }
+
+    let Some(outcome) = payload
+        .last_agent_message
+        .as_deref()
+        .and_then(crate::agent::review::extract_agent_review)
+    else {
+        return;
+    };
+
+    let event = crate::agent::review::map_review_outcome(session_id, outcome);
+    if let Err(e) = crate::agent::events::emit_agent_review(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-review event: {}", e);
     }
 }
 
@@ -1783,6 +1811,76 @@ mod tests {
             .recorded()
             .iter()
             .all(|(name, _)| name != "agent-reply"));
+    }
+
+    #[test]
+    fn process_line_task_complete_with_review_block_emits_agent_review() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+
+        let line = r#"{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","duration_ms":5,"last_agent_message":"done\n<<<VIMEFLOW_REVIEW\n{\"v\":1,\"nonce\":\"n\",\"reviewer\":\"codex\",\"findings\":[{\"scope\":\"line\",\"path\":\"a.ts\",\"side\":\"additions\",\"line\":5,\"category\":\"bug\",\"text\":\"x\"}]}\nVIMEFLOW_REVIEW>>>"}}"#;
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut None,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let reviews: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-review")
+            .collect();
+        assert_eq!(reviews.len(), 1);
+        let payload = &reviews[0].1;
+        assert_eq!(payload["sessionId"], "pty-1");
+        assert_eq!(payload["nonce"], "n");
+        assert_eq!(payload["reviewer"], "codex");
+        assert_eq!(payload["findings"][0]["scope"], "line");
+        assert_eq!(payload["findings"][0]["line"], 5);
+    }
+
+    #[test]
+    fn process_line_task_complete_without_review_block_emits_no_review() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+
+        let line = r#"{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","duration_ms":5,"last_agent_message":"just done"}}"#;
+        process_line(
+            line,
+            "pty-1",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut None,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        assert!(sink
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-review"));
     }
 
     #[test]

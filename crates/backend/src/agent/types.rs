@@ -353,6 +353,86 @@ pub enum AgentReplyStatus {
     Skipped,
 }
 
+/// A delegated reviewer's findings for the current diff (VIM-304).
+/// `findings: None` is the malformed marker; `raw_text` carries the full block
+/// so the frontend can degrade to a plain-text reviewer note.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Consumed by the frontend (PR-2)
+pub struct AgentReviewEvent {
+    /// PTY session ID
+    pub session_id: String,
+    /// Echoed dispatch token; best-effort on malformed (None if unparseable).
+    pub nonce: Option<String>,
+    /// The reviewer's self-reported name; best-effort on malformed (the frontend
+    /// falls back to a label).
+    pub reviewer: Option<String>,
+    /// The full block text — the frontend degrade note.
+    pub raw_text: String,
+    /// Typed findings when the block is schema-valid (may be empty = clean
+    /// review); None is the malformed marker.
+    pub findings: Option<Vec<AgentReviewFinding>>,
+}
+
+/// One self-anchoring review finding (VIM-304).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct AgentReviewFinding {
+    pub scope: ReviewFindingScope,
+    pub path: String,
+    /// Present for line / range scope.
+    pub side: Option<ReviewFindingSide>,
+    /// Line scope: new-file line for additions, old-file line for deletions.
+    pub line: Option<u32>,
+    /// Range scope.
+    pub start_line: Option<u32>,
+    pub end_line: Option<u32>,
+    pub category: ReviewFindingCategory,
+    pub text: String,
+}
+
+/// Where a finding anchors in the diff (VIM-304).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum ReviewFindingScope {
+    Line,
+    Range,
+    File,
+}
+
+/// Which diff column a finding targets (VIM-304).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum ReviewFindingSide {
+    Additions,
+    Deletions,
+}
+
+/// The finding's category — reuses the frontend `ReviewCommentCategory` literals
+/// (VIM-304).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum ReviewFindingCategory {
+    Bug,
+    Suggestion,
+    Change,
+    Question,
+}
+
 /// Tool call execution status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
