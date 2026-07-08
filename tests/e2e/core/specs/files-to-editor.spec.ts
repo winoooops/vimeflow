@@ -37,42 +37,35 @@ describe('File explorer → editor flow', () => {
     await clickBySelector('[aria-label="Refresh file tree"]')
 
     await browser.waitUntil(
-      async () => {
-        return browser.execute((name: string) => {
+      async () =>
+        browser.execute((fileName: string) => {
           const items = Array.from(
-            document.querySelectorAll<HTMLElement>('[role="treeitem"]')
+            document.querySelectorAll<HTMLElement>(
+              '[role="treeitem"][data-file-type="file"]'
+            )
           )
 
           return items.some(
-            (el) =>
-              !el.hasAttribute('aria-expanded') &&
-              (el.textContent ?? '').includes(name)
+            (el) => el.dataset.fileName === fileName && el.offsetParent !== null
           )
-        }, FIXTURE_NAME)
-      },
+        }, FIXTURE_NAME),
       {
         timeout: 15_000,
         timeoutMsg: `fixture ${FIXTURE_NAME} never appeared in the refreshed file tree`,
       }
     )
 
-    // Click our fixture file specifically. Falls back to an error if the
-    // explorer filtered out dotfiles — which would matter for this test
-    // since we rely on the dotfile showing up.
-    const fileTargeted = await browser.execute((name: string) => {
-      const items = Array.from(
-        document.querySelectorAll<HTMLElement>('[role="treeitem"]')
-      )
-      const fixture = items.find(
-        (el) =>
-          !el.hasAttribute('aria-expanded') &&
-          (el.textContent ?? '').includes(name)
-      )
+    const fileTargeted = await browser.execute((fileName: string) => {
+      const fixture = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[role="treeitem"][data-file-type="file"]'
+        )
+      ).find((el) => el.dataset.fileName === fileName)
       if (!fixture) return null
       const target =
         fixture.querySelector<HTMLElement>('.cursor-pointer') ?? fixture
       target.click()
-      return fixture.textContent?.trim() ?? ''
+      return fixture.dataset.filePath ?? ''
     }, FIXTURE_NAME)
 
     if (fileTargeted === null) {

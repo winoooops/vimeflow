@@ -105,7 +105,13 @@ export const FileTreeNode = ({
   const indent = depth * 16
 
   return (
-    <div role="treeitem" aria-expanded={isFolder ? isExpanded : undefined}>
+    <div
+      role="treeitem"
+      aria-expanded={isFolder ? isExpanded : undefined}
+      data-file-name={node.name.replace(/\/$/u, '')}
+      data-file-path={fullPath}
+      data-file-type={node.type}
+    >
       <div
         className="group flex h-7 cursor-pointer items-center gap-1.5 rounded px-1 text-on-surface/80 transition-colors hover:bg-wash-subtle"
         style={{ paddingLeft: `${indent + 4}px` }}
