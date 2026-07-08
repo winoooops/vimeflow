@@ -12,26 +12,41 @@ import { clickBySelector } from '../../shared/actions.js'
 interface KeyInit {
   key: string
   code?: string
+  modKey?: boolean
   metaKey?: boolean
   ctrlKey?: boolean
   shiftKey?: boolean
 }
 
 // The app uses Meta (⌘) on macOS and Ctrl on Linux/Windows for the
-// document-level pane shortcuts under test. Drive the events with the same
-// modifier the running binary expects so the suite passes on CI runners for
-// both platforms.
-const isMac = process.platform === 'darwin'
-const modInit = (): Pick<KeyInit, 'metaKey' | 'ctrlKey'> =>
-  isMac ? { metaKey: true } : { ctrlKey: true }
+// document-level pane shortcuts under test. Resolve it in the renderer so the
+// synthetic event matches the platform the app itself sees.
+const modInit = (): Pick<KeyInit, 'modKey'> => ({ modKey: true })
 
 const fireKey = async (init: KeyInit): Promise<void> => {
   await browser.execute((i: KeyInit) => {
+    const { modKey, ...eventInit } = i
+    const platform =
+      (
+        navigator as Navigator & {
+          userAgentData?: { platform?: string }
+        }
+      ).userAgentData?.platform ?? navigator.platform
+    const isMac = platform.toLowerCase().includes('mac')
+    const modKeys =
+      modKey === true
+        ? {
+            ctrlKey: !isMac,
+            metaKey: isMac,
+          }
+        : {}
+
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         bubbles: true,
         cancelable: true,
-        ...i,
+        ...eventInit,
+        ...modKeys,
       })
     )
   }, init)
