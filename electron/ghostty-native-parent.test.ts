@@ -1318,6 +1318,64 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('keeps secondary resize active while overlay blocks input', () => {
+    const callbacks: {
+      onInput?: (data: string) => void
+      onResize?: (cols: number, rows: number) => void
+      onFocus?: () => void
+    } = {}
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      addSecondary: vi.fn((_surface, input, resize, focus) => {
+        callbacks.onInput = input
+        callbacks.onResize = resize
+        callbacks.onFocus = focus
+      }),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      writeSecondary: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+      inputBlocked: vi.fn(() => true),
+    })
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+      }
+    )
+
+    callbacks.onInput?.('blocked')
+    callbacks.onResize?.(100, 30)
+    callbacks.onFocus?.()
+
+    expect(sidecar.invoke).toHaveBeenCalledOnce()
+    expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+      request: { sessionId: 'burner-pty', cols: 100, rows: 30 },
+    })
+    expect(webContentsSend).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
   test('buffers capped secondary output until the child is attached', () => {
     const surface = {}
 

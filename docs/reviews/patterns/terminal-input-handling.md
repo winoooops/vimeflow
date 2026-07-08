@@ -2,7 +2,7 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ref_count: 5
 ---
 
@@ -105,4 +105,13 @@ double execution, and paste failures.
 - **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`, `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** Native Ghostty input and write paths crossed Swift/C++ bridge APIs with `Int32`/`int` length parameters but did not guard oversized byte buffers before conversion.
 - **Fix:** Drop input buffers larger than `Int32.max` before the Swift callback conversion and throw JS-visible errors before narrowing primary or secondary write strings beyond `INT_MAX`.
+- **Commit:** same commit as this entry
+
+### 11. Secondary Ghostty resize was gated as interactive input
+
+- **Source:** github-codex-connector | PR #675 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native secondary Ghostty resize callback returned early when an interactive overlay was active. Burner PTYs could keep stale cols/rows if the split or popup layout changed while a menu or dialog was open.
+- **Fix:** Kept overlay gating on secondary input and focus callbacks, but let secondary resize callbacks continue when the owner window and secondary state are live. Added a regression test covering blocked input/focus with resize still forwarded to `resize_pty`.
 - **Commit:** same commit as this entry

@@ -1201,7 +1201,7 @@ export class GhosttyNativeParentController {
       },
       onResize: (cols, rows): void => {
         const win = ownerWindow()
-        if (!win || !state.secondary || this.inputBlocked(win)) {
+        if (!win || !state.secondary) {
           return
         }
 
