@@ -2,13 +2,17 @@ import { clickBySelector } from '../../shared/actions.js'
 
 type ElectronModule = typeof import('electron')
 
+const commandPaletteInputSelector =
+  '[role="combobox"][aria-label="Command palette search"]'
+
 /**
  * VIM-104 end-to-end verification of the keymap + opt-in Vim mode keybindings,
  * driven against the real Electron app.
  *
  * Most app-level shortcuts are `document` capture-phase keydown listeners.
  * The command palette shortcut is owned by Electron before-input-event /
- * focused-window accelerator plumbing, so this spec drives that path directly.
+ * focused-window accelerator plumbing, so this spec sends a real WebDriver
+ * key chord instead of dispatching a synthetic DOM KeyboardEvent.
  */
 
 interface KeyInit {
@@ -18,10 +22,6 @@ interface KeyInit {
   metaKey?: boolean
   ctrlKey?: boolean
   shiftKey?: boolean
-}
-
-interface ElectronBeforeInputEvent {
-  preventDefault: () => void
 }
 
 // The app uses Meta (⌘) on macOS and Ctrl on Linux/Windows for the
@@ -90,48 +90,91 @@ const fireTerminalZoneKey = async (init: KeyInit): Promise<void> => {
   }, init)
 }
 
-const fireCommandPaletteShortcutInput = async (): Promise<void> => {
-  await browser.electron.execute((electron: ElectronModule) => {
-    const win = electron.BrowserWindow.getAllWindows()[0]
-    const platform = process.platform
-    const isMac = platform === 'darwin'
-    win?.focus()
-    win?.webContents.focus()
-    win?.webContents.emit(
-      'before-input-event',
-      { preventDefault: () => undefined } satisfies ElectronBeforeInputEvent,
-      {
-        type: 'keyDown',
-        key: ';',
-        code: 'Semicolon',
-        control: !isMac,
-        meta: isMac,
-        alt: false,
-        shift: false,
-        isAutoRepeat: false,
-      }
-    )
+const fireCommandPaletteShortcutKeyAction = async (): Promise<void> => {
+  const isMac = await browser.execute(() => {
+    const platform =
+      (
+        navigator as Navigator & {
+          userAgentData?: { platform?: string }
+        }
+      ).userAgentData?.platform ?? navigator.platform
+
+    return platform.toLowerCase().includes('mac')
   })
+  const modifierKey = isMac ? '\uE03D' : '\uE009'
+
+  await browser
+    .action('key')
+    .down(modifierKey)
+    .down(';')
+    .up(';')
+    .up(modifierKey)
+    .perform()
 }
 
 // Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it
 // and pressing Enter.
 const runExCommand = async (command: string): Promise<void> => {
   await openCommandPalette()
-  const input = await $(
-    '[role="combobox"][aria-label="Command palette search"]'
-  )
-  await input.waitForDisplayed({ timeout: 8_000 })
-  await input.setValue(command)
+  await setCommandPaletteQuery(command)
   await fireKey({ key: 'Enter' })
 }
 
-const openCommandPalette = async (): Promise<void> => {
-  const paletteInput = (): ReturnType<typeof $> =>
-    $('[role="combobox"][aria-label="Command palette search"]')
-  const isPaletteOpen = async (): Promise<boolean> =>
-    (await paletteInput()).isDisplayed()
+const isCommandPaletteInputVisible = async (): Promise<boolean> =>
+  browser.execute((selector: string) => {
+    const element = document.querySelector<HTMLElement>(selector)
+    if (element === null) {
+      return false
+    }
 
+    const style = window.getComputedStyle(element)
+
+    return (
+      style.visibility !== 'hidden' &&
+      style.display !== 'none' &&
+      element.getClientRects().length > 0
+    )
+  }, commandPaletteInputSelector)
+
+const waitForCommandPaletteInput = async (): Promise<void> => {
+  await browser.waitUntil(async () => isCommandPaletteInputVisible(), {
+    timeout: 8_000,
+    interval: 100,
+    timeoutMsg: 'command palette input did not become visible',
+  })
+}
+
+const waitForCommandPaletteClosed = async (): Promise<void> => {
+  await browser.waitUntil(async () => !(await isCommandPaletteInputVisible()), {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'command palette input did not close',
+  })
+}
+
+const setCommandPaletteQuery = async (query: string): Promise<void> => {
+  await waitForCommandPaletteInput()
+  await browser.execute(
+    (selector: string, value: string) => {
+      const input = document.querySelector<HTMLInputElement>(selector)
+      if (input === null) {
+        throw new Error('command palette input not found')
+      }
+
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value'
+      )?.set
+      valueSetter?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.focus()
+    },
+    commandPaletteInputSelector,
+    query
+  )
+}
+
+const openCommandPalette = async (): Promise<void> => {
   await browser.electron.execute((electron: ElectronModule) => {
     const win = electron.BrowserWindow.getAllWindows()[0]
     win?.focus()
@@ -140,20 +183,14 @@ const openCommandPalette = async (): Promise<void> => {
 
   await browser.waitUntil(
     async () => {
-      if (await isPaletteOpen()) {
+      if (await isCommandPaletteInputVisible()) {
         return true
       }
 
-      await fireCommandPaletteShortcutInput()
-      await browser.pause(150)
-      if (await isPaletteOpen()) {
-        return true
-      }
-
-      await fireCommandPaletteShortcutInput()
+      await fireCommandPaletteShortcutKeyAction()
       await browser.pause(150)
 
-      return isPaletteOpen()
+      return isCommandPaletteInputVisible()
     },
     {
       timeout: 8_000,
@@ -161,6 +198,8 @@ const openCommandPalette = async (): Promise<void> => {
       timeoutMsg: 'command palette did not open from the shortcut',
     }
   )
+
+  await waitForCommandPaletteInput()
 }
 
 const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
@@ -284,14 +323,11 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   it('Cmd+; opens the command palette', async () => {
     await openCommandPalette()
 
-    const palette = await $(
-      '[role="combobox"][aria-label="Command palette search"]'
-    )
-    await palette.waitForDisplayed({ timeout: 8_000 })
+    await waitForCommandPaletteInput()
 
     // The palette owns its Escape handler.
     await fireKey({ key: 'Escape' })
-    await palette.waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await waitForCommandPaletteClosed()
   })
 
   it('Keymap pane: Vim preset reveals vim bindings and persists across reopen', async () => {
