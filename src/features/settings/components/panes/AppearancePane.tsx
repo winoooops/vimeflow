@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { type ReactElement } from 'react'
 import {
   resolveSwellVariant,
   type SwellVariant,
@@ -19,11 +19,6 @@ export const AppearancePane = ({
   activeTargetId = null,
 }: SettingsPaneTargetProps): ReactElement => {
   const { settings, update } = useSettings()
-  const [activeScheme, setActiveScheme] = useState('obsidian')
-  const [accentHue, setAccentHue] = useState(285)
-  const [density, setDensity] = useState('comfortable')
-  const [uiFont, setUiFont] = useState('instrument')
-  const [monoFont, setMonoFont] = useState('jetbrains')
 
   const colorSchemeActive =
     activeTargetId === SETTINGS_TARGET_IDS.appearanceColorScheme
@@ -51,14 +46,14 @@ export const AppearancePane = ({
 
         <div className="grid grid-cols-2 gap-2.5">
           {BUILTIN_SCHEMES.map((s) => {
-            const isActive = activeScheme === s.id
+            const isActive = settings.aesthetic === s.id
 
             return (
               <button
                 key={s.id}
                 type="button"
                 aria-pressed={isActive}
-                onClick={() => setActiveScheme(s.id)}
+                onClick={() => update({ aesthetic: s.id })}
                 className={`flex items-center gap-3 rounded-lg border p-2.5 text-left transition-colors ${
                   isActive
                     ? 'border-primary-container/45 bg-primary-container/[0.08]'
@@ -127,7 +122,7 @@ export const AppearancePane = ({
 
       <Row
         label="Accent Hue"
-        hint={`Shift the primary accent around the wheel. Current: ${accentHue}°`}
+        hint={`Shift the primary accent around the wheel. Current: ${settings.accentHue}°`}
         settingsTargetId={SETTINGS_TARGET_IDS.appearanceAccentHue}
         settingsTargetActive={
           activeTargetId === SETTINGS_TARGET_IDS.appearanceAccentHue
@@ -138,8 +133,8 @@ export const AppearancePane = ({
           min={240}
           max={360}
           step={2}
-          value={accentHue}
-          onChange={(e) => setAccentHue(Number(e.target.value))}
+          value={settings.accentHue}
+          onChange={(e) => update({ accentHue: Number(e.target.value) })}
           className="w-[180px]"
           aria-label="Accent hue"
         />
@@ -154,8 +149,8 @@ export const AppearancePane = ({
         }
       >
         <Select
-          value={density}
-          onChange={setDensity}
+          value={settings.density}
+          onChange={(value) => update({ density: value })}
           aria-label="Density"
           options={[
             { id: 'comfortable', label: 'Comfortable' },
@@ -173,8 +168,8 @@ export const AppearancePane = ({
         }
       >
         <Select
-          value={uiFont}
-          onChange={setUiFont}
+          value={settings.uiFont}
+          onChange={(value) => update({ uiFont: value })}
           aria-label="UI font"
           options={[
             { id: 'instrument', label: 'Instrument Sans' },
@@ -193,8 +188,8 @@ export const AppearancePane = ({
         }
       >
         <Select
-          value={monoFont}
-          onChange={setMonoFont}
+          value={settings.monoFont}
+          onChange={(value) => update({ monoFont: value })}
           aria-label="Mono font"
           options={[
             { id: 'jetbrains', label: 'JetBrains Mono' },

@@ -1,4 +1,6 @@
 import type { LayoutShape } from '../components/SplitView/layouts'
+import type { LayoutSlotId } from '../../sessions/types'
+import { gridAreaNameForSlotId } from '../layout-registry/layoutDefinition'
 
 export type PaneDirection = 'left' | 'right' | 'up' | 'down'
 
@@ -8,7 +10,7 @@ interface Cell {
 }
 
 interface Candidate {
-  readonly index: number
+  readonly slotId: LayoutSlotId
   readonly steps: number
   readonly nRow: number
   readonly nCol: number
@@ -19,12 +21,6 @@ const DIRECTION_DELTAS: Record<PaneDirection, Cell> = {
   right: { row: 0, col: 1 },
   up: { row: -1, col: 0 },
   down: { row: 1, col: 0 },
-}
-
-const parseSlotIndex = (slot: string): number | null => {
-  const match = /^p(\d+)$/.exec(slot)
-
-  return match === null ? null : Number.parseInt(match[1], 10)
 }
 
 const rayPositions = (
@@ -58,11 +54,24 @@ const rayPositions = (
 
 export const resolveDirectionalPane = (
   layout: LayoutShape,
-  activePaneIndex: number,
-  paneCount: number,
+  activeSlotId: LayoutSlotId,
+  occupiedSlotIds: ReadonlySet<LayoutSlotId>,
   direction: PaneDirection
-): number | null => {
-  const activeSlot = `p${activePaneIndex}`
+): LayoutSlotId | null => {
+  const gridAreaBySlotId = new Map(
+    layout.definition.slots.map((slot) => [
+      slot.id,
+      gridAreaNameForSlotId(slot.id),
+    ])
+  )
+
+  const slotIdByGridArea = new Map(
+    [...gridAreaBySlotId].map(([slotId, gridArea]) => [gridArea, slotId])
+  )
+  const activeSlot = gridAreaBySlotId.get(activeSlotId)
+  if (activeSlot === undefined) {
+    return null
+  }
   const grid = layout.areas
 
   const activeCells = grid.flatMap((row, rowIndex) =>
@@ -83,12 +92,12 @@ export const resolveDirectionalPane = (
       if (slot === activeSlot) {
         return false
       }
-      const index = parseSlotIndex(slot)
-      if (index === null) {
+      const slotId = slotIdByGridArea.get(slot)
+      if (slotId === undefined) {
         return false
       }
 
-      return index < paneCount
+      return occupiedSlotIds.has(slotId)
     })
 
     if (!neighbor) {
@@ -96,15 +105,15 @@ export const resolveDirectionalPane = (
     }
 
     const slot = grid[neighbor.row][neighbor.col]
-    const neighborIndex = parseSlotIndex(slot)
-    if (neighborIndex === null) {
+    const neighborSlotId = slotIdByGridArea.get(slot)
+    if (neighborSlotId === undefined) {
       return acc
     }
 
     return [
       ...acc,
       {
-        index: neighborIndex,
+        slotId: neighborSlotId,
         steps: Math.abs(neighbor.row - row) + Math.abs(neighbor.col - col),
         nRow: neighbor.row,
         nCol: neighbor.col,
@@ -126,5 +135,5 @@ export const resolveDirectionalPane = (
     return candidate.nCol < best.nCol ? candidate : best
   }, null)
 
-  return nearest?.index ?? null
+  return nearest?.slotId ?? null
 }

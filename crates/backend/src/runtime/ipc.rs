@@ -757,6 +757,7 @@ mod router {
                 }
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                p.settings.validate_ipc_payload()?;
                 state.save_app_settings(&p.settings)?;
                 Ok(Value::Null)
             }
@@ -770,7 +771,12 @@ mod router {
                 }
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.save_agent_aliases(&p.aliases)?;
+                let store = crate::aliases::AgentAliasesStore {
+                    version: crate::aliases::CURRENT_AGENT_ALIASES_VERSION,
+                    aliases: p.aliases,
+                };
+                store.validate_ipc_payload()?;
+                state.save_agent_aliases(&store.aliases)?;
                 Ok(Value::Null)
             }
             #[cfg(feature = "e2e-test")]

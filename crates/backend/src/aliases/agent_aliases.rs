@@ -12,6 +12,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 pub const CURRENT_AGENT_ALIASES_VERSION: u32 = 1;
+const MAX_AGENT_ALIASES: usize = 128;
+const MAX_ALIAS_FIELD_CHARS: usize = 1024;
 
 /// User-defined alias for launching a coding agent (or arbitrary shell command).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,6 +42,32 @@ impl Default for AgentAlias {
     }
 }
 
+impl AgentAlias {
+    fn validate_ipc_payload(&self) -> Result<(), String> {
+        for (field, value) in [
+            ("id", self.id.as_str()),
+            ("alias", self.alias.as_str()),
+            ("agent", self.agent.as_str()),
+            ("model", self.model.as_str()),
+            ("extra", self.extra.as_str()),
+        ] {
+            if value.chars().count() > MAX_ALIAS_FIELD_CHARS {
+                return Err(format!("{field} exceeds {MAX_ALIAS_FIELD_CHARS} characters"));
+            }
+        }
+
+        if let Some(account) = &self.account {
+            if account.chars().count() > MAX_ALIAS_FIELD_CHARS {
+                return Err(format!(
+                    "account exceeds {MAX_ALIAS_FIELD_CHARS} characters"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// On-disk wrapper for the alias store.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -56,6 +84,26 @@ impl Default for AgentAliasesStore {
             version: CURRENT_AGENT_ALIASES_VERSION,
             aliases: Vec::new(),
         }
+    }
+}
+
+impl AgentAliasesStore {
+    pub fn validate_ipc_payload(&self) -> Result<(), String> {
+        if self.version != CURRENT_AGENT_ALIASES_VERSION {
+            return Err(format!(
+                "unsupported aliases version {} (current {CURRENT_AGENT_ALIASES_VERSION})",
+                self.version
+            ));
+        }
+        if self.aliases.len() > MAX_AGENT_ALIASES {
+            return Err(format!("aliases exceeds {MAX_AGENT_ALIASES} entries"));
+        }
+
+        for alias in &self.aliases {
+            alias.validate_ipc_payload()?;
+        }
+
+        Ok(())
     }
 }
 
@@ -111,6 +159,7 @@ impl AliasesCache {
     /// the lock across the disk write so overlapping saves cannot persist out
     /// of order.
     pub fn save(&self, store: &AgentAliasesStore) -> Result<(), String> {
+        store.validate_ipc_payload()?;
         if store.version != CURRENT_AGENT_ALIASES_VERSION {
             return Err(format!(
                 "refusing to save unsupported aliases version {} (current {CURRENT_AGENT_ALIASES_VERSION})",
@@ -354,6 +403,31 @@ alias = "c"
 
         let reloaded = AliasesCache::new(path).load();
         assert_eq!(reloaded, custom_store());
+    }
+
+    #[test]
+    fn validate_ipc_payload_rejects_unbounded_aliases() {
+        let store = AgentAliasesStore {
+            version: CURRENT_AGENT_ALIASES_VERSION,
+            aliases: (0..=MAX_AGENT_ALIASES)
+                .map(|i| make_alias(&format!("a{i}"), "claude", "sonnet", ""))
+                .collect(),
+        };
+
+        assert!(store.validate_ipc_payload().is_err());
+    }
+
+    #[test]
+    fn validate_ipc_payload_rejects_overlong_alias_fields() {
+        let store = AgentAliasesStore {
+            version: CURRENT_AGENT_ALIASES_VERSION,
+            aliases: vec![AgentAlias {
+                extra: "x".repeat(MAX_ALIAS_FIELD_CHARS + 1),
+                ..make_alias("c", "claude", "sonnet", "")
+            }],
+        };
+
+        assert!(store.validate_ipc_payload().is_err());
     }
 
     #[test]

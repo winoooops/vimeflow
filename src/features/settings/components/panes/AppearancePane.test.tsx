@@ -119,4 +119,41 @@ describe('AppearancePane', () => {
       )
     })
   })
+
+  test('persists appearance controls through the settings store', async () => {
+    const user = userEvent.setup()
+    const save = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),
+        save,
+        openFile: vi.fn(),
+      },
+    } as unknown as Window['vimeflow']
+
+    renderPane()
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /Obsidian/i, pressed: true })
+      ).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /Dense/i }))
+    await user.selectOptions(screen.getByLabelText('Density'), 'compact')
+    await user.selectOptions(screen.getByLabelText('UI font'), 'inter')
+    await user.selectOptions(screen.getByLabelText('Mono font'), 'iosevka')
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          aesthetic: 'dense',
+          density: 'compact',
+          uiFont: 'inter',
+          monoFont: 'iosevka',
+        })
+      )
+    })
+  })
 })

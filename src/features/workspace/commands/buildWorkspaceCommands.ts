@@ -854,6 +854,14 @@ export const buildWorkspaceCommands = (
       icon: 'vertical_split',
       match: aliasMatch('vsplit', 'vs'),
       execute: (): void => {
+        if (pickLayout) {
+          if (pickLayout('vsplit') === false) {
+            notifyInfo("Layout 'VSplit' needs fewer panes")
+          }
+
+          return
+        }
+
         if (setActiveSessionLayout) {
           setActiveSessionLayout('vsplit')
 
@@ -870,6 +878,14 @@ export const buildWorkspaceCommands = (
       icon: 'horizontal_split',
       match: aliasMatch('split', 'sp'),
       execute: (): void => {
+        if (pickLayout) {
+          if (pickLayout('hsplit') === false) {
+            notifyInfo("Layout 'HSplit' needs fewer panes")
+          }
+
+          return
+        }
+
         if (setActiveSessionLayout) {
           setActiveSessionLayout('hsplit')
 
@@ -886,6 +902,14 @@ export const buildWorkspaceCommands = (
       icon: 'crop_free',
       match: aliasMatch('only', 'on'),
       execute: (): void => {
+        if (pickLayout) {
+          if (pickLayout('single') === false) {
+            notifyInfo("Layout 'Single' needs fewer panes")
+          }
+
+          return
+        }
+
         if (setActiveSessionLayout) {
           setActiveSessionLayout('single')
 

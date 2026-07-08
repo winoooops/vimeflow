@@ -2,7 +2,7 @@
 id: pane-slot-identity
 category: correctness
 created: 2026-06-19
-last_updated: 2026-07-01
+last_updated: 2026-07-08
 ref_count: 1
 ---
 
@@ -64,4 +64,18 @@ pass the `slotId` through every layer that needs to act on a specific cell.
 - **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
 - **Finding:** The native Ghostty shortcut context derived `paneIds` from `resolvePanePlacement().assignments`, whose order follows the visible pane array rather than `layout.definition.addOrder`. Explicit placements could therefore map native digit shortcuts to the wrong visual slot.
 - **Fix:** Added a slot-ordered pane-id helper that projects assignments through `layout.definition.addOrder`, used it for `NativeGhosttyShortcutContext`, and covered swapped placements with a unit regression.
+- **Commit:** same commit as this entry
+
+### 5. Directional focus inferred neighbors from pane order instead of occupied slots
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-08
+- **Severity:** HIGH
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** Directional pane navigation passed the active pane's visible-array
+  index into the neighbor resolver. After drag-to-slot placement, that index no
+  longer represented the pane's grid cell, so focus could jump to an absent or
+  visually unrelated pane.
+- **Fix:** Resolve active and occupied slot ids from `resolvePanePlacement`, then
+  choose directional neighbors from the layout slot geometry and map the chosen
+  slot back to its assigned pane. Added slot-placement regression coverage.
 - **Commit:** same commit as this entry

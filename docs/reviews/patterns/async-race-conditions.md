@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ref_count: 83
 ---
 
@@ -983,4 +983,17 @@ prevent showing previous data.
 - **File:** `src/components/Menu.tsx`, `src/components/Tooltip.tsx`
 - **Finding:** Native-overlay Menu and Tooltip resize effects could resolve an accepted `openNativeOverlay` request after the surface was dismissed, leaving stale native sessions alive after renderer cleanup.
 - **Fix:** Mirror the initial-open cancellation guard in resize resync effects: when the effect has been disposed and the pending request is accepted, close the native overlay by `surfaceId` and skip state updates. Added regression tests for menu and tooltip stale resize requests.
+- **Commit:** same commit as this entry
+
+### 91. Initial settings load overwrote in-flight renderer updates
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-08
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** The settings provider applied the initial async `load()` result even
+  after the renderer had already accepted a local `update()`. A slower load could
+  roll the UI and context back to stale persisted settings until the next reload.
+- **Fix:** Track whether a local update happened while the initial load was
+  pending and skip applying that stale load result. Added a provider regression
+  test that keeps the in-flight update visible after the delayed load resolves.
 - **Commit:** same commit as this entry

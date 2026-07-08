@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { PaneLayoutId, Session } from '../../sessions/types'
+import type { LayoutSlotId, PaneLayoutId, Session } from '../../sessions/types'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   LAYOUT_CYCLE,
@@ -245,25 +245,41 @@ export const usePaneShortcuts = ({
         activeSession.panes,
         shape.capacity
       )
-      const activeVisibleIndex = visiblePanes.findIndex((pane) => pane.active)
-      if (activeVisibleIndex === -1) {
+
+      const placement = resolvePanePlacement(
+        visiblePanes,
+        shape,
+        activeSession.placements
+      )
+
+      const activeAssignment = placement.assignments.find(
+        (assignment) => assignment.pane.active
+      )
+      if (activeAssignment === undefined) {
         return
       }
 
-      const targetVisibleIndex = resolveDirectionalPane(
+      const paneBySlotId = new Map(
+        placement.assignments.map((assignment) => [
+          assignment.slotId,
+          assignment.pane,
+        ])
+      )
+
+      const targetSlotId = resolveDirectionalPane(
         shape,
-        activeVisibleIndex,
-        visiblePanes.length,
+        activeAssignment.slotId,
+        new Set<LayoutSlotId>(paneBySlotId.keys()),
         direction
       )
       event.preventDefault()
       event.stopPropagation()
 
-      if (targetVisibleIndex !== null) {
-        setSessionActivePane(
-          activeSession.id,
-          visiblePanes[targetVisibleIndex].id
-        )
+      if (targetSlotId !== null) {
+        const targetPane = paneBySlotId.get(targetSlotId)
+        if (targetPane !== undefined) {
+          setSessionActivePane(activeSession.id, targetPane.id)
+        }
       }
     }
 

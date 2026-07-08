@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
 } from 'react'
-import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 import {
   formatShortcut,
   isMacPlatform,
@@ -38,7 +38,6 @@ import type {
   KeymapKeys,
   SettingsPaneTargetProps,
 } from '../../types'
-import { Icon } from '../Icon'
 import { Kbd } from '../Kbd'
 import { PaneTitle, Row, Select } from '../controls'
 
@@ -329,20 +328,20 @@ export const KeymapPane = ({
     disabled?: boolean
     editCommandId?: CommandId
   }): ReactElement => (
-    <Tooltip content={label}>
-      <button
-        type="button"
-        aria-label={label}
-        {...(editCommandId === undefined
-          ? {}
-          : { [KEYMAP_EDIT_BUTTON_ATTRIBUTE]: editCommandId })}
-        onClick={onClick}
-        disabled={disabled}
-        className={iconButtonClass(disabled)}
-      >
-        <Icon name={icon} size={14} />
-      </button>
-    </Tooltip>
+    <IconButton
+      type="button"
+      label={label}
+      icon={icon}
+      size="sm"
+      variant="ghost"
+      showTooltip
+      {...(editCommandId === undefined
+        ? {}
+        : { [KEYMAP_EDIT_BUTTON_ATTRIBUTE]: editCommandId })}
+      onClick={onClick}
+      disabled={disabled}
+      className={iconButtonClass(disabled)}
+    />
   )
 
   const commandRow = (cmd: CatalogCommand, last: boolean): ReactElement => {

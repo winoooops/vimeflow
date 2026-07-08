@@ -2,7 +2,7 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-23
+last_updated: 2026-07-08
 ref_count: 7
 ---
 
@@ -138,4 +138,18 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **File:** `src/features/sessions/hooks/useSessionRestore.ts`
 - **Finding:** The store-load failure guard treated any non-empty PTY cache as a usable fallback. If the durable workspace layout was unreadable and `listSessions()` returned only `Exited` rows, restore reconstructed stale completed sessions and called `onRestore` instead of taking the intended failure path.
 - **Fix:** Changed the fallback eligibility check to require at least one `Alive` PTY row before suppressing the store-load failure. Added a regression test proving an exited-only cache after store-load failure does not call `onRestore` and still releases hydration.
+- **Commit:** same commit as this entry
+
+### 15. Appearance controls updated local state without persisting settings
+
+- **Source:** github-codex-connector | PR #672 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
+- **Finding:** Appearance controls for scheme, accent hue, density, and fonts
+  mutated component-local state instead of the settings provider. The UI appeared
+  to accept the change, but reloads discarded it and other settings consumers did
+  not observe the update.
+- **Fix:** Bind those controls directly to provider settings and call
+  `update(...)` for every change. Added a regression test asserting the controls
+  invoke persisted settings updates.
 - **Commit:** same commit as this entry

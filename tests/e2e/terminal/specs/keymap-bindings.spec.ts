@@ -55,13 +55,18 @@ const fireKey = async (init: KeyInit): Promise<void> => {
 // Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it
 // and pressing Enter.
 const runExCommand = async (command: string): Promise<void> => {
-  await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
+  await openCommandPalette()
   const input = await $(
     '[role="combobox"][aria-label="Command palette search"]'
   )
   await input.waitForDisplayed({ timeout: 8_000 })
   await input.setValue(command)
   await fireKey({ key: 'Enter' })
+}
+
+const openCommandPalette = async (): Promise<void> => {
+  await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
+  await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
 }
 
 const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
@@ -165,7 +170,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   })
 
   it('Cmd+; opens the command palette', async () => {
-    await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
+    await openCommandPalette()
 
     const palette = await $(
       '[role="combobox"][aria-label="Command palette search"]'

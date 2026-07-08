@@ -78,6 +78,7 @@ interface GhosttyNativeParentAddon {
   setShortcutDigits?: (surface: GhosttyNativeSurface, digits: string) => void
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
+  setFontFamily: (surface: GhosttyNativeSurface, fontFamily: string) => void
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
   destroy: (surface: GhosttyNativeSurface) => void
@@ -116,6 +117,7 @@ interface GhosttyNativeSurfaceState {
   // Ghostty theme/shortcut state so steady resize only calls setFrame.
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
+  lastFontFamily: string | null
   lastResize: { cols: number; rows: number } | null
   lastShortcutDigits: string | null
 }
@@ -477,6 +479,13 @@ export class GhosttyNativeParentController {
       state.lastForegroundColor = payload.foregroundColor
       addon.setForegroundColor?.(surface, payload.foregroundColor)
     }
+    if (
+      isNonEmptyString(payload.fontFamily) &&
+      state.lastFontFamily !== payload.fontFamily
+    ) {
+      state.lastFontFamily = payload.fontFamily
+      addon.setFontFamily(surface, payload.fontFamily)
+    }
     addon.setFrame(
       surface,
       frame.x,
@@ -821,6 +830,7 @@ export class GhosttyNativeParentController {
       secondary: null,
       lastBackgroundColor: null,
       lastForegroundColor: null,
+      lastFontFamily: null,
       lastResize: null,
       lastShortcutDigits: null,
     }

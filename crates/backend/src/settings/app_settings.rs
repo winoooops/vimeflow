@@ -9,6 +9,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 pub const CURRENT_APP_SETTINGS_VERSION: u32 = 1;
+const MAX_SETTINGS_STRING_CHARS: usize = 256;
+const MAX_CUSTOM_KEYBINDINGS: usize = 256;
+const MAX_KEYBINDING_CHARS: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -78,6 +81,52 @@ impl Default for AppSettings {
     }
 }
 
+impl AppSettings {
+    pub fn validate_ipc_payload(&self) -> Result<(), String> {
+        if self.version != CURRENT_APP_SETTINGS_VERSION {
+            return Err(format!(
+                "unsupported app settings version {} (current {CURRENT_APP_SETTINGS_VERSION})",
+                self.version
+            ));
+        }
+
+        for (field, value) in [
+            ("closeWithNoTabs", self.close_with_no_tabs.as_str()),
+            ("onLastWindowClosed", self.on_last_window_closed.as_str()),
+            ("cliOpenBehavior", self.cli_open_behavior.as_str()),
+            ("aesthetic", self.aesthetic.as_str()),
+            ("density", self.density.as_str()),
+            ("uiFont", self.ui_font.as_str()),
+            ("monoFont", self.mono_font.as_str()),
+            ("terminalFontFamily", self.terminal_font_family.as_str()),
+            ("reservoirSwell", self.reservoir_swell.as_str()),
+            ("keymapPreset", self.keymap_preset.as_str()),
+        ] {
+            if value.chars().count() > MAX_SETTINGS_STRING_CHARS {
+                return Err(format!("{field} exceeds {MAX_SETTINGS_STRING_CHARS} characters"));
+            }
+        }
+
+        if self.custom_keybindings.len() > MAX_CUSTOM_KEYBINDINGS {
+            return Err(format!(
+                "customKeybindings exceeds {MAX_CUSTOM_KEYBINDINGS} entries"
+            ));
+        }
+
+        for (command, chord) in &self.custom_keybindings {
+            if command.chars().count() > MAX_KEYBINDING_CHARS
+                || chord.chars().count() > MAX_KEYBINDING_CHARS
+            {
+                return Err(format!(
+                    "customKeybindings entries must be at most {MAX_KEYBINDING_CHARS} characters"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Rust-owned durable cache for `app_data_dir/settings.json`.
 /// Atomic write (`tempfile.persist`) + in-memory mirror, mirroring
 /// `WorkspaceLayoutCache`. Distinct file from `sessions.json`, so `clear_all`
@@ -118,6 +167,7 @@ impl AppSettingsCache {
     /// the lock across the disk write so overlapping saves cannot persist out
     /// of order.
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
+        settings.validate_ipc_payload()?;
         // Fail closed: never overwrite the durable file with a version `load`
         // would discard (which would silently delete the saved settings on the
         // next restore).
@@ -343,6 +393,34 @@ mod tests {
         // Original good file survived the failed save.
         let reloaded = AppSettingsCache::new(path).load();
         assert_eq!(reloaded, custom_settings());
+    }
+
+    #[test]
+    fn validate_ipc_payload_rejects_unbounded_custom_keybindings() {
+        let mut settings = AppSettings {
+            custom_keybindings: (0..=MAX_CUSTOM_KEYBINDINGS)
+                .map(|i| (format!("command-{i}"), "Mod+KeyK".to_string()))
+                .collect(),
+            ..AppSettings::default()
+        };
+
+        assert!(settings.validate_ipc_payload().is_err());
+
+        settings.custom_keybindings = HashMap::from([(
+            "command".to_string(),
+            "x".repeat(MAX_KEYBINDING_CHARS + 1),
+        )]);
+        assert!(settings.validate_ipc_payload().is_err());
+    }
+
+    #[test]
+    fn validate_ipc_payload_rejects_overlong_settings_strings() {
+        let settings = AppSettings {
+            terminal_font_family: "x".repeat(MAX_SETTINGS_STRING_CHARS + 1),
+            ..AppSettings::default()
+        };
+
+        assert!(settings.validate_ipc_payload().is_err());
     }
 
     #[test]

@@ -31,6 +31,7 @@ export const SettingsProvider = ({
   const [saveError, setSaveError] = useState<Error | null>(null)
   const settingsRef = useRef<AppSettings>(settings)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const hasLocalUpdateRef = useRef(false)
 
   settingsRef.current = settings
 
@@ -65,6 +66,9 @@ export const SettingsProvider = ({
 
       try {
         const loaded = await bridge.load()
+        if (hasLocalUpdateRef.current) {
+          return
+        }
         setSettings(loaded)
         settingsRef.current = loaded
       } catch {
@@ -113,6 +117,7 @@ export const SettingsProvider = ({
   const update = useCallback(
     (patch: Partial<AppSettings>): void => {
       const next = { ...settingsRef.current, ...patch }
+      hasLocalUpdateRef.current = true
       settingsRef.current = next
       setSettings(next)
       setSaveError(null)

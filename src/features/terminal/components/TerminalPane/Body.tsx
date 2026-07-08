@@ -95,6 +95,26 @@ export const terminalCache = new Map<
   { terminal: Terminal; fitAddon: FitAddon }
 >()
 
+const terminalOptions = (terminal: Terminal): Terminal['options'] | undefined =>
+  (terminal as Terminal & { options?: Terminal['options'] }).options
+
+const xtermFontFamily = (terminal: Terminal, fallback: string): string =>
+  terminalOptions(terminal)?.fontFamily ?? fallback
+
+const setTerminalFontFamily = (
+  terminal: Terminal,
+  fontFamily: string
+): boolean => {
+  const options = terminalOptions(terminal)
+  if (options === undefined) {
+    return false
+  }
+
+  options.fontFamily = fontFamily
+
+  return true
+}
+
 /**
  * Clear terminal cache (for testing only)
  */
@@ -665,6 +685,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       // Re-open terminal in the new container
       newTerminal.open(node)
+      setTerminalFontFamily(newTerminal, resolvedTerminalFontFamilyRef.current)
 
       // Re-fit to new container — guard against hidden (display:none) containers
       // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
@@ -774,7 +795,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
     }
 
-    appliedTerminalFontFamilyRef.current = resolvedTerminalFontFamilyRef.current
+    appliedTerminalFontFamilyRef.current = xtermFontFamily(
+      newTerminal,
+      resolvedTerminalFontFamilyRef.current
+    )
 
     const refreshAfterFontFit = (): void => {
       newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
@@ -994,8 +1018,15 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return
     }
 
-    terminal.options.fontFamily = resolvedTerminalFontFamily
+    const didApplyFont = setTerminalFontFamily(
+      terminal,
+      resolvedTerminalFontFamily
+    )
     appliedTerminalFontFamilyRef.current = resolvedTerminalFontFamily
+
+    if (!didApplyFont) {
+      return
+    }
 
     const node = containerRef.current
     const fitAddon = fitAddonRef.current

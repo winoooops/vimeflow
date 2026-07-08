@@ -2,7 +2,7 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ref_count: 2
 ---
 
@@ -119,4 +119,18 @@ not become repeated unhandled main-process failures.
 - **File:** `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** `Write` and `WriteSecondary` cast JS string byte lengths from `size_t` to `int` without checking `INT_MAX`, allowing oversized writes to wrap and be dropped with no visible error.
 - **Fix:** Reject oversized primary and secondary writes with JS-visible errors before passing lengths to the Swift bridge.
+- **Commit:** same commit as this entry
+
+### 9. Settings and aliases IPC accepted unbounded valid-shaped payloads
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/runtime/ipc.rs`
+- **Finding:** The save-settings and save-aliases IPC handlers accepted
+  renderer-provided strings and collections without size limits. A renderer bug
+  or compromised renderer could submit very large valid JSON and force the
+  backend to hold and persist oversized payloads.
+- **Fix:** Added Rust-side payload validators for settings strings, custom
+  keybinding counts and lengths, alias counts, and alias field lengths, then
+  invoked them at the IPC boundary and cache write path with regression tests.
 - **Commit:** same commit as this entry

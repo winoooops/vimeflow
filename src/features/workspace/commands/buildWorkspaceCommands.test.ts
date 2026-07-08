@@ -1718,6 +1718,26 @@ describe('buildWorkspaceCommands - vim aliases (VIM-104 B1)', () => {
     expect(setActiveSessionLayout).toHaveBeenCalledWith('single')
   })
 
+  test('vim split aliases use guarded layout picker when available', () => {
+    const pickLayout = vi.fn((id: string) => id !== 'hsplit')
+    const setActiveSessionLayout = vi.fn()
+    const notifyInfo = vi.fn()
+
+    const commands = buildVimCommands({
+      pickLayout,
+      setActiveSessionLayout,
+      notifyInfo,
+    })
+
+    commands.find((c) => c.id === 'vim-vsplit')?.execute?.('')
+    commands.find((c) => c.id === 'vim-split')?.execute?.('')
+
+    expect(pickLayout).toHaveBeenCalledWith('vsplit')
+    expect(pickLayout).toHaveBeenCalledWith('hsplit')
+    expect(setActiveSessionLayout).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith("Layout 'HSplit' needs fewer panes")
+  })
+
   test('layout commands notify when setActiveSessionLayout is unavailable', () => {
     const notifyInfo = vi.fn()
 

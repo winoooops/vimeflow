@@ -45,6 +45,7 @@ interface GhosttyBodyProps {
   onRequestFocus?: () => void
   shortcutContext?: NativeGhosttyShortcutContext
   bottomCornerRadius?: number
+  terminalFontFamily?: string
   onUnavailable?: () => void
 }
 
@@ -119,6 +120,7 @@ const nativeGhosttyFrameKey = ({
   backgroundColor,
   foregroundColor,
   bottomCornerRadius,
+  fontFamily,
   bounds,
   parentHeight,
   shortcutContext,
@@ -127,6 +129,7 @@ const nativeGhosttyFrameKey = ({
   backgroundColor: string
   foregroundColor: string
   bottomCornerRadius: number
+  fontFamily?: string
   bounds: NativeGhosttyBounds
   parentHeight: number
   shortcutContext?: NativeGhosttyShortcutContext
@@ -146,6 +149,7 @@ const nativeGhosttyFrameKey = ({
     frameVisible ? '1' : '0',
     backgroundColor,
     foregroundColor,
+    fontFamily ?? '',
     shortcutContext?.activePaneId ?? '',
     ...(shortcutContext?.paneIds ?? []),
   ].join(':')
@@ -173,6 +177,7 @@ export const GhosttyBody = ({
   onRequestFocus = undefined,
   shortcutContext = undefined,
   bottomCornerRadius = 0,
+  terminalFontFamily = undefined,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
   const theme = useTheme()
@@ -473,6 +478,7 @@ export const GhosttyBody = ({
         backgroundColor,
         foregroundColor,
         bottomCornerRadius: nativeBottomCornerRadius,
+        fontFamily: terminalFontFamily,
         bounds,
         parentHeight,
         shortcutContext,
@@ -484,6 +490,7 @@ export const GhosttyBody = ({
         bounds,
         backgroundColor,
         foregroundColor,
+        ...(terminalFontFamily ? { fontFamily: terminalFontFamily } : {}),
         bottomCornerRadius: nativeBottomCornerRadius,
         parentHeight,
         visible,
@@ -502,6 +509,7 @@ export const GhosttyBody = ({
   }, [
     backgroundColor,
     foregroundColor,
+    terminalFontFamily,
     bottomCornerRadius,
     cwd,
     flushQueuedNativeFrame,

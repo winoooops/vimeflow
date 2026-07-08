@@ -2,7 +2,7 @@
 id: react-prop-contracts
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-22
+last_updated: 2026-07-08
 ref_count: 6
 ---
 
@@ -85,3 +85,16 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **Finding:** The quota notice component hardcoded a tooltip string containing `sst/opencode#16017` while the URL lived in the agent registry. Updating the upstream issue link later could leave the tooltip stale even though the link opened the new destination.
 - **Fix:** Added `tooltipLabel` to `QuotaNotice`, populated it beside `trackUrl` in the registry, and made `QuotaUnavailableNotice` render that prop. Updated component and card tests to provide the co-located label.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Keymap actions reimplemented icon-only button primitives
+
+- **Source:** github-codex-connector | PR #672 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** The keymap pane rendered raw icon-only `<button>` elements with
+  local tooltip wrapping instead of the shared button primitives. This bypassed
+  the enforced icon-button contract and duplicated accessibility/styling
+  behavior owned by the design system.
+- **Fix:** Replace the local action helper with the shared `IconButton`
+  primitive while preserving labels, disabled state, and click handlers.
+- **Commit:** same commit as this entry

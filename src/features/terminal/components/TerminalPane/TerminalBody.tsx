@@ -128,6 +128,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           onRequestFocus={onRequestFocus}
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
+          terminalFontFamily={terminalFontFamily}
           onUnavailable={handleNativeUnavailable}
         />
       )

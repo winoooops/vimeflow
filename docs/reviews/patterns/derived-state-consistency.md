@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ref_count: 21
 ---
 
@@ -335,3 +335,18 @@ base data is technically "correct."
   is the active pane. Extended the inactive-pane restart test to assert the
   active session metadata remains unchanged.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Cached terminal surfaces kept the previous resolved font
+
+- **Source:** github-claude + github-codex-connector | PR #672 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** Terminal font settings were resolved in React state, but cached
+  xterm instances and native Ghostty frame updates did not receive the changed
+  font family. A settings change could update the provider while already-open
+  terminal panes continued rendering with the previous font.
+- **Fix:** Reapply the resolved font when reusing cached xterm instances and
+  thread `terminalFontFamily` through the native Ghostty update path, including
+  frame dedupe and Electron parent/helper handling. Added renderer and Electron
+  regression tests.
+- **Commit:** same commit as this entry

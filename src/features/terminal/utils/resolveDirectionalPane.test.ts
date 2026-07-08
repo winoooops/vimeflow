@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { LAYOUTS, type LayoutShape } from '../components/SplitView/layouts'
+import type { LayoutSlotId } from '../../sessions/types'
 import {
   resolveDirectionalPane,
   type PaneDirection,
@@ -12,6 +13,11 @@ interface TestCase {
   readonly direction: PaneDirection
   readonly expected: number | null
 }
+
+const slotId = (index: number): LayoutSlotId => `slot:p${index}`
+
+const occupiedSlots = (paneCount: number): ReadonlySet<LayoutSlotId> =>
+  new Set(Array.from({ length: paneCount }, (_, index) => slotId(index)))
 
 const cases: TestCase[] = [
   // single
@@ -296,8 +302,13 @@ describe('resolveDirectionalPane', () => {
   cases.forEach(({ layout, active, paneCount, direction, expected }) => {
     test(`${layout} p${active} ${direction} -> ${String(expected)}`, () => {
       expect(
-        resolveDirectionalPane(LAYOUTS[layout], active, paneCount, direction)
-      ).toBe(expected)
+        resolveDirectionalPane(
+          LAYOUTS[layout],
+          slotId(active),
+          occupiedSlots(paneCount),
+          direction
+        )
+      ).toBe(expected === null ? null : slotId(expected))
     })
   })
 
@@ -314,9 +325,20 @@ describe('resolveDirectionalPane', () => {
       cols: '',
       rows: '',
       areas: [['p0', 'p2', 'p1']],
+      definition: {
+        ...LAYOUTS.single.definition,
+        slots: [
+          { id: slotId(0), rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+          { id: slotId(1), rect: { col: 2, row: 0, colSpan: 1, rowSpan: 1 } },
+          { id: slotId(2), rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 } },
+        ],
+        addOrder: [slotId(0), slotId(1), slotId(2)],
+      },
     }
 
-    expect(resolveDirectionalPane(layout, 0, 2, 'right')).toBe(1)
+    expect(
+      resolveDirectionalPane(layout, slotId(0), occupiedSlots(2), 'right')
+    ).toBe(slotId(1))
   })
 
   test('silently skips non-p{N} slot names instead of producing NaN', () => {
@@ -331,8 +353,38 @@ describe('resolveDirectionalPane', () => {
       cols: '',
       rows: '',
       areas: [['p0', 'main', 'p1']],
+      definition: {
+        ...LAYOUTS.single.definition,
+        slots: [
+          { id: slotId(0), rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 } },
+          { id: slotId(1), rect: { col: 2, row: 0, colSpan: 1, rowSpan: 1 } },
+        ],
+        addOrder: [slotId(0), slotId(1)],
+      },
     }
 
-    expect(resolveDirectionalPane(layout, 0, 2, 'right')).toBe(1)
+    expect(
+      resolveDirectionalPane(layout, slotId(0), occupiedSlots(2), 'right')
+    ).toBe(slotId(1))
+  })
+
+  test('uses explicit occupied slots after panes are drag-placed', () => {
+    expect(
+      resolveDirectionalPane(
+        LAYOUTS.quad,
+        slotId(3),
+        new Set([slotId(0), slotId(3)]),
+        'left'
+      )
+    ).toBeNull()
+
+    expect(
+      resolveDirectionalPane(
+        LAYOUTS.quad,
+        slotId(3),
+        new Set([slotId(2), slotId(3)]),
+        'left'
+      )
+    ).toBe(slotId(2))
   })
 })
