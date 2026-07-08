@@ -24,6 +24,10 @@ interface KeyInit {
   shiftKey?: boolean
 }
 
+interface ElectronBeforeInputEvent {
+  preventDefault: () => void
+}
+
 // The app uses Meta (⌘) on macOS and Ctrl on Linux/Windows for the
 // document-level pane shortcuts under test. Resolve it in the renderer so the
 // synthetic event matches the platform the app itself sees.
@@ -90,26 +94,28 @@ const fireTerminalZoneKey = async (init: KeyInit): Promise<void> => {
   }, init)
 }
 
-const fireCommandPaletteShortcutKeyAction = async (): Promise<void> => {
-  const isMac = await browser.execute(() => {
-    const platform =
-      (
-        navigator as Navigator & {
-          userAgentData?: { platform?: string }
-        }
-      ).userAgentData?.platform ?? navigator.platform
-
-    return platform.toLowerCase().includes('mac')
+const fireCommandPaletteShortcutInput = async (): Promise<void> => {
+  await browser.electron.execute((electron: ElectronModule) => {
+    const win = electron.BrowserWindow.getAllWindows()[0]
+    const platform = process.platform
+    const isMac = platform === 'darwin'
+    win?.focus()
+    win?.webContents.focus()
+    win?.webContents.emit(
+      'before-input-event',
+      { preventDefault: () => undefined } satisfies ElectronBeforeInputEvent,
+      {
+        type: 'keyDown',
+        key: ';',
+        code: 'Semicolon',
+        control: !isMac,
+        meta: isMac,
+        alt: false,
+        shift: false,
+        isAutoRepeat: false,
+      }
+    )
   })
-  const modifierKey = isMac ? '\uE03D' : '\uE009'
-
-  await browser
-    .action('key')
-    .down(modifierKey)
-    .down(';')
-    .up(';')
-    .up(modifierKey)
-    .perform()
 }
 
 // Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it
@@ -187,7 +193,7 @@ const openCommandPalette = async (): Promise<void> => {
         return true
       }
 
-      await fireCommandPaletteShortcutKeyAction()
+      await fireCommandPaletteShortcutInput()
       await browser.pause(150)
 
       return isCommandPaletteInputVisible()
