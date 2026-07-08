@@ -574,6 +574,93 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('clears pending primary resize when moving a surface between windows', () => {
+    vi.useFakeTimers()
+
+    try {
+      const firstSurface = {}
+      const secondSurface = {}
+
+      const addon = {
+        create: vi
+          .fn()
+          .mockReturnValueOnce(firstSurface)
+          .mockReturnValueOnce(secondSurface),
+        setFrame: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+      }
+
+      const sidecar = {
+        invoke: vi.fn(<T>(): Promise<T> => Promise.resolve(undefined as T)),
+        onEvent: vi.fn(() => vi.fn()),
+        shutdown: vi.fn(() => Promise.resolve()),
+      } satisfies Sidecar
+
+      const controller = setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+        addon,
+      })
+      const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+
+      update?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+
+      const firstResize = addon.create.mock.calls[0]?.[3] as
+        | ((cols: number, rows: number) => void)
+        | undefined
+
+      if (firstResize === undefined) {
+        throw new Error('expected native resize callback')
+      }
+
+      firstResize(80, 24)
+      firstResize(100, 30)
+
+      browserWindowState.id = 2
+      update?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+
+      vi.advanceTimersByTime(120)
+
+      expect(addon.destroy).toHaveBeenCalledWith(firstSurface)
+      expect(addon.create).toHaveBeenCalledTimes(2)
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+      expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+        request: {
+          sessionId: 'pty-1',
+          cols: 80,
+          rows: 24,
+        },
+      })
+
+      controller.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('caps renderer-created pane state before allocating unbounded surfaces', () => {
     const addon = {
       create: vi.fn(),

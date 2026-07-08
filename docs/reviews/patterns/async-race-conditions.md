@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-05
-ref_count: 83
+last_updated: 2026-07-08
+ref_count: 84
 ---
 
 # Async Race Conditions
@@ -983,4 +983,19 @@ prevent showing previous data.
 - **File:** `src/components/Menu.tsx`, `src/components/Tooltip.tsx`
 - **Finding:** Native-overlay Menu and Tooltip resize effects could resolve an accepted `openNativeOverlay` request after the surface was dismissed, leaving stale native sessions alive after renderer cleanup.
 - **Fix:** Mirror the initial-open cancellation guard in resize resync effects: when the effect has been disposed and the pending request is accepted, close the native overlay by `surfaceId` and skip state updates. Added regression tests for menu and tooltip stale resize requests.
+- **Commit:** same commit as this entry
+
+### 91. Native Ghostty reparent left a stale resize debounce
+
+- **Source:** github-claude | PR #674 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty reparent path destroyed the old surface but
+  left any pending primary resize debounce alive on the retained pane state.
+  That stale timer could later forward the old grid size after the pane had
+  been attached to a different BrowserWindow.
+- **Fix:** Clear pending primary resize state when destroying the old surface
+  during reparenting. Added a regression test that queues a resize, reparents
+  the pane, advances the debounce timer, and asserts only the original resize
+  reached the sidecar.
 - **Commit:** same commit as this entry

@@ -844,6 +844,7 @@ export class GhosttyNativeParentController {
     const key = this.paneKey(state.pane)
     if (state.surface) {
       addon.destroy(state.surface)
+      this.clearPendingResize(state)
       if (state.ownerWindowId !== null) {
         this.surfaceKeysByWindowId.get(state.ownerWindowId)?.delete(key)
       }
