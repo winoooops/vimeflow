@@ -117,6 +117,7 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastResize: { cols: number; rows: number } | null
+  resizeTimer: ReturnType<typeof setTimeout> | null
   lastShortcutDigits: string | null
 }
 
@@ -146,6 +147,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const MAX_PENDING_CHUNKS = 64
 const MAX_SURFACES = 128
+const GHOSTTY_RESIZE_SETTLE_MS = 120
 
 // Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in with
 // VITE_GHOSTTY_NATIVE_MACOS_PARENT so ordinary local runs can keep the fallback.
@@ -822,6 +824,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastResize: null,
+      resizeTimer: null,
       lastShortcutDigits: null,
     }
     this.surfaces.set(key, state)
@@ -841,6 +844,7 @@ export class GhosttyNativeParentController {
     const key = this.paneKey(state.pane)
     if (state.surface) {
       addon.destroy(state.surface)
+      this.clearPendingResize(state)
       if (state.ownerWindowId !== null) {
         this.surfaceKeysByWindowId.get(state.ownerWindowId)?.delete(key)
       }
@@ -879,18 +883,14 @@ export class GhosttyNativeParentController {
           return
         }
 
-        if (state.lastResize?.cols === cols && state.lastResize.rows === rows) {
-          return
-        }
-
-        state.lastResize = { cols, rows }
-        this.invokeSidecar('resize_pty', {
-          request: {
-            sessionId: state.pane.sessionId,
-            cols,
-            rows,
-          },
-        })
+        this.queuePtyResize(
+          state,
+          state.pane.sessionId,
+          cols,
+          rows,
+          () =>
+            !win.isDestroyed() && this.surfaces.has(this.paneKey(state.pane))
+        )
       },
       () => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
@@ -1076,6 +1076,69 @@ export class GhosttyNativeParentController {
     }
   }
 
+  private queuePtyResize(
+    resizeState: GhosttyNativeSurfaceState,
+    sessionId: string,
+    cols: number,
+    rows: number,
+    canForward: () => boolean
+  ): void {
+    if (cols <= 0 || rows <= 0) {
+      return
+    }
+
+    if (
+      resizeState.lastResize?.cols === cols &&
+      resizeState.lastResize.rows === rows
+    ) {
+      this.clearPendingResize(resizeState)
+
+      return
+    }
+
+    if (resizeState.lastResize === null) {
+      this.forwardPtyResize(resizeState, sessionId, cols, rows)
+
+      return
+    }
+
+    if (resizeState.resizeTimer !== null) {
+      clearTimeout(resizeState.resizeTimer)
+    }
+
+    resizeState.resizeTimer = setTimeout(() => {
+      resizeState.resizeTimer = null
+      if (!canForward()) {
+        return
+      }
+
+      this.forwardPtyResize(resizeState, sessionId, cols, rows)
+    }, GHOSTTY_RESIZE_SETTLE_MS)
+  }
+
+  private forwardPtyResize(
+    resizeState: GhosttyNativeSurfaceState,
+    sessionId: string,
+    cols: number,
+    rows: number
+  ): void {
+    resizeState.lastResize = { cols, rows }
+    this.invokeSidecar('resize_pty', {
+      request: {
+        sessionId,
+        cols,
+        rows,
+      },
+    })
+  }
+
+  private clearPendingResize(resizeState: GhosttyNativeSurfaceState): void {
+    if (resizeState.resizeTimer !== null) {
+      clearTimeout(resizeState.resizeTimer)
+    }
+    resizeState.resizeTimer = null
+  }
+
   private invokeSidecar(
     command: Parameters<Sidecar['invoke']>[0],
     payload: Parameters<Sidecar['invoke']>[1]
@@ -1152,6 +1215,7 @@ export class GhosttyNativeParentController {
     if (state.surface && addon) {
       addon.destroy(state.surface)
     }
+    this.clearPendingResize(state)
     this.surfaces.delete(key)
 
     if (state.ownerWindowId !== null) {
