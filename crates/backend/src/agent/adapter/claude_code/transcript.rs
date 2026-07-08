@@ -447,6 +447,7 @@ fn process_line(
                 replay_done,
             );
             emit_reply_if_present(&dto, session_id, events, replay_done);
+            emit_review_if_present(&dto, session_id, events, replay_done);
         }
         "user" => {
             process_user_message(
@@ -615,6 +616,48 @@ fn emit_reply_if_present(
 
     if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-reply event: {}", e);
+    }
+}
+
+/// If a completed assistant turn's `text` carries the VIM-304 review sentinel
+/// block, extract it and emit `agent-review`. Same `replay_done` + completion
+/// gates as the reply path. No sentinel → no event.
+fn emit_review_if_present(
+    dto: &ClaudeTranscriptLineDto,
+    session_id: &str,
+    events: &Arc<dyn EventSink>,
+    replay_done: bool,
+) {
+    if !replay_done {
+        return;
+    }
+
+    let ended = matches!(
+        dto.message.as_ref().and_then(|m| m.stop_reason.as_deref()),
+        Some("end_turn" | "stop_sequence" | "max_tokens")
+    );
+    if !ended {
+        return;
+    }
+
+    let Some(blocks) = message_content_items(dto) else {
+        return;
+    };
+
+    let reply_text = blocks
+        .iter()
+        .filter(|block| text_block_type(block) == Some("text"))
+        .filter_map(text_block_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let Some(outcome) = crate::agent::review::extract_agent_review(&reply_text) else {
+        return;
+    };
+
+    let event = crate::agent::review::map_review_outcome(session_id, outcome);
+    if let Err(e) = crate::agent::events::emit_agent_review(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-review event: {}", e);
     }
 }
 
@@ -1881,6 +1924,24 @@ mod tests {
         );
     }
 
+    /// A completed assistant transcript line whose text is `text` — built from a
+    /// JSON object so the test reads without hand-escaped quotes.
+    fn assistant_line(text: &str) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{ "type": "text", "text": text }],
+                "stop_reason": "end_turn",
+            },
+        })
+        .to_string()
+    }
+
+    /// Wrap a JSON object in the review sentinels.
+    fn review_block(inner: serde_json::Value) -> String {
+        format!("<<<VIMEFLOW_REVIEW\n{inner}\nVIMEFLOW_REVIEW>>>")
+    }
+
     #[test]
     fn assistant_end_turn_with_reply_block_emits_agent_reply() {
         let concrete = Arc::new(FakeEventSink::new());
@@ -1908,6 +1969,43 @@ mod tests {
             .recorded()
             .iter()
             .all(|(name, _)| name != "agent-reply"));
+    }
+
+    #[test]
+    fn assistant_end_turn_with_review_block_emits_agent_review() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let block = review_block(serde_json::json!({
+            "v": 1,
+            "nonce": "n",
+            "reviewer": "codex",
+            "findings": [
+                { "scope": "file", "path": "a.ts", "category": "bug", "text": "x" },
+            ],
+        }));
+        let line = assistant_line(&format!("done\n{block}"));
+        drive_assistant_line(&concrete, &line, true);
+
+        let reviews: Vec<_> = concrete
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-review")
+            .collect();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0].1["sessionId"], "sess-1");
+        assert_eq!(reviews[0].1["reviewer"], "codex");
+        assert_eq!(reviews[0].1["findings"][0]["scope"], "file");
+    }
+
+    #[test]
+    fn assistant_end_turn_without_review_block_emits_no_review() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let line = assistant_line("just done");
+        drive_assistant_line(&concrete, &line, true);
+
+        assert!(concrete
+            .recorded()
+            .iter()
+            .all(|(name, _)| name != "agent-review"));
     }
 
     #[test]

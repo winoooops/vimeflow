@@ -962,7 +962,7 @@ describe('NativeOverlayController', () => {
         request
       )
 
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(5000)
 
       await expect(openPromise).resolves.toEqual({
         accepted: false,
@@ -1082,7 +1082,7 @@ describe('NativeOverlayController', () => {
       overlayWindow.setIgnoreMouseEvents.mockClear()
       overlayWindow.webContents.send.mockClear()
 
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(5000)
 
       await expect(firstOpenPromise).resolves.toEqual({
         accepted: false,

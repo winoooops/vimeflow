@@ -75,7 +75,7 @@ pub(crate) fn extract_agent_reply(reply_text: &str) -> Option<AgentReplyOutcome>
     }
 }
 
-fn normalize_reply_json(json: &str) -> Cow<'_, str> {
+pub(crate) fn normalize_reply_json(json: &str) -> Cow<'_, str> {
     if !json.lines().any(|line| line.trim_start().starts_with("> ")) {
         return Cow::Borrowed(json);
     }

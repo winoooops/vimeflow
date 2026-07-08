@@ -11,6 +11,7 @@ pub mod detector;
 pub(crate) mod events;
 pub(crate) mod kimi_usage_consent;
 pub(crate) mod reply;
+pub(crate) mod review;
 pub mod sanitize_title;
 pub mod types;
 
