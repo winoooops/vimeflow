@@ -3,6 +3,7 @@ import {
   resolveSwellVariant,
   type SwellVariant,
 } from '@/features/agent-status/hooks/useReservoirFlow'
+import { themeService } from '@/theme'
 import { BUILTIN_SCHEMES, SETTINGS_TARGET_IDS } from '../../sections'
 import { useSettings } from '../../hooks/useSettings'
 import type { SettingsPaneTargetProps } from '../../types'
@@ -22,6 +23,11 @@ export const AppearancePane = ({
 
   const colorSchemeActive =
     activeTargetId === SETTINGS_TARGET_IDS.appearanceColorScheme
+
+  const applyScheme = (scheme: (typeof BUILTIN_SCHEMES)[number]): void => {
+    themeService.apply(scheme.themeId)
+    update({ aesthetic: scheme.id })
+  }
 
   return (
     <>
@@ -53,7 +59,7 @@ export const AppearancePane = ({
                 key={s.id}
                 type="button"
                 aria-pressed={isActive}
-                onClick={() => update({ aesthetic: s.id })}
+                onClick={() => applyScheme(s)}
                 className={`flex items-center gap-3 rounded-lg border p-2.5 text-left transition-colors ${
                   isActive
                     ? 'border-primary-container/45 bg-primary-container/[0.08]'

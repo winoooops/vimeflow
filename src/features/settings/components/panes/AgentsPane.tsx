@@ -9,7 +9,7 @@ import type { AgentAlias, SettingsPaneTargetProps } from '../../types'
 import { DEFAULT_ALIASES, SETTINGS_TARGET_IDS } from '../../sections'
 import { useSettings } from '../../hooks/useSettings'
 import { Icon } from '../Icon'
-import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 import {
   GhostButton,
   PaneTitle,
@@ -250,17 +250,16 @@ export const AgentsPane = ({
                   onChange={(v) => updateAlias(a.id, 'extra', v)}
                   aria-label={`Extra flags for ${a.agent}`}
                 />
-                <Tooltip content="Remove alias">
-                  <button
-                    type="button"
-                    aria-label="Remove alias"
-                    onClick={() => remove(a.id)}
-                    className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-tertiary/10 hover:text-tertiary"
-                    data-testid="remove-alias"
-                  >
-                    <Icon name="delete" size={13} />
-                  </button>
-                </Tooltip>
+                <IconButton
+                  icon="delete"
+                  label="Remove alias"
+                  size="sm"
+                  variant="ghost"
+                  tooltipPlacement="bottom"
+                  onClick={() => remove(a.id)}
+                  className="hover:bg-tertiary/10 hover:text-tertiary"
+                  data-testid="remove-alias"
+                />
               </fieldset>
             </div>
           ))}

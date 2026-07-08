@@ -72,6 +72,7 @@ export const settingsSubsectionId = (
 export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   {
     id: 'obsidian',
+    themeId: 'obsidian-lens',
     label: 'Obsidian Lens',
     accent: '#cba6f7',
     surface: '#121221',
@@ -79,6 +80,7 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   },
   {
     id: 'editorial',
+    themeId: 'tokyo-night',
     label: 'Editorial',
     accent: '#a8c8ff',
     surface: '#141424',
@@ -86,6 +88,7 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   },
   {
     id: 'dense',
+    themeId: 'dracula',
     label: 'Dense',
     accent: '#7defa1',
     surface: '#0d0d1c',
@@ -93,6 +96,7 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   },
   {
     id: 'navigator',
+    themeId: 'gruvbox-dark',
     label: 'W.W. Navigator',
     accent: '#c9a55a',
     surface: '#1a1408',
@@ -100,6 +104,7 @@ export const BUILTIN_SCHEMES: AppearanceScheme[] = [
   },
   {
     id: 'flexoki',
+    themeId: 'flexoki',
     label: 'Flexoki',
     accent: '#6e4caa',
     surface: '#fffcf0',

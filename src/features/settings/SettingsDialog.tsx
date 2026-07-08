@@ -1,8 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { SettingsDialogProps } from './types'
-import { Icon } from './components/Icon'
-import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 import { Kbd } from './components/Kbd'
 import { SettingsContent } from './SettingsContent'
 
@@ -147,17 +146,15 @@ export const SettingsDialog = ({
           >
             {/* Title bar */}
             <div className="flex h-9 shrink-0 items-center justify-end gap-1.5 border-b border-outline-variant/25 bg-surface-container px-2.5">
-              <Tooltip content="Close">
-                <button
-                  ref={closeButtonRef}
-                  type="button"
-                  aria-label="Close"
-                  onClick={onClose}
-                  className="grid h-[22px] w-[22px] place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-on-surface/[0.04] hover:text-on-surface"
-                >
-                  <Icon name="close" size={14} />
-                </button>
-              </Tooltip>
+              <IconButton
+                ref={closeButtonRef}
+                icon="close"
+                label="Close"
+                size="sm"
+                variant="ghost"
+                tooltipPlacement="bottom"
+                onClick={onClose}
+              />
             </div>
 
             <SettingsContent key={contentSessionKey} />

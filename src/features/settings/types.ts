@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { ThemeId } from '../../theme'
 import type { ShortcutInput } from '../../lib/formatShortcut'
 
 export type SettingsSectionId =
@@ -139,6 +140,7 @@ export interface TextInputProps {
 
 export interface AppearanceScheme {
   id: string
+  themeId: ThemeId
   label: string
   accent: string
   surface: string

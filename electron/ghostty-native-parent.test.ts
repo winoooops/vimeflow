@@ -598,6 +598,7 @@ describe('ghostty native parent', () => {
           .mockReturnValueOnce(firstSurface)
           .mockReturnValueOnce(secondSurface),
         setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
         write: vi.fn(),
         focus: vi.fn(),
         destroy: vi.fn(),
@@ -1124,6 +1125,7 @@ describe('ghostty native parent', () => {
           }
         ),
         setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
         write: vi.fn(),
         focus: vi.fn(),
         destroy: vi.fn(),

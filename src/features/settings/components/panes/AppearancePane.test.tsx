@@ -5,6 +5,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { SettingsProvider } from '../../SettingsProvider'
 import { DEFAULT_SETTINGS } from '../../store/settingsDefaults'
 import { BUILTIN_SCHEMES } from '../../sections'
+import { themeService } from '@/theme'
 import { AppearancePane } from './AppearancePane'
 
 interface TestWrapperProps {
@@ -24,6 +25,7 @@ const renderPane = (): ReturnType<typeof render> =>
 
 describe('AppearancePane', () => {
   afterEach(() => {
+    vi.restoreAllMocks()
     delete window.vimeflow
   })
 
@@ -46,11 +48,13 @@ describe('AppearancePane', () => {
 
   test('selects a scheme card on click', async () => {
     const user = userEvent.setup()
+    const applyTheme = vi.spyOn(themeService, 'apply')
     renderPane()
 
     const dense = screen.getByText('Dense')
     await user.click(dense)
 
+    expect(applyTheme).toHaveBeenCalledWith('dracula')
     expect(screen.getByRole('button', { name: /Dense/i })).toHaveClass(
       'bg-primary-container/[0.08]'
     )

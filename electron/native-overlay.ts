@@ -294,6 +294,7 @@ interface IpcMainLike {
   removeHandler: IpcMain['removeHandler']
 }
 
+const OVERLAY_LOAD_TIMEOUT_MS = 5000
 const OVERLAY_RENDER_TIMEOUT_MS = 5000
 const MAX_OVERLAY_ITEMS = 200
 const MAX_OVERLAY_SECTIONS = 50

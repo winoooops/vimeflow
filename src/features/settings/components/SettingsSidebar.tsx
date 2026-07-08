@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from 'react'
-import { Tooltip } from '@/components/Tooltip'
+import { IconButton } from '@/components/IconButton'
 import type {
   SettingsSearchNavigationDirection,
   SettingsSectionId,
@@ -266,16 +266,15 @@ export const SettingsSidebar = ({
             </span>
           )}
           {query.trim() !== '' && (
-            <Tooltip content="Clear search">
-              <button
-                type="button"
-                aria-label="Clear settings search"
-                onClick={handleClearQuery}
-                className="grid h-5 w-5 shrink-0 place-items-center rounded border-none bg-transparent text-on-surface-muted transition-colors hover:bg-on-surface/[0.04] hover:text-on-surface"
-              >
-                <Icon name="close" size={12} />
-              </button>
-            </Tooltip>
+            <IconButton
+              icon="close"
+              label="Clear settings search"
+              size="sm"
+              variant="ghost"
+              tooltipPlacement="bottom"
+              onClick={handleClearQuery}
+              className="h-5 w-5 shrink-0 text-[12px]"
+            />
           )}
         </div>
       </div>
