@@ -91,6 +91,7 @@ import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHo
 import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { useFeedbackBatchStore } from '../diff/hooks/useFeedbackBatch'
 import { useAgentReply } from '../diff/hooks/useAgentReply'
+import { useAgentReview } from '../diff/hooks/useAgentReview'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
@@ -161,6 +162,11 @@ let agentReplyCommentSeq = 0
 
 const nextAgentReplyCommentId = (): string =>
   `agent-reply-${(agentReplyCommentSeq += 1)}`
+
+let agentReviewCommentSeq = 0
+
+const nextAgentReviewCommentId = (): string =>
+  `agent-review-${(agentReviewCommentSeq += 1)}`
 
 const sameSelectedDiffFile = (
   left: SelectedDiffFile | null,
@@ -1978,6 +1984,13 @@ const WorkspaceViewContent = (): ReactElement => {
   useAgentReply({
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReplyCommentId,
+  })
+
+  // Capture delegated review findings (VIM-304): the same single subscription
+  // point, placing reviewer findings onto the owner that requested the review.
+  useAgentReview({
+    addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
+    nextCommentId: nextAgentReviewCommentId,
   })
 
   useLayoutEffect(() => {
