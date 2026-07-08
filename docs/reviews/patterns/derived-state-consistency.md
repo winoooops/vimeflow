@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ref_count: 21
 ---
 
@@ -335,3 +335,12 @@ base data is technically "correct."
   is the active pane. Extended the inactive-pane restart test to assert the
   active session metadata remains unchanged.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Preserved native surface caches skipped replay on recreation
+
+- **Source:** github-codex-connector | PR #675 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Destroying a primary Ghostty surface while preserving its burner secondary left `lastBackgroundColor`, `lastForegroundColor`, and `lastShortcutDigits` populated. Recreating the native surface with the same theme and shortcut context then skipped the setter calls needed to initialize the new surface.
+- **Fix:** Reset the surface-scoped visual and shortcut caches whenever a native surface is torn down, including preserved-secondary destroys and window reparenting destroys. Added a regression test proving the same colors and shortcut digits are replayed onto the recreated surface.
+- **Commit:** same commit as this entry

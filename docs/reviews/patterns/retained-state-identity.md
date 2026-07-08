@@ -2,7 +2,7 @@
 id: retained-state-identity
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-05
+last_updated: 2026-07-08
 ref_count: 4
 ---
 
@@ -54,4 +54,13 @@ When a React component renders retained (stale) content while fresh data for a n
 - **File:** `src/features/diff/hooks/useDiffRangeBars.ts`
 - **Finding:** The diff range-bar hook retained Pierre's last rendered shadow-DOM container but repainted whenever selected-file annotations changed. During file navigation, new-file spans could be combined with the previous file's retained container before Pierre posted the new file's render callback.
 - **Fix:** Passed the selected-file key into the hook, stored that key with the retained container, invalidated the container on file-key changes, and skipped repaint unless the stored container key still matches the active file key. Added a regression test that changes file keys with different spans and verifies the previous file host is not repainted.
+- **Commit:** same commit as this entry
+
+### 5. Preserved native secondary reattached stale session before replacement
+
+- **Source:** github-claude | PR #675 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `attachSecondary()` recreated the primary Ghostty surface before replacing preserved secondary state. When a primary surface was destroyed with `preserveSecondary` and the next attach targeted a different burner session, surface recreation briefly reattached the old secondary before removing it and attaching the requested one.
+- **Fix:** Replaced mismatched secondary state before calling `getOrCreateSurface()`, so the auto-reattach path sees the requested secondary identity. Added a regression test proving a preserved old burner is not reattached during the replacement attach.
 - **Commit:** same commit as this entry

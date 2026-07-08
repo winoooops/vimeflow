@@ -590,8 +590,8 @@ export class GhosttyNativeParentController {
     }
 
     const state = this.getOrCreatePaneState(payload)
-    this.getOrCreateSurface(addon, win, state)
     this.replaceSecondaryIfNeeded(addon, state, payload.secondarySessionId)
+    this.getOrCreateSurface(addon, win, state)
 
     const secondary = this.ensureSecondaryState(
       state,
@@ -815,6 +815,7 @@ export class GhosttyNativeParentController {
     if (state.surface) {
       addon.destroy(state.surface)
       this.clearPendingResize(state)
+      this.resetSurfaceScopedCaches(state)
       if (state.ownerWindowId !== null) {
         this.surfaceKeysByWindowId.get(state.ownerWindowId)?.delete(key)
       }
@@ -1118,6 +1119,12 @@ export class GhosttyNativeParentController {
     resizeState.resizeTimer = null
   }
 
+  private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
+    state.lastBackgroundColor = null
+    state.lastForegroundColor = null
+    state.lastShortcutDigits = null
+  }
+
   private invokeSidecar(
     command: Parameters<Sidecar['invoke']>[0],
     payload: Parameters<Sidecar['invoke']>[1]
@@ -1291,6 +1298,7 @@ export class GhosttyNativeParentController {
       addon.destroy(state.surface)
     }
     this.clearPendingResize(state)
+    this.resetSurfaceScopedCaches(state)
 
     if (state.ownerWindowId !== null) {
       const keys = this.surfaceKeysByWindowId.get(state.ownerWindowId)

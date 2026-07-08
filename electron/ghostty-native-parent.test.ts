@@ -430,6 +430,96 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('replays surface-scoped state after preserving secondary on destroy', () => {
+    const firstSurface = { id: 'surface-1' }
+    const secondSurface = { id: 'surface-2' }
+    let createCount = 0
+
+    const addon = {
+      create: vi.fn(() => {
+        const surface = createCount === 0 ? firstSurface : secondSurface
+        createCount += 1
+
+        return surface
+      }),
+      addSecondary: vi.fn(),
+      setFrame: vi.fn(),
+      setBackgroundColor: vi.fn(),
+      setForegroundColor: vi.fn(),
+      setShortcutDigits: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+      }
+    )
+
+    const updatePayload = {
+      sessionId: 'pty-1',
+      paneId: 'pane-1',
+      cwd: '/tmp',
+      backgroundColor: '#fffcf0',
+      foregroundColor: '#100f0f',
+      visible: true,
+      parentHeight: 900,
+      bounds: { x: 10, y: 20, width: 300, height: 200 },
+      shortcutContext: {
+        paneIds: ['pane-1', 'pane-2', 'pane-3'],
+        activePaneId: 'pane-1',
+      },
+    }
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.({ sender: {} }, updatePayload)
+
+    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+      {},
+      { sessionId: 'pty-1', paneId: 'pane-1' }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.({ sender: {} }, updatePayload)
+
+    expect(addon.destroy).toHaveBeenCalledWith(firstSurface)
+    expect(addon.setBackgroundColor).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      '#fffcf0'
+    )
+
+    expect(addon.setForegroundColor).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      '#100f0f'
+    )
+
+    expect(addon.setShortcutDigits).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      '23'
+    )
+
+    controller.dispose()
+  })
+
   test('flushes pending data once when the parented surface is created', () => {
     const surface = {}
 
@@ -1613,6 +1703,83 @@ describe('ghostty native parent', () => {
     expect(sidecar.invoke).toHaveBeenCalledWith('write_pty', {
       request: { sessionId: 'burner-pty', data: 'b' },
     })
+
+    controller.dispose()
+  })
+
+  test('does not reattach stale secondary before replacing it', () => {
+    const firstSurface = { id: 'surface-1' }
+    const secondSurface = { id: 'surface-2' }
+    let createCount = 0
+
+    const addon = {
+      create: vi.fn(() => {
+        const surface = createCount === 0 ? firstSurface : secondSurface
+        createCount += 1
+
+        return surface
+      }),
+      addSecondary: vi.fn(),
+      removeSecondary: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'old-burner-pty',
+      }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+      {},
+      { sessionId: 'host-pty', paneId: 'pane-1' }
+    )
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'new-burner-pty',
+      }
+    )
+
+    expect(addon.addSecondary).toHaveBeenCalledTimes(2)
+    expect(addon.addSecondary).toHaveBeenNthCalledWith(
+      1,
+      firstSurface,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function)
+    )
+
+    expect(addon.addSecondary).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function)
+    )
+    expect(addon.removeSecondary).not.toHaveBeenCalled()
 
     controller.dispose()
   })
