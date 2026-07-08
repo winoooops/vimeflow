@@ -25,6 +25,7 @@ const dispatchFromRecorder = (init: KeyboardEventInit): void => {
 describe('useSettingsDialog', () => {
   afterEach(() => {
     delete window.vimeflow
+    vi.unstubAllEnvs()
     vi.unstubAllGlobals()
   })
 
@@ -109,6 +110,22 @@ describe('useSettingsDialog', () => {
 
     expect(openWindow).toHaveBeenCalledTimes(1)
     expect(result.current.isOpen).toBe(false)
+  })
+
+  test('open keeps the renderer dialog in E2E when the native bridge is present', () => {
+    vi.stubEnv('VITE_E2E', '1')
+    const openWindow = vi.fn().mockResolvedValue(undefined)
+    window.vimeflow = {
+      settings: {
+        openWindow,
+      },
+    } as unknown as BackendApi
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open())
+
+    expect(openWindow).not.toHaveBeenCalled()
+    expect(result.current.isOpen).toBe(true)
   })
 
   test('shortcut requests the native settings window when the bridge is present', () => {

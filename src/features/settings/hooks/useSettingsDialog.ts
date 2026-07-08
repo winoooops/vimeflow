@@ -8,6 +8,10 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
   const isOpenRef = useRef(isOpen)
 
   const openNativeWindow = useCallback((): boolean => {
+    if (import.meta.env.VITE_E2E) {
+      return false
+    }
+
     const openWindow =
       typeof window !== 'undefined'
         ? window.vimeflow?.settings?.openWindow

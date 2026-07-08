@@ -294,6 +294,7 @@ interface IpcMainLike {
   removeHandler: IpcMain['removeHandler']
 }
 
+const OVERLAY_LOAD_TIMEOUT_MS = 5000
 const OVERLAY_RENDER_TIMEOUT_MS = 1000
 const MAX_OVERLAY_ITEMS = 200
 const MAX_OVERLAY_SECTIONS = 50
@@ -1058,7 +1059,7 @@ export class NativeOverlayController {
         overlayWindow.webContents.removeListener('did-fail-load', handleFail)
         resolve(value)
       }
-      const timeout = setTimeout(() => finish(false), OVERLAY_RENDER_TIMEOUT_MS)
+      const timeout = setTimeout(() => finish(false), OVERLAY_LOAD_TIMEOUT_MS)
       const handleFinish = (): void => finish(true)
       const handleFail = (): void => finish(false)
 
