@@ -109,6 +109,7 @@ interface GhosttyNativeParentDeps {
 interface GhosttyNativeSurfaceState {
   pane: GhosttyNativePaneRequest
   surface: GhosttyNativeSurface | null
+  ownerWindow: BrowserWindow | null
   ownerWindowId: number | null
   pendingData: string[]
   secondary: GhosttyNativeSecondaryState | null
@@ -121,9 +122,17 @@ interface GhosttyNativeSurfaceState {
   lastShortcutDigits: string | null
 }
 
+interface GhosttyNativeSecondaryCallbacks {
+  onInput: (data: string) => void
+  onResize: (cols: number, rows: number) => void
+  onFocus: () => void
+}
+
 interface GhosttyNativeSecondaryState {
   sessionId: string
   attached: boolean
+  visible: boolean
+  callbacks: GhosttyNativeSecondaryCallbacks | null
   pendingData: string[]
   lastResize: { cols: number; rows: number } | null
 }
@@ -555,7 +564,9 @@ export class GhosttyNativeParentController {
       return { enabled: false }
     }
 
-    this.destroySurface(this.paneKey(payload), addon)
+    this.destroySurface(this.paneKey(payload), addon, {
+      preserveSecondary: true,
+    })
 
     return { enabled: true }
   }
@@ -579,75 +590,18 @@ export class GhosttyNativeParentController {
     }
 
     const state = this.getOrCreatePaneState(payload)
-    const surface = this.getOrCreateSurface(addon, win, state)
     this.replaceSecondaryIfNeeded(addon, state, payload.secondarySessionId)
+    this.getOrCreateSurface(addon, win, state)
 
-    addon.addSecondary(
-      surface,
-      (data) => {
-        if (
-          win.isDestroyed() ||
-          !this.surfaces.has(this.paneKey(state.pane)) ||
-          state.secondary?.sessionId !== payload.secondarySessionId
-        ) {
-          return
-        }
-
-        if (this.inputBlocked(win)) {
-          return
-        }
-
-        this.invokeSidecar('write_pty', {
-          request: {
-            sessionId: payload.secondarySessionId,
-            data,
-          },
-        })
-      },
-      (cols, rows) => {
-        if (
-          win.isDestroyed() ||
-          !this.surfaces.has(this.paneKey(state.pane)) ||
-          state.secondary?.sessionId !== payload.secondarySessionId
-        ) {
-          return
-        }
-
-        if (
-          state.secondary.lastResize?.cols === cols &&
-          state.secondary.lastResize.rows === rows
-        ) {
-          return
-        }
-
-        state.secondary.lastResize = { cols, rows }
-        this.invokeSidecar('resize_pty', {
-          request: {
-            sessionId: payload.secondarySessionId,
-            cols,
-            rows,
-          },
-        })
-      },
-      () => {
-        if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
-          return
-        }
-
-        if (this.inputBlocked(win)) {
-          return
-        }
-
-        win.webContents.send(BACKEND_EVENT, {
-          event: 'ghostty-native-focus',
-          payload: state.pane,
-        })
-      }
+    const secondary = this.ensureSecondaryState(
+      state,
+      payload.secondarySessionId
     )
-    if (state.secondary) {
-      state.secondary.attached = true
-    }
-    this.flushPendingSecondaryData(addon, state)
+    secondary.callbacks = this.createSecondaryCallbacks(
+      state,
+      payload.secondarySessionId
+    )
+    this.attachSecondaryToSurface(addon, state, secondary)
 
     return { enabled: true }
   }
@@ -676,6 +630,9 @@ export class GhosttyNativeParentController {
       state,
       payload.secondarySessionId
     )
+    if (state.surface && !secondary.attached) {
+      this.attachSecondaryToSurface(addon, state, secondary)
+    }
 
     if (!state.surface || !secondary.attached) {
       secondary.pendingData.push(payload.data)
@@ -709,6 +666,9 @@ export class GhosttyNativeParentController {
       state?.surface &&
       state.secondary?.sessionId === payload.secondarySessionId
     ) {
+      if (!state.secondary.attached) {
+        this.attachSecondaryToSurface(addon, state, state.secondary)
+      }
       addon.focusSecondary(state.surface)
     }
 
@@ -722,18 +682,21 @@ export class GhosttyNativeParentController {
       return { enabled: false }
     }
 
-    const addon = this.getOptionalAddon()
-    if (!addon?.removeSecondary) {
-      return { enabled: false }
+    const state = this.getExistingPaneState(payload)
+    if (state?.secondary?.sessionId !== payload.secondarySessionId) {
+      return { enabled: true }
     }
 
-    const state = this.getExistingPaneState(payload)
-    if (
-      state?.surface &&
-      state.secondary?.sessionId === payload.secondarySessionId
-    ) {
-      addon.removeSecondary(state.surface)
-      state.secondary = null
+    if (state.surface) {
+      const removeSecondary = this.getOptionalAddon()?.removeSecondary
+      if (!removeSecondary) {
+        return { enabled: false }
+      }
+      removeSecondary(state.surface)
+    }
+    state.secondary = null
+    if (!state.surface) {
+      this.surfaces.delete(this.paneKey(payload))
     }
 
     return { enabled: true }
@@ -752,10 +715,16 @@ export class GhosttyNativeParentController {
     }
 
     const state = this.getExistingPaneState(payload)
+    if (state?.secondary?.sessionId === payload.secondarySessionId) {
+      state.secondary.visible = payload.visible
+    }
     if (
       state?.surface &&
       state.secondary?.sessionId === payload.secondarySessionId
     ) {
+      if (!state.secondary.attached) {
+        this.attachSecondaryToSurface(addon, state, state.secondary)
+      }
       addon.setSecondaryVisible(state.surface, payload.visible)
     }
 
@@ -818,6 +787,7 @@ export class GhosttyNativeParentController {
         paneId: payload.paneId,
       },
       surface: null,
+      ownerWindow: null,
       ownerWindowId: null,
       pendingData: [],
       secondary: null,
@@ -845,11 +815,17 @@ export class GhosttyNativeParentController {
     if (state.surface) {
       addon.destroy(state.surface)
       this.clearPendingResize(state)
+      this.resetSurfaceScopedCaches(state)
       if (state.ownerWindowId !== null) {
         this.surfaceKeysByWindowId.get(state.ownerWindowId)?.delete(key)
       }
       state.surface = null
+      state.ownerWindow = null
       state.ownerWindowId = null
+      if (state.secondary) {
+        state.secondary.attached = false
+        state.secondary.lastResize = null
+      }
     }
 
     this.registerWindowCleanup(win)
@@ -959,8 +935,12 @@ export class GhosttyNativeParentController {
         })
       }
     )
+    state.ownerWindow = win
     state.ownerWindowId = win.id
     this.surfaceKeysByWindowId.get(win.id)?.add(key)
+    if (state.secondary) {
+      this.attachSecondaryToSurface(addon, state, state.secondary)
+    }
 
     return state.surface
   }
@@ -1139,6 +1119,12 @@ export class GhosttyNativeParentController {
     resizeState.resizeTimer = null
   }
 
+  private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
+    state.lastBackgroundColor = null
+    state.lastForegroundColor = null
+    state.lastShortcutDigits = null
+  }
+
   private invokeSidecar(
     command: Parameters<Sidecar['invoke']>[0],
     payload: Parameters<Sidecar['invoke']>[1]
@@ -1164,6 +1150,8 @@ export class GhosttyNativeParentController {
     state.secondary = {
       sessionId: secondarySessionId,
       attached: false,
+      visible: true,
+      callbacks: null,
       pendingData: [],
       lastResize: null,
     }
@@ -1186,6 +1174,99 @@ export class GhosttyNativeParentController {
     this.ensureSecondaryState(state, secondarySessionId)
   }
 
+  private createSecondaryCallbacks(
+    state: GhosttyNativeSurfaceState,
+    secondarySessionId: string
+  ): GhosttyNativeSecondaryCallbacks {
+    const ownerWindow = (): BrowserWindow | null => {
+      const win = state.ownerWindow
+      if (
+        !win ||
+        win.isDestroyed() ||
+        !this.surfaces.has(this.paneKey(state.pane)) ||
+        state.secondary?.sessionId !== secondarySessionId
+      ) {
+        return null
+      }
+
+      return win
+    }
+
+    return {
+      onInput: (data): void => {
+        const win = ownerWindow()
+        if (!win || this.inputBlocked(win)) {
+          return
+        }
+
+        this.invokeSidecar('write_pty', {
+          request: {
+            sessionId: secondarySessionId,
+            data,
+          },
+        })
+      },
+      onResize: (cols, rows): void => {
+        const win = ownerWindow()
+        if (!win || !state.secondary) {
+          return
+        }
+
+        if (
+          state.secondary.lastResize?.cols === cols &&
+          state.secondary.lastResize.rows === rows
+        ) {
+          return
+        }
+
+        state.secondary.lastResize = { cols, rows }
+        this.invokeSidecar('resize_pty', {
+          request: {
+            sessionId: secondarySessionId,
+            cols,
+            rows,
+          },
+        })
+      },
+      onFocus: (): void => {
+        const win = ownerWindow()
+        if (!win || this.inputBlocked(win)) {
+          return
+        }
+
+        win.webContents.send(BACKEND_EVENT, {
+          event: 'ghostty-native-focus',
+          payload: state.pane,
+        })
+      },
+    }
+  }
+
+  private attachSecondaryToSurface(
+    addon: GhosttyNativeParentAddon,
+    state: GhosttyNativeSurfaceState,
+    secondary: GhosttyNativeSecondaryState
+  ): void {
+    if (
+      !state.surface ||
+      secondary.attached ||
+      !secondary.callbacks ||
+      !addon.addSecondary
+    ) {
+      return
+    }
+
+    addon.addSecondary(
+      state.surface,
+      secondary.callbacks.onInput,
+      secondary.callbacks.onResize,
+      secondary.callbacks.onFocus
+    )
+    secondary.attached = true
+    addon.setSecondaryVisible?.(state.surface, secondary.visible)
+    this.flushPendingSecondaryData(addon, state)
+  }
+
   private flushPendingSecondaryData(
     addon: GhosttyNativeParentAddon,
     state: GhosttyNativeSurfaceState
@@ -1205,7 +1286,8 @@ export class GhosttyNativeParentController {
 
   private destroySurface(
     key: string,
-    addon: GhosttyNativeParentAddon | null = this.getOptionalAddon()
+    addon: GhosttyNativeParentAddon | null = this.getOptionalAddon(),
+    options: { preserveSecondary?: boolean } = {}
   ): void {
     const state = this.surfaces.get(key)
     if (!state) {
@@ -1216,12 +1298,23 @@ export class GhosttyNativeParentController {
       addon.destroy(state.surface)
     }
     this.clearPendingResize(state)
-    this.surfaces.delete(key)
+    this.resetSurfaceScopedCaches(state)
 
     if (state.ownerWindowId !== null) {
       const keys = this.surfaceKeysByWindowId.get(state.ownerWindowId)
       keys?.delete(key)
     }
+    state.surface = null
+    state.ownerWindow = null
+    state.ownerWindowId = null
+    if (options.preserveSecondary && state.secondary) {
+      state.secondary.attached = false
+      state.secondary.lastResize = null
+
+      return
+    }
+
+    this.surfaces.delete(key)
   }
 }
 
