@@ -52,6 +52,9 @@ export interface BackendApi {
   setKeymapCaptureActive?: (active: boolean) => void
   setCommandPaletteBinding?: (binding: string) => void
   setCommandPaletteBindings?: (bindings: CommandPaletteBindingSync) => void
+  e2e?: {
+    dispatchCommandPaletteShortcut: () => Promise<boolean>
+  }
 
   settings?: SettingsBridge
   aliases?: AliasesBridge

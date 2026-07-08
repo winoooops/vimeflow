@@ -22,6 +22,7 @@ import {
   COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   DIALOG_PICK_DIRECTORY,
+  E2E_COMMAND_PALETTE_SHORTCUT,
   SETTINGS_CHANGED,
   SETTINGS_OPEN_WINDOW,
 } from './ipc-channels'
@@ -54,6 +55,7 @@ import './preload'
 const electronMock = vi.hoisted(() => {
   let exposedApi: Record<string, unknown> | undefined
   vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')
+  vi.stubEnv('VITE_E2E', '1')
 
   return {
     get exposed(): Record<string, unknown> | undefined {
@@ -166,6 +168,18 @@ describe('preload browserPane wiring', () => {
         palette: 'Mod+KeyP',
         leader: 'Mod+KeyK',
       }
+    )
+  })
+
+  test('e2e dispatchCommandPaletteShortcut invokes the e2e shortcut channel', async () => {
+    const e2e = preloadApi().e2e as {
+      dispatchCommandPaletteShortcut: () => Promise<boolean>
+    }
+
+    await e2e.dispatchCommandPaletteShortcut()
+
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+      E2E_COMMAND_PALETTE_SHORTCUT
     )
   })
 

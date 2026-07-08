@@ -20,6 +20,7 @@ import {
   packagedContentSecurityPolicy,
 } from './csp'
 import {
+  dispatchCommandPaletteShortcutForWindow,
   installCommandPaletteShortcutOverride,
   setCommandPaletteShortcutBinding,
   setCommandPaletteShortcutBindings,
@@ -31,6 +32,7 @@ import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
   COMMAND_PALETTE_BINDING,
+  E2E_COMMAND_PALETTE_SHORTCUT,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_CHANGED,
   SETTINGS_OPEN_FILE,
@@ -674,6 +676,28 @@ const setupApp = async (): Promise<void> => {
       setCommandPaletteShortcutBindings(win, binding)
     }
   })
+
+  if (isE2eRuntime()) {
+    ipcMain.handle(E2E_COMMAND_PALETTE_SHORTCUT, (ipcEvent): boolean => {
+      const win = BrowserWindow.fromWebContents(ipcEvent.sender)
+      if (win === null) {
+        return false
+      }
+
+      const isMac = process.platform === 'darwin'
+
+      return dispatchCommandPaletteShortcutForWindow(win, {
+        type: 'keyDown',
+        key: ';',
+        code: 'Semicolon',
+        control: !isMac,
+        meta: isMac,
+        alt: false,
+        shift: false,
+        isAutoRepeat: false,
+      })
+    })
+  }
 
   ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<void> => {
     const settingsPath = path.join(app.getPath('userData'), 'settings.json')

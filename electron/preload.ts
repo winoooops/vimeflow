@@ -6,6 +6,7 @@ import {
   COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   DIALOG_PICK_DIRECTORY,
+  E2E_COMMAND_PALETTE_SHORTCUT,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_CHANGED,
   SETTINGS_OPEN_FILE,
@@ -195,6 +196,18 @@ const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
     }
   : {}
 
+const e2eBridge =
+  process.env.VITE_E2E === '1'
+    ? {
+        e2e: {
+          dispatchCommandPaletteShortcut: (): Promise<boolean> =>
+            ipcRenderer.invoke(
+              E2E_COMMAND_PALETTE_SHORTCUT
+            ) as Promise<boolean>,
+        },
+      }
+    : {}
+
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
@@ -202,6 +215,7 @@ contextBridge.exposeInMainWorld('vimeflow', {
   setKeymapCaptureActive,
   setCommandPaletteBinding,
   setCommandPaletteBindings,
+  ...e2eBridge,
   browserPane: {
     createPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CREATE, request),

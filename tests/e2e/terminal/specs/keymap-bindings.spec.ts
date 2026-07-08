@@ -24,10 +24,6 @@ interface KeyInit {
   shiftKey?: boolean
 }
 
-interface ElectronBeforeInputEvent {
-  preventDefault: () => void
-}
-
 // The app uses Meta (⌘) on macOS and Ctrl on Linux/Windows for the
 // document-level pane shortcuts under test. Resolve it in the renderer so the
 // synthetic event matches the platform the app itself sees.
@@ -95,27 +91,12 @@ const fireTerminalZoneKey = async (init: KeyInit): Promise<void> => {
 }
 
 const fireCommandPaletteShortcutInput = async (): Promise<void> => {
-  await browser.electron.execute((electron: ElectronModule) => {
-    const win = electron.BrowserWindow.getAllWindows()[0]
-    const platform = process.platform
-    const isMac = platform === 'darwin'
-    win?.focus()
-    win?.webContents.focus()
-    win?.webContents.emit(
-      'before-input-event',
-      { preventDefault: () => undefined } satisfies ElectronBeforeInputEvent,
-      {
-        type: 'keyDown',
-        key: ';',
-        code: 'Semicolon',
-        control: !isMac,
-        meta: isMac,
-        alt: false,
-        shift: false,
-        isAutoRepeat: false,
-      }
-    )
+  const handled = await browser.execute(async () => {
+    return window.__VIMEFLOW_E2E__?.dispatchCommandPaletteShortcut() ?? false
   })
+  if (!handled) {
+    throw new Error('command palette shortcut was not handled by Electron')
+  }
 }
 
 // Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it

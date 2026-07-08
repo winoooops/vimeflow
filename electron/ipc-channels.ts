@@ -11,6 +11,8 @@ export const COMMAND_PALETTE_BINDING = 'command-palette:binding'
 
 export const KEYMAP_CAPTURE_ACTIVE = 'keymap:capture-active'
 
+export const E2E_COMMAND_PALETTE_SHORTCUT = 'e2e:command-palette-shortcut'
+
 export const SETTINGS_OPEN_FILE = 'settings:open-file'
 
 export const SETTINGS_OPEN_WINDOW = 'settings:open-window'

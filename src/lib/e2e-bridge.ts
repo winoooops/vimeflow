@@ -162,6 +162,9 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
+const dispatchCommandPaletteShortcut = async (): Promise<boolean> =>
+  window.vimeflow?.e2e?.dispatchCommandPaletteShortcut() ?? false
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
@@ -176,6 +179,7 @@ if (import.meta.env.VITE_E2E) {
     emitBackendEvent: __dispatchBackendEventForE2e,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    dispatchCommandPaletteShortcut,
     startBrowserPaneBoundsCapture,
     clearBrowserPaneBoundsCaptures,
     stopBrowserPaneBoundsCapture,
