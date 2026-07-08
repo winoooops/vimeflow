@@ -1,13 +1,15 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { waitForE2eBridge } from '../../shared/e2e-bridge.js'
-import {
-  pressEnterInActiveTerminal,
-  typeInActiveTerminal,
-} from '../../shared/terminal.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = path.resolve(__dirname, '../../fixtures/agents')
+
+interface AgentDetectedEvent {
+  sessionId: string
+  agentType: 'claudeCode' | 'codex' | 'kimi' | 'opencode' | 'aider' | 'generic'
+  pid: number
+}
 
 const textForSelector = async (selector: string): Promise<string> =>
   await browser.execute((target: string) => {
@@ -15,6 +17,44 @@ const textForSelector = async (selector: string): Promise<string> =>
 
     return el?.textContent ?? ''
   }, selector)
+
+const invokeBackend = async <T>(
+  method: string,
+  args?: Record<string, unknown>
+): Promise<T> =>
+  await browser.execute(
+    async (backendMethod: string, backendArgs?: Record<string, unknown>) =>
+      await window.__VIMEFLOW_E2E__!.invokeBackend<T>(
+        backendMethod,
+        backendArgs
+      ),
+    method,
+    args
+  )
+
+const waitForVisiblePtyId = async (): Promise<string> => {
+  let ptyId: string | null = null
+  await browser.waitUntil(
+    async () => {
+      ptyId = await browser.execute(
+        () => window.__VIMEFLOW_E2E__?.getVisiblePtyId() ?? null
+      )
+
+      return ptyId !== null
+    },
+    {
+      timeout: 20_000,
+      interval: 250,
+      timeoutMsg: 'visible PTY id never resolved',
+    }
+  )
+
+  if (ptyId === null) {
+    throw new Error('visible PTY id never resolved')
+  }
+
+  return ptyId
+}
 
 describe('Agent detection (fake-claude)', function () {
   // Linux-only: detector reads /proc; fixture uses bash + exec -a.
@@ -49,10 +89,32 @@ describe('Agent detection (fake-claude)', function () {
       { timeout: 20_000, timeoutMsg: 'PTY never produced a prompt' }
     )
 
+    const ptyId = await waitForVisiblePtyId()
+
     // The default PTY CWD is ~, so use an absolute path to the fixture.
     const fixturePath = `${FIXTURE_DIR}/fake-claude`
-    await typeInActiveTerminal(fixturePath)
-    await pressEnterInActiveTerminal()
+    await invokeBackend('write_pty', {
+      request: {
+        sessionId: ptyId,
+        data: `${fixturePath}\n`,
+      },
+    })
+
+    await browser.waitUntil(
+      async () => {
+        const detected = await invokeBackend<AgentDetectedEvent | null>(
+          'detect_agent_in_session',
+          { sessionId: ptyId }
+        )
+
+        return detected?.agentType === 'claudeCode'
+      },
+      {
+        timeout: 20_000,
+        interval: 500,
+        timeoutMsg: 'backend did not detect fake Claude in the PTY tree',
+      }
+    )
 
     // Detector polls /proc every ~2s for argv[0]="claude".
     await browser.waitUntil(
