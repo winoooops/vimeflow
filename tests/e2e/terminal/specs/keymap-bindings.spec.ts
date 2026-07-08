@@ -65,8 +65,34 @@ const runExCommand = async (command: string): Promise<void> => {
 }
 
 const openCommandPalette = async (): Promise<void> => {
-  await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
-  await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
+  const paletteInput = (): ReturnType<typeof $> =>
+    $('[role="combobox"][aria-label="Command palette search"]')
+  const isPaletteOpen = async (): Promise<boolean> =>
+    (await paletteInput()).isDisplayed()
+
+  await browser.waitUntil(
+    async () => {
+      if (await isPaletteOpen()) {
+        return true
+      }
+
+      await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
+      await browser.pause(50)
+      if (await isPaletteOpen()) {
+        return true
+      }
+
+      await fireKey({ key: ';', code: 'Semicolon', ...modInit() })
+      await browser.pause(50)
+
+      return isPaletteOpen()
+    },
+    {
+      timeout: 8_000,
+      interval: 250,
+      timeoutMsg: 'command palette did not open from the shortcut',
+    }
+  )
 }
 
 const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
