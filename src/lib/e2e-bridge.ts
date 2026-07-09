@@ -163,13 +163,15 @@ const getVisiblePtyId = (): string | null => {
 }
 
 const dispatchCommandPaletteShortcut = async (): Promise<boolean> => {
-  const handledByElectron =
-    await window.vimeflow?.e2e?.dispatchCommandPaletteShortcut()
-  if (handledByElectron === true) {
+  const handledByRenderer = commandPaletteShortcutOpener?.() ?? false
+  if (handledByRenderer) {
     return true
   }
 
-  return commandPaletteShortcutOpener?.() ?? false
+  const handledByElectron =
+    await window.vimeflow?.e2e?.dispatchCommandPaletteShortcut()
+
+  return handledByElectron === true
 }
 
 let commandPaletteShortcutOpener: (() => boolean) | null = null
