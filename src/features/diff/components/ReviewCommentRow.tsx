@@ -58,36 +58,19 @@ export const ReviewCommentRow = ({
   // user comment also shows "Sent <time ago>" (VIM-282).
   const { author, dispatchedAt } = comment
   const isAgent = author === 'agent'
-  const isReviewer = author === 'reviewer'
-  // Agent replies and delegated reviewer findings are agent output — read-only,
-  // never dispatched, rendered on an elevated card (VIM-256 / VIM-304).
-  const isAgentOutput = isAgent || isReviewer
   const isDispatched = dispatchedAt !== undefined
-  const readOnly = isAgentOutput || isDispatched
+  const readOnly = isAgent || isDispatched
   const categoryMeta = REVIEW_CATEGORY_META[reviewCommentCategory(comment)]
 
   return (
     <div
       className={`mx-2 my-1 flex items-start gap-2 rounded-md px-3 py-2 ${
-        isAgentOutput
-          ? 'bg-primary-container/15'
-          : 'bg-surface-container-high/60'
+        isAgent ? 'bg-primary-container/15' : 'bg-surface-container-high/60'
       }`}
     >
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-1">
-          {isReviewer ? (
-            <>
-              <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-primary">
-                {comment.reviewer ?? 'Reviewer'}
-              </span>
-              <span
-                className={`inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium ${categoryMeta.chip}`}
-              >
-                {categoryMeta.label}
-              </span>
-            </>
-          ) : isAgent ? (
+          {isAgent ? (
             <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-success">
               Agent reply
             </span>

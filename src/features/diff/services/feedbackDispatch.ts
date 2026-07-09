@@ -5,7 +5,6 @@ import {
   type ReviewComment,
   type ReviewCommentCategory,
 } from '../hooks/useFeedbackBatch'
-import type { ReviewedFile } from './pendingReviewRequests'
 
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -134,58 +133,6 @@ export const dispatchFeedbackBatch = async (
   writePty: (ptyId: string, data: string) => Promise<void>
 ): Promise<void> => {
   const formatted = formatFeedbackPayload(entries, nonce)
-  const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
-
-  await writePty(ptyId, payload)
-}
-
-export interface ReviewRequestFile extends ReviewedFile {
-  promptPath?: string
-}
-
-// The "Request review" payload (VIM-304): instruct the primary agent to delegate
-// a code review of a specific diff scope and emit the self-anchoring
-// VIMEFLOW_REVIEW block, echoing the nonce. The findings self-anchor, so there
-// is no [#n] item list — only the scope (paths + staged mode) + the contract.
-export const formatReviewRequest = (
-  files: ReviewRequestFile[],
-  staged: boolean,
-  nonce: string
-): string => {
-  const mode = staged ? 'staged' : 'unstaged'
-
-  const fileLines = files.map((file) => {
-    const path = stripControls(file.path)
-
-    const promptPath =
-      file.promptPath === undefined ? '' : stripControls(file.promptPath)
-
-    return promptPath.length > 0 ? `> ─ ${path} (${promptPath})` : `> ─ ${path}`
-  })
-
-  return [
-    `> Delegate a code review of the ${mode} diff of these ${files.length} file${files.length === 1 ? '' : 's'}:`,
-    ...fileLines,
-    '>',
-    '> Anchor each finding with diff-side line numbers: "additions" uses new-file lines, "deletions" uses old-file lines.',
-    '> In the JSON block, use the repo-relative path before the parentheses as each finding path.',
-    '> category is one of: "bug", "suggestion", "change", "question". scope is "line", "range", or "file".',
-    '> When done, end your reply with this exact block — echo the nonce verbatim and self-report the reviewer name.',
-    '> Also give a one-line overview in your normal reply (not in the block), especially if there is little to report.',
-    '> <<<VIMEFLOW_REVIEW',
-    `> {"v":1,"nonce":"${nonce}","reviewer":"<your name>","findings":[{"path":"<file>","scope":"line","side":"additions","line":1,"category":"bug","text":"..."}]}`,
-    '> VIMEFLOW_REVIEW>>>',
-  ].join('\n')
-}
-
-export const dispatchReviewRequest = async (
-  ptyId: string,
-  files: ReviewedFile[],
-  staged: boolean,
-  nonce: string,
-  writePty: (ptyId: string, data: string) => Promise<void>
-): Promise<void> => {
-  const formatted = formatReviewRequest(files, staged, nonce)
   const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
 
   await writePty(ptyId, payload)

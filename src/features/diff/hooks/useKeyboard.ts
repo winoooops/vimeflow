@@ -28,7 +28,6 @@ export interface UseKeyboardOptions {
   onUpdateFileComment: () => void
   onDeleteComment: () => void
   onFinishReview: () => void
-  onRequestReview: () => void
   onStageHunk: () => void
   onDiscardHunk: () => void
   onDiscardFile: () => void
@@ -85,7 +84,6 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onUpdateFileComment,
     onDeleteComment,
     onFinishReview,
-    onRequestReview,
     onStageHunk,
     onDiscardHunk,
     onDiscardFile,
@@ -208,7 +206,6 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         U: onUpdateFileComment,
         x: onDeleteComment,
         Y: onFinishReview,
-        '@': onRequestReview,
         s: onStageHunk,
         d: onDiscardHunk,
         D: onDiscardFile,
@@ -256,7 +253,6 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onUpdateFileComment,
     onDeleteComment,
     onFinishReview,
-    onRequestReview,
     onStageHunk,
     onDiscardHunk,
     onDiscardFile,

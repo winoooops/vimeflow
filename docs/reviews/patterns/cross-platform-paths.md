@@ -2,7 +2,7 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-07-09
+last_updated: 2026-06-28
 ref_count: 12
 ---
 
@@ -132,13 +132,4 @@ consider using path libraries for cross-platform code.
 - **File:** `electron/ghostty-native-helper.ts`
 - **Finding:** The Swift Ghostty helper package path was hardcoded under `docs/exploration/2026-06-27-ghostty-native-macos-runtime`, so pruning exploratory documentation could silently break the development native-helper runtime.
 - **Fix:** Moved the Swift package to `native/ghostty-helper` and updated `helperPackageDir()` to resolve that product-owned native path.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 14. Delegated review prompts used repo-relative paths from descendant agent cwd
-
-- **Source:** github-codex-connector | PR #677 round 1 | 2026-07-09
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/diff/services/feedbackDispatch.ts`
-- **Finding:** The review-request payload listed only repo-relative paths, so an agent pane running from a descendant cwd such as `/repo/packages/app` could resolve `src/a.ts` under the descendant instead of the reviewed repository root.
-- **Fix:** Threaded the current repo root into `useRequestReview`, included an absolute prompt path beside the repo-relative path, and kept the stored review snapshot repo-relative so returned findings still place against the diff.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

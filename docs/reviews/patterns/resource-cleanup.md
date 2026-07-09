@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-09
+last_updated: 2026-07-05
 ref_count: 25
 ---
 
@@ -308,12 +308,3 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** Native Ghostty surfaces were cached only by session and pane id, while the callback closures captured the original `BrowserWindow`. macOS close/reopen could leave restored panes reusing a native surface bound to a destroyed window.
 - **Fix:** Track surface keys by owning `BrowserWindow.id`, register one `closed` handler per window, and destroy/evict every surface owned by that window before a later update can reuse the pane id. The surface creation path also destroys a stale owner-specific surface before reparenting.
 - **Commit:** same commit as this entry
-
-### 31. Owner-scoped review request stores must join pane pruning
-
-- **Source:** github-claude | PR #677 round 2 | 2026-07-09
-- **Severity:** MEDIUM
-- **File:** `src/features/diff/services/pendingReviewRequests.ts`
-- **Finding:** The delegated-review request store and review-level-note store were module singletons keyed by nonce and owner, but only successful `agent-review` replies cleared requests and no production path cleared review-level notes. Closing a pane could leave abandoned requests and stale notes retained for the app lifetime.
-- **Fix:** Added an owner-prune helper that deletes pending requests and review-level notes for owners no longer in the live pane set, then invoked it from the existing workspace pane-pruning effect. Regression tests cover pruning both requests and notes.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -66,14 +66,12 @@ import {
 import { useToolbarState } from './hooks/useToolbarState'
 import { useReviewTargetNavigation } from './hooks/useReviewTargetNavigation'
 import { useVisualSelection } from './hooks/useVisualSelection'
-import { useRequestReview } from './hooks/useRequestReview'
 import { Notifier } from './components/Notifier'
 import { PanelBody } from './components/PanelBody'
 import { DiffSearchButton } from './components/DiffSearchButton'
 import { DiffSearchPopup } from './components/DiffSearchPopup'
 import { ReviewCommentEditor } from './components/ReviewCommentEditor'
 import { ReviewCommentRow } from './components/ReviewCommentRow'
-import { ReviewLevelNotes } from './components/ReviewLevelNotes'
 import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 import { DIFF_RANGE_BAR_UNSAFE_CSS } from './rangeBar/diffRangeBars'
 
@@ -891,19 +889,6 @@ export const Panel = ({
       )
     })()
   }, [buildFeedbackEntries, feedback, notifyInfo])
-
-  // Request review (VIM-304): the whole "arm a pending request, then dispatch or
-  // copy it" flow lives in useRequestReview so this component stays a renderer.
-  const review = useRequestReview({
-    fileDiff: activeResponse?.fileDiff,
-    ownerKey: feedbackOwnerKey,
-    cwd,
-    staged: selectedFileStaged,
-    repoRoot: response?.repoRoot ?? repoRootRef.current,
-    writePty: feedbackDispatch?.writePty,
-    focusTerminal: feedbackDispatch?.focusTerminal,
-    notify: notifyInfo,
-  })
 
   // Single-flight staging flag — drops clicks while an IPC is in flight.
   const [staging, setStaging] = useState(false)
@@ -1938,13 +1923,8 @@ export const Panel = ({
     onUpdateFileComment: updateSelectedFileComment,
     onDeleteComment: deleteSelectedComment,
     onFinishReview: (): void => {
-      if (feedback.pendingAnnotations() > 0 && !review.open) {
+      if (feedback.pendingAnnotations() > 0) {
         setFinishOpen(true)
-      }
-    },
-    onRequestReview: (): void => {
-      if (!finishOpen) {
-        review.openPopover()
       }
     },
     onStageHunk: (): void => openKeyboardConfirm('stage-hunk'),
@@ -2053,12 +2033,7 @@ export const Panel = ({
   )
 
   const onFinishFeedback =
-    feedbackCount > 0 && !review.open
-      ? (): void => {
-          review.closePopover()
-          setFinishOpen(true)
-        }
-      : undefined
+    feedbackCount > 0 ? (): void => setFinishOpen(true) : undefined
 
   const finishFeedback = {
     open: finishOpen,
@@ -2071,31 +2046,6 @@ export const Panel = ({
     onCancel: (): void => setFinishOpen(false),
     onSend: handleSendFeedback,
     onCopy: handleCopyFeedback,
-  }
-
-  // The "Request review" affordance (VIM-304) — always available when a file
-  // diff is loaded, independent of pending comments (unlike Finish).
-  const onRequestReview =
-    review.canRequest && !finishOpen
-      ? (): void => {
-          setFinishOpen(false)
-          review.openPopover()
-        }
-      : undefined
-
-  const requestReview = {
-    open: review.open,
-    result: resolveCandidatePanes({
-      allPanes: feedbackDispatch?.candidates ?? [],
-      diffCwd: cwd,
-    }),
-    scopeLabel:
-      selectedFilePath !== null
-        ? `${selectedFilePath} (${selectedFileStaged ? 'staged' : 'unstaged'})`
-        : 'this file',
-    onSubmit: review.requestReview,
-    onCopy: review.copyReviewRequest,
-    onCancel: review.closePopover,
   }
 
   // Loading state
@@ -2150,10 +2100,8 @@ export const Panel = ({
             feedbackCount: pendingFeedbackCount,
             onDiscardFeedback: feedback.clearPending,
             onFinishFeedback,
-            onRequestReview,
           }}
           finishFeedback={finishFeedback}
-          requestReview={requestReview}
           keyboardConfirm={null}
           onCancelKeyboardConfirm={cancelKeyboardConfirm}
           onConfirmKeyboardAction={confirmKeyboardAction}
@@ -2220,12 +2168,10 @@ export const Panel = ({
           feedbackCount: pendingFeedbackCount,
           onDiscardFeedback: feedback.clearPending,
           onFinishFeedback,
-          onRequestReview,
           onRefreshActiveFile:
             latestDiffStatus === 'ready' ? acceptLatestDiff : undefined,
         }}
         finishFeedback={finishFeedback}
-        requestReview={requestReview}
         keyboardConfirm={keyboardConfirm}
         renderSyncError={renderSyncError}
         notifyMessage={notifyMessage}
@@ -2385,7 +2331,6 @@ export const Panel = ({
               </div>
             </div>
           ) : null}
-          <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
           <PanelBody
             scrollBodyRef={diffScrollBodyRef}
             diffError={diffError}

@@ -83,7 +83,6 @@ const renderKeyboard = (
     onUpdateFileComment: vi.fn(),
     onDeleteComment: vi.fn(),
     onFinishReview: vi.fn(),
-    onRequestReview: vi.fn(),
     onStageHunk: vi.fn(),
     onDiscardHunk: vi.fn(),
     onDiscardFile: vi.fn(),
@@ -209,14 +208,6 @@ describe('useKeyboard', () => {
     dispatch('Y')
 
     expect(props.onFinishReview).toHaveBeenCalledOnce()
-  })
-
-  test('@ opens request review', () => {
-    const { props } = renderKeyboard()
-
-    dispatch('@')
-
-    expect(props.onRequestReview).toHaveBeenCalledOnce()
   })
 
   test('s, d, and D request keyboard confirmations for hunk/file actions', () => {
@@ -428,7 +419,6 @@ describe('useKeyboard', () => {
       onUpdateFileComment: vi.fn(),
       onDeleteComment: vi.fn(),
       onFinishReview: vi.fn(),
-      onRequestReview: vi.fn(),
       onStageHunk: vi.fn(),
       onDiscardHunk: vi.fn(),
       onDiscardFile: vi.fn(),
