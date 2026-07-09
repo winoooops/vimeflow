@@ -2,7 +2,7 @@
 id: react-prop-contracts
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-06-22
+last_updated: 2026-07-09
 ref_count: 6
 ---
 
@@ -84,4 +84,13 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **File:** `src/features/agent-status/components/QuotaUnavailableNotice.tsx` L30-34
 - **Finding:** The quota notice component hardcoded a tooltip string containing `sst/opencode#16017` while the URL lived in the agent registry. Updating the upstream issue link later could leave the tooltip stale even though the link opened the new destination.
 - **Fix:** Added `tooltipLabel` to `QuotaNotice`, populated it beside `trackUrl` in the registry, and made `QuotaUnavailableNotice` render that prop. Updated component and card tests to provide the co-located label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. TerminalPane active prop mixed focus and visibility gates
+
+- **Source:** github-codex-connector | PR #676 round 1 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** `TerminalPane` used one `isActive` prop for selected-pane focus/interactivity and for session-visible git metadata loading. After the selected-pane gate was tightened, visible inactive split panes stopped enabling branch, worktree, and status hooks.
+- **Fix:** Added a separate `isSessionVisible` prop for metadata hook enablement while keeping `isActive` as the selected-pane focus/body/chrome signal. `SplitView` now passes both gates, and a regression test covers visible inactive panes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

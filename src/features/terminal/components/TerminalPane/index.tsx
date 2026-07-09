@@ -52,7 +52,10 @@ export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 export interface TerminalPaneProps {
   session: Session
   pane: Pane
+  /** Selected-pane activity: drives focus, chrome emphasis, and body interactivity. */
   isActive: boolean
+  /** Session visibility: drives background metadata for panes mounted on screen. */
+  isSessionVisible?: boolean
   service: ITerminalService
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
@@ -104,6 +107,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       session,
       pane,
       isActive,
+      isSessionVisible = isActive,
       service,
       onPaneReady = undefined,
       mode = 'spawn',
@@ -168,15 +172,15 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     }, [isActive])
 
     const { branch } = useGitBranch(pane.cwd, {
-      enabled: isActive,
+      enabled: isSessionVisible,
     })
 
     const { worktreeName } = useGitWorktree(pane.cwd, {
-      enabled: isActive,
+      enabled: isSessionVisible,
     })
 
     const { files, filesCwd } = useGitStatus(pane.cwd, {
-      enabled: isActive,
+      enabled: isSessionVisible,
     })
 
     const isFresh = filesCwd === pane.cwd

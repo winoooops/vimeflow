@@ -683,6 +683,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         runningBurnerPaneKeys={runningBurnerPaneKeys}
                         outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
                         isActive={isActive}
+                        isSessionVisible={isSessionVisible}
                         shortcutContext={nativeShortcutContext}
                         shortcutHint={
                           slotIndex < 9
