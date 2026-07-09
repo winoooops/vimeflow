@@ -338,19 +338,46 @@ pub struct AgentReplyEvent {
 pub struct AgentReply {
     pub id: u32,
     pub status: AgentReplyStatus,
+    /// Where the reply lands (VIM-304): the user's `[#n]` comment (default) or a
+    /// delegated finding's thread. Absent on shipped replies → `Comment`.
+    #[serde(default)]
+    pub target: AgentReplyTarget,
     pub text: String,
 }
 
-/// Outcome the agent reports for a reviewed comment (VIM-283).
+/// Where an agent reply lands (VIM-304). `comment` is the user's `[#n]` comment
+/// (the shipped VIM-283 path); `finding` is a delegated reviewer finding's
+/// thread. A reply with no `target` defaults to `comment` (back-compat).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum AgentReplyTarget {
+    #[default]
+    Comment,
+    Finding,
+}
+
+/// The outcome axis for an agent turn (VIM-304) — replaces the old
+/// answered/changed/skipped triple. Applies to a reply on a user comment AND to
+/// the main agent posting into a delegated finding's thread:
+/// - `reply` — answers the user (was `answered`).
+/// - `clarify` — asks the user a question back; the thread awaits them.
+/// - `resolved` — made the change / fixed it (was `changed`).
+/// - `deferred` — punts for later; cites an issue # in `text` if filed.
+/// - `rejected` — declined / disagreed (was `skipped`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "lowercase")]
 #[allow(dead_code)]
 pub enum AgentReplyStatus {
-    Answered,
-    Changed,
-    Skipped,
+    Reply,
+    Clarify,
+    Resolved,
+    Deferred,
+    Rejected,
 }
 
 /// A delegated reviewer's findings for the current diff (VIM-304).

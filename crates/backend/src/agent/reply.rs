@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use std::borrow::Cow;
 
-use crate::agent::types::{AgentReply, AgentReplyStatus};
+use crate::agent::types::{AgentReply, AgentReplyStatus, AgentReplyTarget};
 
 const OPEN: &str = "<<<VIMEFLOW_REPLY";
 const CLOSE: &str = "VIMEFLOW_REPLY>>>";
@@ -39,6 +39,8 @@ struct ReplyBlockDto {
 struct ReplyDto {
     id: Option<i64>,
     status: Option<String>,
+    #[serde(default)]
+    target: Option<String>,
     text: Option<String>,
 }
 
@@ -119,14 +121,33 @@ fn validate(json: &str) -> Option<(String, Vec<AgentReply>)> {
             return None; // duplicate id
         }
         let status = match entry.status.as_deref()? {
-            "answered" => AgentReplyStatus::Answered,
-            "changed" => AgentReplyStatus::Changed,
-            "skipped" => AgentReplyStatus::Skipped,
+            "reply" => AgentReplyStatus::Reply,
+            "clarify" => AgentReplyStatus::Clarify,
+            "resolved" => AgentReplyStatus::Resolved,
+            "deferred" => AgentReplyStatus::Deferred,
+            "rejected" => AgentReplyStatus::Rejected,
+            // Legacy literals (pre-VIM-304) mapped canonically so replies keep
+            // parsing while the dispatch prompt + any in-flight agents migrate.
+            // TODO(VIM-304): once the migrated dispatch prompt (Task 16) has
+            // shipped and no agent emits answered/changed/skipped anymore, delete
+            // these three arms. Grep the repo for answered/changed/skipped first
+            // to sweep any lingering references (prompt text, docs, or a legacy
+            // type/alias) in the same cleanup.
+            "answered" => AgentReplyStatus::Reply,
+            "changed" => AgentReplyStatus::Resolved,
+            "skipped" => AgentReplyStatus::Rejected,
             _ => return None,
+        };
+        // Absent target → Comment (shipped replies); unknown value → malformed.
+        let target = match entry.target.as_deref() {
+            Some("finding") => AgentReplyTarget::Finding,
+            Some("comment") | None => AgentReplyTarget::Comment,
+            Some(_) => return None,
         };
         replies.push(AgentReply {
             id,
             status,
+            target,
             text: entry.text?,
         });
     }
@@ -156,11 +177,71 @@ mod tests {
                 assert_eq!(nonce, "abc");
                 assert_eq!(replies.len(), 1);
                 assert_eq!(replies[0].id, 1);
-                assert_eq!(replies[0].status, AgentReplyStatus::Answered);
+                // legacy "answered" maps to the new canonical Reply outcome.
+                assert_eq!(replies[0].status, AgentReplyStatus::Reply);
                 assert_eq!(replies[0].text, "hi");
             }
             other => panic!("expected Structured, got {other:?}"),
         }
+    }
+
+    fn parse_status(literal: &str) -> AgentReplyStatus {
+        let text = block(&format!(
+            r#"{{"v":1,"nonce":"n","replies":[{{"id":1,"status":"{literal}","text":"t"}}]}}"#
+        ));
+        match extract_agent_reply(&text) {
+            Some(AgentReplyOutcome::Structured { replies, .. }) => replies[0].status.clone(),
+            other => panic!("expected Structured for {literal}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_outcome_literals_parse() {
+        assert_eq!(parse_status("reply"), AgentReplyStatus::Reply);
+        assert_eq!(parse_status("clarify"), AgentReplyStatus::Clarify);
+        assert_eq!(parse_status("resolved"), AgentReplyStatus::Resolved);
+        assert_eq!(parse_status("deferred"), AgentReplyStatus::Deferred);
+        assert_eq!(parse_status("rejected"), AgentReplyStatus::Rejected);
+    }
+
+    #[test]
+    fn legacy_status_literals_map_canonically() {
+        assert_eq!(parse_status("answered"), AgentReplyStatus::Reply);
+        assert_eq!(parse_status("changed"), AgentReplyStatus::Resolved);
+        assert_eq!(parse_status("skipped"), AgentReplyStatus::Rejected);
+    }
+
+    fn parse_one(json: &str) -> AgentReply {
+        match extract_agent_reply(&block(json)) {
+            Some(AgentReplyOutcome::Structured { replies, .. }) => {
+                replies.into_iter().next().unwrap()
+            }
+            other => panic!("expected Structured, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reply_target_finding_parses() {
+        let reply = parse_one(
+            r#"{"v":1,"nonce":"n","replies":[{"target":"finding","id":1,"status":"resolved","text":"t"}]}"#,
+        );
+        assert_eq!(reply.target, AgentReplyTarget::Finding);
+    }
+
+    #[test]
+    fn reply_target_absent_defaults_to_comment() {
+        // Shipped replies carry no `target`; they must keep landing on the comment.
+        let reply =
+            parse_one(r#"{"v":1,"nonce":"n","replies":[{"id":1,"status":"reply","text":"t"}]}"#);
+        assert_eq!(reply.target, AgentReplyTarget::Comment);
+    }
+
+    #[test]
+    fn reply_target_unknown_is_malformed() {
+        let outcome = extract_agent_reply(&block(
+            r#"{"v":1,"nonce":"n","replies":[{"target":"nope","id":1,"status":"reply","text":"t"}]}"#,
+        ));
+        assert!(matches!(outcome, Some(AgentReplyOutcome::Malformed { .. })));
     }
 
     #[test]
