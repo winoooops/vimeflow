@@ -107,3 +107,12 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **Finding:** `TerminalPane` used one `isActive` prop for selected-pane focus/interactivity and for session-visible git metadata loading. After the selected-pane gate was tightened, visible inactive split panes stopped enabling branch, worktree, and status hooks.
 - **Fix:** Added a separate `isSessionVisible` prop for metadata hook enablement while keeping `isActive` as the selected-pane focus/body/chrome signal. `SplitView` now passes both gates, and a regression test covers visible inactive panes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. TerminalPane data-focused bypassed the focus-highlight prop
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** `TerminalPane` computed `isFocusVisible = showFocusHighlight && isActive` for the border opacity, but `data-focused` still used raw `isActive`. When callers hid focus highlights, the visual border disappeared while the semantic/test attribute continued to report focus.
+- **Fix:** Bound `data-focused` to `isFocusVisible` and added a regression test that keeps `data-pane-active` while omitting `data-focused` when `showFocusHighlight` is false.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

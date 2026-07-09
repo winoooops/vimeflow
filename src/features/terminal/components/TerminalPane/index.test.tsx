@@ -540,6 +540,23 @@ describe('TerminalPane index', () => {
     expect(wrapper).toHaveAttribute('data-focused', 'true')
   })
 
+  test('active pane omits focus marker when focus highlight is hidden', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: true }}
+        showFocusHighlight={inactive}
+      />
+    )
+
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
+    expect(wrapper).toHaveAttribute('data-pane-active', 'true')
+    expect(wrapper).not.toHaveAttribute('data-focused')
+    expect(screen.getByTestId('terminal-pane-border')).toHaveStyle({
+      opacity: '0',
+    })
+  })
+
   test('inactive pane has no active marker or focus marker', () => {
     render(
       <TerminalPane
