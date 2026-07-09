@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-05
+last_updated: 2026-07-09
 ref_count: 11
 ---
 
@@ -311,3 +311,21 @@ true` and drop the chunk.
   closed/disabled malformed streams, and made addon string conversion fail
   explicitly on non-string or unreadable values.
 - **Commit:** same commit as this entry
+
+### 21. Reviewer range anchoring trusted only the start line
+
+- **Source:** github-codex-connector | PR #677 round 1 | 2026-07-09
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/hooks/useAgentReview.ts`
+- **Finding:** Range findings were considered anchorable when `startLine` was inside a reviewed hunk, but `endLine` could still be outside that hunk or in another hunk. The UI could therefore attach reviewer text to lines that were not part of the reviewed diff.
+- **Fix:** Added a same-hunk range validator and used it for the downgrade decision, so ranges only anchor when both endpoints are present and inside the same reviewed hunk; otherwise they degrade to file-level.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Null reviewer range end line bypassed graceful degradation
+
+- **Source:** github-claude | PR #677 round 1 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/hooks/useAgentReview.ts`
+- **Finding:** A `scope: "range"` finding with a valid `startLine` but `endLine: null` skipped file-level downgrade, failed range target construction, and fell through to a line annotation at line `0` with no file target. The reviewer finding then rendered nowhere.
+- **Fix:** Folded `endLine !== null` into the same target-in-hunk check used by the downgrade path and added regression coverage for missing and out-of-hunk range endpoints.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

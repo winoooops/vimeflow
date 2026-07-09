@@ -2,7 +2,7 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-07
+last_updated: 2026-07-09
 ref_count: 10
 ---
 
@@ -465,4 +465,13 @@ against three classes of false-fire:
 - **Fix:** Rechecked `inputBlocked(win)` immediately before `addon.focus(currentSurface)`
   in the async refocus branch and added regression coverage for an overlay opening
   while shortcut dispatch is pending.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Independent popovers shared shortcut handlers
+
+- **Source:** github-claude | PR #677 round 1 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The Finish feedback popover and Request review popover were controlled by independent booleans, so mouse users could open both dialogs at the same toolbar anchor. Each dialog had document-level shortcut handling, making one shared keypress capable of submitting both actions.
+- **Fix:** Made the toolbar and keyboard entry points mutually exclusive: Finish cannot open while Request review is open, Request review cannot open while Finish is open, and a panel regression test asserts the Request review trigger disappears while Finish is active.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

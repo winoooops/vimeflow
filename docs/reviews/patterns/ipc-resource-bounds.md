@@ -146,4 +146,12 @@ not become repeated unhandled main-process failures.
 - **Fix:** Split preview state from persisted state for the slider and commit
   only on pointer release, key release, or blur. Added a regression test that
   multiple drag changes do not save until the final value is committed.
+  
+### 11. Delegated reviewer findings need a display bound
+
+- **Source:** github-claude | PR #677 round 2 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/hooks/useAgentReview.ts`
+- **Finding:** A single valid `agent-review` event could contain an unbounded findings array, and every delegated reviewer finding was rendered as a diff annotation without a reviewer-specific ceiling. A malfunctioning or prompt-injected reviewer could flood the diff UI with thousands of rows.
+- **Fix:** Added a per-event reviewer finding cap and collapse overflow into one review-level note that reports how many findings were omitted. Regression coverage asserts only the capped number of annotations is rendered and the overflow note is retained.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

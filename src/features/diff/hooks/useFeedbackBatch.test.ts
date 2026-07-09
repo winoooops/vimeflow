@@ -905,6 +905,12 @@ describe('review annotation category + agent predicates (VIM-256)', () => {
     expect(isPendingReviewAnnotation(annotation({ author: 'self' }))).toBe(true)
   })
 
+  test('a delegated reviewer finding is never pending (VIM-304)', () => {
+    expect(isPendingReviewAnnotation(annotation({ author: 'reviewer' }))).toBe(
+      false
+    )
+  })
+
   test('reviewCommentCategory defaults an untagged comment to change', () => {
     expect(
       reviewCommentCategory({
