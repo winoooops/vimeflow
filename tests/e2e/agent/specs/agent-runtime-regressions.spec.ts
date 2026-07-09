@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { createNewSessionWithDefaults } from '../../shared/actions.js'
 import { waitForE2eBridge } from '../../shared/e2e-bridge.js'
+import { e2eTempRoot } from '../../shared/electron-app.js'
 import {
   pressEnterInActiveTerminal,
   typeInActiveTerminal,
@@ -374,7 +374,7 @@ describe('Agent runtime regressions', () => {
   })
 
   it('stores bridge files under app data and leaves project .vimeflow absent', async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vimeflow-e2e-'))
+    const tempRoot = fs.mkdtempSync(path.join(e2eTempRoot(), 'vimeflow-e2e-'))
     const projectDir = path.join(tempRoot, 'Project With Spaces & Symbols')
     fs.mkdirSync(projectDir)
     const sessionId = `e2e_bridge_${Date.now()}`
@@ -549,10 +549,10 @@ describe('Agent runtime regressions', () => {
   it('renders seeded Codex and Kimi statuses in the sidebar card and status panel', async () => {
     const ptyId = await waitForVisiblePtyId()
     const codexHome = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'vimeflow-codex-e2e-')
+      path.join(e2eTempRoot(), 'vimeflow-codex-e2e-')
     )
     const kimiHome = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'vimeflow-kimi-e2e-')
+      path.join(e2eTempRoot(), 'vimeflow-kimi-e2e-')
     )
 
     const scenarios: AgentStatusScenario[] = [

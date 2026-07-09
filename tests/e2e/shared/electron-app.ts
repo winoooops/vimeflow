@@ -30,6 +30,13 @@ export const appEntryPoint = path.resolve(repoRoot, 'dist-electron/main.js')
 // E2E-only backend-method allowlist (electron/main.ts:isE2eRuntime).
 export const appArgs: string[] = ['--no-sandbox', '--vimeflow-e2e']
 
+export const e2eTempRoot = (): string => {
+  const root = process.env.RUNNER_TEMP ?? os.tmpdir()
+  fs.mkdirSync(root, { recursive: true })
+
+  return root
+}
+
 // Tracks the temp dirs created by injectFreshUserDataDir across all
 // sessions in this WDIO process so the exit-time safety net can clean up
 // anything afterSession missed (crash, kill -9, etc).
@@ -47,7 +54,7 @@ const activeUserDataDirs = new Set<string>()
 export const injectFreshUserDataDir = (
   capabilities: WebdriverIO.Capabilities
 ): void => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vimeflow-e2e-'))
+  const dir = fs.mkdtempSync(path.join(e2eTempRoot(), 'vimeflow-e2e-'))
   activeUserDataDirs.add(dir)
   const electronOpts = capabilities['wdio:electronServiceOptions'] ?? {}
   // Strip any --user-data-dir already injected by a prior beforeSession
