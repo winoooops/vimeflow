@@ -899,6 +899,7 @@ export const Panel = ({
     ownerKey: feedbackOwnerKey,
     cwd,
     staged: selectedFileStaged,
+    repoRoot: response?.repoRoot ?? repoRootRef.current,
     writePty: feedbackDispatch?.writePty,
     focusTerminal: feedbackDispatch?.focusTerminal,
     notify: notifyInfo,
@@ -1937,11 +1938,15 @@ export const Panel = ({
     onUpdateFileComment: updateSelectedFileComment,
     onDeleteComment: deleteSelectedComment,
     onFinishReview: (): void => {
-      if (feedback.pendingAnnotations() > 0) {
+      if (feedback.pendingAnnotations() > 0 && !review.open) {
         setFinishOpen(true)
       }
     },
-    onRequestReview: review.openPopover,
+    onRequestReview: (): void => {
+      if (!finishOpen) {
+        review.openPopover()
+      }
+    },
     onStageHunk: (): void => openKeyboardConfirm('stage-hunk'),
     onDiscardHunk: (): void => openKeyboardConfirm('discard-hunk'),
     onDiscardFile: (): void => openKeyboardConfirm('discard-file'),
@@ -2048,7 +2053,12 @@ export const Panel = ({
   )
 
   const onFinishFeedback =
-    feedbackCount > 0 ? (): void => setFinishOpen(true) : undefined
+    feedbackCount > 0 && !review.open
+      ? (): void => {
+          review.closePopover()
+          setFinishOpen(true)
+        }
+      : undefined
 
   const finishFeedback = {
     open: finishOpen,
@@ -2065,7 +2075,13 @@ export const Panel = ({
 
   // The "Request review" affordance (VIM-304) — always available when a file
   // diff is loaded, independent of pending comments (unlike Finish).
-  const onRequestReview = review.canRequest ? review.openPopover : undefined
+  const onRequestReview =
+    review.canRequest && !finishOpen
+      ? (): void => {
+          setFinishOpen(false)
+          review.openPopover()
+        }
+      : undefined
 
   const requestReview = {
     open: review.open,

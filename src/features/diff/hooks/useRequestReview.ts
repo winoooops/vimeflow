@@ -11,6 +11,7 @@ import {
   dispatchReviewRequest,
   formatReviewRequest,
   makeDispatchNonce,
+  type ReviewRequestFile,
 } from '../services/feedbackDispatch'
 
 export interface UseRequestReviewOptions {
@@ -30,6 +31,8 @@ export interface UseRequestReviewOptions {
   focusTerminal?: () => void
   /** Surface a one-line status message to the user. */
   notify: (message: string) => void
+  /** Git repo root used to include resolvable absolute file paths in prompts. */
+  repoRoot?: string
 }
 
 export interface RequestReviewController {
@@ -59,6 +62,7 @@ export const useRequestReview = ({
   writePty,
   focusTerminal,
   notify,
+  repoRoot = undefined,
 }: UseRequestReviewOptions): RequestReviewController => {
   const [open, setOpen] = useState(false)
 
@@ -71,12 +75,22 @@ export const useRequestReview = ({
   const arm = useCallback((): {
     nonce: string
     files: ReviewedFile[]
+    requestFiles: ReviewRequestFile[]
   } | null => {
     if (fileDiff === undefined || ownerKey === undefined) {
       return null
     }
 
     const files = buildDiffSnapshot(fileDiff)
+    const normalizedRepoRoot = repoRoot?.replace(/[\\/]+$/, '') ?? ''
+
+    const requestFiles =
+      normalizedRepoRoot.length > 0
+        ? files.map((file) => ({
+            ...file,
+            promptPath: `${normalizedRepoRoot}/${file.path}`,
+          }))
+        : files
     const nonce = makeDispatchNonce()
     setPendingReviewRequest({
       nonce,
@@ -87,8 +101,8 @@ export const useRequestReview = ({
       dispatchedAt: Date.now(),
     })
 
-    return { nonce, files }
-  }, [fileDiff, ownerKey, cwd, staged])
+    return { nonce, files, requestFiles }
+  }, [fileDiff, ownerKey, cwd, staged, repoRoot])
 
   const requestReview = useCallback(
     (pane: PaneCandidate): void => {
@@ -102,7 +116,7 @@ export const useRequestReview = ({
         try {
           await dispatchReviewRequest(
             pane.ptyId,
-            armed.files,
+            armed.requestFiles,
             staged,
             armed.nonce,
             writePty
@@ -127,7 +141,7 @@ export const useRequestReview = ({
 
     void (async (): Promise<void> => {
       const copied = await writeClipboardText(
-        formatReviewRequest(armed.files, staged, armed.nonce)
+        formatReviewRequest(armed.requestFiles, staged, armed.nonce)
       )
       notify(
         copied

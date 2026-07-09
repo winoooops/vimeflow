@@ -286,6 +286,27 @@ test('formatReviewRequest names the scope, coordinate convention, and block (VIM
   expect(payload).toContain('VIMEFLOW_REVIEW>>>')
 })
 
+test('formatReviewRequest can include absolute prompt paths while preserving JSON paths', () => {
+  const payload = formatReviewRequest(
+    [
+      {
+        path: 'src/auth.ts',
+        promptPath: '/repo/src/auth.ts',
+        additions: [{ start: 40, end: 50 }],
+        deletions: [],
+      },
+    ],
+    false,
+    'r3v13w'
+  )
+
+  expect(payload).toContain('> ─ src/auth.ts (/repo/src/auth.ts)')
+  expect(payload).toContain(
+    'use the repo-relative path before the parentheses as each finding path'
+  )
+  expect(payload).toContain('"path":"<file>"')
+})
+
 test('formatReviewRequest uses the staged label + singular wording', () => {
   const payload = formatReviewRequest([reviewedFiles[0]], true, 'n')
 

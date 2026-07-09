@@ -115,6 +115,32 @@ test('requestReview records the pending request and dispatches to the pane', asy
   expect(result.current.open).toBe(false)
 })
 
+test('requestReview dispatches resolvable prompt paths without changing the stored snapshot', async () => {
+  const { result } = setup({ cwd: '/repo/packages/app', repoRoot: '/repo' })
+
+  await act(async () => {
+    result.current.requestReview(pane('pty-9'))
+    await Promise.resolve()
+  })
+
+  const request = getPendingReviewRequest('nonce-1')
+  expect(request?.diffSnapshot[0].path).toBe('src/a.ts')
+  expect(dispatchReviewRequest).toHaveBeenCalledWith(
+    'pty-9',
+    [
+      {
+        path: 'src/a.ts',
+        promptPath: '/repo/src/a.ts',
+        additions: [{ start: 40, end: 50 }],
+        deletions: [{ start: 5, end: 7 }],
+      },
+    ],
+    false,
+    'nonce-1',
+    writePty
+  )
+})
+
 test('copyReviewRequest records a request and copies the prompt', async () => {
   const { result } = setup()
 

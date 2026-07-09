@@ -175,6 +175,38 @@ describe('useAgentReview', () => {
     })
   })
 
+  test('downgrades a range finding with no end line to file-level', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(
+      event({
+        findings: [
+          finding({ scope: 'range', line: null, startLine: 41, endLine: null }),
+        ],
+      })
+    )
+
+    const annotation = addAnnotationForOwner.mock.calls[0][4]
+    expect(annotation.lineNumber).toBe(0)
+    expect(annotation.metadata.target).toEqual({ scope: 'file' })
+  })
+
+  test('downgrades a range finding whose end line leaves the hunk', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(
+      event({
+        findings: [
+          finding({ scope: 'range', line: null, startLine: 41, endLine: 999 }),
+        ],
+      })
+    )
+
+    const annotation = addAnnotationForOwner.mock.calls[0][4]
+    expect(annotation.lineNumber).toBe(0)
+    expect(annotation.metadata.target).toEqual({ scope: 'file' })
+  })
+
   test('places a file finding as a file-scope note', async () => {
     setPendingReviewRequest(request())
     mount()

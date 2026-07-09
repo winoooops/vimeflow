@@ -32,6 +32,19 @@ export interface UseAgentReviewOptions {
 const lineInRanges = (line: number, ranges: HunkRange[]): boolean =>
   ranges.some((range) => line >= range.start && line <= range.end)
 
+const rangeInSameHunk = (
+  startLine: number,
+  endLine: number,
+  ranges: HunkRange[]
+): boolean =>
+  ranges.some(
+    (range) =>
+      startLine >= range.start &&
+      startLine <= range.end &&
+      endLine >= range.start &&
+      endLine <= range.end
+  )
+
 const findFile = (
   snapshot: ReviewedFile[],
   path: string
@@ -157,10 +170,13 @@ export const useAgentReview = ({
         const ranges =
           finding.side === 'deletions' ? file.deletions : file.additions
 
-        const anchor =
-          finding.scope === 'range' ? finding.startLine : finding.line
-        const anchorInHunk = anchor !== null && lineInRanges(anchor, ranges)
-        const downgradeToFile = finding.scope !== 'file' && !anchorInHunk
+        const targetInHunk =
+          finding.scope === 'range'
+            ? finding.startLine !== null &&
+              finding.endLine !== null &&
+              rangeInSameHunk(finding.startLine, finding.endLine, ranges)
+            : finding.line !== null && lineInRanges(finding.line, ranges)
+        const downgradeToFile = finding.scope !== 'file' && !targetInHunk
 
         addAnnotationForOwner(
           ownerKey,
