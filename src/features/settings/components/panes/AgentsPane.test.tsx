@@ -256,6 +256,38 @@ describe('AgentsPane', () => {
     })
   })
 
+  test('sends each alias save immediately without waiting for earlier saves', async () => {
+    const { aliasesSave } = installBridge(DEFAULT_ALIASES)
+    let resolveFirstSave: (() => void) | undefined
+    aliasesSave.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirstSave = resolve
+        })
+    )
+    aliasesSave.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+
+    render(
+      <TestWrapper>
+        <AgentsPane />
+      </TestWrapper>
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('alias-row').length).toBe(
+        DEFAULT_ALIASES.length
+      )
+    })
+
+    await user.click(screen.getByRole('button', { name: /Add alias/i }))
+    await user.click(screen.getByRole('button', { name: /Add alias/i }))
+
+    expect(aliasesSave).toHaveBeenCalledTimes(2)
+
+    resolveFirstSave?.()
+  })
+
   test('reads and writes agentShimEnabled through the settings store', async () => {
     const { settingsSave } = installBridge(DEFAULT_ALIASES)
     const user = userEvent.setup()

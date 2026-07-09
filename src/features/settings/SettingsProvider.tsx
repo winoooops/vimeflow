@@ -32,6 +32,7 @@ export const SettingsProvider = ({
   const settingsRef = useRef<AppSettings>(settings)
   const hasLoadedRef = useRef(false)
   const pendingLoadPatchRef = useRef<Partial<AppSettings> | null>(null)
+  const latestBroadcastBeforeLoadRef = useRef<AppSettings | null>(null)
 
   settingsRef.current = settings
 
@@ -104,15 +105,19 @@ export const SettingsProvider = ({
 
       try {
         const loaded = await bridge.load()
+        const base = latestBroadcastBeforeLoadRef.current ?? loaded
+        latestBroadcastBeforeLoadRef.current = null
         hasLoadedRef.current = true
-        if (applyPendingLoadPatch(loaded)) {
+        if (applyPendingLoadPatch(base)) {
           return
         }
-        setSettings(loaded)
-        settingsRef.current = loaded
+        setSettings(base)
+        settingsRef.current = base
       } catch {
+        const base = latestBroadcastBeforeLoadRef.current ?? DEFAULT_SETTINGS
+        latestBroadcastBeforeLoadRef.current = null
         hasLoadedRef.current = true
-        applyPendingLoadPatch(DEFAULT_SETTINGS)
+        applyPendingLoadPatch(base)
         // Fall back to defaults if the backend load fails.
       }
     }
@@ -125,6 +130,21 @@ export const SettingsProvider = ({
       typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
 
     return bridge?.onDidChange?.((next) => {
+      if (!hasLoadedRef.current) {
+        latestBroadcastBeforeLoadRef.current = next
+      }
+
+      const pendingPatch = pendingLoadPatchRef.current
+      const merged = pendingPatch === null ? next : { ...next, ...pendingPatch }
+
+      if (!hasLoadedRef.current || pendingPatch !== null) {
+        settingsRef.current = merged
+        setSettings(merged)
+        setSaveError(null)
+
+        return
+      }
+
       settingsRef.current = next
       setSettings(next)
       setSaveError(null)

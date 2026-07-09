@@ -1,8 +1,8 @@
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
+  useRef,
   type ReactElement,
 } from 'react'
 import type { AgentAlias, SettingsPaneTargetProps } from '../../types'
@@ -27,7 +27,6 @@ export const AgentsPane = ({
   const [aliases, setAliases] = useState<AgentAlias[]>([])
   const [isInitializing, setIsInitializing] = useState(true)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const hasInteractedRef = useRef(false)
 
   const shellAliasesActive =
@@ -62,41 +61,32 @@ export const AgentsPane = ({
     void load()
   }, [])
 
-  const saveNext = useCallback(
-    async (previous: Promise<void>, next: AgentAlias[]): Promise<void> => {
-      try {
-        await previous
-      } catch {
-        // Swallow prior save errors so the queue keeps moving.
-      }
+  const saveAliases = useCallback(async (next: AgentAlias[]): Promise<void> => {
+    const bridge = window.vimeflow?.aliases
 
-      const bridge = window.vimeflow?.aliases
+    if (!bridge) {
+      setSaveError('Alias bridge is not available')
 
-      if (!bridge) {
-        setSaveError('Alias bridge is not available')
+      return
+    }
 
-        return
-      }
-
-      try {
-        await bridge.save(next)
-        setSaveError(null)
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Failed to save aliases'
-        setSaveError(message)
-      }
-    },
-    []
-  )
+    try {
+      await bridge.save(next)
+      setSaveError(null)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to save aliases'
+      setSaveError(message)
+    }
+  }, [])
 
   const setAliasesAndPersist = useCallback(
     (next: AgentAlias[]): void => {
       hasInteractedRef.current = true
       setAliases(next)
-      saveQueueRef.current = saveNext(saveQueueRef.current, next)
+      void saveAliases(next)
     },
-    [saveNext]
+    [saveAliases]
   )
 
   const addAlias = (): void => {

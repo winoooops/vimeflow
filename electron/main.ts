@@ -20,7 +20,7 @@ import {
   packagedContentSecurityPolicy,
 } from './csp'
 import {
-  dispatchCommandPaletteShortcutForWindow,
+  commandPaletteToggleDispatcherForWindow,
   installCommandPaletteShortcutOverride,
   setCommandPaletteShortcutBinding,
   setCommandPaletteShortcutBindings,
@@ -684,18 +684,14 @@ const setupApp = async (): Promise<void> => {
         return false
       }
 
-      const isMac = process.platform === 'darwin'
+      if (win.isDestroyed() || win.webContents.isDestroyed()) {
+        return false
+      }
 
-      return dispatchCommandPaletteShortcutForWindow(win, {
-        type: 'keyDown',
-        key: ';',
-        code: 'Semicolon',
-        control: !isMac,
-        meta: isMac,
-        alt: false,
-        shift: false,
-        isAutoRepeat: false,
-      })
+      win.webContents.focus()
+      commandPaletteToggleDispatcherForWindow(win)('palette')
+
+      return true
     })
   }
 

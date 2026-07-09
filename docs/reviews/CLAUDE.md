@@ -52,11 +52,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 30       | 25   | 2026-07-05   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 12       | 12   | 2026-06-22   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 28       | 21   | 2026-07-09   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 29       | 22   | 2026-07-09   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 4        | 0    | 2026-06-21   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 87       | 41   | 2026-07-04   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 88       | 42   | 2026-07-09   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 5    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
@@ -88,7 +88,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 19       | 9    | 2026-07-05   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 18       | 7    | 2026-07-09   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 19       | 8    | 2026-07-09   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
 | [Identifier Prefix Matching](patterns/identifier-prefix-matching.md)                                 | correctness        | 4        | 2    | 2026-06-17   |

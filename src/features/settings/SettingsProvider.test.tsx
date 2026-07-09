@@ -272,6 +272,92 @@ describe('SettingsProvider', () => {
     expect(save).not.toHaveBeenCalled()
   })
 
+  test('preserves a pre-load local edit when a settings broadcast arrives', async () => {
+    const loaded = createLoadedSettings()
+
+    const broadcast = {
+      ...loaded,
+      keymapPreset: 'vim' as const,
+      accentHue: 320,
+    }
+    let resolveLoad: ((settings: AppSettings) => void) | undefined
+    let changeCallback: ((settings: AppSettings) => void) | undefined
+
+    const load = vi.fn(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveLoad = resolve
+        })
+    )
+    const save = vi.fn().mockResolvedValue(undefined)
+    const syncSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load,
+        save,
+        openFile: vi.fn(),
+        syncSnapshot,
+        onDidChange: vi.fn((callback: (settings: AppSettings) => void) => {
+          changeCallback = callback
+
+          return vi.fn()
+        }),
+      },
+    } as unknown as Window['vimeflow']
+
+    const PendingConsumer = (): ReactElement => {
+      const { settings, update } = useSettings()
+
+      return (
+        <div>
+          <span data-testid="closeWithNoTabs">{settings.closeWithNoTabs}</span>
+          <span data-testid="keymapPreset">{settings.keymapPreset}</span>
+          <span data-testid="accentHue">{settings.accentHue}</span>
+          <button
+            type="button"
+            onClick={() => update({ closeWithNoTabs: 'nothing' })}
+          >
+            Update
+          </button>
+        </div>
+      )
+    }
+
+    render(
+      <SettingsProvider>
+        <PendingConsumer />
+      </SettingsProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    act(() => {
+      changeCallback?.(broadcast)
+    })
+
+    expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('nothing')
+    expect(screen.getByTestId('keymapPreset').textContent).toBe('vim')
+    expect(screen.getByTestId('accentHue').textContent).toBe('320')
+
+    act(() => {
+      resolveLoad?.(loaded)
+    })
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        ...broadcast,
+        closeWithNoTabs: 'nothing',
+      })
+    })
+
+    expect(syncSnapshot).toHaveBeenCalledWith({
+      ...broadcast,
+      closeWithNoTabs: 'nothing',
+    })
+  })
+
   test('falls back to DEFAULT_SETTINGS when the bridge is absent', () => {
     render(
       <SettingsProvider>

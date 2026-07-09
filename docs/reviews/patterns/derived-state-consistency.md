@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-07-09
-ref_count: 21
+ref_count: 22
 ---
 
 # Derived State Consistency
@@ -371,4 +371,18 @@ base data is technically "correct."
 - **Fix:** Derive dock and sidebar tooltip shortcuts from `bindingFor(...)`
   using the same `chordToShortcutInput` path as the command palette tooltip.
   Added status bar coverage for a custom dock shortcut chip.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Settings broadcasts must merge with local pending-load edits
+
+- **Source:** github-claude | PR #672 round 4 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** Cross-window settings broadcasts replaced local state even while
+  the receiving provider still had a pending pre-load edit. That could hide the
+  user's own optimistic edit, then later replay the pending patch over a stale
+  load base and revert fields from the broadcast.
+- **Fix:** Retain the latest pre-load broadcast as the load base and overlay any
+  pending local patch before rendering or saving. Added regression coverage for
+  a broadcast arriving between a local pre-load edit and the load resolution.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

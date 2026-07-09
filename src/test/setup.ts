@@ -6,22 +6,16 @@ import * as paneHeaderRefs from '../features/terminal/paneHeaderRefs'
 // jsdom populates navigator.userAgent/platform, but tests that stub globals
 // can leave it in a state where third-party listeners (e.g. floating-ui's
 // focus-visible detection) crash. Provide a stable fallback.
-interface NavigatorLike {
-  userAgent?: string
-  platform?: string
-}
-
-const existingNavigator: NavigatorLike =
-  (globalThis.navigator as NavigatorLike | undefined) ?? {}
-
-Object.defineProperty(globalThis, 'navigator', {
-  writable: true,
+Object.defineProperty(globalThis.navigator, 'userAgent', {
   configurable: true,
-  value: {
-    ...existingNavigator,
-    userAgent: existingNavigator.userAgent ?? 'vitest-jsdom',
-    platform: existingNavigator.platform ?? 'Linux x86_64',
-  },
+  enumerable: true,
+  value: globalThis.navigator.userAgent || 'vitest-jsdom',
+})
+
+Object.defineProperty(globalThis.navigator, 'platform', {
+  configurable: true,
+  enumerable: true,
+  value: globalThis.navigator.platform || 'Linux x86_64',
 })
 
 const ensureLocalStorageClear = (): void => {

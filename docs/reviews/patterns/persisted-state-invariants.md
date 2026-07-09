@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-07-09
-ref_count: 7
+ref_count: 8
 ---
 
 # Persisted State Invariants
@@ -194,4 +194,19 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **Fix:** Remove the renderer-only save queue and send each save IPC
   immediately after updating state, while keeping the existing main snapshot
   sync for close-time decisions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Renderer-only alias save queues can lose latest edits on window close
+
+- **Source:** github-claude | PR #672 round 4 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** Agent alias saves were chained behind a renderer-owned promise
+  queue. Rapid alias edits could leave the final `bridge.aliases.save(...)`
+  call waiting behind an earlier save when the native settings window closed,
+  with no main-process snapshot fallback for aliases.
+- **Fix:** Removed the alias save queue and issued each alias save IPC
+  immediately after updating local state. Added regression coverage proving a
+  later alias edit calls `save` even while the previous save promise remains
+  unresolved.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
