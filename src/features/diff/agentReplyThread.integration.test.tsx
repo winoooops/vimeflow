@@ -109,7 +109,9 @@ describe('inline agent Q&A thread (integration)', () => {
       sessionId: 'pty-1',
       nonce: 'abc',
       rawText: 'Because latency.',
-      replies: [{ id: 1, status: 'answered', text: 'Because latency.' }],
+      replies: [
+        { id: 1, status: 'reply', target: 'comment', text: 'Because latency.' },
+      ],
     })
 
     // The reply attached onto the dispatching owner and renders distinctly.

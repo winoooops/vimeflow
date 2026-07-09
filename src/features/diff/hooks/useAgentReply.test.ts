@@ -113,7 +113,14 @@ describe('useAgentReply', () => {
     mount()
     await emit(
       event({
-        replies: [{ id: 1, status: 'answered', text: 'Because latency.' }],
+        replies: [
+          {
+            id: 1,
+            status: 'reply',
+            target: 'comment',
+            text: 'Because latency.',
+          },
+        ],
       })
     )
 
@@ -137,7 +144,7 @@ describe('useAgentReply', () => {
     await emit(
       event({
         nonce: 'stale',
-        replies: [{ id: 1, status: 'answered', text: 'x' }],
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'x' }],
       })
     )
 
@@ -149,7 +156,7 @@ describe('useAgentReply', () => {
     await emit(
       event({
         sessionId: 'other',
-        replies: [{ id: 1, status: 'answered', text: 'x' }],
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'x' }],
       })
     )
 
@@ -180,7 +187,7 @@ describe('useAgentReply', () => {
     await emit(
       event({
         rawText: 'note',
-        replies: [{ id: 99, status: 'answered', text: 'x' }],
+        replies: [{ id: 99, status: 'reply', target: 'comment', text: 'x' }],
       })
     )
 
@@ -203,8 +210,8 @@ describe('useAgentReply', () => {
     await emit(
       event({
         replies: [
-          { id: 1, status: 'answered', text: 'A' },
-          { id: 99, status: 'answered', text: 'ignored' },
+          { id: 1, status: 'reply', target: 'comment', text: 'A' },
+          { id: 99, status: 'reply', target: 'comment', text: 'ignored' },
         ],
       })
     )
@@ -224,8 +231,17 @@ describe('useAgentReply', () => {
     )
     mount()
     // Answer only #1; #2 must remain, so a later reply for #2 still attaches.
-    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
-    await emit(event({ replies: [{ id: 2, status: 'changed', text: 'B' }] }))
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+
+    await emit(
+      event({
+        replies: [{ id: 2, status: 'resolved', target: 'comment', text: 'B' }],
+      })
+    )
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
     expect(addAnnotationForOwner.mock.calls[1][4].metadata.text).toBe('B')
@@ -238,7 +254,11 @@ describe('useAgentReply', () => {
       )
     )
     mount()
-    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
 
     expect(addAnnotationForOwner.mock.calls[0][4].metadata.target).toEqual({
       scope: 'file',
@@ -249,10 +269,18 @@ describe('useAgentReply', () => {
     addAnnotationForOwner.mockReturnValueOnce('cap-reached')
     setPendingReview(pending(new Map([[1, handle()]])))
     mount()
-    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
 
     addAnnotationForOwner.mockReturnValueOnce('ok')
-    await emit(event({ replies: [{ id: 1, status: 'answered', text: 'A' }] }))
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
   })
@@ -271,7 +299,7 @@ describe('useAgentReply', () => {
     mount()
 
     const reply = event({
-      replies: [{ id: 1, status: 'answered', text: 'A' }],
+      replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
     })
     await emit(reply)
     await emit(reply) // replay — record was cleared, so nothing happens

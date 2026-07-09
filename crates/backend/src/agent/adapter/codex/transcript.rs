@@ -1779,7 +1779,8 @@ mod tests {
         assert_eq!(payload["sessionId"], "pty-1");
         assert_eq!(payload["nonce"], "abc");
         assert_eq!(payload["replies"][0]["id"], 1);
-        assert_eq!(payload["replies"][0]["status"], "answered");
+        // legacy "answered" in the block is normalized to the canonical outcome.
+        assert_eq!(payload["replies"][0]["status"], "reply");
     }
 
     #[test]
