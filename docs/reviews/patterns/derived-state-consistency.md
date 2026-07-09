@@ -349,4 +349,12 @@ base data is technically "correct."
   thread `terminalFontFamily` through the native Ghostty update path, including
   frame dedupe and Electron parent/helper handling. Added renderer and Electron
   regression tests.
+  
+### 27. Preserved native surface caches skipped replay on recreation
+
+- **Source:** github-codex-connector | PR #675 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Destroying a primary Ghostty surface while preserving its burner secondary left `lastBackgroundColor`, `lastForegroundColor`, and `lastShortcutDigits` populated. Recreating the native surface with the same theme and shortcut context then skipped the setter calls needed to initialize the new surface.
+- **Fix:** Reset the surface-scoped visual and shortcut caches whenever a native surface is torn down, including preserved-secondary destroys and window reparenting destroys. Added a regression test proving the same colors and shortcut digits are replayed onto the recreated surface.
 - **Commit:** same commit as this entry
