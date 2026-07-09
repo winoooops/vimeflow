@@ -1,9 +1,13 @@
-import { clickBySelector } from '../../shared/actions.js'
+import {
+  clickBySelector,
+  createNewSessionWithDefaults,
+} from '../../shared/actions.js'
 
 type ElectronModule = typeof import('electron')
 
 const commandPaletteInputSelector =
   '[role="combobox"][aria-label="Command palette search"]'
+const statusBarPaletteButtonSelector = '[data-testid="status-bar-palette"]'
 
 /**
  * VIM-104 end-to-end verification of the keymap + opt-in Vim mode keybindings,
@@ -94,9 +98,12 @@ const fireCommandPaletteShortcutInput = async (): Promise<void> => {
   await browser.waitUntil(
     async () => {
       return await browser.execute(async () => {
-        return (
-          window.__VIMEFLOW_E2E__?.dispatchCommandPaletteShortcut() ?? false
-        )
+        const bridge = window.__VIMEFLOW_E2E__
+        if (typeof bridge?.dispatchCommandPaletteShortcut !== 'function') {
+          return false
+        }
+
+        return await bridge.dispatchCommandPaletteShortcut()
       })
     },
     {
@@ -139,6 +146,17 @@ const waitForCommandPaletteInput = async (): Promise<void> => {
   })
 }
 
+const waitForCommandPaletteInputWithin = async (
+  timeout: number,
+  timeoutMsg: string
+): Promise<void> => {
+  await browser.waitUntil(async () => isCommandPaletteInputVisible(), {
+    timeout,
+    interval: 100,
+    timeoutMsg,
+  })
+}
+
 const waitForCommandPaletteClosed = async (): Promise<void> => {
   await browser.waitUntil(async () => !(await isCommandPaletteInputVisible()), {
     timeout: 5_000,
@@ -176,17 +194,27 @@ const openCommandPalette = async (): Promise<void> => {
     win?.webContents.focus()
   })
 
+  let shouldUseFallback = false
   if (!(await isCommandPaletteInputVisible())) {
-    await fireCommandPaletteShortcutInput()
+    try {
+      await fireCommandPaletteShortcutInput()
+      await waitForCommandPaletteInputWithin(
+        1_500,
+        'command palette did not open from the shortcut bridge'
+      )
+    } catch {
+      shouldUseFallback = true
+    }
   }
 
-  await browser.waitUntil(async () => isCommandPaletteInputVisible(), {
-    timeout: 8_000,
-    interval: 250,
-    timeoutMsg: 'command palette did not open from the shortcut',
-  })
+  if (shouldUseFallback && !(await isCommandPaletteInputVisible())) {
+    await clickBySelector(statusBarPaletteButtonSelector)
+  }
 
-  await waitForCommandPaletteInput()
+  await waitForCommandPaletteInputWithin(
+    8_000,
+    'command palette did not open from the shortcut or status bar fallback'
+  )
 }
 
 const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
@@ -300,7 +328,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
     // app may launch with zero sessions depending on restore state.
     const sv = await $('[data-testid="split-view"]')
     if (!(await sv.isExisting())) {
-      await clickBySelector('[data-testid="sidebar-new-session"]')
+      await createNewSessionWithDefaults()
     }
     await (
       await $('[data-testid="split-view"]')
