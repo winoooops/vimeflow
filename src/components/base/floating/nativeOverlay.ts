@@ -110,6 +110,7 @@ export interface NativeOverlayCommandPaletteItem {
 export interface NativeOverlayCommandPaletteActions {
   selectIndex: string
   executeIndex: string
+  setQuery: string
 }
 
 export interface NativeOverlayCommandPaletteDialogPayload {
@@ -217,6 +218,7 @@ export interface NativeOverlayActionEvent {
   suspendOnSelect?: boolean
   feedback?: 'copy'
   index?: number
+  query?: string
 }
 
 export interface NativeOverlayActionResultEvent {
@@ -312,7 +314,8 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   (value.suspendOnSelect === undefined ||
     typeof value.suspendOnSelect === 'boolean') &&
   (value.feedback === undefined || value.feedback === 'copy') &&
-  (value.index === undefined || typeof value.index === 'number')
+  (value.index === undefined || typeof value.index === 'number') &&
+  (value.query === undefined || typeof value.query === 'string')
 
 const isCloseEvent = (value: unknown): value is NativeOverlayCloseEvent =>
   isRecord(value) &&

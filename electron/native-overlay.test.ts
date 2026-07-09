@@ -283,6 +283,52 @@ const dialogRequest = {
     actions: {
       selectIndex: 'command-palette:select-index',
       executeIndex: 'command-palette:execute-index',
+      setQuery: 'command-palette:set-query',
+    },
+  },
+} as const
+
+const newSessionDialogRequest = {
+  surfaceId: 'dialog-new-session',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'new-session',
+    ariaLabel: 'New session',
+    name: 'scratch',
+    path: '/tmp',
+    nameEdited: false,
+    selectedLayoutId: 'single',
+    activeCommandPaneIndex: 0,
+    layouts: [
+      {
+        id: 'single',
+        label: 'Single',
+        capacity: 1,
+        cols: 'minmax(0,1fr)',
+        rows: 'minmax(0,1fr)',
+        areas: [['p0']],
+      },
+    ],
+    panes: [{ index: 0, areaName: 'p0', commandId: 'shell' }],
+    commands: [
+      {
+        id: 'shell',
+        label: 'Shell',
+        accentVar: '--color-agent-shell-accent',
+      },
+    ],
+    actions: {
+      focusName: 'new-session:focus-name',
+      resetName: 'new-session:reset-name',
+      browse: 'new-session:browse',
+      cancel: 'new-session:cancel',
+      create: 'new-session:create',
+      selectPanePrefix: 'new-session:select-pane:',
+      pickLayoutPrefix: 'new-session:pick-layout:',
+      pickCommandPrefix: 'new-session:pick-command:',
     },
   },
 } as const
@@ -705,6 +751,108 @@ describe('NativeOverlayController', () => {
         repeat: true,
       }
     )
+  })
+
+  test('relays owner dialog text keys to the non-focusable dialog layer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      dialogRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(menuWindow, dialogRequest.surfaceId)
+    await openPromise
+
+    menuWindow.webContents.send.mockClear()
+    const event = { preventDefault: vi.fn() }
+
+    electronMock.owner.webContents.emit('before-input-event', event, {
+      type: 'keyDown',
+      key: 'o',
+      code: 'KeyO',
+      isAutoRepeat: false,
+      isComposing: false,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      location: 0,
+      modifiers: [],
+    })
+
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_KEYDOWN,
+      {
+        surfaceId: dialogRequest.surfaceId,
+        key: 'o',
+        code: 'KeyO',
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        repeat: false,
+      }
+    )
+  })
+
+  test('leaves dialog Tab key events for owner renderer completion', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      dialogRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(menuWindow, dialogRequest.surfaceId)
+    await openPromise
+
+    menuWindow.webContents.send.mockClear()
+    const event = { preventDefault: vi.fn() }
+
+    electronMock.owner.webContents.emit('before-input-event', event, {
+      type: 'keyDown',
+      key: 'Tab',
+      code: 'Tab',
+      isAutoRepeat: false,
+      isComposing: false,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      location: 0,
+      modifiers: [],
+    })
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(menuWindow.webContents.send).not.toHaveBeenCalled()
+  })
+
+  test('leaves new session dialog text keys in the owner renderer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      newSessionDialogRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(menuWindow, newSessionDialogRequest.surfaceId)
+    await openPromise
+
+    menuWindow.webContents.send.mockClear()
+    const event = { preventDefault: vi.fn() }
+
+    electronMock.owner.webContents.emit('before-input-event', event, {
+      type: 'keyDown',
+      key: 'x',
+      code: 'KeyX',
+      isAutoRepeat: false,
+      isComposing: false,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      location: 0,
+      modifiers: [],
+    })
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(menuWindow.webContents.send).not.toHaveBeenCalled()
   })
 
   test('dispatches command palette shortcut instead of menu key forwarding', async () => {
@@ -1442,10 +1590,17 @@ describe('NativeOverlayController', () => {
       }
     )
 
-    expect(overlayWindow.hide).not.toHaveBeenCalled()
+    expect(overlayWindow.hide).toHaveBeenCalledOnce()
     expect(overlayWindow.webContents.executeJavaScript).toHaveBeenCalledOnce()
     expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
     expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.emit('blur')
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      { surfaceId: request.surfaceId, reason: 'outside' }
+    )
 
     handler(NATIVE_OVERLAY_RESUME)(
       { sender: electronMock.owner.webContents },

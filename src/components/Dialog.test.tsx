@@ -22,6 +22,7 @@ const nativeDialogPayload: NativeOverlayCommandPaletteDialogPayload = {
   actions: {
     selectIndex: 'command-palette:select-index',
     executeIndex: 'command-palette:execute-index',
+    setQuery: 'command-palette:set-query',
   },
 }
 

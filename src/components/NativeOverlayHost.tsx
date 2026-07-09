@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactElement,
 } from 'react'
 import { IconButton } from '@/components/IconButton'
@@ -31,6 +32,7 @@ interface NativeOverlayHostBridge {
     suspendOnSelect?: boolean
     feedback?: 'copy'
     index?: number
+    query?: string
   }) => Promise<unknown>
   close: (request: { surfaceId: string; reason: 'outside' }) => Promise<unknown>
   onRender: (callback: (payload: unknown) => void) => () => void
@@ -169,10 +171,10 @@ const OVERLAY_TOOLTIP_CLASSES =
 
 const OVERLAY_DIALOG_BACKDROP_CLASSES =
   'fixed inset-0 flex items-start justify-center pt-[15vh] backdrop-blur-sm ' +
-  'bg-scrim/40'
+  'bg-scrim/60'
 
 const OVERLAY_COMMAND_PALETTE_CLASSES =
-  'w-full max-w-2xl mx-4 bg-surface-container/90 glass-panel rounded-2xl ' +
+  'w-full max-w-2xl mx-4 bg-surface-container-high/95 glass-panel rounded-2xl ' +
   'border border-outline-variant/30 shadow-2xl overflow-hidden'
 
 const OVERLAY_COMMAND_PALETTE_INPUT_CLASSES =
@@ -326,7 +328,9 @@ const dispatchNativeOverlayKeyDown = (
     document.activeElement instanceof HTMLElement &&
     document.activeElement !== document.body
       ? document.activeElement
-      : (document.querySelector<HTMLElement>('[role="menu"]') ?? document.body)
+      : (document.querySelector<HTMLElement>('[role="menu"]') ??
+        document.querySelector<HTMLElement>('[role="dialog"]') ??
+        document.body)
 
   target.dispatchEvent(
     new KeyboardEvent('keydown', {
@@ -400,6 +404,10 @@ const NativeOverlayCommandPalette = ({
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const payload = request.payload
   const selectedIndex = payload.selectedIndex
+  const localQueryRef = useRef(payload.query)
+  const pendingQueryRef = useRef<string | null>(null)
+  const localSelectedIndexRef = useRef(selectedIndex)
+  const pendingSelectedIndexRef = useRef<number | null>(null)
 
   const selectedCommand =
     selectedIndex >= 0 && selectedIndex < payload.results.length
@@ -414,6 +422,24 @@ const NativeOverlayCommandPalette = ({
 
   const showArgumentPlaceholder =
     payload.argumentPlaceholder !== undefined && payload.query.endsWith(' ')
+
+  useEffect(() => {
+    if (pendingQueryRef.current === payload.query) {
+      pendingQueryRef.current = null
+    }
+    if (pendingQueryRef.current === null) {
+      localQueryRef.current = payload.query
+    }
+  }, [payload.query])
+
+  useEffect(() => {
+    if (pendingSelectedIndexRef.current === selectedIndex) {
+      pendingSelectedIndexRef.current = null
+    }
+    if (pendingSelectedIndexRef.current === null) {
+      localSelectedIndexRef.current = selectedIndex
+    }
+  }, [selectedIndex])
 
   useEffect(() => {
     if (selectedCommand === undefined) {
@@ -439,7 +465,7 @@ const NativeOverlayCommandPalette = ({
 
   const dispatchAction = (
     actionId: string,
-    options: { index?: number } = {}
+    options: { index?: number; query?: string } = {}
   ): void => {
     void nativeOverlayHostBridge()?.action({
       surfaceId: request.surfaceId,
@@ -449,12 +475,88 @@ const NativeOverlayCommandPalette = ({
     })
   }
 
+  const dispatchQuery = (query: string): void => {
+    localQueryRef.current = query
+    pendingQueryRef.current = query
+    localSelectedIndexRef.current = 0
+    pendingSelectedIndexRef.current = 0
+    dispatchAction(payload.actions.setQuery, { query })
+  }
+
+  const dispatchSelectedIndex = (index: number): void => {
+    localSelectedIndexRef.current = index
+    pendingSelectedIndexRef.current = index
+    dispatchAction(payload.actions.selectIndex, { index })
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return
+    }
+
+    switch (event.key) {
+      case 'Escape':
+        event.preventDefault()
+        close()
+
+        return
+      case 'ArrowUp':
+      case 'ArrowDown': {
+        if (payload.results.length === 0) {
+          return
+        }
+
+        event.preventDefault()
+        const offset = event.key === 'ArrowUp' ? -1 : 1
+        const localSelectedIndex = localSelectedIndexRef.current
+
+        const current =
+          localSelectedIndex >= 0 && localSelectedIndex < payload.results.length
+            ? localSelectedIndex
+            : 0
+        dispatchSelectedIndex(
+          (current + offset + payload.results.length) % payload.results.length
+        )
+
+        return
+      }
+      case 'Enter':
+        if (
+          localSelectedIndexRef.current >= 0 &&
+          localSelectedIndexRef.current < payload.results.length
+        ) {
+          event.preventDefault()
+          dispatchAction(payload.actions.executeIndex, {
+            index: localSelectedIndexRef.current,
+          })
+        }
+
+        return
+      case 'Backspace':
+        event.preventDefault()
+        if (localQueryRef.current === ':') {
+          close()
+
+          return
+        }
+        dispatchQuery(localQueryRef.current.slice(0, -1))
+
+        return
+      default:
+        if (event.key.length === 1) {
+          event.preventDefault()
+          dispatchQuery(`${localQueryRef.current}${event.key}`)
+        }
+    }
+  }
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={payload.ariaLabel}
       className={OVERLAY_DIALOG_BACKDROP_CLASSES}
+      onKeyDown={handleKeyDown}
       onMouseDown={(event): void => {
         if (event.target === event.currentTarget) {
           event.preventDefault()
