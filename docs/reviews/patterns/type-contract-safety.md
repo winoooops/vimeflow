@@ -2,7 +2,7 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-07-05
+last_updated: 2026-07-09
 ref_count: 10
 ---
 
@@ -198,4 +198,16 @@ expands.
   pass uninitialized stack memory into N-API and crash the main process.
 - **Fix:** Added one-argument guards matching the existing `SetFrame` and
   `WriteSecondary` style before each `GetSurface(env, args[0])` access.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Test doubles must satisfy expanded native addon contracts
+
+- **Source:** deterministic CI failure | PR #672 round 3 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.test.ts`
+- **Finding:** The `GhosttyNativeParentAddon` test doubles in several native
+  parent tests omitted the newly-required `setFontFamily` method. TypeScript
+  correctly rejected the mocks with TS2741, blocking the code quality job.
+- **Fix:** Added no-op `setFontFamily` mocks to each affected addon literal so
+  the tests continue to satisfy the production addon interface.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

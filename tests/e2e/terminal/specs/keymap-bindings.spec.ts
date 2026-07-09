@@ -168,23 +168,15 @@ const openCommandPalette = async (): Promise<void> => {
     win?.webContents.focus()
   })
 
-  await browser.waitUntil(
-    async () => {
-      if (await isCommandPaletteInputVisible()) {
-        return true
-      }
+  if (!(await isCommandPaletteInputVisible())) {
+    await fireCommandPaletteShortcutInput()
+  }
 
-      await fireCommandPaletteShortcutInput()
-      await browser.pause(150)
-
-      return isCommandPaletteInputVisible()
-    },
-    {
-      timeout: 8_000,
-      interval: 250,
-      timeoutMsg: 'command palette did not open from the shortcut',
-    }
-  )
+  await browser.waitUntil(async () => isCommandPaletteInputVisible(), {
+    timeout: 8_000,
+    interval: 250,
+    timeoutMsg: 'command palette did not open from the shortcut',
+  })
 
   await waitForCommandPaletteInput()
 }

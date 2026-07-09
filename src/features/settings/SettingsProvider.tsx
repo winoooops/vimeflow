@@ -30,8 +30,6 @@ export const SettingsProvider = ({
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [saveError, setSaveError] = useState<Error | null>(null)
   const settingsRef = useRef<AppSettings>(settings)
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
-  const hasLocalUpdateRef = useRef(false)
   const hasLoadedRef = useRef(false)
   const pendingLoadPatchRef = useRef<Partial<AppSettings> | null>(null)
 
@@ -57,28 +55,40 @@ export const SettingsProvider = ({
     []
   )
 
-  const saveNext = useCallback(
-    async (previous: Promise<void>, next: AppSettings): Promise<void> => {
-      try {
-        await previous
-      } catch {
-        // Swallow prior save errors so the queue keeps moving.
+  const saveNext = useCallback(async (next: AppSettings): Promise<void> => {
+    const bridge =
+      typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
+
+    if (!bridge) {
+      return
+    }
+
+    try {
+      await bridge.save(next)
+    } catch (error: unknown) {
+      setSaveError(error instanceof Error ? error : new Error(String(error)))
+    }
+  }, [])
+
+  const applyPendingLoadPatch = useCallback(
+    (base: AppSettings): boolean => {
+      const pendingPatch = pendingLoadPatchRef.current
+      pendingLoadPatchRef.current = null
+
+      if (pendingPatch === null) {
+        return false
       }
 
-      const bridge =
-        typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
+      const next = { ...base, ...pendingPatch }
+      settingsRef.current = next
+      setSettings(next)
+      setSaveError(null)
+      void syncSnapshotToMain(next)
+      void saveNext(next)
 
-      if (!bridge) {
-        return
-      }
-
-      try {
-        await bridge.save(next)
-      } catch (error: unknown) {
-        setSaveError(error instanceof Error ? error : new Error(String(error)))
-      }
+      return true
     },
-    []
+    [saveNext, syncSnapshotToMain]
   )
 
   useEffect(() => {
@@ -95,28 +105,20 @@ export const SettingsProvider = ({
       try {
         const loaded = await bridge.load()
         hasLoadedRef.current = true
-        const pendingPatch = pendingLoadPatchRef.current
-        pendingLoadPatchRef.current = null
-        if (pendingPatch !== null) {
-          const next = { ...loaded, ...pendingPatch }
-          settingsRef.current = next
-          setSettings(next)
-          setSaveError(null)
-          void syncSnapshotToMain(next)
-          saveQueueRef.current = saveNext(saveQueueRef.current, next)
-
+        if (applyPendingLoadPatch(loaded)) {
           return
         }
         setSettings(loaded)
         settingsRef.current = loaded
       } catch {
         hasLoadedRef.current = true
+        applyPendingLoadPatch(DEFAULT_SETTINGS)
         // Fall back to defaults if the backend load fails.
       }
     }
 
     void load()
-  }, [saveNext, syncSnapshotToMain])
+  }, [applyPendingLoadPatch])
 
   useEffect(() => {
     const bridge =
@@ -132,7 +134,6 @@ export const SettingsProvider = ({
   const update = useCallback(
     (patch: Partial<AppSettings>): void => {
       const next = { ...settingsRef.current, ...patch }
-      hasLocalUpdateRef.current = true
       settingsRef.current = next
       setSettings(next)
       setSaveError(null)
@@ -147,7 +148,7 @@ export const SettingsProvider = ({
       }
 
       void syncSnapshotToMain(next)
-      saveQueueRef.current = saveNext(saveQueueRef.current, next)
+      void saveNext(next)
     },
     [saveNext, syncSnapshotToMain]
   )

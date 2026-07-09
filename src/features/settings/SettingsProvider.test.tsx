@@ -5,6 +5,7 @@ import type { ReactElement } from 'react'
 import type { AppSettings } from '../../bindings/AppSettings'
 import { SettingsProvider } from './SettingsProvider'
 import { useSettings } from './hooks/useSettings'
+import { DEFAULT_SETTINGS } from './store/settingsDefaults'
 
 const createLoadedSettings = (): AppSettings => ({
   version: 1,
@@ -297,6 +298,54 @@ describe('SettingsProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('platform')
+    })
+  })
+
+  test('persists a pre-load update against defaults when load() rejects', async () => {
+    let rejectLoad: ((error: Error) => void) | undefined
+
+    const load = vi.fn(
+      () =>
+        new Promise<AppSettings>((_resolve, reject) => {
+          rejectLoad = reject
+        })
+    )
+    const save = vi.fn().mockResolvedValue(undefined)
+    const syncSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: { load, save, openFile: vi.fn(), syncSnapshot },
+    } as unknown as Window['vimeflow']
+
+    render(
+      <SettingsProvider>
+        <TestConsumer />
+      </SettingsProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('nothing')
+    })
+
+    expect(save).not.toHaveBeenCalled()
+
+    act(() => {
+      rejectLoad?.(new Error('load failed'))
+    })
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        ...DEFAULT_SETTINGS,
+        closeWithNoTabs: 'nothing',
+      })
+    })
+
+    expect(syncSnapshot).toHaveBeenCalledWith({
+      ...DEFAULT_SETTINGS,
+      closeWithNoTabs: 'nothing',
     })
   })
 

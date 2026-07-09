@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-06-22
+last_updated: 2026-07-09
 ref_count: 7
 ---
 
@@ -79,3 +79,15 @@ code and should be removed.
 - **Finding:** `modelToDraft` normalized imported track units before validation, and `normalizeUnits` caps over-capacity axes to `MAX_LAYOUT_TRACKS`. The later `validation.trackOverCapacity` error branch could never fire for imported 25+ track layouts.
 - **Fix:** Reject imported layouts whose raw column or row count exceeds `MAX_LAYOUT_TRACKS` before normalization, then remove the dead post-normalization `trackOverCapacity` branch.
 - **Commit:** same commit as this entry
+
+### 8. Settings local-update ref became write-only after queue refactor
+
+- **Source:** github-claude | PR #672 round 3 | 2026-07-09
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** The settings load race fix replaced the old `hasLocalUpdateRef`
+  reader with `hasLoadedRef` and `pendingLoadPatchRef`, but the ref and its
+  assignment remained. The stale state no longer affected behavior and implied
+  a guard that did not exist.
+- **Fix:** Removed the obsolete ref and assignment.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

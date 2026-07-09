@@ -168,3 +168,30 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
   for other overrides, while intentional shadow pairs still bypass the check.
   Added regression coverage for settings and browser shortcut collisions.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Pre-load settings patches must replay after load failure
+
+- **Source:** github-claude | PR #672 round 3 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** Settings changes made before the initial load resolved were
+  queued for the success path only. If loading settings failed, the UI could
+  show the optimistic edit while the queued patch was never saved or synced.
+- **Fix:** Share pending-patch replay across the success and failure paths. On
+  failure, merge the queued patch onto `DEFAULT_SETTINGS`, sync the main
+  snapshot, and persist it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Renderer-only settings save queues can lose the latest window-scoped edit
+
+- **Source:** github-codex-connector | PR #672 round 3 | 2026-07-09
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** Settings saves were chained in a renderer-owned promise queue. A
+  rapid later edit could remain queued behind an earlier save when the native
+  settings window closed, destroying the renderer before the latest `bridge.save`
+  call reached the main process.
+- **Fix:** Remove the renderer-only save queue and send each save IPC
+  immediately after updating state, while keeping the existing main snapshot
+  sync for close-time decisions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
