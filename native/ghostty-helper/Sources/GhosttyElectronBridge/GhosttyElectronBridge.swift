@@ -271,6 +271,7 @@ private final class EmbeddedGhosttyChild {
     let terminalView: TerminalView
     private var backgroundHexColor = "000000"
     private var foregroundHexColor = "ffffff"
+    private var fontFamily: String?
 
     init(callbacks: CallbackBox) {
         self.callbacks = callbacks
@@ -315,14 +316,31 @@ private final class EmbeddedGhosttyChild {
         applyTheme()
     }
 
+    func setFontFamily(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        fontFamily = trimmed
+        applyTheme()
+    }
+
+    private func terminalConfiguration() -> TerminalConfiguration {
+        let configuration = TerminalConfiguration()
+            .background(backgroundHexColor)
+            .foreground(foregroundHexColor)
+
+        guard let fontFamily else {
+            return configuration
+        }
+
+        return configuration.fontFamily(fontFamily)
+    }
+
     private func applyTheme() {
+        let configuration = terminalConfiguration()
         controller.setTheme(TerminalTheme(
-            light: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor),
-            dark: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor)
+            light: configuration,
+            dark: configuration
         ))
     }
 
@@ -372,6 +390,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var shortcutDigits = Set<Character>()
     private var backgroundHexColor = "000000"
     private var foregroundHexColor = "ffffff"
+    private var fontFamily: String?
     private var secondaryChild: EmbeddedGhosttyChild?
     private var dividerView: EmbeddedGhosttyDividerView?
     private var secondarySplitRatio: CGFloat = 0.34
@@ -516,14 +535,32 @@ private final class EmbeddedGhosttySurface: NSObject {
         secondaryChild?.setForegroundColor(ghosttyHex)
     }
 
+    func setFontFamily(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        fontFamily = trimmed
+        applyTheme()
+        secondaryChild?.setFontFamily(trimmed)
+    }
+
+    private func terminalConfiguration() -> TerminalConfiguration {
+        let configuration = TerminalConfiguration()
+            .background(backgroundHexColor)
+            .foreground(foregroundHexColor)
+
+        guard let fontFamily else {
+            return configuration
+        }
+
+        return configuration.fontFamily(fontFamily)
+    }
+
     private func applyTheme() {
+        let configuration = terminalConfiguration()
         controller.setTheme(TerminalTheme(
-            light: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor),
-            dark: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor)
+            light: configuration,
+            dark: configuration
         ))
     }
 
@@ -556,6 +593,9 @@ private final class EmbeddedGhosttySurface: NSObject {
         let child = EmbeddedGhosttyChild(callbacks: callbacks)
         child.setBackgroundColor(backgroundHexColor)
         child.setForegroundColor(foregroundHexColor)
+        if let fontFamily {
+            child.setFontFamily(fontFamily)
+        }
         container.addSubview(child.terminalView)
         secondaryChild = child
         ensureDivider()
@@ -1048,6 +1088,23 @@ public func vimeflowGhosttySetForegroundColor(
     mainActorSync {
         guard let surface = liveSurface(from: pointer) else { return }
         surface.setForegroundColor(color)
+    }
+}
+
+@_cdecl("vimeflow_ghostty_set_font_family")
+public func vimeflowGhosttySetFontFamily(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ fontFamilyPointer: UnsafePointer<CChar>?
+) {
+    guard let surfacePointer, let fontFamilyPointer else {
+        return
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let fontFamily = String(cString: fontFamilyPointer)
+    mainActorSync {
+        guard let surface = liveSurface(from: pointer) else { return }
+        surface.setFontFamily(fontFamily)
     }
 }
 

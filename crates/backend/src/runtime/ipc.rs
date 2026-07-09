@@ -748,6 +748,37 @@ mod router {
                 state.save_workspace_layout(&p.store)?;
                 Ok(Value::Null)
             }
+            "load_app_settings" => encode_result(state.load_app_settings()),
+            "save_app_settings" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    settings: crate::settings::app_settings::AppSettings,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                p.settings.validate_ipc_payload()?;
+                state.save_app_settings(&p.settings)?;
+                Ok(Value::Null)
+            }
+            "list_system_fonts" => encode_result(state.list_system_fonts().await),
+            "load_agent_aliases" => encode_result(state.load_agent_aliases()),
+            "save_agent_aliases" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    aliases: Vec<crate::aliases::AgentAlias>,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                let store = crate::aliases::AgentAliasesStore {
+                    version: crate::aliases::CURRENT_AGENT_ALIASES_VERSION,
+                    aliases: p.aliases,
+                };
+                store.validate_ipc_payload()?;
+                state.save_agent_aliases(&store.aliases)?;
+                Ok(Value::Null)
+            }
             #[cfg(feature = "e2e-test")]
             "list_active_pty_sessions" => encode_result(state.list_active_pty_sessions()),
             #[cfg(feature = "e2e-test")]

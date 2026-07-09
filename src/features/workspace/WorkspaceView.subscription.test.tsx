@@ -1,7 +1,14 @@
 import type { ReactElement, ReactNode } from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { WorkspaceView } from './WorkspaceView'
+import { SettingsProvider } from '../settings/SettingsProvider'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { AgentStatus } from '../agent-status/types'
 import { useGitStatus } from '../diff/hooks/useGitStatus'
@@ -12,6 +19,9 @@ import type {
   ReviewComment,
   UseFeedbackBatchReturn,
 } from '../diff/hooks/useFeedbackBatch'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 // Mock TerminalPane / TerminalZone deps to avoid xterm.js in jsdom
 interface MockTerminalPaneProps {

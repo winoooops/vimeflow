@@ -171,13 +171,11 @@ describe('TerminalPane index', () => {
     )
   })
 
-  test('forwards submitted terminal command callback to Body', () => {
-    const onCommandSubmit = vi.fn()
-
-    render(<TerminalPane {...baseProps} onCommandSubmit={onCommandSubmit} />)
+  test('forwards terminal font family to Body', () => {
+    render(<TerminalPane {...baseProps} terminalFontFamily="Iosevka" />)
 
     expect(bodyPropsSpy).toHaveBeenLastCalledWith(
-      expect.objectContaining({ onCommandSubmit })
+      expect.objectContaining({ terminalFontFamily: 'Iosevka' })
     )
   })
 
@@ -532,14 +530,31 @@ describe('TerminalPane index', () => {
     expect(onRequestActive).not.toHaveBeenCalled()
   })
 
-  test('active pane keeps semantic active marker without focus marker', () => {
+  test('active pane keeps semantic active marker with focus marker', () => {
     render(
       <TerminalPane {...baseProps} pane={{ ...baseProps.pane, active: true }} />
     )
 
     const wrapper = screen.getByTestId('terminal-pane-wrapper')
     expect(wrapper).toHaveAttribute('data-pane-active', 'true')
+    expect(wrapper).toHaveAttribute('data-focused', 'true')
+  })
+
+  test('active pane omits focus marker when focus highlight is hidden', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: true }}
+        showFocusHighlight={inactive}
+      />
+    )
+
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
+    expect(wrapper).toHaveAttribute('data-pane-active', 'true')
     expect(wrapper).not.toHaveAttribute('data-focused')
+    expect(screen.getByTestId('terminal-pane-border')).toHaveStyle({
+      opacity: '0',
+    })
   })
 
   test('inactive pane has no active marker or focus marker', () => {
@@ -600,11 +615,12 @@ describe('TerminalPane index', () => {
     })
   })
 
-  test('active pane uses the neutral border while staying full opacity', () => {
+  test('active pane keeps focus marker while staying full opacity', () => {
     render(<TerminalPane {...baseProps} />)
 
-    expect(screen.getByTestId('terminal-pane-wrapper')).not.toHaveAttribute(
-      'data-focused'
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveAttribute(
+      'data-focused',
+      'true'
     )
 
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({

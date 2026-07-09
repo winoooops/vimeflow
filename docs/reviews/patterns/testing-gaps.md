@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-07-04
-ref_count: 41
+last_updated: 2026-07-09
+ref_count: 42
 ---
 
 # Testing Gaps
@@ -852,4 +852,19 @@ filesystem scope restrictions).
 - **File:** `src/features/workspace/WorkspaceView.command-palette.test.tsx`
 - **Finding:** The command-palette close focus-restore behavior had no test for commands that both close the palette and open another modal, leaving the dialog-focus regression uncovered.
 - **Fix:** Extended the dirty `:open-file` command-palette test so it opens `UnsavedChangesDialog` and asserts the terminal focus handoff is not requested while that follow-up dialog is active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 88. Test setup replaced the Navigator object instead of patching properties
+
+- **Source:** github-claude | PR #672 round 4 | 2026-07-09
+- **Severity:** LOW
+- **File:** `src/test/setup.ts`
+- **Finding:** The shared Vitest setup replaced `globalThis.navigator` with a
+  plain object containing only `userAgent` and `platform`. Because jsdom exposes
+  most Navigator APIs through prototype getters, the replacement silently
+  removed properties such as `clipboard`, `language`, and `maxTouchPoints` for
+  the rest of the suite.
+- **Fix:** Patch only `navigator.userAgent` and `navigator.platform` via
+  `Object.defineProperty`, preserving the existing Navigator object and its
+  prototype-backed APIs.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

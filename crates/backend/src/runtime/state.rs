@@ -12,7 +12,9 @@ use crate::agent::types::{
     AgentType, RenameAgentSessionError, RenameAgentSessionErrorReason, RenameAgentSessionRequest,
 };
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
+use crate::aliases::{AgentAlias, AgentAliasesStore, AliasesCache, CURRENT_AGENT_ALIASES_VERSION};
 use crate::git::watcher::GitWatcherState;
+use crate::settings::{list_system_fonts, AppSettings, AppSettingsCache, SystemFont};
 use crate::terminal::cache::SessionCache;
 use crate::terminal::state::PtyState;
 use crate::terminal::types::SessionId;
@@ -48,6 +50,8 @@ pub struct BackendState {
     pty: PtyState,
     sessions: Arc<SessionCache>,
     workspace_layouts: Arc<WorkspaceLayoutCache>,
+    app_settings: Arc<AppSettingsCache>,
+    aliases: Arc<AliasesCache>,
     agents: AgentWatcherState,
     transcripts: TranscriptState,
     git: GitWatcherState,
@@ -61,6 +65,14 @@ pub struct BackendState {
 
 impl BackendState {
     pub fn new(app_data_dir: PathBuf, events: Arc<dyn EventSink>) -> Self {
+        Self::new_with_aliases_path(app_data_dir, AliasesCache::default_path(), events)
+    }
+
+    fn new_with_aliases_path(
+        app_data_dir: PathBuf,
+        aliases_path: PathBuf,
+        events: Arc<dyn EventSink>,
+    ) -> Self {
         if let Err(err) = std::fs::create_dir_all(&app_data_dir) {
             log::warn!(
                 "BackendState::new: failed to create app data dir {}: {err}",
@@ -69,6 +81,7 @@ impl BackendState {
         }
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
+        let settings_path = app_data_dir.join("settings.json");
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         Self {
             app_data_dir: app_data_dir.clone(),
@@ -77,6 +90,8 @@ impl BackendState {
                 SessionCache::load_or_recover(cache_path).with_app_data_dir(app_data_dir),
             ),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
+            app_settings: Arc::new(AppSettingsCache::new(settings_path)),
+            aliases: Arc::new(AliasesCache::new(aliases_path)),
             agents: AgentWatcherState::new(),
             transcripts: TranscriptState::new(),
             git: GitWatcherState::new(),
@@ -92,9 +107,10 @@ impl BackendState {
     pub fn with_fake_sink() -> (Arc<Self>, Arc<super::event_sink::FakeEventSink>) {
         let temp_dir = tempfile::tempdir().expect("temp dir for test BackendState");
         let app_data_dir = temp_dir.path().to_path_buf();
+        let aliases_path = app_data_dir.join("aliases.toml");
         let sink = Arc::new(super::event_sink::FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
-        let mut state = Self::new(app_data_dir, events);
+        let mut state = Self::new_with_aliases_path(app_data_dir, aliases_path, events);
         state._test_cache_dir = Some(temp_dir);
         (Arc::new(state), sink)
     }
@@ -122,6 +138,35 @@ impl BackendState {
         self.workspace_layouts.save(store)
     }
 
+    /// Load the durable app settings store; missing / corrupt → defaults.
+    pub fn load_app_settings(&self) -> AppSettings {
+        self.app_settings.load()
+    }
+
+    /// Persist app settings.
+    pub fn save_app_settings(&self, settings: &AppSettings) -> Result<(), String> {
+        self.app_settings.save(settings)
+    }
+
+    /// List installed monospace font families for terminal configuration.
+    pub async fn list_system_fonts(&self) -> Vec<SystemFont> {
+        list_system_fonts().await
+    }
+
+    /// Load the durable agent aliases store; missing / corrupt → empty Vec.
+    pub fn load_agent_aliases(&self) -> Vec<AgentAlias> {
+        self.aliases.load().aliases
+    }
+
+    /// Persist agent aliases.
+    pub fn save_agent_aliases(&self, aliases: &[AgentAlias]) -> Result<(), String> {
+        let store = AgentAliasesStore {
+            version: CURRENT_AGENT_ALIASES_VERSION,
+            aliases: aliases.to_vec(),
+        };
+        self.aliases.save(&store)
+    }
+
     /// Spawn the burner-terminal foreground poll loop (VIM-71). Call once at
     /// startup: it emits `burner-foreground` events as burner shells begin
     /// and finish foreground commands, driving the live "running" cue. Requires
@@ -137,11 +182,15 @@ impl BackendState {
         &self,
         request: crate::terminal::types::SpawnPtyRequest,
     ) -> Result<crate::terminal::types::PtySession, String> {
+        let aliases = self.aliases.load().aliases;
+        let shim_enabled = self.app_settings.load().agent_shim_enabled;
         crate::terminal::commands::spawn_pty_inner(
             self.pty.clone(),
             self.sessions.clone(),
             self.events.clone(),
             request,
+            &aliases,
+            shim_enabled,
         )
         .await
     }

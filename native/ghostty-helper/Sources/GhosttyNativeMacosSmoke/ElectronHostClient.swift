@@ -8,6 +8,7 @@ struct GhosttyNativeFrame: Sendable {
     let visible: Bool
     let backgroundColor: String
     let foregroundColor: String
+    let fontFamily: String?
     let bottomCornerRadius: Double
 }
 
@@ -190,6 +191,7 @@ final class ElectronHostClient: @unchecked Sendable {
             else {
                 return nil
             }
+            let fontFamily = frame["fontFamily"] as? String
             let bottomCornerRadius = frame["bottomCornerRadius"] as? Double ?? 0
 
             return .setFrame(
@@ -201,6 +203,7 @@ final class ElectronHostClient: @unchecked Sendable {
                     visible: visible,
                     backgroundColor: backgroundColor,
                     foregroundColor: foregroundColor,
+                    fontFamily: fontFamily,
                     bottomCornerRadius: bottomCornerRadius
                 )
             )

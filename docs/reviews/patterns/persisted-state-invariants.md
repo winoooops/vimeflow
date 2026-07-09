@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-06-23
-ref_count: 7
+last_updated: 2026-07-09
+ref_count: 8
 ---
 
 # Persisted State Invariants
@@ -139,3 +139,74 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **Finding:** The store-load failure guard treated any non-empty PTY cache as a usable fallback. If the durable workspace layout was unreadable and `listSessions()` returned only `Exited` rows, restore reconstructed stale completed sessions and called `onRestore` instead of taking the intended failure path.
 - **Fix:** Changed the fallback eligibility check to require at least one `Alive` PTY row before suppressing the store-load failure. Added a regression test proving an exited-only cache after store-load failure does not call `onRestore` and still releases hydration.
 - **Commit:** same commit as this entry
+
+### 15. Appearance controls updated local state without persisting settings
+
+- **Source:** github-codex-connector | PR #672 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
+- **Finding:** Appearance controls for scheme, accent hue, density, and fonts
+  mutated component-local state instead of the settings provider. The UI appeared
+  to accept the change, but reloads discarded it and other settings consumers did
+  not observe the update.
+- **Fix:** Bind those controls directly to provider settings and call
+  `update(...)` for every change. Added a regression test asserting the controls
+  invoke persisted settings updates.
+- **Commit:** same commit as this entry
+
+### 16. Stored keymap overrides collided with fixed shortcuts
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/features/keymap/conflicts.ts`
+- **Finding:** `resolveBindings` skipped commands marked
+  `preserveStoredOverrides` when checking whether another stored override
+  collided with fixed shortcuts such as Settings or browser-location. A
+  hand-edited or migrated settings file could therefore load two commands with
+  the same chord.
+- **Fix:** Removed the broad skip so fixed commands remain collision obstacles
+  for other overrides, while intentional shadow pairs still bypass the check.
+  Added regression coverage for settings and browser shortcut collisions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Pre-load settings patches must replay after load failure
+
+- **Source:** github-claude | PR #672 round 3 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** Settings changes made before the initial load resolved were
+  queued for the success path only. If loading settings failed, the UI could
+  show the optimistic edit while the queued patch was never saved or synced.
+- **Fix:** Share pending-patch replay across the success and failure paths. On
+  failure, merge the queued patch onto `DEFAULT_SETTINGS`, sync the main
+  snapshot, and persist it.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Renderer-only settings save queues can lose the latest window-scoped edit
+
+- **Source:** github-codex-connector | PR #672 round 3 | 2026-07-09
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** Settings saves were chained in a renderer-owned promise queue. A
+  rapid later edit could remain queued behind an earlier save when the native
+  settings window closed, destroying the renderer before the latest `bridge.save`
+  call reached the main process.
+- **Fix:** Remove the renderer-only save queue and send each save IPC
+  immediately after updating state, while keeping the existing main snapshot
+  sync for close-time decisions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Renderer-only alias save queues can lose latest edits on window close
+
+- **Source:** github-claude | PR #672 round 4 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** Agent alias saves were chained behind a renderer-owned promise
+  queue. Rapid alias edits could leave the final `bridge.aliases.save(...)`
+  call waiting behind an earlier save when the native settings window closed,
+  with no main-process snapshot fallback for aliases.
+- **Fix:** Removed the alias save queue and issued each alias save IPC
+  immediately after updating local state. Added regression coverage proving a
+  later alias edit calls `save` even while the previous save promise remains
+  unresolved.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

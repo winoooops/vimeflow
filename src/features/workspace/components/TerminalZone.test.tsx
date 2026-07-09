@@ -61,6 +61,8 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
       onCommandSubmit,
       session,
       isActive,
+      showFocusHighlight,
+      terminalFontFamily,
     }: TerminalPaneProps): ReactElement => (
       <div
         data-testid="terminal-pane-mock"
@@ -73,7 +75,9 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
         data-defer-fit={deferFit ? 'true' : 'false'}
         data-session-name={session.name}
         data-is-active={isActive ? 'true' : 'false'}
+        data-show-focus-highlight={showFocusHighlight ? 'true' : 'false'}
         data-session-agent-type={session.agentType}
+        data-terminal-font-family={terminalFontFamily}
       >
         Mocked TerminalPane
         {/* Expose the onRestart wiring so tests can assert TerminalZone
@@ -167,6 +171,28 @@ describe('TerminalZone', () => {
     render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
 
     expect(screen.getByTestId('terminal-zone')).toHaveClass('opacity-[0.65]')
+  })
+
+  test('keeps the active pane highlight even when the zone is not focused', () => {
+    // The active pane highlight tracks "which pane is active" and must persist
+    // when focus moves to the dock — the zone still dims, but the highlight
+    // stays so the user never loses the active-pane reference.
+    const isZoneFocused = false
+
+    render(<TerminalZone {...defaultProps} isZoneFocused={isZoneFocused} />)
+
+    expect(screen.getAllByTestId('terminal-pane-mock')[0]).toHaveAttribute(
+      'data-show-focus-highlight',
+      'true'
+    )
+  })
+
+  test('forwards terminal font family to rendered panes', () => {
+    render(<TerminalZone {...defaultProps} terminalFontFamily="Iosevka" />)
+
+    screen.getAllByTestId('terminal-pane-mock').forEach((pane) => {
+      expect(pane).toHaveAttribute('data-terminal-font-family', 'Iosevka')
+    })
   })
 
   test('isZoneFocused=true by default does not apply dim class', () => {

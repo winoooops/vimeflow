@@ -29,6 +29,7 @@ using SetFrameFn = void (*)(
 using SetShortcutDigitsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
 using SetForegroundColorFn = void (*)(void *, const char *);
+using SetFontFamilyFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
 using AddSecondaryFn = void (*)(void *, InputCallback, ResizeCallback,
@@ -47,6 +48,7 @@ struct BridgeApi {
   SetShortcutDigitsFn set_shortcut_digits = nullptr;
   SetBackgroundColorFn set_background_color = nullptr;
   SetForegroundColorFn set_foreground_color = nullptr;
+  SetFontFamilyFn set_font_family = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
   AddSecondaryFn add_secondary = nullptr;
@@ -213,6 +215,8 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.set_background_color)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_foreground_color",
                  reinterpret_cast<void **>(&bridge.set_foreground_color)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_font_family",
+                 reinterpret_cast<void **>(&bridge.set_font_family)) &&
       LoadSymbol(env, "vimeflow_ghostty_write",
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
@@ -829,6 +833,29 @@ napi_value SetForegroundColor(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+napi_value SetFontFamily(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "setFontFamily(surface, fontFamily) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  std::string font_family;
+  if (!GetString(env, args[1], &font_family)) {
+    return nullptr;
+  }
+
+  bridge.set_font_family(surface->swift_surface, font_family.c_str());
+
+  return nullptr;
+}
+
 napi_value Write(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
@@ -1043,6 +1070,8 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr, napi_default, nullptr},
       {"setForegroundColor", nullptr, SetForegroundColor, nullptr, nullptr,
        nullptr, napi_default, nullptr},
+      {"setFontFamily", nullptr, SetFontFamily, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"write", nullptr, Write, nullptr, nullptr, nullptr, napi_default,
        nullptr},
       {"focus", nullptr, Focus, nullptr, nullptr, nullptr, napi_default,

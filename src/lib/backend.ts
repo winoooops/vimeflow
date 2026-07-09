@@ -1,4 +1,7 @@
 // cspell:ignore ghostty
+import type { AgentAlias } from '../bindings/AgentAlias'
+import type { AppSettings } from '../bindings/AppSettings'
+import type { SystemFont } from '../bindings/SystemFont'
 import type {
   RenameAgentSessionErrorReason,
   RenameAgentSessionRequest,
@@ -13,6 +16,28 @@ import type {
  */
 export type UnlistenFn = () => void
 
+export type CommandPaletteShortcutSource = 'palette' | 'leader'
+
+export interface CommandPaletteBindingSync {
+  palette: string
+  leader: string
+}
+
+export interface SettingsBridge {
+  load: () => Promise<AppSettings>
+  save: (settings: AppSettings) => Promise<void>
+  listSystemFonts?: () => Promise<SystemFont[]>
+  openFile: () => Promise<void>
+  openWindow?: () => Promise<void>
+  syncSnapshot: (settings: AppSettings) => Promise<void>
+  onDidChange?: (callback: (settings: AppSettings) => void) => UnlistenFn
+}
+
+export interface AliasesBridge {
+  load: () => Promise<AgentAlias[]>
+  save: (aliases: AgentAlias[]) => Promise<void>
+}
+
 export interface BackendApi {
   invoke: <T>(method: string, args?: Record<string, unknown>) => Promise<T>
 
@@ -21,7 +46,18 @@ export interface BackendApi {
     callback: (payload: T) => void
   ) => Promise<UnlistenFn>
 
-  onCommandPaletteToggle?: (callback: () => void) => UnlistenFn
+  onCommandPaletteToggle?: (
+    callback: (source?: CommandPaletteShortcutSource) => void
+  ) => UnlistenFn
+  setKeymapCaptureActive?: (active: boolean) => void
+  setCommandPaletteBinding?: (binding: string) => void
+  setCommandPaletteBindings?: (bindings: CommandPaletteBindingSync) => void
+  e2e?: {
+    dispatchCommandPaletteShortcut: () => Promise<boolean>
+  }
+
+  settings?: SettingsBridge
+  aliases?: AliasesBridge
 
   dialog?: {
     pickDirectory: () => Promise<string | null>
@@ -271,7 +307,7 @@ export const listen = async <T>(
 }
 
 export const listenCommandPaletteToggle = (
-  callback: () => void
+  callback: (source?: CommandPaletteShortcutSource) => void
 ): UnlistenFn => {
   if (typeof window === 'undefined') {
     return noop

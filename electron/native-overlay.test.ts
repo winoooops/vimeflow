@@ -887,7 +887,8 @@ describe('NativeOverlayController', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(electronMock.owner.webContents.focus).toHaveBeenCalledOnce()
     expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
-      COMMAND_PALETTE_TOGGLE
+      COMMAND_PALETTE_TOGGLE,
+      'leader'
     )
 
     expect(menuWindow.webContents.send).not.toHaveBeenCalledWith(

@@ -162,6 +162,42 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
+export async function dispatchCommandPaletteShortcutForE2e(): Promise<boolean> {
+  const handledByElectron =
+    await window.vimeflow?.e2e?.dispatchCommandPaletteShortcut()
+  if (handledByElectron === true) {
+    return true
+  }
+
+  return commandPaletteShortcutOpener?.() ?? false
+}
+
+let commandPaletteShortcutOpener: (() => boolean) | null = null
+
+export const registerCommandPaletteShortcutOpenerForE2e = (
+  opener: () => void
+): (() => void) => {
+  if (!import.meta.env.VITE_E2E) {
+    return (): void => {
+      /* no-op outside e2e builds */
+    }
+  }
+
+  const registeredOpener = (): boolean => {
+    opener()
+
+    return true
+  }
+
+  commandPaletteShortcutOpener = registeredOpener
+
+  return (): void => {
+    if (commandPaletteShortcutOpener === registeredOpener) {
+      commandPaletteShortcutOpener = null
+    }
+  }
+}
+
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
     getTerminalBuffer: readVisibleTerminalBuffer,
@@ -176,6 +212,7 @@ if (import.meta.env.VITE_E2E) {
     emitBackendEvent: __dispatchBackendEventForE2e,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
+    dispatchCommandPaletteShortcut: dispatchCommandPaletteShortcutForE2e,
     startBrowserPaneBoundsCapture,
     clearBrowserPaneBoundsCaptures,
     stopBrowserPaneBoundsCapture,

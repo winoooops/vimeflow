@@ -91,6 +91,7 @@ final class GhosttyNativeMacosSmoke:
     private var secondarySplitRatio: CGFloat = 0.34
     private var backgroundHexColor = "000000"
     private var foregroundHexColor = "ffffff"
+    private var fontFamily: String?
     private var shortcutMonitor: Any?
     private let helperMode = CommandLine.arguments.contains("--electron-helper")
 
@@ -413,6 +414,9 @@ final class GhosttyNativeMacosSmoke:
 
         setBackgroundColor(frame.backgroundColor)
         setForegroundColor(frame.foregroundColor)
+        if let fontFamily = frame.fontFamily {
+            setFontFamily(fontFamily)
+        }
         let safeBottomCornerRadius = max(0, frame.bottomCornerRadius)
         containerView?.layer?.cornerRadius = CGFloat(safeBottomCornerRadius)
         containerView?.layer?.maskedCorners = [
@@ -453,22 +457,35 @@ final class GhosttyNativeMacosSmoke:
         applyTheme()
     }
 
+    private func setFontFamily(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        fontFamily = trimmed
+        applyTheme()
+    }
+
+    private func terminalConfiguration() -> TerminalConfiguration {
+        let configuration = TerminalConfiguration()
+            .background(backgroundHexColor)
+            .foreground(foregroundHexColor)
+
+        guard let fontFamily else {
+            return configuration
+        }
+
+        return configuration.fontFamily(fontFamily)
+    }
+
     private func applyTheme() {
+        let configuration = terminalConfiguration()
         controller.setTheme(TerminalTheme(
-            light: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor),
-            dark: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor)
+            light: configuration,
+            dark: configuration
         ))
         secondaryController.setTheme(TerminalTheme(
-            light: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor),
-            dark: TerminalConfiguration()
-                .background(backgroundHexColor)
-                .foreground(foregroundHexColor)
+            light: configuration,
+            dark: configuration
         ))
     }
 

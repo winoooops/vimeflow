@@ -35,6 +35,7 @@ interface TerminalBodyProps {
   bottomCornerRadius?: number
   mode: BodyMode
   deferFit: boolean
+  terminalFontFamily?: string
   enableImagePaste: boolean
 }
 
@@ -62,6 +63,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       bottomCornerRadius = 0,
       mode,
       deferFit,
+      terminalFontFamily = undefined,
       enableImagePaste,
     },
     ref
@@ -126,6 +128,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           onRequestFocus={onRequestFocus}
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
+          terminalFontFamily={terminalFontFamily}
           onUnavailable={handleNativeUnavailable}
         />
       )
@@ -143,6 +146,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
         onCommandSubmit={onCommandSubmit}
         mode={mode}
         deferFit={deferFit}
+        terminalFontFamily={terminalFontFamily}
         enableImagePaste={enableImagePaste}
       />
     )

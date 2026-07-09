@@ -7,18 +7,37 @@ import {
   protocol,
   session,
   shell,
+  type WebContents,
 } from 'electron'
+import { readFileSync } from 'node:fs'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { AppSettings } from '../src/bindings/AppSettings'
 import { isAllowedBackendMethod } from './backend-methods'
 import {
   developmentContentSecurityPolicy,
   packagedContentSecurityPolicy,
 } from './csp'
-import { installCommandPaletteShortcutOverride } from './command-palette-shortcut'
+import {
+  installCommandPaletteShortcutOverride,
+  setCommandPaletteShortcutBinding,
+  setCommandPaletteShortcutBindings,
+  setKeymapCaptureActive,
+} from './command-palette-shortcut'
 import { installApplicationEditMenu } from './edit-menu'
 import { installNavigationGuard } from './navigation-guard'
-import { BACKEND_EVENT, BACKEND_INVOKE } from './ipc-channels'
+import {
+  BACKEND_EVENT,
+  BACKEND_INVOKE,
+  COMMAND_PALETTE_BINDING,
+  E2E_COMMAND_PALETTE_SHORTCUT,
+  KEYMAP_CAPTURE_ACTIVE,
+  SETTINGS_CHANGED,
+  SETTINGS_OPEN_FILE,
+  SETTINGS_OPEN_WINDOW,
+  SETTINGS_SYNC_SNAPSHOT,
+} from './ipc-channels'
 import {
   setupNativeOverlayIpc,
   type NativeOverlayController,
@@ -26,6 +45,7 @@ import {
 } from './native-overlay'
 import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
+import { SettingsWindowController } from './settings-window'
 import {
   isGhosttyNativeEnabled,
   setupGhosttyNativeHelper,
@@ -43,6 +63,7 @@ import {
 } from './workspace-layout-controller'
 import { WorkspaceLayoutWriter } from './workspace-layout-writer'
 import { WorkspaceTeardown } from './workspace-teardown'
+import { shouldQuitOnAllWindowsClosed } from './last-window-close'
 import type { PersistedTab } from './workspace-layout-types'
 
 // Keep the GPU serving this window while it is occluded (covered by another
@@ -76,6 +97,24 @@ const APP_PROTOCOL = 'vimeflow'
 const APP_HOST = 'app'
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_HOST}`
 const E2E_RUNTIME_ARG = '--vimeflow-e2e'
+
+// Mirrors DEFAULT_SETTINGS.version in src/features/settings/store/settingsDefaults.ts
+// and CURRENT_APP_SETTINGS_VERSION in crates/backend/src/settings/app_settings.rs.
+// Kept local to the main process so Electron startup never depends on a renderer
+// feature module that may later gain browser-only runtime imports.
+const SETTINGS_SCHEMA_VERSION = 1
+const COMMAND_PALETTE_BINDING_MAX_LENGTH = 64
+
+const isCommandPaletteBindingSync = (
+  value: unknown
+): value is { palette: string; leader: string } =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  'palette' in value &&
+  'leader' in value &&
+  typeof value.palette === 'string' &&
+  typeof value.leader === 'string'
 
 // E2E detection (env var OR CLI flag fallback). Hoisted above its first
 // caller (installContentSecurityPolicy at ~line 80) so the TDZ never
@@ -270,7 +309,10 @@ let ghosttyNativeController:
 let nativeOverlayController: NativeOverlayController | null = null
 let workspaceLayoutController: WorkspaceLayoutController | null = null
 let workspaceTeardown: WorkspaceTeardown | null = null
+let workspaceWindow: BrowserWindow | null = null
+let settingsWindowController: SettingsWindowController | null = null
 let quitting = false
+let lastKnownOnLastWindowClosed: string | undefined
 
 const RENDERER_DIAGNOSTIC_PREFIXES = [
   '[vimeflow:terminal-cwd]',
@@ -279,6 +321,43 @@ const RENDERER_DIAGNOSTIC_PREFIXES = [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  isRecord(value) &&
+  Object.values(value).every((entry) => typeof entry === 'string')
+
+const isAppSettings = (value: unknown): value is AppSettings =>
+  isRecord(value) &&
+  typeof value.version === 'number' &&
+  typeof value.closeWithNoTabs === 'string' &&
+  typeof value.onLastWindowClosed === 'string' &&
+  typeof value.useSystemPathPrompts === 'boolean' &&
+  typeof value.useSystemPrompts === 'boolean' &&
+  typeof value.redactPrivateValues === 'boolean' &&
+  typeof value.cliOpenBehavior === 'string' &&
+  typeof value.aesthetic === 'string' &&
+  typeof value.accentHue === 'number' &&
+  typeof value.density === 'string' &&
+  typeof value.uiFont === 'string' &&
+  typeof value.monoFont === 'string' &&
+  typeof value.terminalFontFamily === 'string' &&
+  typeof value.reservoirSwell === 'string' &&
+  typeof value.keymapPreset === 'string' &&
+  typeof value.agentShimEnabled === 'boolean' &&
+  isStringRecord(value.customKeybindings)
+
+const broadcastSettingsChanged = (
+  settings: AppSettings,
+  senderWebContents: WebContents
+): void => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.webContents === senderWebContents) {
+      continue
+    }
+
+    win.webContents.send(SETTINGS_CHANGED, settings)
+  }
+}
 
 // Mirrors isStructuredBackendError in src/lib/backend.ts; keep in sync manually.
 const isStructuredBackendError = (
@@ -346,7 +425,20 @@ const isBackendInvokePayload = (
   return payload.args === undefined || isRecord(payload.args)
 }
 
-const createWindow = (): void => {
+const openExternalUrl = (url: string): void => {
+  const open = async (): Promise<void> => {
+    try {
+      await shell.openExternal(url)
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to open external URL', url, error)
+    }
+  }
+
+  void open()
+}
+
+const createWindow = (): BrowserWindow => {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -362,6 +454,7 @@ const createWindow = (): void => {
       preload: path.join(__dirname, 'preload.mjs'),
     },
   })
+  workspaceWindow = win
 
   // Re-arm the teardown flush for this window's lifecycle (spec §3.2).
   workspaceTeardown?.reset()
@@ -387,36 +480,33 @@ const createWindow = (): void => {
     })()
   })
 
+  win.on('closed', () => {
+    if (workspaceWindow === win) {
+      workspaceWindow = null
+    }
+  })
+
   installRendererDiagnosticLogging(win)
   installCommandPaletteShortcutOverride(win)
-  installNavigationGuard(win, (url) => {
-    const openExternalUrl = async (): Promise<void> => {
-      try {
-        await shell.openExternal(url)
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.warn('Failed to open external URL', url, error)
-      }
-    }
-
-    void openExternalUrl()
-  })
+  installNavigationGuard(win, openExternalUrl)
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
   if (app.isPackaged) {
     void win.loadURL(`${APP_ORIGIN}/index.html`)
 
-    return
+    return win
   }
 
   if (devUrl !== undefined && devUrl.length > 0) {
     void win.loadURL(devUrl)
 
-    return
+    return win
   }
 
   void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+
+  return win
 }
 
 const setupApp = async (): Promise<void> => {
@@ -504,8 +594,8 @@ const setupApp = async (): Promise<void> => {
 
   workspaceTeardown = new WorkspaceTeardown({
     drainFinalShape: async (): Promise<void> => {
-      const win = BrowserWindow.getAllWindows().at(0)
-      if (win && !win.webContents.isDestroyed()) {
+      const win = workspaceWindow
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
         await workspaceLayoutController?.requestFinalShape(win.webContents)
       }
     },
@@ -556,6 +646,117 @@ const setupApp = async (): Promise<void> => {
     }
   )
 
+  ipcMain.on(KEYMAP_CAPTURE_ACTIVE, (ipcEvent, active: unknown) => {
+    const win = BrowserWindow.fromWebContents(ipcEvent.sender)
+    if (win !== null) {
+      setKeymapCaptureActive(win, active === true)
+    }
+  })
+
+  ipcMain.on(COMMAND_PALETTE_BINDING, (ipcEvent, binding: unknown) => {
+    const win = BrowserWindow.fromWebContents(ipcEvent.sender)
+    if (win === null) {
+      return
+    }
+
+    if (typeof binding === 'string') {
+      if (binding.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH) {
+        setCommandPaletteShortcutBinding(win, binding)
+      }
+
+      return
+    }
+
+    if (
+      isCommandPaletteBindingSync(binding) &&
+      binding.palette.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH &&
+      binding.leader.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH
+    ) {
+      setCommandPaletteShortcutBindings(win, binding)
+    }
+  })
+
+  if (allowE2eBackendMethods) {
+    ipcMain.handle(E2E_COMMAND_PALETTE_SHORTCUT, (ipcEvent): boolean => {
+      const win = BrowserWindow.fromWebContents(ipcEvent.sender)
+      if (win === null) {
+        return false
+      }
+
+      if (win.isDestroyed() || win.webContents.isDestroyed()) {
+        return false
+      }
+
+      win.webContents.focus()
+
+      // The E2E renderer bridge falls back to the registered React opener when
+      // this handler reports "not handled". Keep this endpoint focused on
+      // Electron window activation: the production shortcut path still covers
+      // before-input-event/globalShortcut dispatch, while Linux CI avoids an
+      // acknowledged-but-not-rendered async IPC toggle.
+      return false
+    })
+  }
+
+  ipcMain.handle(SETTINGS_OPEN_FILE, async (): Promise<void> => {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+
+    const fileExists = await access(settingsPath)
+      .then(() => true)
+      .catch(() => false)
+
+    if (!fileExists) {
+      try {
+        const defaults =
+          await spawnedSidecar.invoke<AppSettings>('load_app_settings')
+        await spawnedSidecar.invoke('save_app_settings', { settings: defaults })
+      } catch {
+        // Best-effort: if ensuring the default file fails, still try to open
+        // so the OS surfaces the missing-file error to the user.
+      }
+    }
+
+    const errorMessage = await shell.openPath(settingsPath)
+
+    if (errorMessage) {
+      throw new Error(errorMessage)
+    }
+  })
+
+  settingsWindowController = new SettingsWindowController({
+    createWindow: (options): BrowserWindow => new BrowserWindow(options),
+    location: {
+      appOrigin: APP_ORIGIN,
+      isPackaged: app.isPackaged,
+      rendererDistDir: path.resolve(__dirname, '..', 'dist'),
+      devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    },
+    preloadPath: path.join(__dirname, 'preload.mjs'),
+    openExternalUrl,
+    onRendererDiagnostics: installRendererDiagnosticLogging,
+    windowChromeOptions: macosWindowChromeOptions,
+  })
+
+  ipcMain.handle(SETTINGS_OPEN_WINDOW, (): void => {
+    settingsWindowController?.open()
+  })
+
+  ipcMain.handle(
+    SETTINGS_SYNC_SNAPSHOT,
+    (ipcEvent, settings: unknown): void => {
+      if (
+        isRecord(settings) &&
+        typeof settings.onLastWindowClosed === 'string'
+      ) {
+        lastKnownOnLastWindowClosed = settings.onLastWindowClosed
+      }
+
+      if (isAppSettings(settings)) {
+        broadcastSettingsChanged(settings, ipcEvent.sender)
+      }
+    }
+  )
+
   spawnedSidecar.onEvent((event, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(BACKEND_EVENT, { event, payload })
@@ -601,13 +802,53 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  let onLastWindowClosed: string | undefined
+
+  if (lastKnownOnLastWindowClosed !== undefined) {
+    // The renderer keeps this snapshot in sync whenever the user changes a
+    // setting, so we can read the latest value without racing the async save
+    // to disk / the Rust sidecar.
+    onLastWindowClosed = lastKnownOnLastWindowClosed
+  } else {
+    try {
+      const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+      const raw = readFileSync(settingsPath, 'utf8')
+
+      const parsed = JSON.parse(raw) as {
+        version?: number
+        onLastWindowClosed?: string
+      }
+
+      // Only honor values written by the current app version. A newer or
+      // unsupported version is treated as a mismatch and falls back to default.
+      if (
+        parsed.version === SETTINGS_SCHEMA_VERSION &&
+        typeof parsed.onLastWindowClosed === 'string'
+      ) {
+        onLastWindowClosed = parsed.onLastWindowClosed
+      }
+    } catch {
+      // Missing or corrupt settings.json falls back to the platform default.
+    }
+  }
+
+  if (
+    shouldQuitOnAllWindowsClosed(
+      onLastWindowClosed ?? 'platform',
+      process.platform
+    )
+  ) {
     app.quit()
   }
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (workspaceWindow === null || workspaceWindow.isDestroyed()) {
     createWindow()
+
+    return
   }
+
+  workspaceWindow.show()
+  workspaceWindow.focus()
 })

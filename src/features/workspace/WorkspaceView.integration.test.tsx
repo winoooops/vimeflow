@@ -1,11 +1,22 @@
 /* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor, act } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  within,
+  waitFor,
+  act,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
+import { SettingsProvider } from '../settings/SettingsProvider'
 import * as useCodeMirrorModule from '../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../editor/hooks/useVimMode'
 import { createTerminalService } from '../terminal/services/terminalService'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({

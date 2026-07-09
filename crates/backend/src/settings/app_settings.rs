@@ -1,0 +1,450 @@
+//! Durable app-wide settings store (`app_data_dir/settings.json`).
+//! Survives graceful quit and is never wiped by `clear_all` — it holds user
+//! preferences, not ephemeral session state.
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+pub const CURRENT_APP_SETTINGS_VERSION: u32 = 1;
+const MAX_SETTINGS_STRING_CHARS: usize = 256;
+const MAX_CUSTOM_KEYBINDINGS: usize = 256;
+const MAX_KEYBINDING_CHARS: usize = 128;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", default)]
+#[cfg_attr(test, ts(export))]
+pub struct AppSettings {
+    pub version: u32,
+    pub close_with_no_tabs: String,
+    pub on_last_window_closed: String,
+    pub use_system_path_prompts: bool,
+    pub use_system_prompts: bool,
+    pub redact_private_values: bool,
+    pub cli_open_behavior: String,
+    pub aesthetic: String,
+    pub accent_hue: u32,
+    pub density: String,
+    pub ui_font: String,
+    pub mono_font: String,
+    pub terminal_font_family: String,
+    pub reservoir_swell: String,
+    pub keymap_preset: String,
+    pub agent_shim_enabled: bool,
+    #[serde(default, deserialize_with = "lenient_string_map")]
+    pub custom_keybindings: HashMap<String, String>,
+}
+
+/// Tolerant deserializer for `custom_keybindings` (spec §7). A malformed entry
+/// must never fail the whole-struct load and wipe the durable settings file. The
+/// file is already valid JSON by the time this runs, so `Value::deserialize`
+/// never errors — a wrong-shaped value yields an empty map, and non-string
+/// entries are dropped rather than rejected.
+fn lenient_string_map<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::Object(map) => map
+            .into_iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+            .collect(),
+        _ => HashMap::new(),
+    })
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            version: CURRENT_APP_SETTINGS_VERSION,
+            close_with_no_tabs: "platform".into(),
+            on_last_window_closed: "platform".into(),
+            use_system_path_prompts: true,
+            use_system_prompts: true,
+            redact_private_values: false,
+            cli_open_behavior: "existing".into(),
+            aesthetic: "obsidian".into(),
+            accent_hue: 285,
+            density: "comfortable".into(),
+            ui_font: "instrument".into(),
+            mono_font: "jetbrains".into(),
+            terminal_font_family: "JetBrains Mono".into(),
+            reservoir_swell: "soft-mound".into(),
+            keymap_preset: "vimeflow".into(),
+            agent_shim_enabled: true,
+            custom_keybindings: HashMap::new(),
+        }
+    }
+}
+
+impl AppSettings {
+    pub fn validate_ipc_payload(&self) -> Result<(), String> {
+        if self.version != CURRENT_APP_SETTINGS_VERSION {
+            return Err(format!(
+                "unsupported app settings version {} (current {CURRENT_APP_SETTINGS_VERSION})",
+                self.version
+            ));
+        }
+
+        for (field, value) in [
+            ("closeWithNoTabs", self.close_with_no_tabs.as_str()),
+            ("onLastWindowClosed", self.on_last_window_closed.as_str()),
+            ("cliOpenBehavior", self.cli_open_behavior.as_str()),
+            ("aesthetic", self.aesthetic.as_str()),
+            ("density", self.density.as_str()),
+            ("uiFont", self.ui_font.as_str()),
+            ("monoFont", self.mono_font.as_str()),
+            ("terminalFontFamily", self.terminal_font_family.as_str()),
+            ("reservoirSwell", self.reservoir_swell.as_str()),
+            ("keymapPreset", self.keymap_preset.as_str()),
+        ] {
+            if value.chars().count() > MAX_SETTINGS_STRING_CHARS {
+                return Err(format!("{field} exceeds {MAX_SETTINGS_STRING_CHARS} characters"));
+            }
+        }
+
+        if self.custom_keybindings.len() > MAX_CUSTOM_KEYBINDINGS {
+            return Err(format!(
+                "customKeybindings exceeds {MAX_CUSTOM_KEYBINDINGS} entries"
+            ));
+        }
+
+        for (command, chord) in &self.custom_keybindings {
+            if command.chars().count() > MAX_KEYBINDING_CHARS
+                || chord.chars().count() > MAX_KEYBINDING_CHARS
+            {
+                return Err(format!(
+                    "customKeybindings entries must be at most {MAX_KEYBINDING_CHARS} characters"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Rust-owned durable cache for `app_data_dir/settings.json`.
+/// Atomic write (`tempfile.persist`) + in-memory mirror, mirroring
+/// `WorkspaceLayoutCache`. Distinct file from `sessions.json`, so `clear_all`
+/// (which only wipes `sessions.json`) never touches it — the durability
+/// invariant.
+#[derive(Debug)]
+pub struct AppSettingsCache {
+    path: PathBuf,
+    mirror: Mutex<Option<AppSettings>>,
+}
+
+impl AppSettingsCache {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            mirror: Mutex::new(None),
+        }
+    }
+
+    /// Load from disk; missing / unreadable / corrupt / version mismatch →
+    /// `AppSettings::default()` (never fails — this is a convenience cache
+    /// that must not block lifecycle).
+    pub fn load(&self) -> AppSettings {
+        let mut guard = self.mirror.lock().expect("app settings mirror poisoned");
+        let settings = match fs::read(&self.path) {
+            Ok(bytes) => match serde_json::from_slice::<AppSettings>(&bytes) {
+                Ok(parsed) if parsed.version == CURRENT_APP_SETTINGS_VERSION => parsed,
+                Ok(_) => AppSettings::default(),
+                Err(_) => AppSettings::default(),
+            },
+            Err(_) => AppSettings::default(),
+        };
+        *guard = Some(settings.clone());
+        settings
+    }
+
+    /// Atomically persist the assembled settings + refresh the mirror, holding
+    /// the lock across the disk write so overlapping saves cannot persist out
+    /// of order.
+    pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
+        settings.validate_ipc_payload()?;
+        // Fail closed: never overwrite the durable file with a version `load`
+        // would discard (which would silently delete the saved settings on the
+        // next restore).
+        if settings.version != CURRENT_APP_SETTINGS_VERSION {
+            return Err(format!(
+                "refusing to save unsupported app settings version {} (current {CURRENT_APP_SETTINGS_VERSION})",
+                settings.version
+            ));
+        }
+        let mut guard = self.mirror.lock().expect("app settings mirror poisoned");
+        self.flush_to_disk(settings)?;
+        *guard = Some(settings.clone());
+        Ok(())
+    }
+
+    /// The in-memory mirror (consumed by the renderer-facing IPC path).
+    pub fn current(&self) -> Option<AppSettings> {
+        self.mirror
+            .lock()
+            .expect("app settings mirror poisoned")
+            .clone()
+    }
+
+    fn flush_to_disk(&self, settings: &AppSettings) -> Result<(), String> {
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| "app settings path has no parent".to_string())?;
+        fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
+        let mut tmp =
+            tempfile::NamedTempFile::new_in(parent).map_err(|e| format!("create tempfile: {e}"))?;
+        let bytes = serde_json::to_vec_pretty(settings).map_err(|e| format!("serialize: {e}"))?;
+        tmp.write_all(&bytes).map_err(|e| format!("write: {e}"))?;
+        tmp.persist(&self.path)
+            .map_err(|e| format!("persist: {e}"))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn custom_settings() -> AppSettings {
+        AppSettings {
+            version: CURRENT_APP_SETTINGS_VERSION,
+            close_with_no_tabs: "close".into(),
+            on_last_window_closed: "quit".into(),
+            use_system_path_prompts: false,
+            use_system_prompts: false,
+            redact_private_values: true,
+            cli_open_behavior: "new".into(),
+            aesthetic: "obsidian".into(),
+            accent_hue: 300,
+            density: "compact".into(),
+            ui_font: "inter".into(),
+            mono_font: "iosevka".into(),
+            terminal_font_family: "Iosevka".into(),
+            reservoir_swell: "trailing".into(),
+            keymap_preset: "vim".into(),
+            agent_shim_enabled: false,
+            custom_keybindings: HashMap::from([(
+                "dock-toggle".to_string(),
+                "Mod+KeyK".to_string(),
+            )]),
+        }
+    }
+
+    #[test]
+    fn default_values_match_ui_precedent() {
+        let s = AppSettings::default();
+        assert_eq!(s.version, CURRENT_APP_SETTINGS_VERSION);
+        assert_eq!(s.close_with_no_tabs, "platform");
+        assert_eq!(s.on_last_window_closed, "platform");
+        assert!(s.use_system_path_prompts);
+        assert!(s.use_system_prompts);
+        assert!(!s.redact_private_values);
+        assert_eq!(s.cli_open_behavior, "existing");
+        assert_eq!(s.aesthetic, "obsidian");
+        assert_eq!(s.accent_hue, 285);
+        assert_eq!(s.density, "comfortable");
+        assert_eq!(s.ui_font, "instrument");
+        assert_eq!(s.mono_font, "jetbrains");
+        assert_eq!(s.terminal_font_family, "JetBrains Mono");
+        assert_eq!(s.reservoir_swell, "soft-mound");
+        assert_eq!(s.keymap_preset, "vimeflow");
+        assert!(s.agent_shim_enabled);
+        assert!(s.custom_keybindings.is_empty());
+    }
+
+    #[test]
+    fn serializes_camel_case_fields() {
+        let json = serde_json::to_string(&AppSettings::default()).unwrap();
+        assert!(
+            json.contains("\"closeWithNoTabs\":\"platform\""),
+            "json: {json}"
+        );
+        assert!(
+            json.contains("\"onLastWindowClosed\":\"platform\""),
+            "json: {json}"
+        );
+        assert!(
+            json.contains("\"useSystemPathPrompts\":true"),
+            "json: {json}"
+        );
+        assert!(json.contains("\"accentHue\":285"), "json: {json}");
+        assert!(
+            json.contains("\"terminalFontFamily\":\"JetBrains Mono\""),
+            "json: {json}"
+        );
+        assert!(
+            json.contains("\"reservoirSwell\":\"soft-mound\""),
+            "json: {json}"
+        );
+        assert!(json.contains("\"agentShimEnabled\":true"), "json: {json}");
+        assert!(
+            json.contains("\"keymapPreset\":\"vimeflow\""),
+            "json: {json}"
+        );
+        assert!(json.contains("\"customKeybindings\":{}"), "json: {json}");
+    }
+
+    #[test]
+    fn cache_save_then_load_round_trips_and_missing_loads_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let cache = AppSettingsCache::new(path.clone());
+        let loaded = cache.load();
+        assert_eq!(loaded, AppSettings::default()); // missing → defaults
+
+        let settings = custom_settings();
+        cache.save(&settings).unwrap();
+        assert_eq!(cache.current().unwrap(), settings); // mirror refreshed
+
+        // Fresh cache instance reads the persisted file.
+        let reloaded = AppSettingsCache::new(path).load();
+        assert_eq!(reloaded, settings);
+    }
+
+    #[test]
+    fn malformed_json_loads_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(&path, "not json at all").unwrap();
+
+        let loaded = AppSettingsCache::new(path).load();
+        assert_eq!(loaded, AppSettings::default());
+    }
+
+    #[test]
+    fn wrong_version_loads_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            r#"{"version":999,"closeWithNoTabs":"close","accentHue":123}"#,
+        )
+        .unwrap();
+
+        let loaded = AppSettingsCache::new(path).load();
+        assert_eq!(loaded, AppSettings::default());
+    }
+
+    #[test]
+    fn partial_file_defaults_missing_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            r#"{"version":1,"closeWithNoTabs":"nothing","accentHue":42}"#,
+        )
+        .unwrap();
+
+        let loaded = AppSettingsCache::new(path).load();
+        assert_eq!(loaded.close_with_no_tabs, "nothing");
+        assert_eq!(loaded.accent_hue, 42);
+        assert_eq!(loaded.on_last_window_closed, "platform");
+        assert!(loaded.use_system_path_prompts);
+        assert_eq!(loaded.density, "comfortable");
+        assert_eq!(loaded.terminal_font_family, "JetBrains Mono");
+        assert_eq!(loaded.reservoir_swell, "soft-mound");
+        assert_eq!(loaded.keymap_preset, "vimeflow");
+        assert!(loaded.custom_keybindings.is_empty());
+    }
+
+    #[test]
+    fn lenient_custom_keybindings_drops_bad_entries_without_failing_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        // A non-string value for one entry must NOT fail the whole-struct load.
+        fs::write(
+            &path,
+            r#"{"version":1,"closeWithNoTabs":"close","customKeybindings":{"dock-toggle":"Mod+KeyK","bad":5}}"#,
+        )
+        .unwrap();
+
+        let loaded = AppSettingsCache::new(path).load();
+        assert_eq!(loaded.close_with_no_tabs, "close"); // other settings survived
+        assert_eq!(
+            loaded
+                .custom_keybindings
+                .get("dock-toggle")
+                .map(String::as_str),
+            Some("Mod+KeyK")
+        );
+        assert!(!loaded.custom_keybindings.contains_key("bad")); // non-string dropped
+    }
+
+    #[test]
+    fn save_rejects_unsupported_version_failing_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let cache = AppSettingsCache::new(path.clone());
+        cache.save(&custom_settings()).unwrap();
+        assert!(path.exists());
+
+        let bad = AppSettings {
+            version: 999,
+            ..AppSettings::default()
+        };
+        assert!(cache.save(&bad).is_err());
+
+        // Original good file survived the failed save.
+        let reloaded = AppSettingsCache::new(path).load();
+        assert_eq!(reloaded, custom_settings());
+    }
+
+    #[test]
+    fn validate_ipc_payload_rejects_unbounded_custom_keybindings() {
+        let mut settings = AppSettings {
+            custom_keybindings: (0..=MAX_CUSTOM_KEYBINDINGS)
+                .map(|i| (format!("command-{i}"), "Mod+KeyK".to_string()))
+                .collect(),
+            ..AppSettings::default()
+        };
+
+        assert!(settings.validate_ipc_payload().is_err());
+
+        settings.custom_keybindings = HashMap::from([(
+            "command".to_string(),
+            "x".repeat(MAX_KEYBINDING_CHARS + 1),
+        )]);
+        assert!(settings.validate_ipc_payload().is_err());
+    }
+
+    #[test]
+    fn validate_ipc_payload_rejects_overlong_settings_strings() {
+        let settings = AppSettings {
+            terminal_font_family: "x".repeat(MAX_SETTINGS_STRING_CHARS + 1),
+            ..AppSettings::default()
+        };
+
+        assert!(settings.validate_ipc_payload().is_err());
+    }
+
+    #[test]
+    fn saved_file_is_valid_json_that_re_parses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let cache = AppSettingsCache::new(path.clone());
+        let settings = custom_settings();
+        cache.save(&settings).unwrap();
+
+        let bytes = fs::read(&path).unwrap();
+        let parsed: AppSettings = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(parsed, settings);
+    }
+
+    #[test]
+    fn current_returns_mirror_after_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let cache = AppSettingsCache::new(path);
+        assert!(cache.current().is_none());
+
+        let settings = custom_settings();
+        cache.save(&settings).unwrap();
+        assert_eq!(cache.current().unwrap(), settings);
+    }
+}

@@ -176,6 +176,9 @@ export class GhosttyNativeHelperController {
       foregroundColor: isHexColor(payload.foregroundColor)
         ? payload.foregroundColor
         : GHOSTTY_NATIVE_FALLBACK_FOREGROUND_COLOR,
+      ...(isNonEmptyString(payload.fontFamily)
+        ? { fontFamily: payload.fontFamily }
+        : {}),
       bottomCornerRadius: frame.visible
         ? Math.max(0, Math.round(payload.bottomCornerRadius ?? 0))
         : 0,

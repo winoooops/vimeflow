@@ -118,6 +118,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -156,6 +157,7 @@ describe('ghostty native parent', () => {
       addon: {
         create: vi.fn(),
         setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
         write: vi.fn(),
         focus: vi.fn(),
         destroy: vi.fn(),
@@ -192,6 +194,7 @@ describe('ghostty native parent', () => {
       addon: {
         create: vi.fn(),
         setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
         write: vi.fn(),
         focus: vi.fn(),
         destroy: vi.fn(),
@@ -302,6 +305,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -373,6 +377,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       setBackgroundColor: vi.fn(),
       setForegroundColor: vi.fn(),
       write: vi.fn(),
@@ -401,6 +406,7 @@ describe('ghostty native parent', () => {
         cwd: '/tmp',
         backgroundColor: '#fffcf0',
         foregroundColor: '#100f0f',
+        fontFamily: 'Iosevka',
         visible: true,
         parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
@@ -409,6 +415,7 @@ describe('ghostty native parent', () => {
 
     expect(addon.setBackgroundColor).toHaveBeenCalledWith(surface, '#fffcf0')
     expect(addon.setForegroundColor).toHaveBeenCalledWith(surface, '#100f0f')
+    expect(addon.setFontFamily).toHaveBeenCalledWith(surface, 'Iosevka')
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },
@@ -418,6 +425,7 @@ describe('ghostty native parent', () => {
         cwd: '/tmp',
         backgroundColor: '#fffcf0',
         foregroundColor: '#100f0f',
+        fontFamily: 'Iosevka',
         visible: true,
         parentHeight: 900,
         bounds: { x: 10, y: 20, width: 300, height: 200 },
@@ -426,6 +434,57 @@ describe('ghostty native parent', () => {
 
     expect(addon.setBackgroundColor).toHaveBeenCalledTimes(1)
     expect(addon.setForegroundColor).toHaveBeenCalledTimes(1)
+    expect(addon.setFontFamily).toHaveBeenCalledTimes(1)
+
+    controller.dispose()
+  })
+
+  test('accepts native addons without font-family support', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        fontFamily: 'Iosevka',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenCalledWith(
+      surface,
+      10,
+      20,
+      300,
+      200,
+      0,
+      900
+    )
 
     controller.dispose()
   })
@@ -446,6 +505,7 @@ describe('ghostty native parent', () => {
       setFrame: vi.fn(),
       setBackgroundColor: vi.fn(),
       setForegroundColor: vi.fn(),
+      setFontFamily: vi.fn(),
       setShortcutDigits: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
@@ -526,6 +586,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -594,6 +655,7 @@ describe('ghostty native parent', () => {
         .mockReturnValueOnce(firstSurface)
         .mockReturnValueOnce(secondSurface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -677,6 +739,7 @@ describe('ghostty native parent', () => {
           .mockReturnValueOnce(firstSurface)
           .mockReturnValueOnce(secondSurface),
         setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
         write: vi.fn(),
         focus: vi.fn(),
         destroy: vi.fn(),
@@ -764,6 +827,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -818,6 +882,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -868,6 +933,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -917,6 +983,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -981,6 +1048,7 @@ describe('ghostty native parent', () => {
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       setShortcutDigits: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
@@ -1078,6 +1146,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -1197,6 +1266,7 @@ describe('ghostty native parent', () => {
           }
         ),
         setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
         write: vi.fn(),
         focus: vi.fn(),
         destroy: vi.fn(),
@@ -1284,6 +1354,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -1348,6 +1419,7 @@ describe('ghostty native parent', () => {
         callbacks.onFocus = focus
       }),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       writeSecondary: vi.fn(),
       focus: vi.fn(),
@@ -1424,6 +1496,7 @@ describe('ghostty native parent', () => {
         callbacks.onFocus = focus
       }),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       writeSecondary: vi.fn(),
       focus: vi.fn(),
@@ -1473,6 +1546,7 @@ describe('ghostty native parent', () => {
       create: vi.fn(() => surface),
       addSecondary: vi.fn(),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       writeSecondary: vi.fn(),
       focus: vi.fn(),
@@ -1532,6 +1606,7 @@ describe('ghostty native parent', () => {
       setSecondaryVisible: vi.fn(),
       removeSecondary: vi.fn(),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       writeSecondary: vi.fn(),
       focus: vi.fn(),
@@ -1614,6 +1689,7 @@ describe('ghostty native parent', () => {
       setSecondaryVisible: vi.fn(),
       removeSecondary: vi.fn(),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       writeSecondary: vi.fn(),
       focus: vi.fn(),
@@ -1722,6 +1798,7 @@ describe('ghostty native parent', () => {
       addSecondary: vi.fn(),
       removeSecondary: vi.fn(),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -1808,6 +1885,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -1991,6 +2069,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -2078,6 +2157,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -2152,6 +2232,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -2186,7 +2267,10 @@ describe('ghostty native parent', () => {
     callbacks.onShortcut?.(';', 'Semicolon', !isMac, isMac, false, false, false)
 
     expect(webContentsFocus).toHaveBeenCalledOnce()
-    expect(webContentsSend).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE)
+    expect(webContentsSend).toHaveBeenCalledWith(
+      COMMAND_PALETTE_TOGGLE,
+      'leader'
+    )
     expect(webContentsExecuteJavaScript).not.toHaveBeenCalled()
     expect(addon.focus).not.toHaveBeenCalled()
 
@@ -2213,6 +2297,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -2285,6 +2370,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -2349,6 +2435,7 @@ describe('ghostty native parent', () => {
         }
       ),
       setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),

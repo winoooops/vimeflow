@@ -121,7 +121,33 @@ not become repeated unhandled main-process failures.
 - **Fix:** Reject oversized primary and secondary writes with JS-visible errors before passing lengths to the Swift bridge.
 - **Commit:** same commit as this entry
 
-### 9. Delegated reviewer findings need a display bound
+### 9. Settings and aliases IPC accepted unbounded valid-shaped payloads
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/runtime/ipc.rs`
+- **Finding:** The save-settings and save-aliases IPC handlers accepted
+  renderer-provided strings and collections without size limits. A renderer bug
+  or compromised renderer could submit very large valid JSON and force the
+  backend to hold and persist oversized payloads.
+- **Fix:** Added Rust-side payload validators for settings strings, custom
+  keybinding counts and lengths, alias counts, and alias field lengths, then
+  invoked them at the IPC boundary and cache write path with regression tests.
+- **Commit:** same commit as this entry
+
+### 10. Accent slider queued full settings saves for every drag tick
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
+- **Finding:** The accent hue range input called the settings provider's
+  persisted `update()` on every drag event, enqueueing many full settings IPC
+  saves and disk writes for intermediate values the user did not settle on.
+- **Fix:** Split preview state from persisted state for the slider and commit
+  only on pointer release, key release, or blur. Added a regression test that
+  multiple drag changes do not save until the final value is committed.
+
+### 11. Delegated reviewer findings need a display bound
 
 - **Source:** github-claude | PR #677 round 2 | 2026-07-09
 - **Severity:** MEDIUM

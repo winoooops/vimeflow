@@ -82,6 +82,8 @@ export interface TerminalZoneProps {
   runningBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys whose burner terminal cwd has drifted from its host pane cwd. */
   outOfSyncBurnerPaneKeys?: ReadonlySet<string>
+  showPaneFocusHighlight?: boolean
+  terminalFontFamily?: string
   layoutRegistry?: PaneLayoutRegistry
 }
 
@@ -114,6 +116,8 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       outOfSyncBurnerPaneKeys = undefined,
+      showPaneFocusHighlight = true,
+      terminalFontFamily = undefined,
       layoutRegistry = undefined,
     }: TerminalZoneProps,
     ref
@@ -229,6 +233,8 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     runningBurnerPaneKeys={runningBurnerPaneKeys}
                     outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
                     deferTerminalFit={deferTerminalFit}
+                    showPaneFocusHighlight={showPaneFocusHighlight}
+                    terminalFontFamily={terminalFontFamily}
                   />
                 </div>
               )

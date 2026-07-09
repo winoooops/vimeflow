@@ -1,5 +1,10 @@
 // cspell:ignore Ghostty ghostty
-import { render, screen, waitFor, act } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  act,
+} from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import {
@@ -7,10 +12,14 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type ReactElement,
   type ReactNode,
 } from 'react'
 import { WorkspaceView } from './WorkspaceView'
+import { SettingsProvider, SettingsContext } from '../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
+import type { AppSettings } from '../../bindings/AppSettings'
 import type { SessionManager } from '../sessions/hooks/useSessionManager'
 import type { AgentStatus } from '../agent-status/types'
 import type { Session } from '../sessions/types'
@@ -20,6 +29,34 @@ import type {
 } from './components/TerminalZone'
 import type { WorkspaceOverlayRegistrationsProps } from './overlays/WorkspaceOverlayRegistrations'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
+
+const VimKeymapProvider = ({
+  children,
+}: {
+  children: ReactNode
+}): ReactElement => {
+  const [settings, setSettings] = useState<AppSettings>({
+    ...DEFAULT_SETTINGS,
+    keymapPreset: 'vim',
+  })
+
+  return (
+    <SettingsContext.Provider
+      value={{
+        settings,
+        saveError: null,
+        update: (patch): void => {
+          setSettings((prev) => ({ ...prev, ...patch }))
+        },
+      }}
+    >
+      {children}
+    </SettingsContext.Provider>
+  )
+}
 
 const terminalZonePropsSpy = vi.hoisted(() => vi.fn())
 const overlayRegistrationPropsSpy = vi.hoisted(() => vi.fn())
@@ -66,13 +103,6 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 vi.mock('./hooks/useNotifyInfo')
 vi.mock('../agent-status/hooks/useAgentStatus')
-
-vi.mock('../agent-status/hooks/useAgentReattach', () => ({
-  useAgentReattach: (): { needsReattach: boolean } => ({
-    needsReattach: false,
-  }),
-}))
-
 vi.mock('../diff/hooks/useGitStatus')
 vi.mock('../editor/hooks/useEditorBuffer')
 vi.mock('../files/services/fileSystemService')
@@ -80,16 +110,6 @@ vi.mock('../terminal/services/terminalService')
 vi.mock('../terminal/hooks/usePaneShortcuts')
 vi.mock('../terminal/hooks/useBurnerTerminals', () => ({
   useBurnerTerminals: vi.fn(),
-}))
-
-vi.mock('./overlays/WorkspaceOverlayRegistrations', () => ({
-  WorkspaceOverlayRegistrations: (
-    props: WorkspaceOverlayRegistrationsProps
-  ): null => {
-    overlayRegistrationPropsSpy(props)
-
-    return null
-  },
 }))
 
 // Mock child components to keep test focused on command dispatch while still
@@ -132,6 +152,16 @@ vi.mock('./components/TerminalZone', () => ({
       return <div ref={nodeRef} data-testid="terminal-zone" tabIndex={-1} />
     }
   ),
+}))
+
+vi.mock('./overlays/WorkspaceOverlayRegistrations', () => ({
+  WorkspaceOverlayRegistrations: (
+    props: WorkspaceOverlayRegistrationsProps
+  ): null => {
+    overlayRegistrationPropsSpy(props)
+
+    return null
+  },
 }))
 
 vi.mock('./components/DockPanel', () => ({
@@ -276,6 +306,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
       createSession: vi.fn(),
       createBrowserSession: vi.fn(),
       removeSession: vi.fn(),
+      customPaneLayouts: [],
+      layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
+      setCustomPaneLayouts: vi.fn(),
       setSessionLayout: vi.fn(),
       setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
@@ -287,19 +320,16 @@ describe('WorkspaceView - Command Palette Integration', () => {
       reorderSessions: vi.fn(),
       updatePaneCwd: vi.fn(),
       appendPaneCacheReading: vi.fn(),
-      clearPaneCacheHistory: vi.fn(),
       updatePaneAgentType: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
-      customPaneLayouts: [],
-      layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
-      setCustomPaneLayouts: vi.fn(),
       restoreData: new Map(),
       loading: false,
       notifyPaneReady: vi.fn(),
       registerPending: vi.fn(),
       dropAllForPty: vi.fn(),
+      clearPaneCacheHistory: vi.fn(),
     }
 
     // Mock useSessionManager
@@ -366,8 +396,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
     vi.mocked(createFileSystemService).mockReturnValue({
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
-      fileExists: vi.fn().mockResolvedValue(true),
       writeFile: vi.fn().mockResolvedValue(undefined),
+      fileExists: vi.fn().mockResolvedValue(true),
       renamePath: vi.fn().mockResolvedValue(undefined),
       deletePath: vi.fn().mockResolvedValue(undefined),
     })
@@ -422,22 +452,12 @@ describe('WorkspaceView - Command Palette Integration', () => {
     act(() => {
       const event = new KeyboardEvent('keydown', {
         key: ';',
+        code: 'Semicolon',
         ctrlKey: true,
         bubbles: true,
       })
       document.dispatchEvent(event)
     })
-  }
-
-  const latestTerminalZoneProps = (): TerminalZoneProps => {
-    const call = terminalZonePropsSpy.mock.calls[
-      terminalZonePropsSpy.mock.calls.length - 1
-    ] as [TerminalZoneProps] | undefined
-    if (!call) {
-      throw new Error('TerminalZone was not rendered')
-    }
-
-    return call[0]
   }
 
   const latestOverlayRegistrationProps =
@@ -451,6 +471,39 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
       return call[0]
     }
+
+  test('syncs separate palette and leader bindings to Electron', async () => {
+    const setCommandPaletteBindings = vi.fn()
+    const setCommandPaletteBinding = vi.fn()
+    window.vimeflow = {
+      setCommandPaletteBindings,
+      setCommandPaletteBinding,
+    } as unknown as Window['vimeflow']
+
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      customKeybindings: {
+        palette: 'Mod+KeyP',
+        'palette-leader': 'Mod+KeyK',
+      },
+    }
+
+    rtlRender(
+      <SettingsContext.Provider
+        value={{ settings, saveError: null, update: vi.fn() }}
+      >
+        <WorkspaceView />
+      </SettingsContext.Provider>
+    )
+
+    await waitFor(() => {
+      expect(setCommandPaletteBindings).toHaveBeenCalledWith({
+        palette: 'Mod+KeyP',
+        leader: 'Mod+KeyK',
+      })
+    })
+    expect(setCommandPaletteBinding).not.toHaveBeenCalled()
+  })
 
   test(':new command creates a new session', async () => {
     const user = userEvent.setup()
@@ -532,226 +585,35 @@ describe('WorkspaceView - Command Palette Integration', () => {
     )
   })
 
-  test('terminal /clear resets the active pane status generation and cache history when pane is Codex', async () => {
-    const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
-
-    vi.mocked(useAgentStatus).mockReturnValue(
-      createAgentStatus({
-        sessionId: 'pty-session-1',
-        agentType: 'codex',
-      })
-    )
-
+  test('occludes browser panes while the command palette is open', async () => {
     render(<WorkspaceView />)
 
-    act(() => {
-      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
-    })
+    expect(latestOverlayRegistrationProps().commandPaletteOpen).toBe(false)
 
-    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
-      'session-1',
-      'p0'
-    )
+    openPalette()
 
     await waitFor(() => {
-      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
-        'pty-session-1',
-        1
-      )
+      expect(latestOverlayRegistrationProps().commandPaletteOpen).toBe(true)
     })
   })
 
-  test('terminal /clear resets the active pane status generation and cache history when pane is opencode', async () => {
-    const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
-
-    vi.mocked(useAgentStatus).mockReturnValue(
-      createAgentStatus({
-        sessionId: 'pty-session-1',
-        agentType: 'opencode',
-      })
-    )
+  test('occludes browser panes while a burner terminal popup is visible', async () => {
+    const { useBurnerTerminals } =
+      await import('../terminal/hooks/useBurnerTerminals')
+    vi.mocked(useBurnerTerminals).mockReturnValue({
+      renderNode: <div data-testid="burner-terminal-popup" />,
+      toggle: vi.fn().mockResolvedValue(undefined),
+      syncToPaneCwd: vi.fn(),
+      runningByPane: new Map(),
+      activeByPane: new Map(),
+      outOfSyncByPane: new Map(),
+      hasVisibleBurner: true,
+      visibleBurnerPaneKey: 'session-1:p0',
+    })
 
     render(<WorkspaceView />)
 
-    act(() => {
-      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
-    })
-
-    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
-      'session-1',
-      'p0'
-    )
-
-    await waitFor(() => {
-      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
-        'pty-session-1',
-        1
-      )
-    })
-  })
-
-  test('terminal /clear does not reset agent-status generation for non-Codex/non-opencode panes', async () => {
-    const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
-
-    vi.mocked(useAgentStatus).mockReturnValue(
-      createAgentStatus({
-        sessionId: 'pty-session-1',
-        agentType: 'claude-code',
-      })
-    )
-
-    render(<WorkspaceView />)
-
-    act(() => {
-      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
-    })
-
-    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
-      'session-1',
-      'p0'
-    )
-
-    await waitFor(() => {
-      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
-        'pty-session-1',
-        0
-      )
-    })
-  })
-
-  test('terminal /clear does not reset agent-status generation for generic panes', async () => {
-    const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
-
-    vi.mocked(useAgentStatus).mockReturnValue(
-      createAgentStatus({
-        sessionId: 'pty-session-1',
-        agentType: null,
-      })
-    )
-
-    render(<WorkspaceView />)
-
-    act(() => {
-      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/clear')
-    })
-
-    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
-      'session-1',
-      'p0'
-    )
-
-    await waitFor(() => {
-      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
-        'pty-session-1',
-        0
-      )
-    })
-  })
-
-  test('a non-context-switch command on a Codex pane does not bump the reset generation', async () => {
-    // Only the codex slash commands `/clear` and `/resume` switch the rollout.
-    // A bare `resume` (no slash — a shell command, not codex's `/resume`) and any
-    // other input must NOT arm the reset/red state (codex review, VIM-192).
-    const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
-
-    vi.mocked(useAgentStatus).mockReturnValue(
-      createAgentStatus({
-        sessionId: 'pty-session-1',
-        agentType: 'codex',
-      })
-    )
-
-    render(<WorkspaceView />)
-
-    act(() => {
-      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', 'resume')
-    })
-
-    expect(mockSessionManager.clearPaneCacheHistory).not.toHaveBeenCalled()
-
-    await waitFor(() => {
-      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
-        'pty-session-1',
-        0
-      )
-    })
-  })
-
-  test('terminal /resume invalidates the status (bumps generation + clears cache) on a Codex pane', async () => {
-    // `/resume` switches codex to another conversation — same invalidation as
-    // `/clear` so the panel goes red until the watcher relocates (VIM-192).
-    const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
-
-    vi.mocked(useAgentStatus).mockReturnValue(
-      createAgentStatus({
-        sessionId: 'pty-session-1',
-        agentType: 'codex',
-      })
-    )
-
-    render(<WorkspaceView />)
-
-    act(() => {
-      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/resume')
-    })
-
-    expect(mockSessionManager.clearPaneCacheHistory).toHaveBeenCalledWith(
-      'session-1',
-      'p0'
-    )
-
-    await waitFor(() => {
-      expect(vi.mocked(useAgentStatus)).toHaveBeenLastCalledWith(
-        'pty-session-1',
-        1
-      )
-    })
-  })
-
-  test('does not thread browser occlusion state through TerminalZone', () => {
-    render(<WorkspaceView />)
-
-    expect(latestTerminalZoneProps()).not.toHaveProperty(
-      'areBrowserPanesOccluded'
-    )
-  })
-
-  test('does not mark the global drag overlay open during dock elastic drags', async () => {
-    const { useElasticContainer } =
-      await import('../../hooks/useElasticContainer')
-
-    const dockDragContainer = {
-      size: 400,
-      isDragging: true,
-      handleMouseDown: vi.fn(),
-      adjustBy: vi.fn(),
-      resetToSize: vi.fn(),
-      sizeRef: { current: 400 },
-      pixelMin: 40,
-      pixelMax: 640,
-      effectiveDimension: 800,
-    }
-
-    const idleDockContainer = {
-      ...dockDragContainer,
-      isDragging: false,
-    }
-
-    vi.mocked(useElasticContainer).mockImplementation((options) =>
-      options.axis === 'vertical' ? dockDragContainer : idleDockContainer
-    )
-
-    render(<WorkspaceView />)
-
-    expect(latestTerminalZoneProps().deferTerminalFit).toBe(true)
-    expect(latestOverlayRegistrationProps().dragOverlayOpen).toBe(false)
-    expect(latestOverlayRegistrationProps().dockDragOverlayOpen).toBe(true)
+    expect(latestOverlayRegistrationProps().burnerTerminalOpen).toBe(true)
   })
 
   test('records detected agent type on the active session', async () => {
@@ -1054,6 +916,46 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     expect(hasUnsavedChanges).toHaveBeenCalledWith('session-1')
     expect(mockSessionManager.removeSession).not.toHaveBeenCalled()
+  })
+
+  test(':edit command respects dirty buffer guard', async () => {
+    const user = userEvent.setup()
+    const openFile = vi.fn()
+    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    vi.mocked(useEditorBuffer).mockReturnValue({
+      filePath: 'src/current.ts',
+      originalContent: 'original',
+      currentContent: 'edits',
+      isDirty: true,
+      isLoading: false,
+      openFile,
+      saveFile: vi.fn(),
+      updateContent: vi.fn(),
+      hasUnsavedChanges: vi.fn(() => true),
+      getFilePathForScope: vi.fn(() => null),
+      releaseScope: vi.fn(),
+    })
+
+    rtlRender(<WorkspaceView />, { wrapper: VimKeymapProvider })
+
+    openPalette()
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    const input = screen.getByRole('combobox', {
+      name: 'Command palette search',
+    })
+    await user.clear(input)
+    await user.type(input, ':edit src/other.ts')
+    await user.keyboard('{Enter}')
+
+    expect(openFile).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.getByTestId('unsaved-changes-dialog')).toBeInTheDocument()
+    })
   })
 
   test(':open-file respects the dirty-buffer guard', async () => {

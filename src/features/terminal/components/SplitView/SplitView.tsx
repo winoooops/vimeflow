@@ -101,6 +101,8 @@ export interface SplitViewProps {
   /** Pane-keys whose burner terminal cwd has drifted from its host pane cwd. */
   outOfSyncBurnerPaneKeys?: ReadonlySet<string>
   deferTerminalFit?: boolean
+  showPaneFocusHighlight?: boolean
+  terminalFontFamily?: string
 }
 
 export interface SplitViewHandle {
@@ -196,6 +198,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       runningBurnerPaneKeys = undefined,
       outOfSyncBurnerPaneKeys = undefined,
       deferTerminalFit = false,
+      showPaneFocusHighlight = true,
+      terminalFontFamily = undefined,
     }: SplitViewProps,
     ref
   ): ReactElement {
@@ -691,6 +695,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                             : undefined
                         }
                         deferFit={deferTerminalFit}
+                        showFocusHighlight={showPaneFocusHighlight}
+                        terminalFontFamily={terminalFontFamily}
                         paneDraggable={dndEnabled}
                         onHeaderDragStart={(event): void =>
                           handlePaneDragStart(pane.id, event)

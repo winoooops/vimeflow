@@ -23,6 +23,7 @@ import {
   COMMAND_PALETTE_SHORTCUT_KEYS,
   isCommandPaletteToggle,
 } from '../shortcutConfig'
+import { isKeymapCaptureTarget } from '../../keymap/capture'
 
 const LEADER_WINDOW_MS = 500
 
@@ -57,6 +58,11 @@ export const useCommandPalette = (
   options: UseCommandPaletteOptions = {}
 ): UseCommandPaletteReturn => {
   const isEnabled = options.enabled ?? true
+  const fallbackToggleEvent = options.isToggleEvent ?? isCommandPaletteToggle
+
+  const isPaletteToggleEvent =
+    options.isPaletteToggleEvent ?? fallbackToggleEvent
+  const isLeaderEvent = options.isLeaderEvent ?? fallbackToggleEvent
 
   const [state, setState] = useState<CommandPaletteState>({
     isOpen: false,
@@ -67,9 +73,13 @@ export const useCommandPalette = (
   const leaderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaderActiveRef = useRef(false)
   const isEnabledRef = useRef(isEnabled)
+  const isPaletteToggleEventRef = useRef(isPaletteToggleEvent)
+  const isLeaderEventRef = useRef(isLeaderEvent)
   const originalThemeIdRef = useRef<ThemeId | null>(null)
 
   isEnabledRef.current = isEnabled
+  isPaletteToggleEventRef.current = isPaletteToggleEvent
+  isLeaderEventRef.current = isLeaderEvent
 
   const clearLeaderWindow = useCallback((): void => {
     if (leaderTimerRef.current) {
@@ -451,13 +461,37 @@ export const useCommandPalette = (
 
   // Global keyboard listener — registered once for the hook's lifetime.
   useEffect(() => {
-    // Platform command-palette toggle handling shared by the renderer keydown path and the Electron
-    // before-input-event override. In the packaged app Electron owns the
-    // toggle binding and consumes it before the renderer sees it, dispatching
-    // an IPC toggle instead; this callback drives the same leader window so
-    // the follow-up chord key (NOT intercepted) still reaches handleKeyDown
-    // below and routes through chordRegistry / usePaneRenameChord.
-    const handlePaletteShortcut = (): void => {
+    const handleDirectPaletteShortcut = (): void => {
+      if (isKeymapCaptureTarget(document.activeElement)) {
+        return
+      }
+
+      if (!isEnabledRef.current) {
+        handlersRef.current.close()
+
+        return
+      }
+
+      clearLeaderWindow()
+
+      if (stateRef.current.isOpen) {
+        handlersRef.current.close()
+      } else {
+        handlersRef.current.open()
+      }
+    }
+
+    // Platform leader handling shared by the renderer keydown path and the
+    // Electron before-input-event override. In the packaged app Electron owns
+    // the binding and consumes it before the renderer sees it, dispatching an
+    // IPC toggle instead; this callback drives the same leader window so the
+    // follow-up chord key (NOT intercepted) still reaches handleKeyDown below
+    // and routes through chordRegistry / usePaneRenameChord.
+    const handleLeaderShortcut = (): void => {
+      if (isKeymapCaptureTarget(document.activeElement)) {
+        return
+      }
+
       if (!isEnabledRef.current) {
         handlersRef.current.close()
 
@@ -481,14 +515,21 @@ export const useCommandPalette = (
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (isCommandPaletteToggle(event) && event.repeat) {
+      if (isKeymapCaptureTarget(event.target)) {
+        return
+      }
+
+      const matchesLeaderEvent = isLeaderEventRef.current(event)
+      const matchesPaletteToggleEvent = isPaletteToggleEventRef.current(event)
+
+      if ((matchesLeaderEvent || matchesPaletteToggleEvent) && event.repeat) {
         fullyConsumeEvent(event)
 
         return
       }
 
       if (leaderActiveRef.current) {
-        if (isCommandPaletteToggle(event)) {
+        if (matchesLeaderEvent || matchesPaletteToggleEvent) {
           fullyConsumeEvent(event)
           clearLeaderWindow()
           handlersRef.current.open()
@@ -518,12 +559,20 @@ export const useCommandPalette = (
         return
       }
 
-      // The palette toggle starts a short leader window. If no chord consumes the
-      // follow-up key, the palette opens after the window or immediately on
-      // the non-chord key.
-      if (isCommandPaletteToggle(event)) {
+      // The leader prefix starts a short leader window. If no chord consumes
+      // the follow-up key, the palette opens after the window or immediately on
+      // the non-chord key. Check it before the direct palette shortcut so the
+      // shared default Mod+; preserves the existing leader behavior.
+      if (matchesLeaderEvent) {
         fullyConsumeEvent(event)
-        handlePaletteShortcut()
+        handleLeaderShortcut()
+
+        return
+      }
+
+      if (matchesPaletteToggleEvent) {
+        fullyConsumeEvent(event)
+        handleDirectPaletteShortcut()
 
         return
       }
@@ -564,7 +613,15 @@ export const useCommandPalette = (
     }
 
     const unlistenCommandPaletteToggle = listenCommandPaletteToggle(
-      handlePaletteShortcut
+      (source) => {
+        if (source === 'palette') {
+          handleDirectPaletteShortcut()
+
+          return
+        }
+
+        handleLeaderShortcut()
+      }
     )
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })

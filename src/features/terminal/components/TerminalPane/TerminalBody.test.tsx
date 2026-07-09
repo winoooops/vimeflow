@@ -22,6 +22,7 @@ const bodyMocks = vi.hoisted(() => ({
     onRequestFocus?: () => void
     shortcutContext?: NativeGhosttyShortcutContext
     bottomCornerRadius?: number
+    terminalFontFamily?: string
   } | null,
   xtermFocus: vi.fn(),
 }))
@@ -34,17 +35,20 @@ vi.mock('./GhosttyBody', () => {
     onRequestFocus = undefined,
     shortcutContext = undefined,
     bottomCornerRadius = undefined,
+    terminalFontFamily = undefined,
   }: {
     onUnavailable?: () => void
     onRequestFocus?: () => void
     shortcutContext?: NativeGhosttyShortcutContext
     bottomCornerRadius?: number
+    terminalFontFamily?: string
   }): ReactElement => {
     bodyMocks.ghosttyProps = {
       onUnavailable,
       onRequestFocus,
       shortcutContext,
       bottomCornerRadius,
+      terminalFontFamily,
     }
 
     return <div data-testid="ghostty-body" />
@@ -147,6 +151,24 @@ describe('TerminalBody', () => {
     )
 
     expect(bodyMocks.ghosttyProps?.bottomCornerRadius).toBe(10)
+  })
+
+  test('passes terminal font family to native Ghostty body', () => {
+    render(
+      <TerminalBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        terminalFontFamily="Iosevka"
+        mode="attach"
+        deferFit={deferFit}
+        enableImagePaste={enableImagePaste}
+      />
+    )
+
+    expect(bodyMocks.ghosttyProps?.terminalFontFamily).toBe('Iosevka')
   })
 
   test('falls back to xterm when imperative native focus rejects', async () => {

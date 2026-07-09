@@ -1,0 +1,457 @@
+import { useState, type ReactElement } from 'react'
+import { describe, expect, test, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import {
+  SETTINGS_SECTIONS,
+  SETTINGS_SUBSECTIONS,
+  SETTINGS_TARGET_IDS,
+  SETTINGS_TARGETS,
+} from '../sections'
+import type { SettingsSectionId } from '../types'
+import { SettingsSidebar } from './SettingsSidebar'
+
+const redactTarget = SETTINGS_TARGETS.find(
+  (target) => target.id === SETTINGS_TARGET_IDS.generalRedactPrivateValues
+)!
+
+const fontsSubsection = SETTINGS_SUBSECTIONS.find(
+  (subsection) => subsection.id === 'appearance-fonts'
+)!
+
+const StatefulSidebar = (): ReactElement => {
+  const [query, setQuery] = useState('')
+
+  return (
+    <SettingsSidebar
+      sections={SETTINGS_SECTIONS}
+      active="appearance"
+      onPick={() => undefined}
+      query={query}
+      onQuery={setQuery}
+    />
+  )
+}
+
+describe('SettingsSidebar', () => {
+  const baseProps = {
+    sections: SETTINGS_SECTIONS,
+    active: 'appearance' as const,
+    onPick: vi.fn(),
+    query: '',
+    onQuery: vi.fn(),
+  }
+
+  test('renders the search input as a combobox with accessible name', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toBeInTheDocument()
+  })
+
+  test('exposes combobox list semantics on the search input', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    const input = screen.getByRole('combobox', { name: 'Search settings' })
+
+    expect(input).toHaveAttribute('aria-autocomplete', 'list')
+    expect(input).toHaveAttribute('aria-controls', 'settings-search-results')
+    expect(input).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test('points aria-activedescendant at the active section result', () => {
+    render(<SettingsSidebar {...baseProps} active="keymap" />)
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      'settings-search-result-section-keymap'
+    )
+  })
+
+  test('points aria-activedescendant at the active target result', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        active="general"
+        activeTargetId={redactTarget.id}
+      />
+    )
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      `settings-search-result-target-${redactTarget.id}`
+    )
+  })
+
+  test('points aria-activedescendant at the active subsection result', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        subsections={SETTINGS_SUBSECTIONS}
+        activeTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}
+      />
+    )
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      'settings-search-result-subsection-appearance-fonts'
+    )
+  })
+
+  test('uses the selected search result key for aria-activedescendant', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        active="general"
+        activeSearchResultKey={`target:${redactTarget.id}`}
+      />
+    )
+
+    expect(
+      screen.getByRole('combobox', { name: 'Search settings' })
+    ).toHaveAttribute(
+      'aria-activedescendant',
+      `settings-search-result-target-${redactTarget.id}`
+    )
+  })
+
+  test('renders the result list as a listbox', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(screen.getByRole('listbox')).toHaveAttribute(
+      'id',
+      'settings-search-results'
+    )
+  })
+
+  test('renders all section options', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    SETTINGS_SECTIONS.forEach((s) => {
+      expect(screen.getByRole('option', { name: s.label })).toBeInTheDocument()
+    })
+  })
+
+  test('renders subsections under the active expanded section', () => {
+    render(
+      <SettingsSidebar {...baseProps} subsections={SETTINGS_SUBSECTIONS} />
+    )
+
+    expect(screen.getByRole('option', { name: 'Theme' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: 'Interface' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Fonts' })).toBeInTheDocument()
+  })
+
+  test('collapses and expands subsection rows from the section option', async () => {
+    const user = userEvent.setup()
+    render(
+      <SettingsSidebar {...baseProps} subsections={SETTINGS_SUBSECTIONS} />
+    )
+
+    await user.click(screen.getByRole('option', { name: 'Appearance' }))
+
+    expect(screen.queryByRole('option', { name: 'Fonts' })).toBeNull()
+
+    await user.click(screen.getByRole('option', { name: 'Appearance' }))
+
+    expect(screen.getByRole('option', { name: 'Fonts' })).toBeInTheDocument()
+  })
+
+  test('calls onPickSubsection when a subsection is clicked', async () => {
+    const user = userEvent.setup()
+    const onPickSubsection = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        subsections={SETTINGS_SUBSECTIONS}
+        onPickSubsection={onPickSubsection}
+      />
+    )
+
+    await user.click(screen.getByRole('option', { name: 'Fonts' }))
+
+    expect(onPickSubsection).toHaveBeenCalledWith(fontsSubsection)
+  })
+
+  test('marks the active subsection with aria-current and aria-selected', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        subsections={SETTINGS_SUBSECTIONS}
+        activeTargetId={SETTINGS_TARGET_IDS.appearanceUiFont}
+      />
+    )
+
+    expect(
+      screen.getByRole('option', { name: 'Fonts', current: 'location' })
+    ).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('scrolls the active navigation option into view after it changes', async () => {
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => undefined)
+
+    try {
+      const expandedSectionIds = new Set<SettingsSectionId>([
+        'appearance',
+        'keymap',
+      ])
+
+      const { rerender } = render(
+        <SettingsSidebar
+          {...baseProps}
+          subsections={SETTINGS_SUBSECTIONS}
+          activeSubsectionId="appearance-theme"
+          expandedSectionIds={expandedSectionIds}
+        />
+      )
+
+      expect(scrollIntoView).not.toHaveBeenCalled()
+
+      rerender(
+        <SettingsSidebar
+          {...baseProps}
+          active="keymap"
+          subsections={SETTINGS_SUBSECTIONS}
+          activeSubsectionId="keymap-browser"
+          expandedSectionIds={expandedSectionIds}
+        />
+      )
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
+  })
+
+  test('keeps search target rows instead of subsection rows while searching', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        subsections={SETTINGS_SUBSECTIONS}
+        active="general"
+        query="redact"
+      />
+    )
+
+    expect(
+      screen.getByRole('option', { name: 'Redact Private Values' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Privacy' })).toBeNull()
+  })
+
+  test('forwards query changes', async () => {
+    const user = userEvent.setup()
+    render(<StatefulSidebar />)
+
+    await user.type(screen.getByPlaceholderText('Search settings...'), 'term')
+
+    expect(screen.getByPlaceholderText('Search settings...')).toHaveValue(
+      'term'
+    )
+  })
+
+  test('renders a clear search button when the query has text', async () => {
+    const user = userEvent.setup()
+    const onClearQuery = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="term"
+        onClearQuery={onClearQuery}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Clear settings search' })
+    )
+
+    expect(onClearQuery).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not render the clear search button when the query is empty', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(
+      screen.queryByRole('button', { name: 'Clear settings search' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('forwards search result keyboard navigation', async () => {
+    const user = userEvent.setup()
+    const onNavigateSearchResult = vi.fn()
+    const onConfirmSearchResult = vi.fn(() => true)
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="redact"
+        onNavigateSearchResult={onNavigateSearchResult}
+        onConfirmSearchResult={onConfirmSearchResult}
+      />
+    )
+
+    await user.click(screen.getByRole('combobox', { name: 'Search settings' }))
+    await user.keyboard('{ArrowDown}{ArrowUp}{Enter}')
+
+    expect(onNavigateSearchResult).toHaveBeenNthCalledWith(1, 'next')
+    expect(onNavigateSearchResult).toHaveBeenNthCalledWith(2, 'previous')
+    expect(onConfirmSearchResult).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps search focused when confirmation reports no result', async () => {
+    const user = userEvent.setup()
+    const onConfirmSearchResult = vi.fn(() => false)
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="missing"
+        onConfirmSearchResult={onConfirmSearchResult}
+      />
+    )
+
+    const input = screen.getByRole('combobox', { name: 'Search settings' })
+
+    await user.click(input)
+    await user.keyboard('{Enter}')
+
+    expect(onConfirmSearchResult).toHaveBeenCalledTimes(1)
+    expect(input).toHaveFocus()
+  })
+
+  test('bypasses search shortcuts while IME composition is active', () => {
+    const onNavigateSearchResult = vi.fn()
+    const onConfirmSearchResult = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        query="redact"
+        onNavigateSearchResult={onNavigateSearchResult}
+        onConfirmSearchResult={onConfirmSearchResult}
+      />
+    )
+
+    const input = screen.getByRole('combobox', { name: 'Search settings' })
+
+    fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+
+    expect(onNavigateSearchResult).not.toHaveBeenCalled()
+    expect(onConfirmSearchResult).not.toHaveBeenCalled()
+  })
+
+  test('calls onPick with the section id when an option is clicked', async () => {
+    const user = userEvent.setup()
+    const onPick = vi.fn()
+    render(<SettingsSidebar {...baseProps} onPick={onPick} />)
+
+    await user.click(screen.getByRole('option', { name: 'Keymap' }))
+
+    expect(onPick).toHaveBeenCalledWith('keymap')
+  })
+
+  test('marks the active section with primary text', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(screen.getByRole('option', { name: 'Appearance' })).toHaveClass(
+      'text-primary'
+    )
+  })
+
+  test('marks the active section with aria-current and aria-selected', () => {
+    render(<SettingsSidebar {...baseProps} />)
+
+    expect(
+      screen.getByRole('option', { name: 'Appearance', current: 'page' })
+    ).toHaveAttribute('aria-selected', 'true')
+
+    expect(screen.getByRole('option', { name: 'Keymap' })).not.toHaveAttribute(
+      'aria-current'
+    )
+
+    expect(screen.getByRole('option', { name: 'Keymap' })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
+  })
+
+  test('renders matching option targets under their owning section', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+      />
+    )
+
+    expect(
+      screen.getByRole('option', { name: 'Redact Private Values' })
+    ).toBeInTheDocument()
+  })
+
+  test('calls onPickTarget when an option target is clicked', async () => {
+    const user = userEvent.setup()
+    const onPickTarget = vi.fn()
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        onPickTarget={onPickTarget}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('option', { name: 'Redact Private Values' })
+    )
+
+    expect(onPickTarget).toHaveBeenCalledWith(redactTarget)
+  })
+
+  test('marks the active option target with aria-current and aria-selected', () => {
+    render(
+      <SettingsSidebar
+        {...baseProps}
+        sections={SETTINGS_SECTIONS.filter(
+          (section) => section.id === 'general'
+        )}
+        targets={[redactTarget]}
+        activeTargetId={redactTarget.id}
+      />
+    )
+
+    expect(
+      screen.getByRole('option', {
+        name: 'Redact Private Values',
+        current: 'location',
+      })
+    ).toHaveAttribute('aria-selected', 'true')
+  })
+})

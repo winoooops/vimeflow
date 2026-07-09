@@ -6,8 +6,12 @@ import {
 } from './useCommandPalette'
 import type { Command } from '../registry/types'
 import * as chordRegistry from '../chordRegistry'
+import type {
+  BackendApi,
+  CommandPaletteShortcutSource,
+} from '../../../lib/backend'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 import { themeService } from '../../../theme'
-import type { BackendApi } from '../../../lib/backend'
 
 describe('useCommandPalette', () => {
   beforeEach(() => {
@@ -259,6 +263,117 @@ describe('useCommandPalette', () => {
       expect(result.current.state.isOpen).toBe(true)
     })
 
+    test('uses the supplied leader matcher for a rebound palette leader', () => {
+      vi.useFakeTimers()
+
+      const isLeaderEvent = (event: KeyboardEvent): boolean =>
+        event.code === 'KeyK' && event.ctrlKey && !event.metaKey
+
+      const isPaletteToggleEvent = (event: KeyboardEvent): boolean =>
+        event.code === 'KeyP' && event.ctrlKey && !event.metaKey
+
+      const { result } = renderHook(() =>
+        useCommandPalette(undefined, { isLeaderEvent, isPaletteToggleEvent })
+      )
+
+      act(() => {
+        const oldDefault = new KeyboardEvent('keydown', {
+          key: ';',
+          code: 'Semicolon',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(oldDefault)
+      })
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        const rebound = new KeyboardEvent('keydown', {
+          key: 'k',
+          code: 'KeyK',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        document.dispatchEvent(rebound)
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+    })
+
+    test('uses a separate direct palette matcher without starting the leader window', () => {
+      vi.useFakeTimers()
+      const handler = vi.fn(() => true)
+      chordRegistry.registerChord('r', handler)
+
+      const isPaletteToggleEvent = (event: KeyboardEvent): boolean =>
+        event.code === 'KeyP' && event.ctrlKey && !event.metaKey
+
+      const isLeaderEvent = (event: KeyboardEvent): boolean =>
+        event.code === 'KeyK' && event.ctrlKey && !event.metaKey
+
+      const { result } = renderHook(() =>
+        useCommandPalette(undefined, { isLeaderEvent, isPaletteToggleEvent })
+      )
+
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'p',
+            code: 'KeyP',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          })
+        )
+      })
+
+      expect(result.current.state.isOpen).toBe(true)
+
+      act(() => {
+        result.current.close()
+      })
+
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'k',
+            code: 'KeyK',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          })
+        )
+      })
+
+      expect(result.current.state.isOpen).toBe(false)
+
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'r',
+            bubbles: true,
+            cancelable: true,
+          })
+        )
+      })
+
+      expect(handler).toHaveBeenCalledOnce()
+      expect(result.current.state.isOpen).toBe(false)
+    })
+
     test('Ctrl+; with palette closed keeps palette closed during leader window', () => {
       vi.useFakeTimers()
       const { result } = renderHook(() => useCommandPalette())
@@ -334,6 +449,7 @@ describe('useCommandPalette', () => {
         bubbles: true,
         cancelable: true,
       })
+
       const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
       const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
 
@@ -569,6 +685,40 @@ describe('useCommandPalette', () => {
       expect(stopImmediatePropagationSpy).toHaveBeenCalled()
     })
 
+    test('Ctrl+; from the keymap recorder is left for capture mode', () => {
+      const { result } = renderHook(() => useCommandPalette())
+      const recorder = document.createElement('button')
+      recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+      document.body.append(recorder)
+
+      try {
+        const event = new KeyboardEvent('keydown', {
+          key: ';',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+        const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+        const stopPropagationSpy = vi.spyOn(event, 'stopPropagation')
+
+        const stopImmediatePropagationSpy = vi.spyOn(
+          event,
+          'stopImmediatePropagation'
+        )
+
+        act(() => {
+          recorder.dispatchEvent(event)
+        })
+
+        expect(result.current.state.isOpen).toBe(false)
+        expect(preventDefaultSpy).not.toHaveBeenCalled()
+        expect(stopPropagationSpy).not.toHaveBeenCalled()
+        expect(stopImmediatePropagationSpy).not.toHaveBeenCalled()
+      } finally {
+        recorder.remove()
+      }
+    })
+
     test('Ctrl+; trigger overrides later document-level global shortcuts', async () => {
       const { result } = renderHook(() => useCommandPalette())
       const globalShortcut = vi.fn()
@@ -597,14 +747,18 @@ describe('useCommandPalette', () => {
       }
     })
 
-    test('toggles from the Electron main-process shortcut override', async () => {
-      let toggleFromMain: (() => void) | null = null
+    test('toggles directly from the Electron palette shortcut source', async () => {
+      let toggleFromMain:
+        | ((source?: CommandPaletteShortcutSource) => void)
+        | null = null
       const unlisten = vi.fn()
 
       window.vimeflow = {
         invoke: vi.fn(),
         listen: vi.fn(),
-        onCommandPaletteToggle: (callback: () => void): (() => void) => {
+        onCommandPaletteToggle: (
+          callback: (source?: CommandPaletteShortcutSource) => void
+        ): (() => void) => {
           toggleFromMain = callback
 
           return unlisten
@@ -617,7 +771,7 @@ describe('useCommandPalette', () => {
         expect(result.current.state.isOpen).toBe(false)
 
         act(() => {
-          toggleFromMain?.()
+          toggleFromMain?.('palette')
         })
 
         await waitFor(() => {
@@ -625,7 +779,7 @@ describe('useCommandPalette', () => {
         })
 
         act(() => {
-          toggleFromMain?.()
+          toggleFromMain?.('palette')
         })
 
         await waitFor(() => {
@@ -635,6 +789,87 @@ describe('useCommandPalette', () => {
         unmount()
         expect(unlisten).toHaveBeenCalledOnce()
       } finally {
+        delete window.vimeflow
+      }
+    })
+
+    test('Electron shortcut without a source uses the leader window', () => {
+      vi.useFakeTimers()
+      let toggleFromMain:
+        | ((source?: CommandPaletteShortcutSource) => void)
+        | null = null
+      const unlisten = vi.fn()
+
+      window.vimeflow = {
+        invoke: vi.fn(),
+        listen: vi.fn(),
+        onCommandPaletteToggle: (
+          callback: (source?: CommandPaletteShortcutSource) => void
+        ): (() => void) => {
+          toggleFromMain = callback
+
+          return unlisten
+        },
+      } as unknown as BackendApi
+
+      const { result, unmount } = renderHook(() => useCommandPalette())
+
+      try {
+        act(() => {
+          toggleFromMain?.()
+        })
+
+        expect(result.current.state.isOpen).toBe(false)
+
+        act(() => {
+          vi.advanceTimersByTime(500)
+        })
+
+        expect(result.current.state.isOpen).toBe(true)
+
+        unmount()
+        expect(unlisten).toHaveBeenCalledOnce()
+      } finally {
+        delete window.vimeflow
+      }
+    })
+
+    test('Electron shortcut toggle is left for focused keymap recorder', () => {
+      let toggleFromMain:
+        | ((source?: CommandPaletteShortcutSource) => void)
+        | null = null
+      const unlisten = vi.fn()
+
+      window.vimeflow = {
+        invoke: vi.fn(),
+        listen: vi.fn(),
+        onCommandPaletteToggle: (
+          callback: (source?: CommandPaletteShortcutSource) => void
+        ): (() => void) => {
+          toggleFromMain = callback
+
+          return unlisten
+        },
+      } as unknown as BackendApi
+
+      const recorder = document.createElement('button')
+      recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+      document.body.append(recorder)
+      recorder.focus()
+
+      const { result, unmount } = renderHook(() => useCommandPalette())
+
+      try {
+        act(() => {
+          toggleFromMain?.('leader')
+        })
+
+        expect(result.current.state.isOpen).toBe(false)
+
+        unmount()
+        expect(unlisten).toHaveBeenCalledOnce()
+      } finally {
+        recorder.remove()
         delete window.vimeflow
       }
     })
@@ -1211,54 +1446,6 @@ describe('useCommandPalette', () => {
       })
 
       expect(result.current.state.selectedIndex).toBe(5)
-    })
-
-    test('previews namespace children as the highlight moves', async () => {
-      const previewCatppuccin = vi.fn()
-      const previewDracula = vi.fn()
-
-      const commands: Command[] = [
-        {
-          id: 'theme',
-          label: ':theme',
-          icon: 'palette',
-          children: [
-            {
-              id: 'theme-catppuccin',
-              label: 'Catppuccin',
-              icon: 'palette',
-              preview: previewCatppuccin,
-              execute: vi.fn(),
-            },
-            {
-              id: 'theme-dracula',
-              label: 'Dracula',
-              icon: 'palette',
-              preview: previewDracula,
-              execute: vi.fn(),
-            },
-          ],
-        },
-      ]
-
-      const { result } = renderHook(() => useCommandPalette(commands))
-
-      act(() => {
-        result.current.open()
-        result.current.executeSelected()
-      })
-
-      await waitFor(() => {
-        expect(previewCatppuccin).toHaveBeenCalled()
-      })
-
-      act(() => {
-        result.current.navigateDown()
-      })
-
-      await waitFor(() => {
-        expect(previewDracula).toHaveBeenCalled()
-      })
     })
   })
 

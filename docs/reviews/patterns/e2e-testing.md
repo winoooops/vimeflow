@@ -2,7 +2,7 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-05
+last_updated: 2026-07-09
 ref_count: 18
 ---
 
@@ -428,3 +428,32 @@ already exists` before the spec could assert agent status rendering.
 - **Finding:** The native-overlay layering spec lived in the Linux core suite but skipped unless `process.platform === 'darwin'`. The macOS Ghostty workflow used an explicit `--spec` filter that only selected the terminal smoke spec, so the layering assertions never ran in CI.
 - **Fix:** Added the layering spec to the macOS Ghostty E2E npm script, which the workflow already runs with native Ghostty and native-overlay environment variables enabled.
 - **Commit:** same commit as this entry
+
+### 37. Shortcut helpers should not retrigger delayed leader windows while waiting
+
+- **Source:** deterministic CI failure | PR #672 round 3 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** The command-palette E2E helper dispatched the palette shortcut
+  on every wait retry. With the leader-window behavior, those repeated dispatches
+  could keep changing the shortcut state instead of letting the palette open,
+  causing the Linux smoke suite to time out.
+- **Fix:** Dispatch the shortcut at most once when the palette is not already
+  visible, then wait only for the input to appear.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. E2E shortcut probes should not depend on async main-process listener delivery
+
+- **Source:** deterministic CI failure | PR #672 round 4 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/lib/e2e-bridge.ts`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The terminal keymap smoke helper received a handled
+  command-palette shortcut response from the Electron E2E IPC path, then timed
+  out waiting for the palette input. The helper depended on main sending a
+  toggle event back through the renderer listener before the assertion window,
+  so a successful IPC response did not prove the renderer opened the palette.
+- **Fix:** Register the renderer-owned `commandPalette.open` callback with the
+  E2E bridge while `WorkspaceView` is mounted. The E2E shortcut helper now
+  invokes that opener directly before falling back to the main-process shortcut
+  path, keeping production code inert outside `VITE_E2E`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

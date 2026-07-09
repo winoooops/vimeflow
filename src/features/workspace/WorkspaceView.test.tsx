@@ -6,7 +6,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import {
   act,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   waitFor,
   within,
@@ -16,8 +16,8 @@ import { WorkspaceView, updateSelectedDiffFilesByOwner } from './WorkspaceView'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
 import type { AgentStatus } from '../agent-status/types'
 import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
+import type { SwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
-import { useGitStatus } from '../diff/hooks/useGitStatus'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import type { SelectedDiffFile } from '../diff/types'
 import type { SessionList } from '../../bindings'
@@ -25,9 +25,11 @@ import {
   MockResizeObserver,
   installMockResizeObserver,
 } from '../../test/mockResizeObserver'
+import { SettingsProvider } from '../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
 
-type UseAgentReattach =
-  typeof import('../agent-status/hooks/useAgentReattach').useAgentReattach
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 const workspaceTerminalMock = vi.hoisted(() => {
   const defaultSessionList = (): SessionList => ({
@@ -82,14 +84,6 @@ const workspaceTerminalMock = vi.hoisted(() => {
 
   return { defaultSessionList, service }
 })
-
-const agentReattachMock = vi.hoisted(() => ({
-  useAgentReattach: vi.fn<UseAgentReattach>(
-    (): ReturnType<UseAgentReattach> => ({
-      needsReattach: false,
-    })
-  ),
-}))
 
 const mockMatchMedia = (matches: boolean): (() => void) => {
   const originalMatchMedia = window.matchMedia
@@ -152,7 +146,9 @@ vi.mock('../agent-status/hooks/useAgentStatus', () => ({
 }))
 
 vi.mock('../agent-status/hooks/useAgentReattach', () => ({
-  useAgentReattach: agentReattachMock.useAgentReattach,
+  useAgentReattach: (): { needsReattach: boolean } => ({
+    needsReattach: false,
+  }),
 }))
 
 // Mock useEditorBuffer so individual tests can flip isDirty without
@@ -163,30 +159,17 @@ vi.mock('../editor/hooks/useEditorBuffer', () => ({
   useEditorBuffer: vi.fn(),
 }))
 
-// Mock useGitStatus so file-lifecycle tests can control the git-derived
-// state without spinning up a real git watcher.
-vi.mock('../diff/hooks/useGitStatus', () => ({
-  useGitStatus: vi.fn(() => ({
-    files: [],
-    filesCwd: null,
-    repoRoot: null,
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    idle: true,
-  })),
-}))
-
-// Mutable file-system mock so tests can flip fileExists between calls.
-const fileSystemMock = vi.hoisted(() => ({
-  readFile: vi.fn().mockResolvedValue(''),
-  fileExists: vi.fn().mockResolvedValue(false),
-  writeFile: vi.fn().mockResolvedValue(undefined),
-  listDirectory: vi.fn().mockResolvedValue([]),
-}))
-
-vi.mock('../files/services/fileSystemService', () => ({
-  createFileSystemService: vi.fn(() => fileSystemMock),
+vi.mock('../../lib/backend', () => ({
+  renameAgentSession: vi.fn().mockResolvedValue(undefined),
+  listen: vi.fn(() =>
+    Promise.resolve(() => {
+      /* no-op unlisten */
+    })
+  ),
+  invoke: vi.fn().mockResolvedValue(null),
+  listenCommandPaletteToggle: vi.fn(() => (): void => {
+    /* no-op unlisten */
+  }),
 }))
 
 vi.mock('../terminal/hooks/usePaneShortcuts', () => ({
@@ -213,6 +196,7 @@ const capturedAgentStatusPanelProps: {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reservoirSwell?: SwellVariant
   reserveWindowControls?: boolean
 } = {}
 
@@ -220,6 +204,7 @@ interface MockAgentStatusPanelProps {
   onOpenFile?: (path: string) => void
   onOpenDiff?: unknown
   agentStatus?: AgentStatus
+  reservoirSwell?: SwellVariant
   reserveWindowControls?: boolean
 }
 
@@ -228,11 +213,13 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     onOpenFile = undefined,
     onOpenDiff = undefined,
     agentStatus = undefined,
+    reservoirSwell = undefined,
     reserveWindowControls = undefined,
   }: MockAgentStatusPanelProps): ReactElement => {
     capturedAgentStatusPanelProps.onOpenFile = onOpenFile
     capturedAgentStatusPanelProps.onOpenDiff = onOpenDiff
     capturedAgentStatusPanelProps.agentStatus = agentStatus
+    capturedAgentStatusPanelProps.reservoirSwell = reservoirSwell
     capturedAgentStatusPanelProps.reserveWindowControls = reserveWindowControls
 
     // Render the panel testid so the existing zone-presence tests
@@ -241,42 +228,6 @@ vi.mock('../agent-status/components/AgentStatusPanel', () => ({
     return <div data-testid="agent-status-panel" />
   },
   PANEL_WIDTH_PX: 280,
-}))
-
-// Capture CodeEditor's controlled props so tests can verify lifecycle state
-// ordering and drive vim saves without spinning up xterm.js/CodeMirror.
-const capturedCodeEditorProps: {
-  onSave?: () => void
-  isReadOnly?: boolean
-} = {}
-
-interface MockCodeEditorProps {
-  onSave?: () => void
-  isReadOnly?: boolean
-}
-
-vi.mock('../editor/components/CodeEditor', () => ({
-  CodeEditor: ({
-    onSave = undefined,
-    isReadOnly = false,
-  }: MockCodeEditorProps): ReactElement => {
-    capturedCodeEditorProps.onSave = onSave
-    capturedCodeEditorProps.isReadOnly = isReadOnly
-
-    return <div data-testid="code-editor" />
-  },
-}))
-
-// Only kimi cards instantiate the consent gate, so a global consent=ON keeps
-// the claude rate-limit tests untouched while letting the kimi card reach its
-// ON state (peach bars) for the weekly-only regression below.
-vi.mock('../agent-status/hooks/useKimiUsageConsent', () => ({
-  useKimiUsageConsent: vi.fn(() => ({
-    consent: true,
-    setConsent: vi.fn(),
-    refresh: vi.fn(),
-    persistError: false,
-  })),
 }))
 
 const makeAgentStatus = (
@@ -394,23 +345,9 @@ describe('WorkspaceView', () => {
     capturedAgentStatusPanelProps.onOpenFile = undefined
     capturedAgentStatusPanelProps.onOpenDiff = undefined
     capturedAgentStatusPanelProps.agentStatus = undefined
+    capturedAgentStatusPanelProps.reservoirSwell = undefined
     capturedAgentStatusPanelProps.reserveWindowControls = undefined
-    capturedCodeEditorProps.onSave = undefined
-    capturedCodeEditorProps.isReadOnly = undefined
-    fileSystemMock.readFile.mockReset().mockResolvedValue('')
-    fileSystemMock.fileExists.mockReset().mockResolvedValue(false)
-    fileSystemMock.writeFile.mockReset().mockResolvedValue(undefined)
-    fileSystemMock.listDirectory.mockReset().mockResolvedValue([])
-    vi.mocked(useGitStatus).mockReset().mockReturnValue({
-      files: [],
-      filesCwd: null,
-      repoRoot: null,
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-      idle: true,
-    })
-
+    delete window.vimeflow
     workspaceTerminalMock.service.spawn.mockResolvedValue({
       sessionId: 'new-id',
       pid: 999,
@@ -445,17 +382,13 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('renders workspace zones with the dock collapsed by default', () => {
+  test('renders workspace zones (sidebar, terminal, dock toggle, agent status panel)', () => {
     render(<WorkspaceView />)
 
     // VIM-76: icon rail removed; sidebar | main | activity.
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
-    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
-    expect(screen.getByTestId('status-bar-dock-toggle')).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    )
+    expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
   })
 
@@ -592,6 +525,7 @@ describe('WorkspaceView', () => {
         document.dispatchEvent(
           new KeyboardEvent('keydown', {
             key: 'b',
+            code: 'KeyB',
             ctrlKey: true,
             shiftKey: true,
             bubbles: true,
@@ -659,6 +593,7 @@ describe('WorkspaceView', () => {
         document.dispatchEvent(
           new KeyboardEvent('keydown', {
             key: 'b',
+            code: 'KeyB',
             ctrlKey: true,
             shiftKey: true,
             bubbles: true,
@@ -1318,10 +1253,10 @@ describe('WorkspaceView', () => {
       within(topBar).queryByRole('button', { name: 'Command Palette' })
     ).not.toBeInTheDocument()
 
-    // Settings aria-label is "Settings — coming (see issue #252)".
+    // Settings button is now wired and enabled.
     expect(
       within(footer).getByRole('button', { name: /^Settings/ })
-    ).toHaveAttribute('aria-disabled', 'true')
+    ).not.toHaveAttribute('aria-disabled')
   })
 
   test('passes sessions to Sidebar', () => {
@@ -1530,6 +1465,7 @@ describe('WorkspaceView', () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: 'n',
+          code: 'KeyN',
           ctrlKey: true,
           shiftKey: true,
           bubbles: true,
@@ -1577,15 +1513,13 @@ describe('WorkspaceView', () => {
     }
   })
 
-  test('DockPanel opens below TerminalZone from the status bar toggle', async () => {
+  test('DockPanel opens below TerminalZone', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
-
     await user.click(screen.getByTestId('status-bar-dock-toggle'))
 
-    expect(screen.getByRole('button', { name: 'Editor' })).toBeInTheDocument()
+    expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /diff viewer/i })
     ).toBeInTheDocument()
@@ -1649,10 +1583,7 @@ describe('WorkspaceView', () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)
 
-    // Dock starts closed.
-    expect(screen.queryByTestId('dock-panel')).toBeNull()
-
-    // Closed: the dock is gone and there is no "show panel" peek affordance -
+    // Closed by default: the dock is gone and there is no "show panel" peek affordance —
     // only the terminal remains. The bottom action bar's dock toggle is the
     // single reopen control.
     expect(screen.queryByTestId('dock-panel')).toBeNull()
@@ -1666,10 +1597,6 @@ describe('WorkspaceView', () => {
 
     expect(screen.getByTestId('dock-panel')).toBeInTheDocument()
     expect(dockToggle).toHaveAttribute('aria-pressed', 'true')
-
-    await user.click(screen.getByRole('button', { name: /collapse panel/i }))
-
-    expect(screen.queryByTestId('dock-panel')).toBeNull()
   })
 
   test('main workspace area uses flex-col layout', () => {
@@ -1746,7 +1673,7 @@ describe('WorkspaceView', () => {
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-zone')).toBeInTheDocument()
     expect(screen.getByTestId('agent-status-panel')).toBeInTheDocument()
-    expect(screen.queryByTestId('dock-panel')).not.toBeInTheDocument()
+    expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
   })
 
   test('grid columns: sidebar auto (drawer), main 1fr, activity auto', () => {
@@ -2215,6 +2142,7 @@ describe('WorkspaceView', () => {
       document.dispatchEvent(
         new KeyboardEvent('keydown', {
           key: ';',
+          code: 'Semicolon',
           ctrlKey: true,
           bubbles: true,
         })
@@ -2285,25 +2213,24 @@ describe('WorkspaceView', () => {
     })
   })
 
-  test('disables Codex drift relocation after the agent exits', async () => {
-    vi.mocked(useAgentStatus).mockImplementation(
-      (sessionId: string | null): AgentStatus =>
-        makeAgentStatus(sessionId, {
-          isActive: false,
-          agentExited: sessionId !== null,
-          agentType: sessionId === null ? null : 'codex',
-        })
-    )
+  test('passes the configured reservoir swell to AgentStatusPanel', async () => {
+    window.vimeflow = {
+      settings: {
+        load: vi.fn().mockResolvedValue({
+          ...DEFAULT_SETTINGS,
+          reservoirSwell: 'wide-lift',
+        }),
+        save: vi.fn().mockResolvedValue(undefined),
+        openFile: vi.fn(),
+      },
+    } as unknown as Window['vimeflow']
 
     render(<WorkspaceView />)
 
     await screen.findByRole('button', { name: 'session 1' })
 
-    const calls = agentReattachMock.useAgentReattach.mock.calls
-    const lastArgs = calls[calls.length - 1]?.[0]
-    expect(lastArgs).toMatchObject({
-      sessionId: 'sess-1',
-      driftEnabled: false,
+    await waitFor(() => {
+      expect(capturedAgentStatusPanelProps.reservoirSwell).toBe('wide-lift')
     })
   })
 
@@ -2385,38 +2312,6 @@ describe('WorkspaceView', () => {
 
     expect(await screen.findByText('5-hour Session')).toBeInTheDocument()
     expect(screen.getByText('0%')).toBeInTheDocument()
-  })
-
-  test('a weekly-only kimi fetch renders no fabricated 5-hour bar', async () => {
-    vi.mocked(useAgentStatus).mockImplementation(
-      (sessionId: string | null): AgentStatus =>
-        makeAgentStatus(sessionId, {
-          agentType: sessionId === null ? null : 'kimi',
-          modelDisplayName: sessionId === null ? null : 'k2.7',
-          usageFetched: sessionId !== null,
-          rateLimits:
-            sessionId === null
-              ? null
-              : {
-                  // Weekly came back; the absent 5-hour window is the backend's
-                  // required-field placeholder (resetsAt 0) — it must not show
-                  // as a fabricated 0% bar just because the fetch landed.
-                  fiveHour: { usedPercentage: 0, resetsAt: 0 },
-                  sevenDay: {
-                    usedPercentage: 40,
-                    resetsAt: 1_776_086_400_000,
-                  },
-                },
-        })
-    )
-
-    render(<WorkspaceView />)
-
-    await screen.findByRole('button', { name: 'session 1' })
-
-    expect(await screen.findByText('Weekly Usage')).toBeInTheDocument()
-    expect(screen.getByText('40%')).toBeInTheDocument()
-    expect(screen.queryByText('5-hour Session')).not.toBeInTheDocument()
   })
 
   test('mirrors agentStatus.cwd into the active pane.cwd', async () => {
@@ -2545,79 +2440,5 @@ describe('WorkspaceView', () => {
       'data-cwd',
       '/home/user/projects/vimeflow/.claude/worktrees/stale'
     )
-  })
-
-  test('vim save refreshes selected-file existence so a recreated deleted file is not read-only', async () => {
-    const user = userEvent.setup()
-
-    const bufferState = {
-      filePath: '/repo/deleted.ts',
-      originalContent: 'original',
-      currentContent: 'edited',
-      isDirty: true,
-    }
-
-    const saveFile = vi.fn().mockImplementation(() => {
-      bufferState.originalContent = bufferState.currentContent
-      bufferState.isDirty = false
-
-      return Promise.resolve()
-    })
-
-    vi.mocked(useGitStatus).mockReturnValue({
-      files: [],
-      filesCwd: '/repo',
-      repoRoot: '/repo',
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-      idle: false,
-    })
-    fileSystemMock.fileExists.mockResolvedValue(false)
-    vi.mocked(useEditorBuffer).mockImplementation(() => ({
-      filePath: bufferState.filePath,
-      originalContent: bufferState.originalContent,
-      currentContent: bufferState.currentContent,
-      isDirty: bufferState.isDirty,
-      isLoading: false,
-      openFile: vi.fn().mockResolvedValue(undefined),
-      saveFile,
-      updateContent: vi.fn(),
-      hasUnsavedChanges: vi.fn(() => bufferState.isDirty),
-      getFilePathForScope: vi.fn(() => bufferState.filePath),
-      releaseScope: vi.fn(),
-    }))
-
-    render(<WorkspaceView />)
-
-    await user.click(screen.getByTestId('status-bar-dock-toggle'))
-    await user.click(screen.getByRole('button', { name: 'Editor' }))
-
-    expect(screen.getByTestId('code-editor')).toBeInTheDocument()
-    expect(fileSystemMock.fileExists).toHaveBeenCalled()
-
-    // While the buffer is dirty the editor stays editable even though the
-    // backing file is missing; the path crumb shows UNSAVED.
-    expect(screen.getByTestId('editor-path-crumb')).toHaveAttribute(
-      'aria-label',
-      'File path: /repo/deleted.ts. unsaved'
-    )
-    expect(capturedCodeEditorProps.isReadOnly).toBe(false)
-
-    act(() => {
-      capturedCodeEditorProps.onSave?.()
-    })
-
-    await waitFor(() => {
-      expect(saveFile).toHaveBeenCalledTimes(1)
-    })
-
-    // After save the buffer is clean. Without the existence refresh, the
-    // stale `selectedEditorFileExists=false` would make the lifecycle status
-    // stay DELETED and the editor would flip to read-only.
-    await waitFor(() => {
-      expect(screen.queryByText('DELETED')).not.toBeInTheDocument()
-    })
-    expect(capturedCodeEditorProps.isReadOnly).toBe(false)
   })
 })

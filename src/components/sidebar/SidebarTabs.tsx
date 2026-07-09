@@ -1,10 +1,15 @@
-import { type ReactElement } from 'react'
+import { type ReactElement, type ReactNode } from 'react'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import { type ShortcutInput } from '../../lib/formatShortcut'
 
 export interface SidebarTabItem<TId extends string = string> {
   id: TId
   label: string
   icon?: string
+  /** Optional tooltip body shown on hover/focus. */
+  tooltip?: ReactNode
+  /** Optional keyboard-shortcut chip rendered inside the tooltip. */
+  shortcut?: ShortcutInput
 }
 
 export interface SidebarTabsProps<TId extends string = string> {
@@ -15,14 +20,6 @@ export interface SidebarTabsProps<TId extends string = string> {
   'data-testid'?: string
 }
 
-// Recessed segmented-control track (per the SidebarViewSwitcher handoff): the
-// active segment is a sliding lavender thumb behind the buttons, not a per-tab
-// border. role="group" + aria-pressed — v1 ships no roving/arrow keyboard
-// contract, so this stays an honest group rather than a tablist/toolbar.
-//
-// 202px is the default sidebar row width left over for this switcher:
-// 272px sidebar - 24px row padding - 8px gap - 38px new-session button.
-// Keep it fixed so resizing the sidebar never stretches or squashes the tabs.
 const SIDEBAR_TABS_W = 202
 
 export const SidebarTabs = <TId extends string = string>({
@@ -41,6 +38,8 @@ export const SidebarTabs = <TId extends string = string>({
       value: tab.id,
       label: tab.label,
       icon: tab.icon,
+      tooltip: tab.tooltip,
+      shortcut: tab.shortcut,
     }))}
     onChange={onChange}
     style={{ width: SIDEBAR_TABS_W }}

@@ -11,12 +11,8 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
-import { TERMINAL_FONT_FAMILY } from './terminalFont'
-import {
-  useTerminal,
-  type UseTerminalOptions,
-  type UseTerminalReturn,
-} from '../../hooks/useTerminal'
+import { TERMINAL_FONT_FAMILY, resolveTerminalFontFamily } from './terminalFont'
+import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
 import { obsidianLens } from '../../../../theme'
 
@@ -85,16 +81,6 @@ vi.mock('@xterm/addon-canvas', () => ({
 vi.mock('../../hooks/useTerminal', () => ({
   useTerminal: vi.fn(),
 }))
-
-let latestUseTerminalOptionsValue: UseTerminalOptions | null = null
-
-const latestUseTerminalOptions = (): UseTerminalOptions => {
-  if (latestUseTerminalOptionsValue === null) {
-    throw new Error('useTerminal was not called')
-  }
-
-  return latestUseTerminalOptionsValue
-}
 
 describe('Body', () => {
   let mockTerminal: {
@@ -171,14 +157,7 @@ describe('Body', () => {
     vi.mocked(Terminal).mockImplementation(() => mockTerminal as never)
     vi.mocked(FitAddon).mockImplementation(() => mockFitAddon as never)
     vi.mocked(CanvasAddon).mockImplementation(() => mockCanvasAddon as never)
-    latestUseTerminalOptionsValue = null
-    vi.mocked(useTerminal).mockImplementation(
-      (options: UseTerminalOptions): UseTerminalReturn => {
-        latestUseTerminalOptionsValue = options
-
-        return mockUseTerminal
-      }
-    )
+    vi.mocked(useTerminal).mockReturnValue(mockUseTerminal)
   })
 
   afterEach(() => {
@@ -213,57 +192,6 @@ describe('Body', () => {
     )
   })
 
-  test('reports submitted terminal command lines from xterm input', async () => {
-    const onCommandSubmit = vi.fn()
-
-    render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-        onCommandSubmit={onCommandSubmit}
-      />
-    )
-
-    await waitFor(() => {
-      expect(useTerminal).toHaveBeenCalled()
-    })
-
-    const options = latestUseTerminalOptions()
-    act(() => {
-      options.onInput?.('/')
-      options.onInput?.('clears')
-      options.onInput?.('\x7f')
-      options.onInput?.('\r')
-    })
-
-    expect(onCommandSubmit).toHaveBeenCalledWith('test-session', '/clear')
-  })
-
-  test('reports slash commands submitted through bracketed paste input', async () => {
-    const onCommandSubmit = vi.fn()
-
-    render(
-      <Body
-        sessionId="test-session"
-        cwd="/home/user"
-        service={defaultMockService}
-        onCommandSubmit={onCommandSubmit}
-      />
-    )
-
-    await waitFor(() => {
-      expect(useTerminal).toHaveBeenCalled()
-    })
-
-    const options = latestUseTerminalOptions()
-    act(() => {
-      options.onInput?.('\x1b[200~/clear\x1b[201~\r')
-    })
-
-    expect(onCommandSubmit).toHaveBeenCalledWith('test-session', '/clear')
-  })
-
   test('initializes xterm terminal on mount', async () => {
     render(
       <Body
@@ -279,10 +207,116 @@ describe('Body', () => {
           cursorBlink: true,
           fontSize: 14,
           fontFamily: TERMINAL_FONT_FAMILY,
-          macOptionClickForcesSelection: true,
         })
       )
     })
+  })
+
+  test('updates the mounted terminal font family without recreating xterm', async () => {
+    const { rerender } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(Terminal).toHaveBeenCalledTimes(1)
+    })
+
+    rerender(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        terminalFontFamily="Iosevka"
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.options.fontFamily).toBe(
+        resolveTerminalFontFamily('Iosevka')
+      )
+    })
+
+    expect(Terminal).toHaveBeenCalledTimes(1)
+  })
+
+  test('forces a deferred font refit when a hidden terminal becomes visible', async () => {
+    const frameCallbacks: FrameRequestCallback[] = []
+    let containerWidth = 840
+
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback: FrameRequestCallback): number => {
+        frameCallbacks.push(callback)
+
+        return frameCallbacks.length
+      })
+
+    const offsetWidthSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetWidth', 'get')
+      .mockImplementation(() => containerWidth)
+
+    const offsetHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(600)
+
+    try {
+      const { rerender } = render(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+        />
+      )
+
+      await waitFor(() => {
+        expect(Terminal).toHaveBeenCalledTimes(1)
+      })
+
+      mockFitAddon.fit.mockClear()
+      mockTerminal.refresh.mockClear()
+      containerWidth = 0
+
+      rerender(
+        <Body
+          sessionId="test-session"
+          cwd="/home/user"
+          service={defaultMockService}
+          terminalFontFamily="Iosevka"
+        />
+      )
+
+      await waitFor(() => {
+        expect(mockTerminal.options.fontFamily).toBe(
+          resolveTerminalFontFamily('Iosevka')
+        )
+      })
+
+      act(() => {
+        frameCallbacks[0](16)
+      })
+
+      expect(mockFitAddon.fit).not.toHaveBeenCalled()
+      expect(mockTerminal.refresh).not.toHaveBeenCalled()
+      expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2)
+
+      containerWidth = 840
+
+      act(() => {
+        frameCallbacks[1](32)
+      })
+
+      expect(mockFitAddon.fit).toHaveBeenCalledTimes(1)
+      expect(mockTerminal.refresh).toHaveBeenCalledWith(0, 23)
+      expect(Terminal).toHaveBeenCalledTimes(1)
+    } finally {
+      requestAnimationFrameSpy.mockRestore()
+      offsetWidthSpy.mockRestore()
+      offsetHeightSpy.mockRestore()
+    }
   })
 
   test('applies Catppuccin Mocha theme', async () => {

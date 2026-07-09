@@ -17,6 +17,7 @@ declare global {
       ): Promise<T>
       emitBackendEvent(event: string, payload: unknown): void
       listActivePtySessions(): Promise<string[]>
+      dispatchCommandPaletteShortcut(): Promise<boolean>
       startBrowserPaneBoundsCapture(): boolean
       clearBrowserPaneBoundsCaptures(): void
       stopBrowserPaneBoundsCapture(): void

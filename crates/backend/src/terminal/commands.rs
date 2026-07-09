@@ -96,6 +96,8 @@ pub(crate) async fn spawn_pty_inner(
     cache: Arc<super::cache::SessionCache>,
     events: Arc<dyn EventSink>,
     request: SpawnPtyRequest,
+    aliases: &[crate::aliases::AgentAlias],
+    shim_enabled: bool,
 ) -> Result<PtySession, String> {
     debug_log(
         "pty",
@@ -186,6 +188,8 @@ pub(crate) async fn spawn_pty_inner(
             &dir.to_string_lossy(),
             &request.session_id,
             Some(&shim_dir.to_string_lossy()),
+            aliases,
+            shim_enabled,
         ) {
             Ok(files) => {
                 debug_log(
@@ -1349,7 +1353,15 @@ mod tests {
             ephemeral: false,
         };
 
-        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request,
+            &[],
+            true,
+        )
+        .await;
 
         assert!(result.is_ok(), "spawn_pty should succeed");
         let session = result.unwrap();
@@ -1376,7 +1388,15 @@ mod tests {
             ephemeral: true,
         };
 
-        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request,
+            &[],
+            true,
+        )
+        .await;
         assert!(result.is_ok(), "ephemeral spawn should succeed: {result:?}");
 
         let snapshot = cache.snapshot();
@@ -1418,7 +1438,15 @@ mod tests {
             ephemeral: false,
         };
 
-        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request,
+            &[],
+            true,
+        )
+        .await;
         assert!(result.is_ok(), "spawn should succeed: {result:?}");
 
         assert!(
@@ -1452,7 +1480,15 @@ mod tests {
             ephemeral: true,
         };
 
-        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request,
+            &[],
+            true,
+        )
+        .await;
         assert!(result.is_ok(), "ephemeral spawn should succeed: {result:?}");
         assert!(
             !bridge_dir.exists(),
@@ -1486,6 +1522,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .expect("keep spawn");
@@ -1502,6 +1540,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: true,
             },
+            &[],
+            true,
         )
         .await
         .expect("burner spawn");
@@ -1552,7 +1592,15 @@ mod tests {
             ephemeral: false,
         };
 
-        let result = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request,
+            &[],
+            true,
+        )
+        .await;
 
         assert!(result.is_ok(), "spawn_pty should succeed: {result:?}");
         assert!(
@@ -1624,7 +1672,7 @@ mod tests {
             ephemeral: false,
         };
 
-        let result = spawn_pty_inner(state.clone(), cache, events, request).await;
+        let result = spawn_pty_inner(state.clone(), cache, events, request, &[], true).await;
 
         assert!(result.is_err(), "bridge-enabled spawn must fail closed");
         assert!(
@@ -1691,9 +1739,16 @@ mod tests {
             ephemeral: false,
         };
 
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
-            .await
-            .expect("spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            spawn_request,
+            &[],
+            true,
+        )
+        .await
+        .expect("spawn should succeed");
 
         // Give background reader task time to initialize session
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -1727,9 +1782,16 @@ mod tests {
             ephemeral: false,
         };
 
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
-            .await
-            .expect("spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            spawn_request,
+            &[],
+            true,
+        )
+        .await
+        .expect("spawn should succeed");
 
         // Write first command
         let write1 = WritePtyRequest {
@@ -1785,9 +1847,16 @@ mod tests {
             ephemeral: false,
         };
 
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), spawn_request)
-            .await
-            .expect("spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            spawn_request,
+            &[],
+            true,
+        )
+        .await
+        .expect("spawn should succeed");
 
         // Immediately try to write (before reader task finishes initialization)
         // This would fail with the old code that removed session from state
@@ -1841,12 +1910,22 @@ mod tests {
             cache.clone(),
             events.clone(),
             request.clone(),
+            &[],
+            true,
         )
         .await;
         assert!(result1.is_ok(), "first spawn should succeed");
 
         // Second spawn with same ID should fail
-        let result2 = spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request).await;
+        let result2 = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request,
+            &[],
+            true,
+        )
+        .await;
         assert!(result2.is_err(), "second spawn with same ID should fail");
         assert!(
             result2.unwrap_err().contains("already exists"),
@@ -1876,9 +1955,16 @@ mod tests {
             ephemeral: false,
         };
 
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
-            .await
-            .expect("first spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request1,
+            &[],
+            true,
+        )
+        .await
+        .expect("first spawn should succeed");
 
         // Check cache: session-1 should be active and first in order
         let snap1 = cache.snapshot();
@@ -1896,9 +1982,16 @@ mod tests {
             ephemeral: false,
         };
 
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
-            .await
-            .expect("second spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request2,
+            &[],
+            true,
+        )
+        .await
+        .expect("second spawn should succeed");
 
         // Check cache: session-1 still active, session-2 appended to order
         let snap2 = cache.snapshot();
@@ -1929,9 +2022,16 @@ mod tests {
                 ephemeral: false,
             };
 
-            spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request)
-                .await
-                .expect(&format!("spawn {} should succeed", i));
+            spawn_pty_inner(
+                state.clone(),
+                cache.clone(),
+                events.clone(),
+                request,
+                &[],
+                true,
+            )
+            .await
+            .expect(&format!("spawn {} should succeed", i));
         }
 
         // 65th session should fail
@@ -1950,8 +2050,15 @@ mod tests {
             "session-65",
         );
 
-        let result =
-            spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request_65).await;
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request_65,
+            &[],
+            true,
+        )
+        .await;
         assert!(result.is_err(), "65th spawn should fail due to cap");
         let err = result.unwrap_err();
         assert!(
@@ -2164,9 +2271,16 @@ mod tests {
             enable_agent_bridge: false,
             ephemeral: false,
         };
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
-            .await
-            .expect("first spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request1,
+            &[],
+            true,
+        )
+        .await
+        .expect("first spawn should succeed");
 
         let request2 = SpawnPtyRequest {
             session_id: "session-2".to_string(),
@@ -2176,9 +2290,16 @@ mod tests {
             enable_agent_bridge: false,
             ephemeral: false,
         };
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
-            .await
-            .expect("second spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request2,
+            &[],
+            true,
+        )
+        .await
+        .expect("second spawn should succeed");
 
         // Verify both sessions are in cache
         let snap_before = cache.snapshot();
@@ -2220,9 +2341,16 @@ mod tests {
             enable_agent_bridge: false,
             ephemeral: false,
         };
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request1)
-            .await
-            .expect("first spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request1,
+            &[],
+            true,
+        )
+        .await
+        .expect("first spawn should succeed");
 
         let request2 = SpawnPtyRequest {
             session_id: "session-2".to_string(),
@@ -2232,9 +2360,16 @@ mod tests {
             enable_agent_bridge: false,
             ephemeral: false,
         };
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request2)
-            .await
-            .expect("second spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request2,
+            &[],
+            true,
+        )
+        .await
+        .expect("second spawn should succeed");
 
         let request3 = SpawnPtyRequest {
             session_id: "session-3".to_string(),
@@ -2244,9 +2379,16 @@ mod tests {
             enable_agent_bridge: false,
             ephemeral: false,
         };
-        spawn_pty_inner(state.clone(), cache.clone(), events.clone(), request3)
-            .await
-            .expect("third spawn should succeed");
+        spawn_pty_inner(
+            state.clone(),
+            cache.clone(),
+            events.clone(),
+            request3,
+            &[],
+            true,
+        )
+        .await
+        .expect("third spawn should succeed");
 
         // Verify session-1 is active
         let snap_before = cache.snapshot();
@@ -2303,6 +2445,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn should succeed");
@@ -2413,6 +2557,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn should succeed");
@@ -2524,6 +2670,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn should succeed");
@@ -2609,6 +2757,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .expect("spawn should succeed");
@@ -2676,6 +2826,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -2728,6 +2880,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -2778,6 +2932,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -2862,6 +3018,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -2929,6 +3087,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .unwrap();
@@ -2968,6 +3128,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -3034,6 +3196,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .unwrap();
@@ -3085,6 +3249,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .unwrap();
@@ -3127,6 +3293,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -3177,6 +3345,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .unwrap();
@@ -3232,6 +3402,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .unwrap();
@@ -3630,6 +3802,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await;
 
@@ -3695,6 +3869,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn should succeed");
@@ -3914,6 +4090,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn");
@@ -4023,6 +4201,8 @@ mod tests {
                     enable_agent_bridge: false,
                     ephemeral: false,
                 },
+                &[],
+                true,
             )
             .await
             .expect("spawn");
@@ -4099,6 +4279,8 @@ mod tests {
                 enable_agent_bridge: false,
                 ephemeral: false,
             },
+            &[],
+            true,
         )
         .await
         .expect("spawn");

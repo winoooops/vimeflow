@@ -3,6 +3,21 @@ import { afterEach, vi } from 'vitest'
 import * as chordRegistry from '../features/command-palette/chordRegistry'
 import * as paneHeaderRefs from '../features/terminal/paneHeaderRefs'
 
+// jsdom populates navigator.userAgent/platform, but tests that stub globals
+// can leave it in a state where third-party listeners (e.g. floating-ui's
+// focus-visible detection) crash. Provide a stable fallback.
+Object.defineProperty(globalThis.navigator, 'userAgent', {
+  configurable: true,
+  enumerable: true,
+  value: globalThis.navigator.userAgent || 'vitest-jsdom',
+})
+
+Object.defineProperty(globalThis.navigator, 'platform', {
+  configurable: true,
+  enumerable: true,
+  value: globalThis.navigator.platform || 'Linux x86_64',
+})
+
 const ensureLocalStorageClear = (): void => {
   if (typeof window.localStorage.clear === 'function') {
     return

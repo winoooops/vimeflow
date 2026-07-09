@@ -36,9 +36,9 @@ import {
 import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
 import {
-  TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
   loadTerminalFonts,
+  resolveTerminalFontFamily,
 } from './terminalFont'
 import '@xterm/xterm/css/xterm.css'
 
@@ -94,6 +94,26 @@ export const terminalCache = new Map<
   string,
   { terminal: Terminal; fitAddon: FitAddon }
 >()
+
+const terminalOptions = (terminal: Terminal): Terminal['options'] | undefined =>
+  (terminal as Terminal & { options?: Terminal['options'] }).options
+
+const xtermFontFamily = (terminal: Terminal, fallback: string): string =>
+  terminalOptions(terminal)?.fontFamily ?? fallback
+
+const setTerminalFontFamily = (
+  terminal: Terminal,
+  fontFamily: string
+): boolean => {
+  const options = terminalOptions(terminal)
+  if (options === undefined) {
+    return false
+  }
+
+  options.fontFamily = fontFamily
+
+  return true
+}
 
 /**
  * Clear terminal cache (for testing only)
@@ -196,6 +216,12 @@ export interface BodyProps {
   deferFit?: boolean
 
   /**
+   * Preferred terminal text font family. The terminal font resolver appends
+   * bundled and platform fallbacks so stale settings keep rendering.
+   */
+  terminalFontFamily?: string
+
+  /**
    * Enables coding-agent-only clipboard image paste controls.
    */
   enableImagePaste?: boolean
@@ -219,6 +245,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     mode = 'spawn',
     onFocusChange = undefined,
     deferFit = false,
+    terminalFontFamily = '',
     enableImagePaste = false,
   },
   ref
@@ -237,6 +264,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const flushFitSessionIdRef = useRef<string | null>(null)
   const pendingDeferredFitFlushRef = useRef(false)
   const pendingDeferredRefreshAfterFitRef = useRef(false)
+
+  const resolvedTerminalFontFamily =
+    resolveTerminalFontFamily(terminalFontFamily)
+  const resolvedTerminalFontFamilyRef = useRef(resolvedTerminalFontFamily)
+  const appliedTerminalFontFamilyRef = useRef<string | null>(null)
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
   const isRestoringOutputRef = useRef(false)
@@ -246,6 +278,10 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   const submittedInputLineRef = useRef('')
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
+
+  useEffect(() => {
+    resolvedTerminalFontFamilyRef.current = resolvedTerminalFontFamily
+  }, [resolvedTerminalFontFamily])
 
   const terminalStatusRef = useRef<'idle' | 'running' | 'exited' | 'error'>(
     'idle'
@@ -649,6 +685,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       // Re-open terminal in the new container
       newTerminal.open(node)
+      setTerminalFontFamily(newTerminal, resolvedTerminalFontFamilyRef.current)
 
       // Re-fit to new container — guard against hidden (display:none) containers
       // where offsetWidth is 0. Fitting at zero width tells xterm cols≈1,
@@ -659,7 +696,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       newTerminal = new Terminal({
         cursorBlink: true,
         fontSize: TERMINAL_FONT_SIZE,
-        fontFamily: TERMINAL_FONT_FAMILY,
+        fontFamily: resolvedTerminalFontFamilyRef.current,
         theme: toXtermTheme(themeService.current().terminal),
         scrollback: 10000,
         allowProposedApi: true,
@@ -757,6 +794,11 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       // Cache the terminal instance for this session
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })
     }
+
+    appliedTerminalFontFamilyRef.current = xtermFontFamily(
+      newTerminal,
+      resolvedTerminalFontFamilyRef.current
+    )
 
     const refreshAfterFontFit = (): void => {
       newTerminal.refresh(0, Math.max(newTerminal.rows - 1, 0))
@@ -967,6 +1009,64 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       fitAddonRef.current = null
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (
+      !terminal ||
+      appliedTerminalFontFamilyRef.current === resolvedTerminalFontFamily
+    ) {
+      return
+    }
+
+    const didApplyFont = setTerminalFontFamily(
+      terminal,
+      resolvedTerminalFontFamily
+    )
+    appliedTerminalFontFamilyRef.current = resolvedTerminalFontFamily
+
+    if (!didApplyFont) {
+      return
+    }
+
+    const node = containerRef.current
+    const fitAddon = fitAddonRef.current
+
+    if (!node || !fitAddon || deferFitRef.current) {
+      pendingDeferredFitFlushRef.current = true
+      pendingDeferredRefreshAfterFitRef.current = true
+
+      return
+    }
+
+    const requestDeferredFontFit = (): void => {
+      pendingDeferredFitFlushRef.current = true
+      pendingDeferredRefreshAfterFitRef.current = true
+
+      if (flushFitSessionIdRef.current === sessionId) {
+        flushFitRef.current?.()
+      }
+    }
+
+    let frameId: number | null = window.requestAnimationFrame(() => {
+      frameId = null
+
+      if (deferFitRef.current || node.offsetWidth <= 0) {
+        requestDeferredFontFit()
+
+        return
+      }
+
+      fitAddon.fit()
+      resizeRef.current(terminal.cols, terminal.rows)
+      terminal.refresh(0, Math.max(terminal.rows - 1, 0))
+    })
+
+    return (): void => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+    }
+  }, [resolvedTerminalFontFamily, sessionId, terminal])
 
   const clipboard = useTerminalClipboard({
     terminal,

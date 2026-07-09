@@ -1,6 +1,5 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
-import { DIALOG_PICK_DIRECTORY } from './ipc-channels'
 import {
   BROWSER_PANE_ACTIVATE_TAB,
   BROWSER_PANE_CDP_INFO,
@@ -19,6 +18,14 @@ import {
   BROWSER_PANE_TABS_CHANGED,
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
+import {
+  COMMAND_PALETTE_BINDING,
+  COMMAND_PALETTE_TOGGLE,
+  DIALOG_PICK_DIRECTORY,
+  E2E_COMMAND_PALETTE_SHORTCUT,
+  SETTINGS_CHANGED,
+  SETTINGS_OPEN_WINDOW,
+} from './ipc-channels'
 import {
   NATIVE_OVERLAY_ACTION,
   NATIVE_OVERLAY_ACTION_RESULT,
@@ -48,6 +55,7 @@ import './preload'
 const electronMock = vi.hoisted(() => {
   let exposedApi: Record<string, unknown> | undefined
   vi.stubEnv('VITE_GHOSTTY_NATIVE_MACOS_PARENT', '1')
+  vi.stubEnv('VITE_E2E', '1')
 
   return {
     get exposed(): Record<string, unknown> | undefined {
@@ -62,6 +70,7 @@ const electronMock = vi.hoisted(() => {
       invoke: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
+      send: vi.fn(),
       setMaxListeners: vi.fn(),
     },
   }
@@ -96,7 +105,7 @@ const browserPane = (): Record<string, unknown> => {
   return pane as Record<string, unknown>
 }
 
-const exposedApi = (): Record<string, unknown> => {
+const preloadApi = (): Record<string, unknown> => {
   const api = electronMock.exposed
 
   if (!api || typeof api !== 'object') {
@@ -105,6 +114,8 @@ const exposedApi = (): Record<string, unknown> => {
 
   return api
 }
+
+const exposedApi = preloadApi
 
 const nativeOverlayInvokeCases: readonly [
   string,
@@ -124,6 +135,119 @@ describe('preload browserPane wiring', () => {
 
   test('raises the shared ipcRenderer listener cap during preload startup', () => {
     expect(preloadSetMaxListenersCalls).toEqual([[64]])
+  })
+
+  test('setCommandPaletteBinding sends the resolved binding to main', () => {
+    const setCommandPaletteBinding = preloadApi().setCommandPaletteBinding as (
+      binding: string
+    ) => void
+
+    setCommandPaletteBinding('Mod+KeyK')
+
+    expect(electronMock.ipcRenderer.send).toHaveBeenCalledWith(
+      COMMAND_PALETTE_BINDING,
+      'Mod+KeyK'
+    )
+  })
+
+  test('setCommandPaletteBindings sends split palette bindings to main', () => {
+    const setCommandPaletteBindings = preloadApi()
+      .setCommandPaletteBindings as (bindings: {
+      palette: string
+      leader: string
+    }) => void
+
+    setCommandPaletteBindings({
+      palette: 'Mod+KeyP',
+      leader: 'Mod+KeyK',
+    })
+
+    expect(electronMock.ipcRenderer.send).toHaveBeenCalledWith(
+      COMMAND_PALETTE_BINDING,
+      {
+        palette: 'Mod+KeyP',
+        leader: 'Mod+KeyK',
+      }
+    )
+  })
+
+  test('e2e dispatchCommandPaletteShortcut invokes the e2e shortcut channel', async () => {
+    const e2e = preloadApi().e2e as {
+      dispatchCommandPaletteShortcut: () => Promise<boolean>
+    }
+
+    await e2e.dispatchCommandPaletteShortcut()
+
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+      E2E_COMMAND_PALETTE_SHORTCUT
+    )
+  })
+
+  test('settings.openWindow invokes the native settings window channel', async () => {
+    const settings = preloadApi().settings as {
+      openWindow: () => Promise<void>
+    }
+
+    await settings.openWindow()
+
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
+      SETTINGS_OPEN_WINDOW
+    )
+  })
+
+  test('settings.onDidChange forwards settings broadcasts', () => {
+    const settings = preloadApi().settings as {
+      onDidChange: (callback: (settings: unknown) => void) => () => void
+    }
+    const callback = vi.fn()
+
+    const unlisten = settings.onDidChange(callback)
+
+    const handler = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === SETTINGS_CHANGED
+    )?.[1] as ((event: unknown, settings: unknown) => void) | undefined
+
+    if (handler === undefined) {
+      throw new Error('settings listener was not registered')
+    }
+
+    const next = { version: 1, onLastWindowClosed: 'quit' }
+    handler({}, next)
+    unlisten()
+
+    expect(callback).toHaveBeenCalledWith(next)
+    expect(electronMock.ipcRenderer.off).toHaveBeenCalledWith(
+      SETTINGS_CHANGED,
+      handler
+    )
+  })
+
+  test('onCommandPaletteToggle forwards the shortcut source', () => {
+    const onCommandPaletteToggle = preloadApi().onCommandPaletteToggle as (
+      callback: (source?: 'palette' | 'leader') => void
+    ) => () => void
+    const callback = vi.fn()
+
+    const unlisten = onCommandPaletteToggle(callback)
+
+    const handler = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === COMMAND_PALETTE_TOGGLE
+    )?.[1] as ((event: unknown, source: unknown) => void) | undefined
+
+    if (handler === undefined) {
+      throw new Error('command palette listener was not registered')
+    }
+
+    handler({}, 'palette')
+    handler({}, 'invalid')
+    unlisten()
+
+    expect(callback).toHaveBeenNthCalledWith(1, 'palette')
+    expect(callback).toHaveBeenNthCalledWith(2, undefined)
+    expect(electronMock.ipcRenderer.off).toHaveBeenCalledWith(
+      COMMAND_PALETTE_TOGGLE,
+      handler
+    )
   })
 
   test.each([

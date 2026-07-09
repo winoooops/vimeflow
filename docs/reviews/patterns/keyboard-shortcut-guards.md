@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-09
-ref_count: 10
+ref_count: 11
 ---
 
 # Keyboard Shortcut Guards
@@ -474,4 +474,18 @@ against three classes of false-fire:
 - **File:** `src/features/diff/Panel.tsx`
 - **Finding:** The Finish feedback popover and Request review popover were controlled by independent booleans, so mouse users could open both dialogs at the same toolbar anchor. Each dialog had document-level shortcut handling, making one shared keypress capable of submitting both actions.
 - **Fix:** Made the toolbar and keyboard entry points mutually exclusive: Finish cannot open while Request review is open, Request review cannot open while Finish is open, and a panel regression test asserts the Request review trigger disappears while Finish is active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Linux global shortcut path bypassed key-capture guards
+
+- **Source:** github-codex-connector | PR #672 round 4 | 2026-07-09
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/command-palette-shortcut.ts`
+- **Finding:** The Linux `globalShortcut` callback dispatched command-palette
+  toggles directly instead of going through `dispatchCommandPaletteShortcutForWindow`.
+  While KeymapPane was capturing a shortcut, pressing the palette chord could
+  still open the palette because the global path skipped `captureActiveByWindow`.
+- **Fix:** Route Linux global accelerator callbacks through the shared window
+  dispatcher with a synthesized shortcut input so source resolution, key-capture
+  guards, focus, and deduplication stay identical to `before-input-event`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

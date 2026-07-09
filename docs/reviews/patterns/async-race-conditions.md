@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-08
-ref_count: 84
+last_updated: 2026-07-09
+ref_count: 85
 ---
 
 # Async Race Conditions
@@ -985,7 +985,19 @@ prevent showing previous data.
 - **Fix:** Mirror the initial-open cancellation guard in resize resync effects: when the effect has been disposed and the pending request is accepted, close the native overlay by `surfaceId` and skip state updates. Added regression tests for menu and tooltip stale resize requests.
 - **Commit:** same commit as this entry
 
-### 91. Native Ghostty reparent left a stale resize debounce
+### 91. Initial settings load overwrote in-flight renderer updates
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-08
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** The settings provider applied the initial async `load()` result even
+  after the renderer had already accepted a local `update()`. A slower load could
+  roll the UI and context back to stale persisted settings until the next reload.
+- **Fix:** Track whether a local update happened while the initial load was
+  pending and skip applying that stale load result. Added a provider regression
+  test that keeps the in-flight update visible after the delayed load resolves.
+
+### 92. Native Ghostty reparent left a stale resize debounce
 
 - **Source:** github-claude | PR #674 round 1 | 2026-07-08
 - **Severity:** MEDIUM
@@ -999,3 +1011,32 @@ prevent showing previous data.
   the pane, advances the debounce timer, and asserts only the original resize
   reached the sidecar.
 - **Commit:** same commit as this entry
+
+### 93. Settings updates before initial load saved defaults over persisted state
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** A fresh settings provider could accept an `update()` before the
+  initial async `load()` resolved, merge the patch onto `DEFAULT_SETTINGS`, and
+  persist that full default-backed object over the user's saved settings.
+- **Fix:** Track initial load completion and queue pre-load patches for replay
+  against the loaded settings object before saving. Added a regression test
+  proving pre-load edits are visible immediately but saved only after merging
+  with the persisted snapshot.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 94. Alias saves could finish out of order and persist stale values
+
+- **Source:** github-codex-connector | PR #672 round 4 | 2026-07-09
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** Alias edits called `bridge.save(next)` immediately for every
+  intermediate state. Concurrent IPC saves could complete out of order, letting
+  an older alias snapshot overwrite the latest value on disk while the UI still
+  showed the newest edit.
+- **Fix:** Serialize alias saves through a single in-flight slot and coalesce
+  pending edits to the latest alias array before sending the next IPC save.
+  Added a regression test that keeps the first save pending and verifies only
+  the latest edit is sent after it resolves.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

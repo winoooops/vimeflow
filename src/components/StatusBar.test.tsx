@@ -98,6 +98,28 @@ describe('StatusBar', () => {
     )
   })
 
+  test('palette tooltip uses the supplied shortcut chips', async () => {
+    const user = userEvent.setup()
+    renderStatusBar({ paletteShortcut: ['Ctrl', 'K'] })
+
+    await user.hover(screen.getByTestId('status-bar-palette'))
+
+    expect(
+      within(await screen.findByRole('tooltip')).getByTestId('tooltip-shortcut')
+    ).toHaveTextContent('Ctrl+K')
+  })
+
+  test('dock tooltip uses the supplied shortcut chips', async () => {
+    const user = userEvent.setup()
+    renderStatusBar({ dockShortcut: ['Ctrl', 'D'] })
+
+    await user.hover(screen.getByTestId('status-bar-dock-toggle'))
+
+    expect(
+      within(await screen.findByRole('tooltip')).getByTestId('tooltip-shortcut')
+    ).toHaveTextContent('Ctrl+D')
+  })
+
   test('dock toggle indicates open state through icon color, not a filled background (J8)', () => {
     const { rerender } = renderStatusBar({ dockOpen: false })
 

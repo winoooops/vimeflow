@@ -86,11 +86,33 @@ Components that wrap native HTML elements and forward `...rest` props must expli
 - **Fix:** Added `tooltipLabel` to `QuotaNotice`, populated it beside `trackUrl` in the registry, and made `QuotaUnavailableNotice` render that prop. Updated component and card tests to provide the co-located label.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 9. TerminalPane active prop mixed focus and visibility gates
+### 9. Keymap actions reimplemented icon-only button primitives
+
+- **Source:** github-codex-connector | PR #672 round 1 | 2026-07-08
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/KeymapPane.tsx`
+- **Finding:** The keymap pane rendered raw icon-only `<button>` elements with
+  local tooltip wrapping instead of the shared button primitives. This bypassed
+  the enforced icon-button contract and duplicated accessibility/styling
+  behavior owned by the design system.
+- **Fix:** Replace the local action helper with the shared `IconButton`
+  primitive while preserving labels, disabled state, and click handlers.
+- **Commit:** same commit as this entry
+
+### 10. TerminalPane active prop mixed focus and visibility gates
 
 - **Source:** github-codex-connector | PR #676 round 1 | 2026-07-09
 - **Severity:** MEDIUM
 - **File:** `src/features/terminal/components/TerminalPane/index.tsx`
 - **Finding:** `TerminalPane` used one `isActive` prop for selected-pane focus/interactivity and for session-visible git metadata loading. After the selected-pane gate was tightened, visible inactive split panes stopped enabling branch, worktree, and status hooks.
 - **Fix:** Added a separate `isSessionVisible` prop for metadata hook enablement while keeping `isActive` as the selected-pane focus/body/chrome signal. `SplitView` now passes both gates, and a regression test covers visible inactive panes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. TerminalPane data-focused bypassed the focus-highlight prop
+
+- **Source:** github-claude | PR #672 round 1 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** `TerminalPane` computed `isFocusVisible = showFocusHighlight && isActive` for the border opacity, but `data-focused` still used raw `isActive`. When callers hid focus highlights, the visual border disappeared while the semantic/test attribute continued to report focus.
+- **Fix:** Bound `data-focused` to `isFocusVisible` and added a regression test that keeps `data-pane-active` while omitting `data-focused` when `showFocusHighlight` is false.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -96,11 +96,18 @@ vi.mock('../../hooks/useElasticContainer', () => ({
 }))
 
 // eslint-disable-next-line import/first
-import { render, screen } from '@testing-library/react'
+import { render as rtlRender, screen } from '@testing-library/react'
 // eslint-disable-next-line import/first
 import userEvent from '@testing-library/user-event'
 // eslint-disable-next-line import/first
+import type { ReactElement } from 'react'
+// eslint-disable-next-line import/first
 import { WorkspaceView } from './WorkspaceView'
+// eslint-disable-next-line import/first
+import { SettingsProvider } from '../settings/SettingsProvider'
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsProvider })
 
 /**
  * Visual Verification Test Suite for Feature #20

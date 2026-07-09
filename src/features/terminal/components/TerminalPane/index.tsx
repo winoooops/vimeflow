@@ -79,6 +79,8 @@ export interface TerminalPaneProps {
   onCommandSubmit?: (ptyId: string, command: string) => void
   onRestart?: (sessionId: string, paneId?: string) => void
   deferFit?: boolean
+  showFocusHighlight?: boolean
+  terminalFontFamily?: string
   shortcutContext?: NativeGhosttyShortcutContext
   shortcutHint?: string
   /**
@@ -124,6 +126,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onCommandSubmit = undefined,
       onRestart = undefined,
       deferFit = false,
+      showFocusHighlight = true,
+      terminalFontFamily = undefined,
       shortcutContext = undefined,
       shortcutHint = undefined,
       paneDraggable = false,
@@ -290,6 +294,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const terminalBodyBottomCornerRadius = isCollapsed
       ? TERMINAL_PANE_CORNER_RADIUS
       : 0
+    const isFocusVisible = showFocusHighlight && isActive
 
     const containerStyle = {
       boxShadow: 'none',
@@ -303,6 +308,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         data-session-id={session.id}
         data-mode={mode}
         data-pane-active={isActive || undefined}
+        data-focused={isFocusVisible || undefined}
         onMouseDown={handleContainerMouseDown}
         onClick={handleContainerClick}
         style={{
@@ -381,6 +387,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               bottomCornerRadius={terminalBodyBottomCornerRadius}
               mode={bodyMode}
               deferFit={deferFit}
+              terminalFontFamily={terminalFontFamily}
               enableImagePaste={enableImagePaste}
             />
           </div>
@@ -403,6 +410,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           data-testid="terminal-pane-border"
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-30 rounded-[10px] border border-outline-variant/[0.22] transition-opacity"
+          style={{ opacity: isFocusVisible ? 1 : 0 }}
         />
       </div>
     )

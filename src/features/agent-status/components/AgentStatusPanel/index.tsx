@@ -19,6 +19,7 @@ import { ActivityFeed } from '../ActivityFeed'
 import { LiveActionCard } from '../LiveActionCard'
 import { useActivityEvents } from '../../hooks/useActivityEvents'
 import { matchChangedFile } from '../../utils/matchChangedFile'
+import type { SwellVariant } from '../../hooks/useReservoirFlow'
 import {
   useGitStatus,
   type UseGitStatusReturn,
@@ -40,6 +41,7 @@ interface AgentStatusPanelProps {
   needsReattach?: boolean
   agent: Agent
   cacheHistory: number[]
+  reservoirSwell?: SwellVariant
   snapshotKey?: string | null
   reserveWindowControls?: boolean
 }
@@ -305,6 +307,7 @@ export const AgentStatusPanel = ({
   needsReattach = false,
   agent,
   cacheHistory,
+  reservoirSwell = 'soft-mound',
   snapshotKey = null,
   reserveWindowControls = false,
 }: AgentStatusPanelProps): ReactElement => {
@@ -564,6 +567,7 @@ export const AgentStatusPanel = ({
                 ? Number(status.contextWindow.totalInputTokens)
                 : undefined
             }
+            reservoirSwell={reservoirSwell}
           />
           <TokenCache
             usage={status.contextWindow?.currentUsage ?? null}

@@ -49,6 +49,7 @@ import {
   AgentStatusRail,
   RAIL_WIDTH_PX,
 } from '../agent-status/components/AgentStatusRail'
+import { resolveSwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
 import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
 import type { RateLimitsState } from '../agent-status/types'
@@ -56,12 +57,16 @@ import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
 import { CommandPalette } from '../command-palette/CommandPalette'
 import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
+import { SettingsDialog, useSettingsDialog } from '../settings'
+import { useSettings } from '../settings/hooks/useSettings'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
 import { listen, renameAgentSession } from '../../lib/backend'
+import { registerCommandPaletteShortcutOpenerForE2e } from '../../lib/e2e-bridge'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
+import { cycleSession } from '../sessions/utils/cycleSession'
 import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
 import {
   clampSize,
@@ -80,8 +85,14 @@ import {
 } from '../terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
+import { useKeybindings } from '../keymap/useKeybindings'
+import { formatChord } from '../keymap/chord'
+import { chordToShortcutInput } from '../keymap/displayKey'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
+import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
+import { useSessionNavShortcut } from './hooks/useSessionNavShortcut'
+import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
 import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
@@ -97,7 +108,10 @@ import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
 import { isShellPane } from '../sessions/utils/paneKind'
-import { selectVisiblePanes } from '../terminal/components/SplitView'
+import {
+  canClosePane,
+  selectVisiblePanes,
+} from '../terminal/components/SplitView'
 import {
   canSelectLayoutOverCapacity,
   getPaneLayoutCapacity,
@@ -111,7 +125,11 @@ import {
   agentTypeToRegistryKey,
   type AgentDef,
 } from '../../agents/registry'
-import type { PaneLayoutId, SessionCloseResult } from '../sessions/types'
+import type {
+  LayoutId,
+  PaneLayoutId,
+  SessionCloseResult,
+} from '../sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
@@ -244,11 +262,6 @@ const formatStatusDuration = (durationMs: number): string | undefined => {
   return `${minutes}m`
 }
 
-// Follow-up tracked at https://github.com/winoooops/vimeflow/issues/252
-// (Settings dialog — Zed-style modal with 14 categories). Remove
-// this const and the gear's `aria-disabled` once the dialog lands.
-const SETTINGS_FOLLOWUP_ISSUE_NUMBER = 252
-
 const SIDEBAR_DEFAULT = 272
 const SIDEBAR_MIN = SIDEBAR_DEFAULT
 // Cap the sidebar at the width where the agent-status card and the
@@ -289,9 +302,27 @@ interface GhosttyNativeRenamePaneEvent {
   paneId: string
 }
 
-const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
-  { id: 'sessions', label: 'SESSIONS', icon: 'view_agenda' },
-  { id: 'files', label: 'FILES', icon: 'folder_open' },
+const buildSidebarTabItems = ({
+  sessionsShortcut,
+  filesShortcut,
+}: {
+  sessionsShortcut: SidebarTabItem<SidebarTab>['shortcut']
+  filesShortcut: SidebarTabItem<SidebarTab>['shortcut']
+}): readonly SidebarTabItem<SidebarTab>[] => [
+  {
+    id: 'sessions',
+    label: 'SESSIONS',
+    icon: 'view_agenda',
+    tooltip: 'Sessions',
+    shortcut: sessionsShortcut,
+  },
+  {
+    id: 'files',
+    label: 'FILES',
+    icon: 'folder_open',
+    tooltip: 'Files',
+    shortcut: filesShortcut,
+  },
 ]
 
 const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
@@ -403,6 +434,8 @@ const WorkspaceViewContent = (): ReactElement => {
     sidebarToggleLeft + SIDEBAR_TOGGLE_SIZE + SIDEBAR_TOGGLE_SURFACE_PADDING_END
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
+  const { settings } = useSettings()
+  const reservoirSwell = resolveSwellVariant(settings.reservoirSwell)
   const { activeTab, setActiveTab } = useSidebarTab()
 
   // VIM-66 / VIM-76: workspace-global sidebar collapse flag. The collapse toggle
@@ -677,6 +710,13 @@ const WorkspaceViewContent = (): ReactElement => {
   // Non-throwing variant: render-path callers cannot crash on transient
   // invariant violations. Mutation guards still use `getActivePane`.
   const activePane = activeSession ? findActivePane(activeSession) : undefined
+
+  // Imperative refs for stable command-palette callbacks that still read the
+  // latest focused session/pane without rebuilding the command list memo.
+  const activeSessionRef = useRef(activeSession)
+  activeSessionRef.current = activeSession
+  const activePaneRef = useRef(activePane)
+  activePaneRef.current = activePane
 
   const activePtyBackedPane =
     activePane === undefined
@@ -1748,6 +1788,122 @@ const WorkspaceViewContent = (): ReactElement => {
     [editorBuffer]
   )
 
+  // Guarded file-open request shared by click handlers and `:edit <path>`.
+  // Shows the unsaved-changes dialog when the current buffer is dirty so a
+  // pending open can be resumed after save/discard/cancel.
+  const requestOpenFile = useCallback(
+    (filePath: string): void => {
+      if (editorBuffer.isDirty) {
+        setPendingFilePathSynced(filePath)
+        setPendingSessionRestoreIdRef(null)
+        setShowUnsavedDialog(true)
+
+        return
+      }
+
+      void openFileSafely(filePath)
+    },
+    [
+      editorBuffer.isDirty,
+      openFileSafely,
+      setPendingFilePathSynced,
+      setPendingSessionRestoreIdRef,
+    ]
+  )
+
+  // Save via vim :w or any direct editor save trigger. Same rationale as
+  // openFileSafely — errors were previously swallowed and the user had no
+  // indication that a disk-full / permission-denied error occurred.
+  const handleVimSave = useCallback(async (): Promise<void> => {
+    try {
+      await editorBuffer.saveFile()
+      setFileError(null)
+      setEditorSavedAt(Date.now())
+      // A successful save recreates the backing file if it was deleted
+      // externally. Refresh the existence signal immediately so the next
+      // render does not derive a stale DELETED/read-only state before the
+      // polling probe catches up.
+      setSelectedEditorFileExists(true)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      setFileError(`Failed to save: ${message}`)
+    }
+  }, [editorBuffer])
+
+  // Stable bound callbacks for vim-flavored ex-command aliases (VIM-104 B1).
+  // These intentionally have stable identities so the workspace command memo
+  // does not churn while still invoking the latest handlers. Refs keep the
+  // callbacks current without making the memo depend on rapidly-changing
+  // values such as `editorBuffer` identity.
+  const handleVimSaveRef = useRef(handleVimSave)
+  handleVimSaveRef.current = handleVimSave
+
+  const requestOpenFileRef = useRef(requestOpenFile)
+  requestOpenFileRef.current = requestOpenFile
+
+  const activeCwdRef = useRef(activeCwd)
+  activeCwdRef.current = activeCwd
+
+  const saveActiveFileCommand = useCallback((): void => {
+    void handleVimSaveRef.current()
+  }, [])
+
+  const openFileInEditorCommand = useCallback((path: string): void => {
+    // Resolve relative `:edit <path>` inputs against the active pane's cwd so
+    // the backend does not canonicalize them relative to the Electron/sidecar
+    // process cwd. Leave Unix absolute (`/`), home (`~`), Windows drive-letter
+    // (`C:\`), and UNC (`\\server\share`) paths untouched.
+    const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/
+
+    const isAbsolute =
+      path.startsWith('/') ||
+      path.startsWith('~') ||
+      WINDOWS_DRIVE_PATH.test(path) ||
+      path.startsWith('\\\\')
+    let resolvedPath = path
+
+    if (
+      path.length > 0 &&
+      !isAbsolute &&
+      activeCwdRef.current !== '.' &&
+      activeCwdRef.current.length > 0
+    ) {
+      resolvedPath = `${activeCwdRef.current.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
+    }
+
+    requestOpenFileRef.current(resolvedPath)
+  }, [])
+
+  const closeActivePaneCommand = useCallback((): void => {
+    const session = activeSessionRef.current
+    const pane = activePaneRef.current
+
+    if (session === undefined || pane === undefined) {
+      notifyInfo('No pane to close')
+
+      return
+    }
+
+    if (!canClosePane(session)) {
+      notifyInfo('Cannot close the last pane')
+
+      return
+    }
+
+    removePane(session.id, pane.id)
+  }, [notifyInfo, removePane])
+
+  const setActiveSessionLayoutCommand = useCallback(
+    (layoutId: LayoutId): void => {
+      const session = activeSessionRef.current
+
+      if (session !== undefined) {
+        setSessionLayout(session.id, layoutId)
+      }
+    },
+    [setSessionLayout]
+  )
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -1767,6 +1923,11 @@ const WorkspaceViewContent = (): ReactElement => {
         notifyInfo,
         toggleSidebar: handleToggleSidebar,
         toggleBurner: toggleBurnerCommand,
+        keymapPreset: settings.keymapPreset,
+        saveActiveFile: saveActiveFileCommand,
+        openFileInEditor: openFileInEditorCommand,
+        closeActivePane: closeActivePaneCommand,
+        setActiveSessionLayout: setActiveSessionLayoutCommand,
         restartSession,
         // Defer past Dialog's close-time focus restore so the dock wins.
         openEditor: (): void => {
@@ -1802,18 +1963,7 @@ const WorkspaceViewContent = (): ReactElement => {
         focusTerminal: (): void => {
           setTimeout(() => claimTerminal(), 0)
         },
-        openFile: (path: string): void => {
-          // Mirror handleFileSelect's unsaved-changes guard before opening.
-          if (editorBuffer.isDirty) {
-            setPendingFilePathSynced(path)
-            setPendingSessionRestoreIdRef(null)
-            setShowUnsavedDialog(true)
-
-            return
-          }
-
-          void openFileSafely(path)
-        },
+        openFile: requestOpenFile,
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -1836,6 +1986,11 @@ const WorkspaceViewContent = (): ReactElement => {
       notifyInfo,
       handleToggleSidebar,
       toggleBurnerCommand,
+      settings.keymapPreset,
+      saveActiveFileCommand,
+      openFileInEditorCommand,
+      closeActivePaneCommand,
+      setActiveSessionLayoutCommand,
       restartSession,
       openDock,
       handleToggleDock,
@@ -1850,17 +2005,80 @@ const WorkspaceViewContent = (): ReactElement => {
       isCompactViewport,
       setCompactSidebarOpen,
       claimTerminal,
-      openFileSafely,
-      editorBuffer.isDirty,
-      setPendingFilePathSynced,
-      setPendingSessionRestoreIdRef,
-      setShowUnsavedDialog,
+      requestOpenFile,
     ]
   )
 
+  // Keybinding registry matcher — keeps the palette and migrated workspace
+  // shortcuts aligned with persisted overrides.
+  const { bindingFor, matches } = useKeybindings()
+  const paletteBinding = bindingFor('palette')
+  const paletteLeaderBinding = bindingFor('palette-leader')
+  const dockToggleBinding = bindingFor('dock-toggle')
+  const sidebarSessionsBinding = bindingFor('sidebar-sessions')
+  const sidebarFilesBinding = bindingFor('sidebar-files')
+
+  const paletteShortcut = useMemo(
+    () => chordToShortcutInput(paletteBinding),
+    [paletteBinding]
+  )
+
+  const dockShortcut = useMemo(
+    () => chordToShortcutInput(dockToggleBinding),
+    [dockToggleBinding]
+  )
+
+  const sidebarTabItems = useMemo(
+    () =>
+      buildSidebarTabItems({
+        sessionsShortcut: chordToShortcutInput(sidebarSessionsBinding),
+        filesShortcut: chordToShortcutInput(sidebarFilesBinding),
+      }),
+    [sidebarFilesBinding, sidebarSessionsBinding]
+  )
+
+  const isPaletteToggleEvent = useCallback(
+    (event: KeyboardEvent): boolean => matches(event, 'palette'),
+    [matches]
+  )
+
+  const isPaletteLeaderEvent = useCallback(
+    (event: KeyboardEvent): boolean => matches(event, 'palette-leader'),
+    [matches]
+  )
+
+  const paletteToken = formatChord(paletteBinding)
+  const leaderToken = formatChord(paletteLeaderBinding)
+
+  useEffect(() => {
+    const bindings = {
+      palette: paletteToken,
+      leader: leaderToken,
+    }
+    const bridge = window.vimeflow
+
+    if (bridge?.setCommandPaletteBindings) {
+      bridge.setCommandPaletteBindings(bindings)
+
+      return
+    }
+
+    bridge?.setCommandPaletteBinding?.(bindings.leader)
+  }, [paletteToken, leaderToken])
+
+  const settingsDialog = useSettingsDialog()
+
   const commandPalette = useCommandPalette(workspaceCommands, {
-    enabled: !showUnsavedDialog && !newSessionDialog.open,
+    enabled:
+      !showUnsavedDialog && !settingsDialog.isOpen && !newSessionDialog.open,
+    isLeaderEvent: isPaletteLeaderEvent,
+    isPaletteToggleEvent,
   })
+
+  useEffect(
+    () => registerCommandPaletteShortcutOpenerForE2e(commandPalette.open),
+    [commandPalette.open]
+  )
 
   // The palette owns focus while open (its Dialog focus-trap), and restoring to
   // whatever happened to be focused when it opened is unreliable — a theme
@@ -1898,7 +2116,7 @@ const WorkspaceViewContent = (): ReactElement => {
     activeSessionId,
     setSessionActivePane,
     setSessionLayout,
-    preferModifier,
+    matches,
     onTerminalZoneFocus: claimTerminal,
     isTerminalContainerActive: activeContainerId === TERMINAL_CONTAINER_ID,
     layoutRegistry,
@@ -1908,24 +2126,88 @@ const WorkspaceViewContent = (): ReactElement => {
     activeContainerId,
     openDock,
     claimTerminal,
+    matches,
     modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
   })
 
   useDockToggleShortcut({
     onToggle: handleToggleDock,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
   })
 
   useSidebarShortcut({
     onToggle: handleToggleSidebar,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
     activeContainerId,
   })
 
   useNewSessionShortcut({
     onNewSession: handleOpenNewSession,
-    modKey: preferModifier === 'meta' ? '⌘' : 'Ctrl',
+    matches,
   })
+
+  // VIM-104: ⌘⇧S / ⌘⇧F switch the left sidebar between Sessions and Files,
+  // revealing the sidebar first if it is collapsed (or opening the compact
+  // drawer on narrow viewports) so the chosen view is always visible.
+  const revealSidebar = useCallback((): void => {
+    if (isCompactViewport) {
+      setCompactSidebarOpen(true)
+
+      return
+    }
+
+    setSidebarCollapsed(false)
+  }, [isCompactViewport, setCompactSidebarOpen, setSidebarCollapsed])
+
+  const handleShowSessions = useCallback((): void => {
+    setActiveTab('sessions')
+    revealSidebar()
+  }, [setActiveTab, revealSidebar])
+
+  const handleShowFiles = useCallback((): void => {
+    setActiveTab('files')
+    revealSidebar()
+  }, [setActiveTab, revealSidebar])
+
+  useSidebarTabShortcut({
+    onShowSessions: handleShowSessions,
+    onShowFiles: handleShowFiles,
+    matches,
+  })
+
+  // VIM-104: ⌘[ / ⌘] cycle to the previous / next session (Ctrl+⇧[ / Ctrl+⇧]
+  // on Linux). Mirrors the previous/next-session palette commands.
+  const switchRelativeSession = useCallback(
+    (delta: number): void => {
+      const nextSession = cycleSession(sessions, activeSessionId, delta)
+      if (nextSession === null) {
+        notifyInfo('No open sessions')
+
+        return
+      }
+
+      setActiveSessionId(nextSession.id)
+      claimTerminal()
+    },
+    [sessions, activeSessionId, setActiveSessionId, notifyInfo, claimTerminal]
+  )
+
+  const handlePrevSession = useCallback((): void => {
+    switchRelativeSession(-1)
+  }, [switchRelativeSession])
+
+  const handleNextSession = useCallback((): void => {
+    switchRelativeSession(1)
+  }, [switchRelativeSession])
+
+  useSessionNavShortcut({
+    onPrevSession: handlePrevSession,
+    onNextSession: handleNextSession,
+    matches,
+  })
+
+  // VIM-104: Ctrl+` toggles the burner terminal popup for the focused pane.
+  useBurnerToggleShortcut({ onToggle: toggleBurnerCommand, matches })
 
   // One elastic size per axis so values survive dock unmounts and position changes.
   const verticalDockElastic = useElasticContainer({
@@ -2074,6 +2356,13 @@ const WorkspaceViewContent = (): ReactElement => {
   const [selectedEditorFileExists, setSelectedEditorFileExists] = useState<
     boolean | null
   >(null)
+
+  // Clear the explicit saved timestamp whenever the edited file or the scoped
+  // buffer identity changes, so a stale "SAVED · just now" never appears on a
+  // newly-selected file or after switching sessions.
+  useEffect(() => {
+    setEditorSavedAt((current) => (current === null ? current : null))
+  }, [editorBuffer.filePath, activeSessionId])
 
   const activeCwdCanLoadGitStatus =
     activeCwd !== '.' && activeCwd !== '~' && activeCwd.length > 0
@@ -2290,32 +2579,6 @@ const WorkspaceViewContent = (): ReactElement => {
       )
     : rateLimitPercentage(agentStatus.rateLimits?.sevenDay)
 
-  // Save via vim :w or any direct editor save trigger. Same rationale as
-  // openFileSafely — errors were previously swallowed and the user had no
-  // indication that a disk-full / permission-denied error occurred.
-  const handleVimSave = useCallback(async (): Promise<void> => {
-    try {
-      await editorBuffer.saveFile()
-      setFileError(null)
-      setEditorSavedAt(Date.now())
-      // A successful save recreates the backing file if it was deleted
-      // externally. Refresh the existence signal immediately so the next
-      // render does not derive a stale DELETED/read-only state before the
-      // polling probe catches up.
-      setSelectedEditorFileExists(true)
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error)
-      setFileError(`Failed to save: ${message}`)
-    }
-  }, [editorBuffer])
-
-  // Clear the explicit saved timestamp whenever the edited file or the scoped
-  // buffer identity changes, so a stale "SAVED · just now" never appears on a
-  // newly-selected file or after switching sessions.
-  useEffect(() => {
-    setEditorSavedAt((current) => (current === null ? current : null))
-  }, [editorBuffer.filePath, activeSessionId])
-
   // Handle file selection from FileExplorer. Memoized so its identity
   // is stable across the 4-level prop chain (WorkspaceView → Sidebar →
   // FileExplorer → FileTree → FileTreeNode). Matches the useCallback
@@ -2328,25 +2591,9 @@ const WorkspaceViewContent = (): ReactElement => {
         return
       }
 
-      const filePath = node.id
-
-      // If current file has unsaved changes, show dialog
-      if (editorBuffer.isDirty) {
-        setPendingFilePathSynced(filePath)
-        setPendingSessionRestoreIdRef(null)
-        setShowUnsavedDialog(true)
-
-        return
-      }
-
-      void openFileSafely(filePath)
+      requestOpenFile(node.id)
     },
-    [
-      editorBuffer.isDirty,
-      openFileSafely,
-      setPendingFilePathSynced,
-      setPendingSessionRestoreIdRef,
-    ]
+    [requestOpenFile]
   )
 
   const handleFileViewDiff = useCallback(
@@ -2407,29 +2654,16 @@ const WorkspaceViewContent = (): ReactElement => {
     ]
   )
 
-  // Open a test file from the activity panel. Mirrors handleFileSelect's
-  // dirty-state guard so clicking a test result row never silently
-  // discards unsaved editor changes — the same unsaved-dialog flow
-  // (handleSave / handleDiscard / handleCancel) resumes the pending
-  // open against pendingFilePathRef once the user picks an action.
+  // Open a test file from the activity panel. Delegates to requestOpenFile so
+  // clicking a test result row uses the same dirty-state guard as file clicks
+  // and `:edit <path>` — the same unsaved-dialog flow (handleSave /
+  // handleDiscard / handleCancel) resumes the pending open against
+  // pendingFilePathRef once the user picks an action.
   const handleOpenTestFile = useCallback(
     (filePath: string): void => {
-      if (editorBuffer.isDirty) {
-        setPendingFilePathSynced(filePath)
-        setPendingSessionRestoreIdRef(null)
-        setShowUnsavedDialog(true)
-
-        return
-      }
-
-      void openFileSafely(filePath)
+      requestOpenFile(filePath)
     },
-    [
-      editorBuffer.isDirty,
-      openFileSafely,
-      setPendingFilePathSynced,
-      setPendingSessionRestoreIdRef,
-    ]
+    [requestOpenFile]
   )
 
   // Save the guarded buffer, then continue the pending file switch or
@@ -2932,7 +3166,7 @@ const WorkspaceViewContent = (): ReactElement => {
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
                     <SidebarTabs<SidebarTab>
-                      tabs={SIDEBAR_TAB_ITEMS}
+                      tabs={sidebarTabItems}
                       activeId={activeTab}
                       onChange={setActiveTab}
                     />
@@ -2962,9 +3196,7 @@ const WorkspaceViewContent = (): ReactElement => {
               }
               footer={
                 isSidebarClosed ? undefined : (
-                  <SidebarSettingsFooter
-                    settingsIssueNumber={SETTINGS_FOLLOWUP_ISSUE_NUMBER}
-                  />
+                  <SidebarSettingsFooter onSettings={settingsDialog.open} />
                 )
               }
             />
@@ -3113,6 +3345,7 @@ const WorkspaceViewContent = (): ReactElement => {
               activeBurnerPaneKeys={activeBurnerPaneKeys}
               openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
+              terminalFontFamily={settings.terminalFontFamily}
               outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
             />
           </div>
@@ -3160,6 +3393,8 @@ const WorkspaceViewContent = (): ReactElement => {
           session={statusBarSession}
           contextPct={statusBarContextPct}
           onOpenPalette={commandPalette.open}
+          paletteShortcut={paletteShortcut}
+          dockShortcut={dockShortcut}
           dockOpen={isDockOpen}
           onToggleDock={handleToggleDock}
           burnerCount={openBurnerPaneKeys.size}
@@ -3226,6 +3461,7 @@ const WorkspaceViewContent = (): ReactElement => {
               onOpenDiff={handleOpenDiff}
               onOpenFile={handleOpenTestFile}
               agent={activityPanelAgent}
+              reservoirSwell={reservoirSwell}
               snapshotKey={activePtyBackedPanePtyId ?? null}
               reserveWindowControls={reserveWindowControls}
             />
@@ -3298,6 +3534,11 @@ const WorkspaceViewContent = (): ReactElement => {
         setQuery={commandPalette.setQuery}
         selectIndex={commandPalette.selectIndex}
         executeAt={commandPalette.executeAt}
+      />
+
+      <SettingsDialog
+        open={settingsDialog.isOpen}
+        onClose={settingsDialog.close}
       />
     </div>
   )

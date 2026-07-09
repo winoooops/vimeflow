@@ -2,17 +2,20 @@
 import { renderHook } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { emptyActivity } from '../../sessions/constants'
-import type { PaneLayoutId, Session } from '../../sessions/types'
+import type { LayoutId, Session } from '../../sessions/types'
+import { SINGLE_PANE_FOCUS_LAYOUT_ID } from '../layout-registry'
 import {
-  PaneLayoutRegistry,
-  SINGLE_PANE_FOCUS_LAYOUT_ID,
-  type PaneLayoutDefinition,
-} from '../layout-registry'
-import { usePaneShortcuts, type PaneShortcutModifier } from './usePaneShortcuts'
+  usePaneShortcuts,
+  type UsePaneShortcutsOptions,
+} from './usePaneShortcuts'
+import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
+import { resolveBinding } from '../../keymap/resolve'
+import { getCommand, type CommandId } from '../../keymap/catalog'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 
 const makeSession = (
   id: string,
-  layout: PaneLayoutId,
+  layout: LayoutId,
   paneIds: string[],
   activeIndex = 0
 ): Session => ({
@@ -42,7 +45,7 @@ const makeSession = (
 // QWERTZ) work too; tests synthesize both fields the way a real
 // keypress would.
 const codeFor = (key: string): string | undefined => {
-  if (key >= '1' && key <= '9') {
+  if (key >= '1' && key <= '4') {
     return `Digit${key}`
   }
   if (key === '\\') {
@@ -74,41 +77,63 @@ const fire = (
   return Object.assign(event, { preventDefaultSpy })
 }
 
+// Inject a registry matcher built from the real engine so the existing
+// event-driven assertions still hold: each command resolves to its catalog
+// default (no overrides) and is matched per platform. The migration replaced
+// usePaneShortcuts' hardcoded super gate with this `matches` (VIM-136 SP1).
+const realMatches =
+  (superKey: PlatformSuper, isMac: boolean) =>
+  (event: KeyboardEvent, id: CommandId): boolean =>
+    eventMatchesChord(
+      event,
+      resolveBinding(id, {}, isMac, superKey),
+      superKey,
+      getCommand(id).matchPolicy
+    )
+const ctrlMatches = realMatches('ctrl', false)
+const metaMatches = realMatches('meta', true)
+
+const renderPane = (
+  options: Omit<UsePaneShortcutsOptions, 'matches'> & {
+    matches?: UsePaneShortcutsOptions['matches']
+  }
+): ReturnType<typeof renderHook> =>
+  renderHook(() => usePaneShortcuts({ matches: ctrlMatches, ...options }))
+
 const modZPlatforms: readonly {
   readonly label: string
-  readonly preferModifier: PaneShortcutModifier
+  readonly matches: UsePaneShortcutsOptions['matches']
+  readonly shortcutModifiers: Partial<KeyboardEventInit>
+  readonly oppositeModifiers: Partial<KeyboardEventInit>
 }[] = [
   {
     label: 'Linux',
-    preferModifier: 'ctrl',
+    matches: ctrlMatches,
+    shortcutModifiers: { ctrlKey: true },
+    oppositeModifiers: { metaKey: true },
   },
   {
     label: 'macOS',
-    preferModifier: 'meta',
+    matches: metaMatches,
+    shortcutModifiers: { metaKey: true },
+    oppositeModifiers: { ctrlKey: true },
   },
 ]
 
 const shortcutModifiersFor = (
-  preferModifier: PaneShortcutModifier
+  preferModifier: PlatformSuper
 ): Partial<KeyboardEventInit> =>
   preferModifier === 'meta' ? { metaKey: true } : { ctrlKey: true }
-
-const oppositeModifiersFor = (
-  preferModifier: PaneShortcutModifier
-): Partial<KeyboardEventInit> =>
-  preferModifier === 'meta' ? { ctrlKey: true } : { metaKey: true }
 
 describe('usePaneShortcuts', () => {
   test('Ctrl+\\ from single cycles to vsplit and prevents default (default modifier)', () => {
     const setSessionLayout = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
 
     const event = fire('\\', { ctrlKey: true })
 
@@ -117,75 +142,104 @@ describe('usePaneShortcuts', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('Ctrl+\\ from grid3x2 wraps to single (default modifier)', () => {
+  test('Ctrl+\\ from the keymap recorder does not cycle layout', () => {
     const setSessionLayout = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'grid3x2', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
+
+    const recorder = document.createElement('button')
+    recorder.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+    document.body.append(recorder)
+
+    try {
+      const event = new KeyboardEvent('keydown', {
+        key: '\\',
+        code: 'Backslash',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
       })
-    )
+      const preventDefaultSpy = vi.spyOn(event, 'preventDefault')
+      recorder.dispatchEvent(event)
+
+      expect(setSessionLayout).not.toHaveBeenCalled()
+      expect(preventDefaultSpy).not.toHaveBeenCalled()
+    } finally {
+      recorder.remove()
+    }
+  })
+
+  test('Ctrl+\\ from quad advances to grid3x2 (default modifier)', () => {
+    const setSessionLayout = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'quad', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
 
     fire('\\', { ctrlKey: true })
 
     expect(setSessionLayout).toHaveBeenCalledOnce()
-    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'single')
+    expect(setSessionLayout).toHaveBeenCalledWith('s1', 'grid3x2')
   })
 
-  modZPlatforms.forEach(({ label, preferModifier }) => {
-    test(`${label}: Mod+Z toggles a multi-pane layout to single and back`, () => {
-      const setSessionLayout = vi.fn()
-      const shortcutModifiers = shortcutModifiersFor(preferModifier)
-      const oppositeModifiers = oppositeModifiersFor(preferModifier)
+  modZPlatforms.forEach(
+    ({ label, matches, shortcutModifiers, oppositeModifiers }) => {
+      test(`${label}: Mod+Z toggles a multi-pane layout to single and back`, () => {
+        const setSessionLayout = vi.fn()
 
-      const { rerender } = renderHook(
-        ({ session }) =>
-          usePaneShortcuts({
-            sessions: [session],
-            activeSessionId: 's1',
-            setSessionActivePane: vi.fn(),
-            setSessionLayout,
-            preferModifier,
-          }),
-        {
-          initialProps: {
-            session: makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2'], 2),
-          },
-        }
-      )
+        const { rerender } = renderHook(
+          ({ session }) =>
+            usePaneShortcuts({
+              sessions: [session],
+              activeSessionId: 's1',
+              setSessionActivePane: vi.fn(),
+              setSessionLayout,
+              matches,
+            }),
+          {
+            initialProps: {
+              session: makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2'], 2),
+            },
+          }
+        )
 
-      const oppositeEvent = fire('z', oppositeModifiers)
-      expect(setSessionLayout).not.toHaveBeenCalled()
-      expect(oppositeEvent.preventDefaultSpy).not.toHaveBeenCalled()
+        const oppositeEvent = fire('z', oppositeModifiers)
+        expect(setSessionLayout).not.toHaveBeenCalled()
+        expect(oppositeEvent.preventDefaultSpy).not.toHaveBeenCalled()
 
-      const event = fire('z', shortcutModifiers)
+        const event = fire('z', shortcutModifiers)
 
-      expect(setSessionLayout).toHaveBeenCalledOnce()
-      expect(setSessionLayout).toHaveBeenCalledWith(
-        's1',
-        SINGLE_PANE_FOCUS_LAYOUT_ID
-      )
-      expect(event.preventDefaultSpy).toHaveBeenCalled()
-
-      setSessionLayout.mockClear()
-      rerender({
-        session: makeSession(
+        expect(setSessionLayout).toHaveBeenCalledOnce()
+        expect(setSessionLayout).toHaveBeenCalledWith(
           's1',
-          SINGLE_PANE_FOCUS_LAYOUT_ID,
-          ['p0', 'p1', 'p2'],
-          2
-        ),
+          SINGLE_PANE_FOCUS_LAYOUT_ID
+        )
+        expect(event.preventDefaultSpy).toHaveBeenCalled()
+
+        setSessionLayout.mockClear()
+        rerender({
+          session: makeSession(
+            's1',
+            SINGLE_PANE_FOCUS_LAYOUT_ID,
+            ['p0', 'p1', 'p2'],
+            2
+          ),
+        })
+
+        const restoreEvent = fire('z', shortcutModifiers)
+
+        expect(setSessionLayout).toHaveBeenCalledOnce()
+        expect(setSessionLayout).toHaveBeenCalledWith('s1', 'grid3x2')
+        expect(restoreEvent.preventDefaultSpy).toHaveBeenCalled()
       })
-
-      const restoreEvent = fire('z', shortcutModifiers)
-
-      expect(setSessionLayout).toHaveBeenCalledOnce()
-      expect(setSessionLayout).toHaveBeenCalledWith('s1', 'grid3x2')
-      expect(restoreEvent.preventDefaultSpy).toHaveBeenCalled()
-    })
-  })
+    }
+  )
 
   test('Mod+Z keeps separate restore layouts for each session', () => {
     const setSessionLayout = vi.fn()
@@ -197,6 +251,7 @@ describe('usePaneShortcuts', () => {
           activeSessionId,
           setSessionActivePane: vi.fn(),
           setSessionLayout,
+          matches: ctrlMatches,
         }),
       {
         initialProps: {
@@ -263,6 +318,7 @@ describe('usePaneShortcuts', () => {
           activeSessionId: 's1',
           setSessionActivePane: vi.fn(),
           setSessionLayout,
+          matches: ctrlMatches,
         }),
       {
         initialProps: {
@@ -303,6 +359,7 @@ describe('usePaneShortcuts', () => {
         activeSessionId: 's1',
         setSessionActivePane: vi.fn(),
         setSessionLayout,
+        matches: ctrlMatches,
       })
     )
 
@@ -322,6 +379,7 @@ describe('usePaneShortcuts', () => {
           activeSessionId: 's1',
           setSessionActivePane: vi.fn(),
           setSessionLayout,
+          matches: ctrlMatches,
         }),
       {
         initialProps: {
@@ -371,6 +429,7 @@ describe('usePaneShortcuts', () => {
         activeSessionId: 's1',
         setSessionActivePane: vi.fn(),
         setSessionLayout,
+        matches: ctrlMatches,
       })
     )
 
@@ -383,18 +442,16 @@ describe('usePaneShortcuts', () => {
   test('Ctrl+2 with only one pane is a no-op AND lets the event propagate', () => {
     // Out-of-range pane index: we deliberately do NOT preventDefault so
     // that terminal apps (vim buffers, tmux windows) can claim Cmd+N
-    // when there's no pane to focus. The toolbar advertises "⌘+1-6
+    // when there's no pane to focus. The toolbar advertises "⌘+1-4
     // focus pane" — claiming a slot we can't fill would silently
     // swallow user input with no visible action.
     const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
 
     const event = fire('2', { ctrlKey: true })
 
@@ -411,14 +468,12 @@ describe('usePaneShortcuts', () => {
     // p0 — the cycle-6 already-active escape-hatch (let key
     // propagate when no focus change) doesn't apply here.
     const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
 
     const event = fire('1', { ctrlKey: true, altKey: true })
 
@@ -431,14 +486,12 @@ describe('usePaneShortcuts', () => {
     // QWERTZ users press Shift to access `\`; we must accept the
     // shift modifier or the shortcut is unreachable for them.
     const setSessionLayout = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
 
     const event = fire('\\', { ctrlKey: true, shiftKey: true })
 
@@ -449,14 +502,12 @@ describe('usePaneShortcuts', () => {
 
   test('no modifier is a no-op and does not prevent default', () => {
     const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
 
     const event = fire('2')
 
@@ -466,14 +517,12 @@ describe('usePaneShortcuts', () => {
 
   test('activeSessionId=null is a no-op', () => {
     const setSessionLayout = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: null,
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: null,
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
 
     fire('\\', { ctrlKey: true })
 
@@ -483,14 +532,12 @@ describe('usePaneShortcuts', () => {
   test('unmount removes the listener', () => {
     const setSessionLayout = vi.fn()
 
-    const { unmount } = renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-      })
-    )
+    const { unmount } = renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
 
     unmount()
     fire('\\', { ctrlKey: true })
@@ -500,134 +547,17 @@ describe('usePaneShortcuts', () => {
 
   test('Ctrl+2 with active p0 and two panes focuses p1', () => {
     const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
 
     fire('2', { ctrlKey: true })
 
     expect(setSessionActivePane).toHaveBeenCalledOnce()
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
-  })
-
-  test('Ctrl+5 / Ctrl+6 focus bottom-row panes in grid3x2', () => {
-    const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [
-          makeSession('s1', 'grid3x2', ['p0', 'p1', 'p2', 'p3', 'p4', 'p5'], 0),
-        ],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
-
-    fire('5', { ctrlKey: true })
-    fire('6', { ctrlKey: true })
-
-    expect(setSessionActivePane).toHaveBeenCalledTimes(2)
-    expect(setSessionActivePane).toHaveBeenNthCalledWith(1, 's1', 'p4')
-    expect(setSessionActivePane).toHaveBeenNthCalledWith(2, 's1', 'p5')
-  })
-
-  test('Ctrl+1 focuses the pane assigned to visual slot 1', () => {
-    const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [
-          {
-            ...makeSession('s1', 'vsplit', ['p0', 'p1'], 1),
-            placements: [
-              { paneId: 'p0', slotId: 'slot:p1' },
-              { paneId: 'p1', slotId: 'slot:p0' },
-            ],
-          },
-        ],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
-
-    const event = fire('1', { ctrlKey: true })
-
-    expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
-
-    const swappedEvent = fire('2', { ctrlKey: true })
-
-    expect(setSessionActivePane).toHaveBeenCalledOnce()
-    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
-    expect(swappedEvent.preventDefaultSpy).toHaveBeenCalled()
-  })
-
-  test('Ctrl+9 focuses the pane assigned to a custom layout ninth slot', () => {
-    const customLayout: PaneLayoutDefinition = {
-      schemaVersion: 1,
-      id: 'custom:nine',
-      title: 'Nine',
-      source: 'workspace',
-      tracks: {
-        columns: [
-          { id: 'col-0', units: 8 },
-          { id: 'col-1', units: 8 },
-          { id: 'col-2', units: 8 },
-        ],
-        rows: [
-          { id: 'row-0', units: 8 },
-          { id: 'row-1', units: 8 },
-          { id: 'row-2', units: 8 },
-        ],
-      },
-      slots: Array.from({ length: 9 }, (_, index) => ({
-        id: `slot:p${index}` as const,
-        rect: {
-          col: index % 3,
-          row: Math.floor(index / 3),
-          colSpan: 1,
-          rowSpan: 1,
-        },
-      })),
-      addOrder: Array.from(
-        { length: 9 },
-        (_, index) => `slot:p${index}` as const
-      ),
-    }
-
-    const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [
-          makeSession('s1', 'custom:nine', [
-            'p0',
-            'p1',
-            'p2',
-            'p3',
-            'p4',
-            'p5',
-            'p6',
-            'p7',
-            'p8',
-          ]),
-        ],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-        layoutRegistry: new PaneLayoutRegistry([customLayout]),
-      })
-    )
-
-    const event = fire('9', { ctrlKey: true })
-
-    expect(setSessionActivePane).toHaveBeenCalledOnce()
-    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p8')
-    expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
   test('Ctrl+1 with already-active p0 lets the event propagate (no preventDefault)', () => {
@@ -639,14 +569,12 @@ describe('usePaneShortcuts', () => {
     // when no focus change would occur. Codex / Claude reached the
     // same conclusion in round 6 of /lifeline:upsource-review.
     const setSessionActivePane = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -660,15 +588,13 @@ describe('usePaneShortcuts', () => {
     // claim the slot — otherwise terminal apps that rely on Ctrl-
     // shortcuts (vim, readline) silently lose them.
     const setSessionLayout = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-        preferModifier: 'meta',
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+      matches: metaMatches,
+    })
 
     // Cmd+\ fires (Mac-displayed modifier matches)
     const cmdEvent = fire('\\', { metaKey: true })
@@ -688,15 +614,13 @@ describe('usePaneShortcuts', () => {
     // Symmetric to the Mac test. On Linux/Windows the hint shows
     // Ctrl, so Cmd+\ does NOT claim the slot.
     const setSessionLayout = vi.fn()
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-        // preferModifier defaults to 'ctrl'
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+      // preferModifier defaults to 'ctrl'
+    })
 
     const event = fire('\\', { metaKey: true })
 
@@ -715,16 +639,14 @@ describe('usePaneShortcuts', () => {
 
     const sessionWithBadLayout = {
       ...makeSession('s1', 'single', ['p0']),
-      layout: 'invalid-old-layout' as PaneLayoutId,
+      layout: 'invalid-old-layout' as LayoutId,
     }
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [sessionWithBadLayout],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout,
-      })
-    )
+    renderPane({
+      sessions: [sessionWithBadLayout],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout,
+    })
 
     const event = fire('\\', { ctrlKey: true })
 
@@ -757,16 +679,14 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     const onTerminalZoneFocus = vi.fn()
     const dockElement = attachFakeDock()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout: vi.fn(),
-        isTerminalContainerActive: false,
-        onTerminalZoneFocus,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: false,
+      onTerminalZoneFocus,
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -788,6 +708,7 @@ describe('usePaneShortcuts container reclaim extensions', () => {
         setSessionLayout,
         isTerminalContainerActive: false,
         onTerminalZoneFocus: vi.fn(),
+        matches: ctrlMatches,
       })
     )
 
@@ -814,6 +735,7 @@ describe('usePaneShortcuts container reclaim extensions', () => {
         setSessionLayout,
         isTerminalContainerActive: true,
         onTerminalZoneFocus: vi.fn(),
+        matches: ctrlMatches,
       })
     )
 
@@ -829,16 +751,14 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     const onTerminalZoneFocus = vi.fn()
     blurActiveElement()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout: vi.fn(),
-        isTerminalContainerActive: false,
-        onTerminalZoneFocus,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: false,
+      onTerminalZoneFocus,
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -855,16 +775,14 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     document.body.appendChild(dialog)
     inner.focus()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout: vi.fn(),
-        isTerminalContainerActive: false,
-        onTerminalZoneFocus,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: false,
+      onTerminalZoneFocus,
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -881,16 +799,14 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     document.body.appendChild(textarea)
     textarea.focus()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout: vi.fn(),
-        isTerminalContainerActive: true,
-        onTerminalZoneFocus,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+      onTerminalZoneFocus,
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -904,16 +820,14 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     const onTerminalZoneFocus = vi.fn()
     blurActiveElement()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'single', ['p0'])],
-        activeSessionId: 's1',
-        setSessionActivePane: vi.fn(),
-        setSessionLayout: vi.fn(),
-        isTerminalContainerActive: true,
-        onTerminalZoneFocus,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane: vi.fn(),
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+      onTerminalZoneFocus,
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -927,16 +841,14 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     const dockEl = attachFakeDock()
     dockEl.focus()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)], // p1 is active
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-        isTerminalContainerActive: false,
-        onTerminalZoneFocus,
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)], // p1 is active
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: false,
+      onTerminalZoneFocus,
+    })
 
     const event = fire('1', { ctrlKey: true })
 
@@ -953,16 +865,264 @@ describe('usePaneShortcuts container reclaim extensions', () => {
   test('omitted reclaim params preserve already-active pass-through behavior', () => {
     const setSessionActivePane = vi.fn()
 
-    renderHook(() =>
-      usePaneShortcuts({
-        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
-        activeSessionId: 's1',
-        setSessionActivePane,
-        setSessionLayout: vi.fn(),
-      })
-    )
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
 
     const event = fire('1', { ctrlKey: true })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
+  test('vsplit active p0 Ctrl+Shift+Right focuses p1 and prevents default', () => {
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('vsplit active p0 plain Ctrl+Right (no Shift) passes through to terminal', () => {
+    // Ctrl+Arrow is common terminal input (readline word movement, vim/tmux
+    // bindings). The directional pane shortcut requires Shift on Ctrl
+    // platforms so terminal programs keep the bare chord.
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('Mac vsplit active p0 plain Cmd+Right (no Shift) passes through', () => {
+    // The Shift requirement applies on macOS too so the advertised chord
+    // matches the design doc: ⌘+Shift+Arrow focuses panes; bare ⌘+Arrow is
+    // left for editor line/document navigation.
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+      matches: metaMatches,
+    })
+
+    const event = fire('ArrowRight', {
+      metaKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+  })
+
+  test('directional focus is suppressed while a dialog is open', () => {
+    const setSessionActivePane = vi.fn()
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.appendChild(dialog)
+
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dialog)
+  })
+
+  test('single active p0 Ctrl+Shift+Right at edge claims the shortcut', () => {
+    // No neighbor exists, but the chord is recognized as an app-level pane-
+    // navigation shortcut after the container/dialog guards pass, so we
+    // prevent it from falling through to xterm and reaching the PTY.
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'single', ['p0'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
+  })
+
+  test('hsplit active p0 Ctrl+Shift+Down focuses p1', () => {
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'hsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    fire('ArrowDown', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowDown',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('quad active p0 Ctrl+Shift+Down focuses p2', () => {
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    fire('ArrowDown', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowDown',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p2')
+  })
+
+  test('quad active p0 Ctrl+Shift+Right focuses p1', () => {
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+  })
+
+  test('vsplit over-capacity: active pane beyond prefix resolves against visible slots', () => {
+    // 3 panes in a 2-slot vsplit, active at index 2. SplitView renders
+    // [p0, p2] in slots p0/p1. The active pane is at visible slot 1, so
+    // ArrowLeft should move to visible slot 0 (pane p0) — not fail because
+    // p3 isn't in the grid.
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1', 'p2'], 2)],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: true,
+    })
+
+    fire('ArrowLeft', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowLeft',
+    })
+
+    expect(setSessionActivePane).toHaveBeenCalledOnce()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+  })
+
+  test('Ctrl+Shift+Arrow passes through when terminal container is not active', () => {
+    const setSessionActivePane = vi.fn()
+    const dockElement = document.createElement('div')
+    dockElement.setAttribute('data-container-id', 'dock')
+    dockElement.setAttribute('tabindex', '-1')
+    document.body.appendChild(dockElement)
+    dockElement.focus()
+
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+      isTerminalContainerActive: false,
+    })
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
+
+    expect(setSessionActivePane).not.toHaveBeenCalled()
+    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+
+    document.body.removeChild(dockElement)
+  })
+
+  test('Ctrl+Shift+Arrow passes through when container-active guard is omitted', () => {
+    // The directional handler defaults to safe: if no caller vouches that the
+    // terminal container owns focus, the shortcut must not claim the key.
+    const setSessionActivePane = vi.fn()
+    renderPane({
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
+      activeSessionId: 's1',
+      setSessionActivePane,
+      setSessionLayout: vi.fn(),
+    })
+
+    const event = fire('ArrowRight', {
+      ctrlKey: true,
+      shiftKey: true,
+      code: 'ArrowRight',
+    })
 
     expect(setSessionActivePane).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()

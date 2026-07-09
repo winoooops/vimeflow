@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-08
-ref_count: 21
+last_updated: 2026-07-09
+ref_count: 22
 ---
 
 # Derived State Consistency
@@ -336,7 +336,21 @@ base data is technically "correct."
   active session metadata remains unchanged.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 26. Preserved native surface caches skipped replay on recreation
+### 26. Cached terminal surfaces kept the previous resolved font
+
+- **Source:** github-claude + github-codex-connector | PR #672 round 1 | 2026-07-08
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** Terminal font settings were resolved in React state, but cached
+  xterm instances and native Ghostty frame updates did not receive the changed
+  font family. A settings change could update the provider while already-open
+  terminal panes continued rendering with the previous font.
+- **Fix:** Reapply the resolved font when reusing cached xterm instances and
+  thread `terminalFontFamily` through the native Ghostty update path, including
+  frame dedupe and Electron parent/helper handling. Added renderer and Electron
+  regression tests.
+
+### 27. Preserved native surface caches skipped replay on recreation
 
 - **Source:** github-codex-connector | PR #675 round 1 | 2026-07-08
 - **Severity:** P2 / MEDIUM
@@ -344,3 +358,31 @@ base data is technically "correct."
 - **Finding:** Destroying a primary Ghostty surface while preserving its burner secondary left `lastBackgroundColor`, `lastForegroundColor`, and `lastShortcutDigits` populated. Recreating the native surface with the same theme and shortcut context then skipped the setter calls needed to initialize the new surface.
 - **Fix:** Reset the surface-scoped visual and shortcut caches whenever a native surface is torn down, including preserved-secondary destroys and window reparenting destroys. Added a regression test proving the same colors and shortcut digits are replayed onto the recreated surface.
 - **Commit:** same commit as this entry
+
+### 28. Shortcut tooltips ignored live keymap overrides
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/components/StatusBar.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Dock-toggle and sidebar-tab tooltips continued rendering static
+  shortcut chips even though those commands are rebindable through the new
+  keymap settings. After customization, hover text showed stale combinations
+  that no longer matched the active command bindings.
+- **Fix:** Derive dock and sidebar tooltip shortcuts from `bindingFor(...)`
+  using the same `chordToShortcutInput` path as the command palette tooltip.
+  Added status bar coverage for a custom dock shortcut chip.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Settings broadcasts must merge with local pending-load edits
+
+- **Source:** github-claude | PR #672 round 4 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** Cross-window settings broadcasts replaced local state even while
+  the receiving provider still had a pending pre-load edit. That could hide the
+  user's own optimistic edit, then later replay the pending patch over a stale
+  load base and revert fields from the broadcast.
+- **Fix:** Retain the latest pre-load broadcast as the load base and overlay any
+  pending local patch before rendering or saving. Added regression coverage for
+  a broadcast arriving between a local pre-load edit and the load resolution.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -3,9 +3,19 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
+  COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   DIALOG_PICK_DIRECTORY,
+  E2E_COMMAND_PALETTE_SHORTCUT,
+  KEYMAP_CAPTURE_ACTIVE,
+  SETTINGS_CHANGED,
+  SETTINGS_OPEN_FILE,
+  SETTINGS_OPEN_WINDOW,
+  SETTINGS_SYNC_SNAPSHOT,
 } from './ipc-channels'
+import type { AgentAlias } from '../src/bindings/AgentAlias'
+import type { AppSettings } from '../src/bindings/AppSettings'
+import type { SystemFont } from '../src/bindings/SystemFont'
 import {
   NATIVE_OVERLAY_ACTION,
   NATIVE_OVERLAY_ACTION_RESULT,
@@ -59,9 +69,21 @@ const BACKEND_EVENT_MAX_LISTENERS = 64
 
 ipcRenderer.setMaxListeners(BACKEND_EVENT_MAX_LISTENERS)
 
+type CommandPaletteShortcutSource = 'palette' | 'leader'
+
+interface CommandPaletteBindingSync {
+  palette: string
+  leader: string
+}
+
 type InvokeEnvelope<T> =
   | { ok: true; result: T }
   | { ok: false; error: string; errorReason?: string }
+
+const isCommandPaletteShortcutSource = (
+  value: unknown
+): value is CommandPaletteShortcutSource =>
+  value === 'palette' || value === 'leader'
 
 const invoke = async <T>(
   method: string,
@@ -110,9 +132,11 @@ const listen = <T>(
   return Promise.resolve(unlisten)
 }
 
-const onCommandPaletteToggle = (callback: () => void): (() => void) => {
-  const handler = (): void => {
-    callback()
+const onCommandPaletteToggle = (
+  callback: (source?: CommandPaletteShortcutSource) => void
+): (() => void) => {
+  const handler = (_event: IpcRendererEvent, source: unknown): void => {
+    callback(isCommandPaletteShortcutSource(source) ? source : undefined)
   }
 
   ipcRenderer.on(COMMAND_PALETTE_TOGGLE, handler)
@@ -120,6 +144,20 @@ const onCommandPaletteToggle = (callback: () => void): (() => void) => {
   return (): void => {
     ipcRenderer.off(COMMAND_PALETTE_TOGGLE, handler)
   }
+}
+
+const setKeymapCaptureActive = (active: boolean): void => {
+  ipcRenderer.send(KEYMAP_CAPTURE_ACTIVE, active)
+}
+
+const setCommandPaletteBinding = (binding: string): void => {
+  ipcRenderer.send(COMMAND_PALETTE_BINDING, binding)
+}
+
+const setCommandPaletteBindings = (
+  bindings: CommandPaletteBindingSync
+): void => {
+  ipcRenderer.send(COMMAND_PALETTE_BINDING, bindings)
 }
 
 const isNativeGhosttyPreloadEnabled =
@@ -158,10 +196,26 @@ const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
     }
   : {}
 
+const e2eBridge =
+  process.env.VITE_E2E === '1'
+    ? {
+        e2e: {
+          dispatchCommandPaletteShortcut: (): Promise<boolean> =>
+            ipcRenderer.invoke(
+              E2E_COMMAND_PALETTE_SHORTCUT
+            ) as Promise<boolean>,
+        },
+      }
+    : {}
+
 contextBridge.exposeInMainWorld('vimeflow', {
   invoke,
   listen,
   onCommandPaletteToggle,
+  setKeymapCaptureActive,
+  setCommandPaletteBinding,
+  setCommandPaletteBindings,
+  ...e2eBridge,
   browserPane: {
     createPane: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(BROWSER_PANE_CREATE, request),
@@ -350,5 +404,34 @@ contextBridge.exposeInMainWorld('vimeflow', {
         ipcRenderer.off(WORKSPACE_LAYOUT_REQUEST_FINAL_SHAPE, handler)
       }
     },
+  },
+  settings: {
+    load: (): Promise<AppSettings> => invoke('load_app_settings'),
+    save: (settings: AppSettings): Promise<void> =>
+      invoke('save_app_settings', { settings }),
+    listSystemFonts: (): Promise<SystemFont[]> => invoke('list_system_fonts'),
+    openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
+    openWindow: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_WINDOW),
+    syncSnapshot: (settings: AppSettings): Promise<void> =>
+      ipcRenderer.invoke(SETTINGS_SYNC_SNAPSHOT, settings),
+    onDidChange: (callback: (settings: AppSettings) => void): (() => void) => {
+      const handler = (
+        _event: IpcRendererEvent,
+        settings: AppSettings
+      ): void => {
+        callback(settings)
+      }
+
+      ipcRenderer.on(SETTINGS_CHANGED, handler)
+
+      return (): void => {
+        ipcRenderer.off(SETTINGS_CHANGED, handler)
+      }
+    },
+  },
+  aliases: {
+    load: (): Promise<AgentAlias[]> => invoke('load_agent_aliases'),
+    save: (aliases: AgentAlias[]): Promise<void> =>
+      invoke('save_agent_aliases', { aliases }),
   },
 })
