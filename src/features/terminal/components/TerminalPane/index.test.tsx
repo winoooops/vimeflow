@@ -4,6 +4,7 @@ import { createRef } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
+import type { UseGitWorktreeReturn } from '../../../diff/hooks/useGitWorktree'
 import type { Session } from '../../../sessions/types'
 import type { BodyHandle, BodyProps } from './Body'
 import { TerminalPane, type TerminalPaneHandle } from './index'
@@ -13,6 +14,49 @@ vi.mock('./usePaneWidth', () => ({ usePaneWidth: vi.fn(() => null) }))
 
 const bodyPropsSpy = vi.hoisted(() => vi.fn())
 const focusTerminalSpy = vi.hoisted(() => vi.fn())
+
+const useGitBranchSpy = vi.hoisted(() =>
+  vi.fn(
+    (): UseGitBranchReturn => ({
+      branch: 'main',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+  )
+)
+
+const useGitStatusSpy = vi.hoisted(() =>
+  vi.fn(
+    (): UseGitStatusReturn => ({
+      files: [
+        {
+          path: 'a.ts',
+          status: 'modified',
+          insertions: 10,
+          deletions: 3,
+          staged: false,
+        },
+      ],
+      filesCwd: '/home/user/repo',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+  )
+)
+
+const useGitWorktreeSpy = vi.hoisted(() =>
+  vi.fn(
+    (): UseGitWorktreeReturn => ({
+      worktreeName: null,
+      loading: false,
+      error: null,
+    })
+  )
+)
 
 vi.mock('./Body', async () => {
   const React = await import('react')
@@ -40,32 +84,15 @@ vi.mock('./Body', async () => {
 })
 
 vi.mock('../../../diff/hooks/useGitBranch', () => ({
-  useGitBranch: (): UseGitBranchReturn => ({
-    branch: 'main',
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    idle: false,
-  }),
+  useGitBranch: useGitBranchSpy,
 }))
 
 vi.mock('../../../diff/hooks/useGitStatus', () => ({
-  useGitStatus: (): UseGitStatusReturn => ({
-    files: [
-      {
-        path: 'a.ts',
-        status: 'modified',
-        insertions: 10,
-        deletions: 3,
-        staged: false,
-      },
-    ],
-    filesCwd: '/home/user/repo',
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    idle: false,
-  }),
+  useGitStatus: useGitStatusSpy,
+}))
+
+vi.mock('../../../diff/hooks/useGitWorktree', () => ({
+  useGitWorktree: useGitWorktreeSpy,
 }))
 
 const session: Session = {
@@ -110,10 +137,15 @@ const baseProps = {
   isActive: true,
 }
 
+const inactive = false
+
 describe('TerminalPane index', () => {
   beforeEach(() => {
     bodyPropsSpy.mockClear()
     focusTerminalSpy.mockClear()
+    useGitBranchSpy.mockClear()
+    useGitStatusSpy.mockClear()
+    useGitWorktreeSpy.mockClear()
     vi.mocked(usePaneWidth).mockReturnValue(null)
   })
 
@@ -216,6 +248,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onRequestActive={onRequestActive}
       />
     )
@@ -234,6 +267,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onRequestActive={onRequestActive}
       />
     )
@@ -342,6 +376,35 @@ describe('TerminalPane index', () => {
     expect(statusBar).toHaveTextContent('−3')
   })
 
+  test('visible inactive panes still enable git metadata hooks', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
+        isSessionVisible
+      />
+    )
+
+    expect(useGitBranchSpy).toHaveBeenCalledWith('/home/user/repo', {
+      enabled: true,
+    })
+
+    expect(useGitWorktreeSpy).toHaveBeenCalledWith('/home/user/repo', {
+      enabled: true,
+    })
+
+    expect(useGitStatusSpy).toHaveBeenCalledWith('/home/user/repo', {
+      enabled: true,
+    })
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
+      opacity: '0.78',
+    })
+
+    expect(focusTerminalSpy).not.toHaveBeenCalled()
+  })
+
   test('the pane wrapper is a size container for responsive chrome', () => {
     render(<TerminalPane {...baseProps} />)
 
@@ -437,6 +500,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onClose={onClose}
         onRequestActive={onRequestActive}
       />
@@ -457,6 +521,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onRequestActive={onRequestActive}
       />
     )
@@ -482,6 +547,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
       />
     )
 
@@ -515,6 +581,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
       />
     )
 
@@ -549,7 +616,7 @@ describe('TerminalPane index', () => {
     )
   })
 
-  test('focuses on initial mount when pane.active=true', () => {
+  test('focuses on initial mount when active', () => {
     // A freshly-created pane (createSession, addPane, restored active pane on
     // app launch) mounts already active and never transitions false→true. The
     // rising-edge effect must therefore treat the first run as a focus event,
@@ -561,10 +628,26 @@ describe('TerminalPane index', () => {
     expect(focusTerminalSpy).toHaveBeenCalledOnce()
   })
 
-  test('does not focus on initial mount when pane.active=false', () => {
+  test('does not mark or focus a non-interactive restored pane', () => {
     render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
+        pane={{ ...baseProps.pane, active: true }}
+      />
+    )
+
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
+    expect(wrapper).not.toHaveAttribute('data-pane-active')
+    expect(wrapper).toHaveStyle({ opacity: '0.78' })
+    expect(focusTerminalSpy).not.toHaveBeenCalled()
+  })
+
+  test('does not focus on initial mount when inactive', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -572,10 +655,11 @@ describe('TerminalPane index', () => {
     expect(focusTerminalSpy).not.toHaveBeenCalled()
   })
 
-  test('focuses when pane.active flips false to true', () => {
+  test('focuses when active flips false to true', () => {
     const { rerender } = render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -588,10 +672,11 @@ describe('TerminalPane index', () => {
     expect(focusTerminalSpy).toHaveBeenCalledOnce()
   })
 
-  test('does not re-focus when pane.active stays true across renders', () => {
+  test('does not re-focus when active stays true across renders', () => {
     const { rerender } = render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -611,6 +696,7 @@ describe('TerminalPane index', () => {
     const { rerender } = render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -622,6 +708,7 @@ describe('TerminalPane index', () => {
     rerender(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -642,6 +729,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         ref={ref}
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )

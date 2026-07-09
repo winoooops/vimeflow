@@ -100,7 +100,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 16       | 10   | 2026-07-05   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 10   | 2026-07-05   |
-| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 8        | 6    | 2026-06-22   |
+| [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 9        | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 10       | 9    | 2026-07-04   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 7        | 4    | 2026-07-05   |

@@ -58,7 +58,7 @@ const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
 export interface SplitViewProps {
   session: Session
   service: ITerminalService
-  isActive: boolean
+  isSessionVisible: boolean
   onSessionCwdChange?: (sessionId: string, paneId: string, cwd: string) => void
   onPaneReady?: NotifyPaneReady
   onCommandSubmit?: (ptyId: string, command: string) => void
@@ -177,7 +177,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     {
       session,
       service,
-      isActive,
+      isSessionVisible,
       onSessionCwdChange = undefined,
       onPaneReady = undefined,
       onCommandSubmit = undefined,
@@ -228,13 +228,13 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     // Mount SplitDividers (and their useElasticContainer hooks) only once the
     // grid actually has a measured size. Sessions mount while hidden
     // (display:none → 0×0) and useElasticContainer hard-throws on a zero
-    // dimension at mount, so re-measure whenever `isActive` flips and the
+    // dimension at mount, so re-measure whenever `isSessionVisible` flips and the
     // session becomes visible.
     const [hasSize, setHasSize] = useState(false)
     useLayoutEffect(() => {
       const rect = outerDivRef.current?.getBoundingClientRect()
       setHasSize(Boolean(rect && rect.width > 0 && rect.height > 0))
-    }, [isActive])
+    }, [isSessionVisible])
 
     // VIM-167 drag-into-slot state: which pane is mid-drag, and which slot the
     // cursor is over (drives the valid-target highlight). Both reset on
@@ -319,8 +319,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
 
     const visibleShortcutPaneIdsKey = visibleShortcutPaneIds.join('\u0000')
 
-    const activePaneId =
-      session.panes.find((sessionPane) => sessionPane.active)?.id ?? null
+    const activePaneId = isSessionVisible
+      ? (session.panes.find((sessionPane) => sessionPane.active)?.id ?? null)
+      : null
 
     const nativeShortcutContext = useMemo<NativeGhosttyShortcutContext>(
       () => ({
@@ -547,6 +548,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               const isBrowserPane = !isShellPane(pane)
               const mode = isBrowserPane ? 'browser' : paneMode(pane)
               const slotIndex = layout.definition.addOrder.indexOf(slotId)
+              // Only the visible session's selected pane is globally active.
+              const isActive = isSessionVisible && pane.active
 
               const closeHandler =
                 onClosePane && canClosePane(session) ? onClosePane : undefined
@@ -572,7 +575,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                   data-testid="split-view-slot"
                   data-pane-id={pane.id}
                   data-pane-kind={pane.kind ?? 'shell'}
-                  data-pane-active={pane.active ? 'true' : 'false'}
+                  data-pane-active={isActive ? 'true' : 'false'}
                   data-pty-id={pane.ptyId}
                   data-mode={mode}
                   data-cwd={pane.cwd}
@@ -644,7 +647,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           key={pane.ptyId}
                           session={session}
                           pane={pane}
-                          isActive={isActive}
+                          isActive={isSessionVisible}
                           onClose={closeHandler}
                           onRequestActive={onSetActivePane}
                           onRequestFocus={onRequestFocus}
@@ -680,6 +683,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         runningBurnerPaneKeys={runningBurnerPaneKeys}
                         outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
                         isActive={isActive}
+                        isSessionVisible={isSessionVisible}
                         shortcutContext={nativeShortcutContext}
                         shortcutHint={
                           slotIndex < 9
@@ -762,7 +766,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                 })
               : null}
           </AnimatePresence>
-          {isActive && hasSize ? (
+          {isSessionVisible && hasSize ? (
             <SplitDividers
               layout={layout}
               containerRef={outerDivRef}

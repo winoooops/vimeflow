@@ -52,7 +52,10 @@ export type TerminalPaneMode = 'attach' | 'spawn' | 'awaiting-restart'
 export interface TerminalPaneProps {
   session: Session
   pane: Pane
+  /** Selected-pane activity: drives focus, chrome emphasis, and body interactivity. */
   isActive: boolean
+  /** Session visibility: drives background metadata for panes mounted on screen. */
+  isSessionVisible?: boolean
   service: ITerminalService
   onPaneReady?: NotifyPaneReady
   mode?: TerminalPaneMode
@@ -104,6 +107,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       session,
       pane,
       isActive,
+      isSessionVisible = isActive,
       service,
       onPaneReady = undefined,
       mode = 'spawn',
@@ -130,7 +134,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
   ): ReactElement {
     const agent = agentForPane(pane)
     const bodyRef = useRef<TerminalBodyHandle>(null)
-    // Seeded `undefined` (NOT `pane.active`) so the first effect run can detect
+    // Seeded `undefined` so the first effect run can detect
     // initial mount distinctly from a stable `true → true` re-render. A pane
     // born active (createSession, addPane, restored on app launch) must focus
     // on first paint — otherwise its xterm stays unfocused with no transition
@@ -158,27 +162,25 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       },
     }))
 
-    const isPaneActive = pane.active
-
     useEffect(() => {
       // Fire on `undefined → true` (initial mount active) AND `false → true`
       // (existing rising edge). Stable `true → true` re-renders are skipped.
-      if (pane.active && wasActiveRef.current !== true) {
+      if (isActive && wasActiveRef.current !== true) {
         bodyRef.current?.focusTerminal()
       }
-      wasActiveRef.current = pane.active
-    }, [pane.active])
+      wasActiveRef.current = isActive
+    }, [isActive])
 
     const { branch } = useGitBranch(pane.cwd, {
-      enabled: isActive,
+      enabled: isSessionVisible,
     })
 
     const { worktreeName } = useGitWorktree(pane.cwd, {
-      enabled: isActive,
+      enabled: isSessionVisible,
     })
 
     const { files, filesCwd } = useGitStatus(pane.cwd, {
-      enabled: isActive,
+      enabled: isSessionVisible,
     })
 
     const isFresh = filesCwd === pane.cwd
@@ -196,7 +198,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const handleContainerClick = useCallback(
       (event: MouseEvent<HTMLDivElement>): void => {
-        if (!pane.active) {
+        if (!isActive) {
           event.stopPropagation()
 
           return
@@ -204,7 +206,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
         bodyRef.current?.focusTerminal()
       },
-      [pane.active]
+      [isActive]
     )
 
     const handleContainerMouseDown = useCallback(
@@ -216,14 +218,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           return
         }
 
-        if (!pane.active) {
+        if (!isActive) {
           requestPaneActive()
 
           return
         }
         bodyRef.current?.focusTerminal()
       },
-      [pane.active, requestPaneActive]
+      [isActive, requestPaneActive]
     )
 
     const handleToggleCollapse = useCallback((): void => {
@@ -291,7 +293,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const containerStyle = {
       boxShadow: 'none',
-      cursor: isPaneActive ? ('default' as const) : ('pointer' as const),
+      cursor: isActive ? ('default' as const) : ('pointer' as const),
     }
 
     return (
@@ -300,7 +302,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         data-testid="terminal-pane-wrapper"
         data-session-id={session.id}
         data-mode={mode}
-        data-pane-active={isPaneActive || undefined}
+        data-pane-active={isActive || undefined}
         onMouseDown={handleContainerMouseDown}
         onClick={handleContainerClick}
         style={{
@@ -308,14 +310,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           background: 'var(--color-surface-container-lowest)',
           borderRadius: TERMINAL_PANE_CORNER_RADIUS,
           transition: 'box-shadow 220ms ease, opacity 220ms ease',
-          opacity: isPaneActive ? 1 : 0.78,
+          opacity: isActive ? 1 : 0.78,
         }}
         className="@container/pane relative isolate flex h-full w-full flex-col overflow-hidden"
       >
         <Header
           agent={agent}
           session={session}
-          isActive={isPaneActive}
+          isActive={isActive}
           isCollapsed={isCollapsed}
           autoCollapsed={autoCollapsed}
           hideCollapseToggle={hideCollapseToggle}
@@ -367,7 +369,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               paneId={pane.id}
               ptyId={pane.ptyId}
               cwd={pane.cwd}
-              active={isActive && pane.active}
+              active={isActive}
               service={service}
               restoredFrom={pane.restoreData}
               onCwdChange={onCwdChange}
@@ -386,7 +388,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
         {!isAwaitingRestart && !isCollapsed && (
           <PaneStatusBar
-            isActive={isPaneActive}
+            isActive={isActive}
             worktreeName={worktreeName}
             branch={branch}
             cwd={pane.cwd}
