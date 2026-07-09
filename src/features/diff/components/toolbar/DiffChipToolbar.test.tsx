@@ -824,6 +824,32 @@ describe('DiffChipToolbar', () => {
     expect(onFinishFeedback).toHaveBeenCalledTimes(1)
   })
 
+  test('renders the Request review button even when feedbackCount is 0', () => {
+    renderToolbar({ feedbackCount: 0, onRequestReview: vi.fn<() => void>() })
+
+    const button = screen.getByRole('button', { name: /request review/i })
+    expect(button).toBeInTheDocument()
+    expect(button).toHaveAttribute('aria-keyshortcuts', '@')
+  })
+
+  test('omits the Request review button when onRequestReview is undefined', () => {
+    renderToolbar({ feedbackCount: 0, onRequestReview: undefined })
+
+    expect(
+      screen.queryByRole('button', { name: /request review/i })
+    ).not.toBeInTheDocument()
+  })
+
+  test('clicking Request review calls onRequestReview once', async () => {
+    const user = userEvent.setup()
+    const onRequestReview = vi.fn<() => void>()
+
+    renderToolbar({ feedbackCount: 0, onRequestReview })
+
+    await user.click(screen.getByRole('button', { name: /request review/i }))
+    expect(onRequestReview).toHaveBeenCalledTimes(1)
+  })
+
   test('clicking the Discard action calls onDiscardFeedback once', async () => {
     const user = userEvent.setup()
     const onDiscardFeedback = vi.fn<() => void>()

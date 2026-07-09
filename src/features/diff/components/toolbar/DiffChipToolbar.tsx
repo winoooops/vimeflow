@@ -199,6 +199,10 @@ export interface DiffChipToolbarProps {
   onFinishFeedback?: () => void
   onDiscardFeedback?: () => void
   onRefreshActiveFile?: () => void
+  // Request review (VIM-304) — delegate a code review of the active file to an
+  // agent. Unlike Finish, this is ALWAYS available (not gated on pending
+  // feedback): it opens the request-review popover. Omit to hide the button.
+  onRequestReview?: () => void
 }
 
 // Composed chip toolbar. Pure controlled component — all state lives in the
@@ -250,6 +254,7 @@ export const DiffChipToolbar = ({
   onFinishFeedback = undefined,
   onDiscardFeedback = undefined,
   onRefreshActiveFile = undefined,
+  onRequestReview = undefined,
 }: DiffChipToolbarProps): ReactElement => {
   // Discard All confirmation popover state. The trigger is the discard-all
   // button inside the tool-well; the confirm card renders on the shared Popover
@@ -495,7 +500,10 @@ export const DiffChipToolbar = ({
   const showActions = feedbackCount > 0
   const canDiscardFeedback = onDiscardFeedback !== undefined
   const canFinishFeedback = onFinishFeedback !== undefined
-  const showPinnedActions = onRefreshActiveFile !== undefined || showActions
+  const canRequestReview = onRequestReview !== undefined
+
+  const showPinnedActions =
+    onRefreshActiveFile !== undefined || canRequestReview || showActions
 
   const renderNativeOverflowMenu = (
     hiddenKeys: readonly string[]
@@ -752,6 +760,32 @@ export const DiffChipToolbar = ({
                     className="rounded border border-outline-variant/40 px-1 text-[0.625rem] leading-none text-on-surface-muted"
                   >
                     r
+                  </span>
+                </button>
+              </Tooltip>
+            ) : null}
+            {canRequestReview ? (
+              <Tooltip content="Request agent review" shortcut="@">
+                <button
+                  type="button"
+                  data-testid="diff-request-review"
+                  aria-label="request review"
+                  aria-keyshortcuts="@"
+                  onClick={onRequestReview}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-outline-variant/60 bg-transparent px-3 font-mono text-[0.6875rem] font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-surface-container hover:text-primary"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-sm leading-none"
+                  >
+                    rate_review
+                  </span>
+                  Request review
+                  <span
+                    aria-hidden="true"
+                    className="rounded border border-outline-variant/40 px-1 text-[0.625rem] leading-none text-on-surface-muted"
+                  >
+                    @
                   </span>
                 </button>
               </Tooltip>

@@ -53,7 +53,6 @@ const request = (
   overrides: Partial<PendingReviewRequest> = {}
 ): PendingReviewRequest => ({
   nonce: 'abc',
-  ptyId: 'pty-1',
   ownerKey: 'owner',
   cwd: '/repo',
   staged: false,
@@ -126,11 +125,13 @@ describe('useAgentReview', () => {
     expect(addAnnotationForOwner).not.toHaveBeenCalled()
   })
 
-  test('ignores an event whose session id is not the request pty', async () => {
+  test('accepts a matching nonce from any session (the nonce is the whole gate)', async () => {
+    // No session/pty gating: whether the review was delegated to a pane or
+    // copied and pasted into some other agent, a matching nonce is enough.
     setPendingReviewRequest(request())
     mount()
-    await emit(event({ sessionId: 'other', findings: [finding()] }))
-    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+    await emit(event({ sessionId: 'some-other-pane', findings: [finding()] }))
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
   })
 
   test('places a line finding on the dispatching owner with reviewer + category', async () => {

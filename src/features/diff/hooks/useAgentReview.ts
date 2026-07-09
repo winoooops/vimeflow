@@ -43,7 +43,7 @@ const findFile = (
  * requested them. Mounts once where all feedback owners are reachable
  * (WorkspaceView).
  *
- * The gate — session id AND nonce must match the pending request — means a stray
+ * The gate — the event's nonce must match a request we minted — means a stray
  * sentinel or a review we did not ask for cannot mutate the diff. Each finding resolves
  * against the request's diff snapshot: line/range in a hunk → anchored; line/range
  * out of range → file-level; path not in the snapshot → a review-level note
@@ -116,12 +116,11 @@ export const useAgentReview = ({
 
     const handleReview = (event: AgentReviewEvent): void => {
       const request = getPendingReviewRequest(event.nonce ?? '')
-      // Session + nonce gate: only a review we requested, on its pty, proceeds.
-      if (
-        request === undefined ||
-        event.nonce === null ||
-        event.sessionId !== request.ptyId
-      ) {
+      // The nonce is the whole gate: we only act on a review whose nonce matches
+      // one we minted. It's random + unguessable, so this holds equally for a
+      // review we delegated to a pane and one you copied and pasted into any
+      // agent — no session check, and the copy path needs no pty id.
+      if (request === undefined || event.nonce === null) {
         return
       }
 
