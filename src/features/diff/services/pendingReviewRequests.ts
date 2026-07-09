@@ -144,3 +144,25 @@ export const clearReviewLevelNotes = (ownerKey: string): void => {
   reviewLevelByOwner.delete(ownerKey)
   emitNotes()
 }
+
+export const prunePendingReviewRequestOwners = (
+  liveOwnerKeys: ReadonlySet<string>
+): void => {
+  for (const [nonce, request] of store) {
+    if (!liveOwnerKeys.has(request.ownerKey)) {
+      store.delete(nonce)
+    }
+  }
+
+  let notesChanged = false
+  for (const ownerKey of reviewLevelByOwner.keys()) {
+    if (!liveOwnerKeys.has(ownerKey)) {
+      reviewLevelByOwner.delete(ownerKey)
+      notesChanged = true
+    }
+  }
+
+  if (notesChanged) {
+    emitNotes()
+  }
+}

@@ -5,6 +5,7 @@ import {
   clearPendingReviewRequest,
   clearReviewLevelNotes,
   getPendingReviewRequest,
+  prunePendingReviewRequestOwners,
   reviewLevelNotes,
   setPendingReviewRequest,
   type PendingReviewRequest,
@@ -25,7 +26,10 @@ const request = (nonce = 'abc'): PendingReviewRequest => ({
 afterEach(() => {
   clearPendingReviewRequest('abc')
   clearPendingReviewRequest('xyz')
+  clearPendingReviewRequest('stale')
   clearReviewLevelNotes('owner')
+  clearReviewLevelNotes('sess:pane')
+  clearReviewLevelNotes('stale-owner')
 })
 
 describe('pendingReviewRequests', () => {
@@ -53,6 +57,16 @@ describe('pendingReviewRequests', () => {
     expect(getPendingReviewRequest('abc')?.nonce).toBe('abc')
     expect(getPendingReviewRequest('xyz')?.nonce).toBe('xyz')
   })
+
+  test('prunePendingReviewRequestOwners removes requests for closed owners', () => {
+    setPendingReviewRequest(request('abc'))
+    setPendingReviewRequest({ ...request('stale'), ownerKey: 'stale-owner' })
+
+    prunePendingReviewRequestOwners(new Set(['sess:pane']))
+
+    expect(getPendingReviewRequest('abc')?.ownerKey).toBe('sess:pane')
+    expect(getPendingReviewRequest('stale')).toBeUndefined()
+  })
 })
 
 describe('reviewLevelNotes', () => {
@@ -79,6 +93,27 @@ describe('reviewLevelNotes', () => {
 
   test('an owner with no notes reads as empty', () => {
     expect(reviewLevelNotes('nobody')).toEqual([])
+  })
+
+  test('prunePendingReviewRequestOwners removes notes for closed owners', () => {
+    addReviewLevelNote('sess:pane', {
+      commentId: 'c1',
+      reviewer: 'codex',
+      text: 'live',
+      nonce: 'abc',
+    })
+
+    addReviewLevelNote('stale-owner', {
+      commentId: 'c2',
+      reviewer: 'codex',
+      text: 'stale',
+      nonce: 'stale',
+    })
+
+    prunePendingReviewRequestOwners(new Set(['sess:pane']))
+
+    expect(reviewLevelNotes('sess:pane').map((n) => n.text)).toEqual(['live'])
+    expect(reviewLevelNotes('stale-owner')).toEqual([])
   })
 })
 

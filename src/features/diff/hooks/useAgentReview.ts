@@ -16,6 +16,8 @@ import {
   type ReviewedFile,
 } from '../services/pendingReviewRequests'
 
+export const REVIEWER_FINDING_SOFT_CAP = 50
+
 export interface UseAgentReviewOptions {
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
   addAnnotationForOwner: (
@@ -153,7 +155,10 @@ export const useAgentReview = ({
         return
       }
 
-      for (const finding of event.findings) {
+      const findingsToPlace = event.findings.slice(0, REVIEWER_FINDING_SOFT_CAP)
+      const omittedCount = event.findings.length - findingsToPlace.length
+
+      for (const finding of findingsToPlace) {
         const file = findFile(diffSnapshot, finding.path)
 
         // path not in the reviewed diff → no (path, staged) row to anchor under.
@@ -185,6 +190,15 @@ export const useAgentReview = ({
           staged,
           reviewerAnnotation(finding, reviewer, downgradeToFile)
         )
+      }
+
+      if (omittedCount > 0) {
+        addReviewLevelNote(ownerKey, {
+          commentId: nextCommentId(),
+          reviewer,
+          text: `${omittedCount} additional reviewer findings were omitted because this review exceeded the ${REVIEWER_FINDING_SOFT_CAP}-finding display limit.`,
+          nonce,
+        })
       }
 
       clearPendingReviewRequest(event.nonce)

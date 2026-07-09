@@ -5,7 +5,7 @@ import type { DiffLineAnnotation } from '@pierre/diffs'
 import { listen } from '@/lib/backend'
 import type { BackendApi } from '@/lib/backend'
 import type { AgentReviewEvent, AgentReviewFinding } from '@/bindings'
-import { useAgentReview } from './useAgentReview'
+import { REVIEWER_FINDING_SOFT_CAP, useAgentReview } from './useAgentReview'
 import type { ReviewComment } from './useFeedbackBatch'
 import {
   clearPendingReviewRequest,
@@ -272,5 +272,26 @@ describe('useAgentReview', () => {
     await emit(e)
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+  })
+
+  test('caps delegated reviewer findings and records one overflow note', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(
+      event({
+        findings: Array.from(
+          { length: REVIEWER_FINDING_SOFT_CAP + 2 },
+          (_, index) => finding({ text: `finding ${index}` })
+        ),
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(
+      REVIEWER_FINDING_SOFT_CAP
+    )
+
+    expect(reviewLevelNotes('owner').map((note) => note.text)).toEqual([
+      `2 additional reviewer findings were omitted because this review exceeded the ${REVIEWER_FINDING_SOFT_CAP}-finding display limit.`,
+    ])
   })
 })
