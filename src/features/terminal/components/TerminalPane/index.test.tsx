@@ -16,40 +16,46 @@ const bodyPropsSpy = vi.hoisted(() => vi.fn())
 const focusTerminalSpy = vi.hoisted(() => vi.fn())
 
 const useGitBranchSpy = vi.hoisted(() =>
-  vi.fn((): UseGitBranchReturn => ({
-    branch: 'main',
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    idle: false,
-  }))
+  vi.fn(
+    (): UseGitBranchReturn => ({
+      branch: 'main',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+  )
 )
 
 const useGitStatusSpy = vi.hoisted(() =>
-  vi.fn((): UseGitStatusReturn => ({
-    files: [
-      {
-        path: 'a.ts',
-        status: 'modified',
-        insertions: 10,
-        deletions: 3,
-        staged: false,
-      },
-    ],
-    filesCwd: '/home/user/repo',
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    idle: false,
-  }))
+  vi.fn(
+    (): UseGitStatusReturn => ({
+      files: [
+        {
+          path: 'a.ts',
+          status: 'modified',
+          insertions: 10,
+          deletions: 3,
+          staged: false,
+        },
+      ],
+      filesCwd: '/home/user/repo',
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      idle: false,
+    })
+  )
 )
 
 const useGitWorktreeSpy = vi.hoisted(() =>
-  vi.fn((): UseGitWorktreeReturn => ({
-    worktreeName: null,
-    loading: false,
-    error: null,
-  }))
+  vi.fn(
+    (): UseGitWorktreeReturn => ({
+      worktreeName: null,
+      loading: false,
+      error: null,
+    })
+  )
 )
 
 vi.mock('./Body', async () => {
