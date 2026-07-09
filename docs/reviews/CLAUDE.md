@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 94       | 84   | 2026-07-09   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 94       | 85   | 2026-07-09   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 2        | 0    | 2026-06-14   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
@@ -83,7 +83,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 38       | 18   | 2026-07-09   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 17       | 3    | 2026-06-25   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 36       | 10   | 2026-07-09   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 37       | 11   | 2026-07-09   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
@@ -97,7 +97,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 8        | 7    | 2026-07-09   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
-| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 17       | 10   | 2026-07-09   |
+| [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 18       | 11   | 2026-07-09   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 10   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 9        | 6    | 2026-07-09   |

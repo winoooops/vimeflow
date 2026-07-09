@@ -256,7 +256,7 @@ describe('AgentsPane', () => {
     })
   })
 
-  test('sends each alias save immediately without waiting for earlier saves', async () => {
+  test('serializes alias saves and coalesces pending edits to the latest state', async () => {
     const { aliasesSave } = installBridge(DEFAULT_ALIASES)
     let resolveFirstSave: (() => void) | undefined
     aliasesSave.mockImplementationOnce(
@@ -280,12 +280,22 @@ describe('AgentsPane', () => {
       )
     })
 
-    await user.click(screen.getByRole('button', { name: /Add alias/i }))
-    await user.click(screen.getByRole('button', { name: /Add alias/i }))
+    const aliasInput = screen.getByLabelText('Alias for claude')
+    await user.clear(aliasInput)
+    await user.type(aliasInput, 'coc')
 
-    expect(aliasesSave).toHaveBeenCalledTimes(2)
+    expect(aliasesSave).toHaveBeenCalledTimes(1)
 
     resolveFirstSave?.()
+
+    await waitFor(() => {
+      expect(aliasesSave).toHaveBeenCalledTimes(2)
+    })
+
+    expect(aliasesSave).toHaveBeenLastCalledWith([
+      { ...DEFAULT_ALIASES[0], alias: 'coc' },
+      ...DEFAULT_ALIASES.slice(1),
+    ])
   })
 
   test('reads and writes agentShimEnabled through the settings store', async () => {

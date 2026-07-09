@@ -78,7 +78,7 @@ interface GhosttyNativeParentAddon {
   setShortcutDigits?: (surface: GhosttyNativeSurface, digits: string) => void
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
-  setFontFamily: (surface: GhosttyNativeSurface, fontFamily: string) => void
+  setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
   destroy: (surface: GhosttyNativeSurface) => void
@@ -495,7 +495,7 @@ export class GhosttyNativeParentController {
       state.lastFontFamily !== payload.fontFamily
     ) {
       state.lastFontFamily = payload.fontFamily
-      addon.setFontFamily(surface, payload.fontFamily)
+      addon.setFontFamily?.(surface, payload.fontFamily)
     }
     addon.setFrame(
       surface,

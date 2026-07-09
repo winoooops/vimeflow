@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-09
-ref_count: 84
+ref_count: 85
 ---
 
 # Async Race Conditions
@@ -1024,4 +1024,19 @@ prevent showing previous data.
   against the loaded settings object before saving. Added a regression test
   proving pre-load edits are visible immediately but saved only after merging
   with the persisted snapshot.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 94. Alias saves could finish out of order and persist stale values
+
+- **Source:** github-codex-connector | PR #672 round 4 | 2026-07-09
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/settings/components/panes/AgentsPane.tsx`
+- **Finding:** Alias edits called `bridge.save(next)` immediately for every
+  intermediate state. Concurrent IPC saves could complete out of order, letting
+  an older alias snapshot overwrite the latest value on disk while the UI still
+  showed the newest edit.
+- **Fix:** Serialize alias saves through a single in-flight slot and coalesce
+  pending edits to the latest alias array before sending the next IPC save.
+  Added a regression test that keeps the first save pending and verifies only
+  the latest edit is sent after it resolves.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

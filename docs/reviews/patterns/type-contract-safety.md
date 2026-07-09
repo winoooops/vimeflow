@@ -3,7 +3,7 @@ id: type-contract-safety
 category: code-quality
 created: 2026-06-15
 last_updated: 2026-07-09
-ref_count: 10
+ref_count: 11
 ---
 
 # Type Contract Safety
@@ -210,4 +210,19 @@ expands.
   correctly rejected the mocks with TS2741, blocking the code quality job.
 - **Fix:** Added no-op `setFontFamily` mocks to each affected addon literal so
   the tests continue to satisfy the production addon interface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Optional native addon capabilities must stay optional in the TypeScript contract
+
+- **Source:** github-claude | PR #672 round 4 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `setFontFamily` was typed as a required native addon method and
+  called without an optional guard, unlike sibling capability setters such as
+  `setShortcutDigits`, `setBackgroundColor`, and `setForegroundColor`.
+  Older packaged native addons could therefore crash when the renderer sent a
+  font-family update before the native capability existed.
+- **Fix:** Made `setFontFamily` optional in `GhosttyNativeParentAddon`, guarded
+  the call with `?.`, and added regression coverage for an addon without font
+  support receiving a font-family update.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

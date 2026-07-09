@@ -316,6 +316,18 @@ const sendCommandPaletteToggle = (
   win.webContents.send(COMMAND_PALETTE_TOGGLE, source)
 }
 
+const inputForShortcutConfig = (
+  config: CommandPaletteShortcutConfig
+): CommandPaletteShortcutInput => ({
+  type: 'keyDown',
+  key: config.key,
+  code: config.code,
+  control: config.modifier === 'control',
+  meta: config.modifier === 'command',
+  alt: config.alt,
+  shift: config.shift,
+})
+
 const commandPaletteToggleDispatchers = new WeakMap<
   BrowserWindow,
   (source?: CommandPaletteShortcutSource) => void
@@ -421,8 +433,6 @@ export const installCommandPaletteShortcutOverride = (
   const shortcutRegistry = options.shortcutRegistry ?? globalShortcut
   let shortcutConfig = commandPaletteShortcutBindingsConfigForPlatform(platform)
 
-  const dispatchCommandPaletteToggle =
-    commandPaletteToggleDispatcherForWindow(win)
   let registeredAccelerators: string[] = []
 
   const registerFocusedLinuxShortcuts = (): void => {
@@ -433,7 +443,11 @@ export const installCommandPaletteShortcutOverride = (
     registeredAccelerators = acceleratorEntriesForConfig(shortcutConfig)
       .filter(({ accelerator, source }) =>
         shortcutRegistry.register(accelerator, () => {
-          dispatchCommandPaletteToggle(source)
+          dispatchCommandPaletteShortcutForWindow(
+            win,
+            inputForShortcutConfig(shortcutConfig[source]),
+            shortcutConfig
+          )
         })
       )
       .map(({ accelerator }) => accelerator)

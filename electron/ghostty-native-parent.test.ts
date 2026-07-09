@@ -439,6 +439,56 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('accepts native addons without font-family support', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        fontFamily: 'Iosevka',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.setFrame).toHaveBeenCalledWith(
+      surface,
+      10,
+      20,
+      300,
+      200,
+      0,
+      900
+    )
+
+    controller.dispose()
+  })
+
   test('replays surface-scoped state after preserving secondary on destroy', () => {
     const firstSurface = { id: 'surface-1' }
     const secondSurface = { id: 'surface-2' }

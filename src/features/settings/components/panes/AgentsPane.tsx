@@ -28,6 +28,8 @@ export const AgentsPane = ({
   const [isInitializing, setIsInitializing] = useState(true)
   const [saveError, setSaveError] = useState<string | null>(null)
   const hasInteractedRef = useRef(false)
+  const saveInFlightRef = useRef(false)
+  const pendingSaveRef = useRef<AgentAlias[] | null>(null)
 
   const shellAliasesActive =
     activeTargetId === SETTINGS_TARGET_IDS.agentsShellAliases
@@ -80,13 +82,33 @@ export const AgentsPane = ({
     }
   }, [])
 
+  const flushPendingSave = useCallback((): void => {
+    if (saveInFlightRef.current || pendingSaveRef.current === null) {
+      return
+    }
+
+    const next = pendingSaveRef.current
+    pendingSaveRef.current = null
+    saveInFlightRef.current = true
+
+    void (async (): Promise<void> => {
+      try {
+        await saveAliases(next)
+      } finally {
+        saveInFlightRef.current = false
+        flushPendingSave()
+      }
+    })()
+  }, [saveAliases])
+
   const setAliasesAndPersist = useCallback(
     (next: AgentAlias[]): void => {
       hasInteractedRef.current = true
       setAliases(next)
-      void saveAliases(next)
+      pendingSaveRef.current = next
+      flushPendingSave()
     },
-    [saveAliases]
+    [flushPendingSave]
   )
 
   const addAlias = (): void => {

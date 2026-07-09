@@ -12,9 +12,19 @@ import {
   getSlotOrderedPaneIds,
   type SplitViewHandle,
 } from './SplitView'
-import type { LayoutId, Pane, Session } from '../../../sessions/types'
+import type {
+  LayoutId,
+  Pane,
+  PaneKind,
+  PanePlacement,
+  Session,
+} from '../../../sessions/types'
 import type { ITerminalService } from '../../services/terminalService'
-import { LAYOUTS } from '../../layout-registry'
+import {
+  LAYOUTS,
+  PaneLayoutRegistry,
+  type PaneLayoutDefinition,
+} from '../../layout-registry'
 import { resolvePanePlacement } from '../../../sessions/utils/panePlacements'
 
 class MockResizeObserver {

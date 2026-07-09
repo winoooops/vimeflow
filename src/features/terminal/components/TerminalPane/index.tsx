@@ -294,6 +294,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const terminalBodyBottomCornerRadius = isCollapsed
       ? TERMINAL_PANE_CORNER_RADIUS
       : 0
+    const isFocusVisible = showFocusHighlight && isActive
 
     const containerStyle = {
       boxShadow: 'none',
@@ -307,6 +308,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         data-session-id={session.id}
         data-mode={mode}
         data-pane-active={isActive || undefined}
+        data-focused={isActive || undefined}
         onMouseDown={handleContainerMouseDown}
         onClick={handleContainerClick}
         style={{
@@ -408,6 +410,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           data-testid="terminal-pane-border"
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-30 rounded-[10px] border border-outline-variant/[0.22] transition-opacity"
+          style={{ opacity: isFocusVisible ? 1 : 0 }}
         />
       </div>
     )

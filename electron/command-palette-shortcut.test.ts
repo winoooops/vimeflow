@@ -582,6 +582,28 @@ describe('command palette shortcut override', () => {
     expect(send).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE, 'leader')
   })
 
+  test('Linux global override respects active key capture', () => {
+    const { callbacks, registry } = createShortcutRegistry()
+    const { send, win, windowHandlers } = createFakeWindow()
+
+    installCommandPaletteShortcutOverride(win, {
+      platform: 'linux',
+      shortcutRegistry: registry,
+    })
+
+    emitWindowEvent(windowHandlers, 'focus')
+    setKeymapCaptureActive(win, true)
+
+    callbacks.get('Control+;')?.()
+
+    expect(send).not.toHaveBeenCalled()
+
+    setKeymapCaptureActive(win, false)
+    callbacks.get('Control+;')?.()
+
+    expect(send).toHaveBeenCalledWith(COMMAND_PALETTE_TOGGLE, 'leader')
+  })
+
   test('syncing a new binding re-registers the focused Linux global override', () => {
     const { callbacks, registry } = createShortcutRegistry()
     const { send, win, windowHandlers } = createFakeWindow()
