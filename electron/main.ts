@@ -20,7 +20,6 @@ import {
   packagedContentSecurityPolicy,
 } from './csp'
 import {
-  commandPaletteToggleDispatcherForWindow,
   installCommandPaletteShortcutOverride,
   setCommandPaletteShortcutBinding,
   setCommandPaletteShortcutBindings,
@@ -689,9 +688,13 @@ const setupApp = async (): Promise<void> => {
       }
 
       win.webContents.focus()
-      commandPaletteToggleDispatcherForWindow(win)('palette')
 
-      return true
+      // The E2E renderer bridge falls back to the registered React opener when
+      // this handler reports "not handled". Keep this endpoint focused on
+      // Electron window activation: the production shortcut path still covers
+      // before-input-event/globalShortcut dispatch, while Linux CI avoids an
+      // acknowledged-but-not-rendered async IPC toggle.
+      return false
     })
   }
 

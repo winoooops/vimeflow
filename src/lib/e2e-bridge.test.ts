@@ -152,6 +152,34 @@ describe('readPaneBuffer', () => {
     }
   })
 
+  test('falls back to renderer opener when Electron reports the shortcut unhandled', async () => {
+    vi.stubEnv('VITE_E2E', '1')
+
+    const rendererOpener = vi.fn()
+
+    const electronDispatch = vi.fn<() => Promise<boolean>>(() =>
+      Promise.resolve(false)
+    )
+
+    const unregister =
+      registerCommandPaletteShortcutOpenerForE2e(rendererOpener)
+
+    window.vimeflow = {
+      e2e: {
+        dispatchCommandPaletteShortcut: electronDispatch,
+      },
+    } as unknown as BackendApi
+
+    try {
+      await expect(dispatchCommandPaletteShortcutForE2e()).resolves.toBe(true)
+
+      expect(electronDispatch).toHaveBeenCalledOnce()
+      expect(rendererOpener).toHaveBeenCalledOnce()
+    } finally {
+      unregister()
+    }
+  })
+
   test('returns the focused pane buffer in multi-pane DOM', () => {
     // Three panes; active = index 1. Bug class this catches: a naive
     // `pane.querySelector('.xterm-rows')` would return panes[0]'s buffer.
