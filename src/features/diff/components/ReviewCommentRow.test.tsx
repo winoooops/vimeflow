@@ -21,6 +21,49 @@ describe('ReviewCommentRow', () => {
     expect(screen.getByText('Looks good to me')).toBeInTheDocument()
   })
 
+  test('a reviewer finding renders its reviewer name + category, read-only (VIM-304)', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: 'r1',
+          text: 'Token compared with ==',
+          author: 'reviewer',
+          reviewer: 'codex',
+          category: 'bug',
+          createdAt: 3000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('codex')).toBeInTheDocument()
+    expect(screen.getByText('Bug')).toBeInTheDocument()
+    expect(screen.getByText('Token compared with ==')).toBeInTheDocument()
+    // Read-only: no edit/delete controls.
+    expect(
+      screen.queryByRole('button', { name: 'Edit comment' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('a reviewer finding with no name falls back to "Reviewer"', () => {
+    render(
+      <ReviewCommentRow
+        comment={{
+          id: 'r2',
+          text: 'x',
+          author: 'reviewer',
+          category: 'suggestion',
+          createdAt: 3000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Reviewer')).toBeInTheDocument()
+  })
+
   test('clicking Edit button fires onEdit once', async () => {
     const user = userEvent.setup()
     const handleEdit = vi.fn()

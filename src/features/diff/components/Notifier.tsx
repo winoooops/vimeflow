@@ -3,6 +3,7 @@ import { Button } from '@/components/Button'
 import { Popover } from '@/components/Popover'
 import { DiffChipToolbar, type DiffChipToolbarProps } from './toolbar'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
+import { RequestReviewPopover } from './RequestReviewPopover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
 import {
   isFileAnnotationTarget,
@@ -19,6 +20,15 @@ interface FinishFeedbackState {
   onCopy: () => void
 }
 
+interface RequestReviewState {
+  open: boolean
+  result: ResolveResult
+  scopeLabel: string
+  onSubmit: (pane: PaneCandidate) => void
+  onCopy: () => void
+  onCancel: () => void
+}
+
 export interface KeyboardConfirmView {
   title: string
   body: string
@@ -33,6 +43,7 @@ interface DraftRecovery {
 interface NotifierProps {
   toolbarProps: DiffChipToolbarProps
   finishFeedback: FinishFeedbackState
+  requestReview?: RequestReviewState
   keyboardConfirm: KeyboardConfirmView | null
   renderSyncError?: string | null
   notifyMessage?: string | null
@@ -44,6 +55,7 @@ interface NotifierProps {
 export const Notifier = ({
   toolbarProps,
   finishFeedback,
+  requestReview = undefined,
   keyboardConfirm,
   renderSyncError = null,
   notifyMessage = null,
@@ -104,6 +116,18 @@ export const Notifier = ({
           onCancel={finishFeedback.onCancel}
           onSend={finishFeedback.onSend}
           onCopy={finishFeedback.onCopy}
+        />
+      ) : null}
+      {requestReview !== undefined &&
+      requestReview.open &&
+      toolbarShellRef.current !== null ? (
+        <RequestReviewPopover
+          anchor={toolbarShellRef.current}
+          result={requestReview.result}
+          scopeLabel={requestReview.scopeLabel}
+          onSubmit={requestReview.onSubmit}
+          onCopy={requestReview.onCopy}
+          onCancel={requestReview.onCancel}
         />
       ) : null}
       {keyboardConfirm !== null && toolbarShellRef.current !== null ? (
