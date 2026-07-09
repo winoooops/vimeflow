@@ -162,10 +162,8 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
-const dispatchCommandPaletteShortcut = async (): Promise<boolean> =>
-  commandPaletteShortcutOpener?.() ??
-  window.vimeflow?.e2e?.dispatchCommandPaletteShortcut() ??
-  false
+const dispatchCommandPaletteShortcut = (): Promise<boolean> =>
+  Promise.resolve(commandPaletteShortcutOpener?.() ?? false)
 
 let commandPaletteShortcutOpener: (() => boolean) | null = null
 

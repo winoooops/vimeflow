@@ -91,12 +91,20 @@ const fireTerminalZoneKey = async (init: KeyInit): Promise<void> => {
 }
 
 const fireCommandPaletteShortcutInput = async (): Promise<void> => {
-  const handled = await browser.execute(async () => {
-    return window.__VIMEFLOW_E2E__?.dispatchCommandPaletteShortcut() ?? false
-  })
-  if (!handled) {
-    throw new Error('command palette shortcut was not handled by Electron')
-  }
+  await browser.waitUntil(
+    async () => {
+      return await browser.execute(async () => {
+        return (
+          window.__VIMEFLOW_E2E__?.dispatchCommandPaletteShortcut() ?? false
+        )
+      })
+    },
+    {
+      timeout: 8_000,
+      interval: 100,
+      timeoutMsg: 'command palette shortcut opener was not registered',
+    }
+  )
 }
 
 // Open the command palette (⌘; / Ctrl+;) and run a vim ex-command by typing it
