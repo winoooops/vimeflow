@@ -192,7 +192,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
           ) : (
             // Render all sessions but hide inactive ones to keep PTY sessions alive.
             sessions.map((session) => {
-              const isActive = session.id === activeSessionId
+              const isSessionVisible = session.id === activeSessionId
 
               return (
                 <div
@@ -200,13 +200,17 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                   id={`session-panel-${session.id}`}
                   data-testid="terminal-pane"
                   data-session-id={session.id}
-                  className={`absolute inset-0 ${isActive ? '' : 'hidden'}`}
+                  className={`absolute inset-0 ${
+                    isSessionVisible ? '' : 'hidden'
+                  }`}
                 >
                   <SplitView
-                    ref={isActive ? setActiveSplitViewRefFn.current : null}
+                    ref={
+                      isSessionVisible ? setActiveSplitViewRefFn.current : null
+                    }
                     session={session}
                     service={service}
-                    isActive={isActive}
+                    isSessionVisible={isSessionVisible}
                     onSessionCwdChange={onSessionCwdChange}
                     onPaneReady={onPaneReady}
                     onCommandSubmit={onCommandSubmit}

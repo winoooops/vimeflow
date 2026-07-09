@@ -110,6 +110,8 @@ const baseProps = {
   isActive: true,
 }
 
+const inactive = false
+
 describe('TerminalPane index', () => {
   beforeEach(() => {
     bodyPropsSpy.mockClear()
@@ -216,6 +218,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onRequestActive={onRequestActive}
       />
     )
@@ -234,6 +237,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onRequestActive={onRequestActive}
       />
     )
@@ -437,6 +441,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onClose={onClose}
         onRequestActive={onRequestActive}
       />
@@ -457,6 +462,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
         onRequestActive={onRequestActive}
       />
     )
@@ -482,6 +488,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
       />
     )
 
@@ -515,6 +522,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         {...baseProps}
         pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
       />
     )
 
@@ -549,7 +557,7 @@ describe('TerminalPane index', () => {
     )
   })
 
-  test('focuses on initial mount when pane.active=true', () => {
+  test('focuses on initial mount when active', () => {
     // A freshly-created pane (createSession, addPane, restored active pane on
     // app launch) mounts already active and never transitions false→true. The
     // rising-edge effect must therefore treat the first run as a focus event,
@@ -561,10 +569,26 @@ describe('TerminalPane index', () => {
     expect(focusTerminalSpy).toHaveBeenCalledOnce()
   })
 
-  test('does not focus on initial mount when pane.active=false', () => {
+  test('does not mark or focus a non-interactive restored pane', () => {
     render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
+        pane={{ ...baseProps.pane, active: true }}
+      />
+    )
+
+    const wrapper = screen.getByTestId('terminal-pane-wrapper')
+    expect(wrapper).not.toHaveAttribute('data-pane-active')
+    expect(wrapper).toHaveStyle({ opacity: '0.78' })
+    expect(focusTerminalSpy).not.toHaveBeenCalled()
+  })
+
+  test('does not focus on initial mount when inactive', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -572,10 +596,11 @@ describe('TerminalPane index', () => {
     expect(focusTerminalSpy).not.toHaveBeenCalled()
   })
 
-  test('focuses when pane.active flips false to true', () => {
+  test('focuses when active flips false to true', () => {
     const { rerender } = render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -588,10 +613,11 @@ describe('TerminalPane index', () => {
     expect(focusTerminalSpy).toHaveBeenCalledOnce()
   })
 
-  test('does not re-focus when pane.active stays true across renders', () => {
+  test('does not re-focus when active stays true across renders', () => {
     const { rerender } = render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -611,6 +637,7 @@ describe('TerminalPane index', () => {
     const { rerender } = render(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -622,6 +649,7 @@ describe('TerminalPane index', () => {
     rerender(
       <TerminalPane
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )
@@ -642,6 +670,7 @@ describe('TerminalPane index', () => {
       <TerminalPane
         ref={ref}
         {...baseProps}
+        isActive={inactive}
         pane={{ ...baseProps.pane, active: false }}
       />
     )

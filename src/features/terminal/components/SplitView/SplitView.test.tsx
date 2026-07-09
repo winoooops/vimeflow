@@ -204,7 +204,7 @@ const makeMockService = (): ITerminalService => ({
   setWorkspaceSessions: vi.fn(() => Promise.resolve(undefined)),
 })
 
-// Literal `isActive={false}` is stripped by the project's jsx-boolean-value
+// Literal `isSessionVisible={false}` is stripped by the project's jsx-boolean-value
 // autofix, which then breaks the required prop; a variable dodges the rule.
 const inactive = false
 
@@ -214,7 +214,7 @@ describe('SplitView - single layout', () => {
       <SplitView
         session={makeSession('single', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -232,7 +232,7 @@ describe('SplitView - single layout', () => {
       <SplitView
         session={makeSession('single', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -252,7 +252,7 @@ describe('SplitView - single layout', () => {
           panes: [{ ...session.panes[0], status: 'completed' }],
         }}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -269,7 +269,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -291,7 +291,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('hsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -306,7 +306,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('threeRight', 3)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -322,7 +322,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('quad', 4)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -338,7 +338,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('grid3x2', 6)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -355,7 +355,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('single', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
     expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(0)
@@ -365,7 +365,11 @@ describe('SplitView - multi-pane layouts', () => {
     const session = makeSession('vsplit', 2)
 
     const { rerender } = render(
-      <SplitView session={session} service={makeMockService()} isActive />
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isSessionVisible
+      />
     )
     expect(screen.getAllByTestId('split-resize-handle')).toHaveLength(1)
 
@@ -373,7 +377,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={session}
         service={makeMockService()}
-        isActive={inactive}
+        isSessionVisible={inactive}
       />
     )
     expect(screen.queryAllByTestId('split-resize-handle')).toHaveLength(0)
@@ -387,7 +391,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
     const pristine = valueNow()
@@ -401,7 +405,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('single', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -409,7 +413,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
     expect(valueNow()).toBe(resized)
@@ -423,7 +427,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
     fireEvent.keyDown(screen.getByTestId('split-resize-handle'), {
@@ -435,7 +439,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive={inactive}
+        isSessionVisible={inactive}
       />
     )
 
@@ -443,7 +447,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
     expect(valueNow()).toBe(resized)
@@ -459,7 +463,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('grid3x2', 6)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
     const defaultGridValues = handleValues()
@@ -469,7 +473,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -481,7 +485,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('grid3x2', 6)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -501,7 +505,7 @@ describe('SplitView - multi-pane layouts', () => {
           })),
         }}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -520,7 +524,13 @@ describe('SplitView - multi-pane layouts', () => {
       ],
     } satisfies Session
 
-    render(<SplitView session={session} service={makeMockService()} isActive />)
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
 
     const slots = screen.getAllByTestId('split-view-slot')
 
@@ -555,7 +565,7 @@ describe('SplitView - multi-pane layouts', () => {
       <SplitView
         session={makeSession('vsplit', 2, 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -571,6 +581,23 @@ describe('SplitView - multi-pane layouts', () => {
     expect(activeWrapper).not.toHaveAttribute('data-focused')
     expect(activeWrapper).toHaveStyle({ opacity: '1' })
   })
+
+  test('inactive sessions expose no active shell slot', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2, 1)}
+        service={makeMockService()}
+        isSessionVisible={inactive}
+      />
+    )
+
+    for (const slot of screen.getAllByTestId('split-view-slot')) {
+      expect(slot).toHaveAttribute('data-pane-active', 'false')
+    }
+    for (const wrapper of screen.getAllByTestId('terminal-pane-wrapper')) {
+      expect(wrapper).not.toHaveAttribute('data-pane-active')
+    }
+  })
 })
 
 describe('SplitView - under-capacity', () => {
@@ -579,7 +606,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('quad', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -607,7 +634,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('grid3x2', 5)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={vi.fn()}
       />
     )
@@ -623,7 +650,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('threeRight', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -635,7 +662,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('vsplit', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={vi.fn()}
       />
     )
@@ -656,7 +683,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('quad', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={vi.fn()}
       />
     )
@@ -673,7 +700,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('quad', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -694,7 +721,7 @@ describe('SplitView - under-capacity', () => {
       <SplitView
         session={makeSession('vsplit', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={onAddPane}
       />
     )
@@ -710,7 +737,13 @@ describe('SplitView - over-capacity layout render', () => {
   test('single layout keeps an active second pane visible without throwing', () => {
     const session = makeSession('single', 2, 1)
 
-    render(<SplitView session={session} service={makeMockService()} isActive />)
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
 
     const slots = screen.getAllByTestId('split-view-slot')
 
@@ -728,7 +761,11 @@ describe('SplitView - no PTY lifecycle IPC', () => {
     const service = makeMockService()
 
     render(
-      <SplitView session={makeSession('quad', 4)} service={service} isActive />
+      <SplitView
+        session={makeSession('quad', 4)}
+        service={service}
+        isSessionVisible
+      />
     )
 
     expect(service.spawn).not.toHaveBeenCalled()
@@ -742,7 +779,7 @@ describe('SplitView - no PTY lifecycle IPC', () => {
       <SplitView
         session={makeSession('single', 1)}
         service={service}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -759,7 +796,7 @@ describe('SplitView - imperative focus handle', () => {
         ref={ref}
         session={makeSession('single', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -779,7 +816,7 @@ describe('SplitView - imperative focus handle', () => {
           panes: session.panes.map((pane) => ({ ...pane, active: false })),
         }}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -798,7 +835,7 @@ describe('SplitView - click-to-focus', () => {
       <SplitView
         session={session}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onSetActivePane={onSetActivePane}
       />
     )
@@ -816,7 +853,7 @@ describe('SplitView - click-to-focus', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -830,7 +867,7 @@ describe('SplitView - click-to-focus', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -868,7 +905,13 @@ describe('SplitView - click-to-focus', () => {
       ],
     } satisfies Session
 
-    render(<SplitView session={session} service={makeMockService()} isActive />)
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
 
     expect(screen.getByTestId('browser-pane-mock')).toBeInTheDocument()
     expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
@@ -883,7 +926,7 @@ describe('SplitView - click-to-focus', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -911,7 +954,7 @@ describe('SplitView - close pane', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onClosePane={onClosePane}
       />
     )
@@ -927,7 +970,7 @@ describe('SplitView - close pane', () => {
       <SplitView
         session={makeSession('single', 1)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onClosePane={vi.fn()}
       />
     )
@@ -1088,7 +1131,13 @@ describe('SplitView - over-capacity rescued active render', () => {
     const session = makeSession('vsplit', 3, 2)
     // 3 panes, vsplit capacity = 2, active at index 2 → must land at p1.
 
-    render(<SplitView session={session} service={makeMockService()} isActive />)
+    render(
+      <SplitView
+        session={session}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
 
     const slots = screen.getAllByTestId('split-view-slot')
 
@@ -1146,7 +1195,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onPanePlacementsChange={vi.fn()}
       />
     )
@@ -1179,7 +1228,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={browserSession}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onPanePlacementsChange={vi.fn()}
       />
     )
@@ -1201,7 +1250,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onPanePlacementsChange={onPanePlacementsChange}
       />
     )
@@ -1234,7 +1283,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={makeSession('quad', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={vi.fn()}
         onPanePlacementsChange={onPanePlacementsChange}
       />
@@ -1323,7 +1372,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={browserSession}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         layoutRegistry={registry}
         onPanePlacementsChange={onPanePlacementsChange}
       />
@@ -1352,7 +1401,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onPanePlacementsChange={vi.fn()}
       />
     )
@@ -1375,7 +1424,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onPanePlacementsChange={onPanePlacementsChange}
       />
     )
@@ -1394,7 +1443,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
-        isActive
+        isSessionVisible
       />
     )
 
@@ -1447,7 +1496,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={session}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={vi.fn()}
         layoutRegistry={registry}
         onPanePlacementsChange={onPanePlacementsChange}
@@ -1519,7 +1568,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={session}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         layoutRegistry={registry}
         onPanePlacementsChange={onPanePlacementsChange}
       />
@@ -1579,7 +1628,7 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
       <SplitView
         session={session}
         service={makeMockService()}
-        isActive
+        isSessionVisible
         onAddPane={vi.fn()}
         layoutRegistry={registry}
         onPanePlacementsChange={vi.fn()}
