@@ -1,7 +1,12 @@
 // cspell:ignore vsplit
-import { describe, test, expect, beforeEach } from 'vitest'
-import { readPaneBuffer } from './e2e-bridge'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
+import {
+  dispatchCommandPaletteShortcutForE2e,
+  readPaneBuffer,
+  registerCommandPaletteShortcutOpenerForE2e,
+} from './e2e-bridge'
 import { terminalCache } from '../features/terminal/components/TerminalPane/Body'
+import type { BackendApi } from './backend'
 
 type CacheEntry = ReturnType<typeof terminalCache.get>
 
@@ -95,6 +100,56 @@ const buildSessionWrapper = (
 describe('readPaneBuffer', () => {
   beforeEach(() => {
     terminalCache.clear()
+  })
+
+  afterEach(() => {
+    delete window.vimeflow
+    vi.unstubAllEnvs()
+  })
+
+  test('dispatches command palette shortcut through Electron before renderer fallback', async () => {
+    vi.stubEnv('VITE_E2E', '1')
+
+    const rendererOpener = vi.fn()
+
+    const electronDispatch = vi.fn<() => Promise<boolean>>(() =>
+      Promise.resolve(true)
+    )
+
+    const unregister =
+      registerCommandPaletteShortcutOpenerForE2e(rendererOpener)
+
+    window.vimeflow = {
+      e2e: {
+        dispatchCommandPaletteShortcut: electronDispatch,
+      },
+    } as unknown as BackendApi
+
+    try {
+      await expect(dispatchCommandPaletteShortcutForE2e()).resolves.toBe(true)
+
+      expect(electronDispatch).toHaveBeenCalledOnce()
+      expect(rendererOpener).not.toHaveBeenCalled()
+    } finally {
+      unregister()
+    }
+  })
+
+  test('falls back to renderer opener when Electron shortcut dispatch is unavailable', async () => {
+    vi.stubEnv('VITE_E2E', '1')
+
+    const rendererOpener = vi.fn()
+
+    const unregister =
+      registerCommandPaletteShortcutOpenerForE2e(rendererOpener)
+
+    try {
+      await expect(dispatchCommandPaletteShortcutForE2e()).resolves.toBe(true)
+
+      expect(rendererOpener).toHaveBeenCalledOnce()
+    } finally {
+      unregister()
+    }
   })
 
   test('returns the focused pane buffer in multi-pane DOM', () => {

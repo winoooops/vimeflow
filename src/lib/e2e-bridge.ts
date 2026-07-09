@@ -162,16 +162,14 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
-const dispatchCommandPaletteShortcut = async (): Promise<boolean> => {
-  const handledByRenderer = commandPaletteShortcutOpener?.() ?? false
-  if (handledByRenderer) {
+export async function dispatchCommandPaletteShortcutForE2e(): Promise<boolean> {
+  const handledByElectron =
+    await window.vimeflow?.e2e?.dispatchCommandPaletteShortcut()
+  if (handledByElectron === true) {
     return true
   }
 
-  const handledByElectron =
-    await window.vimeflow?.e2e?.dispatchCommandPaletteShortcut()
-
-  return handledByElectron === true
+  return commandPaletteShortcutOpener?.() ?? false
 }
 
 let commandPaletteShortcutOpener: (() => boolean) | null = null
@@ -214,7 +212,7 @@ if (import.meta.env.VITE_E2E) {
     emitBackendEvent: __dispatchBackendEventForE2e,
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
-    dispatchCommandPaletteShortcut,
+    dispatchCommandPaletteShortcut: dispatchCommandPaletteShortcutForE2e,
     startBrowserPaneBoundsCapture,
     clearBrowserPaneBoundsCaptures,
     stopBrowserPaneBoundsCapture,
