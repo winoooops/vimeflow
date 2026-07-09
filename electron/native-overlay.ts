@@ -129,6 +129,7 @@ interface NativeOverlayCommandPaletteItem {
 interface NativeOverlayCommandPaletteActions {
   selectIndex: string
   executeIndex: string
+  setQuery: string
 }
 
 interface NativeOverlayCommandPaletteDialogPayload {
@@ -228,6 +229,7 @@ interface NativeOverlayActionEvent {
   suspendOnSelect?: boolean
   feedback?: 'copy'
   index?: number
+  query?: string
 }
 
 interface NativeOverlayActionResultEvent {
@@ -281,6 +283,7 @@ interface NativeOverlaySurface {
   owner: WebContents
   parentId: number
   kind: NativeOverlayKind
+  dialog?: NativeOverlayDialogPayload['dialog']
 }
 
 interface NativeOverlayControllerOptions {
@@ -337,6 +340,12 @@ const MENU_KEY_MAP: Readonly<Partial<Record<string, string>>> = {
   Space: ' ',
   Tab: 'Tab',
   Up: 'ArrowUp',
+}
+
+const DIALOG_KEY_MAP: Readonly<Partial<Record<string, string>>> = {
+  ...MENU_KEY_MAP,
+  Backspace: 'Backspace',
+  Delete: 'Delete',
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -512,7 +521,10 @@ const isCommandPaletteItem = (
 const isCommandPaletteActions = (
   value: unknown
 ): value is NativeOverlayCommandPaletteActions =>
-  isRecord(value) && isString(value.selectIndex) && isString(value.executeIndex)
+  isRecord(value) &&
+  isString(value.selectIndex) &&
+  isString(value.executeIndex) &&
+  isString(value.setQuery)
 
 const isStringMatrix = (
   value: unknown
@@ -673,7 +685,8 @@ const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   (value.suspendOnSelect === undefined ||
     typeof value.suspendOnSelect === 'boolean') &&
   (value.feedback === undefined || value.feedback === 'copy') &&
-  (value.index === undefined || isFiniteNumber(value.index))
+  (value.index === undefined || isFiniteNumber(value.index)) &&
+  (value.query === undefined || typeof value.query === 'string')
 
 const isActionResultEvent = (
   value: unknown
@@ -712,12 +725,54 @@ const menuKeyboardEventFromInput = (
   }
 }
 
+const dialogKeyboardEventFromInput = (
+  surfaceId: string,
+  input: Input
+): NativeOverlayKeyboardEvent | null => {
+  if (input.type !== 'keyDown') {
+    return null
+  }
+
+  // Keep Tab in the owner renderer for command-palette completion.
+  if (input.key === 'Tab' || input.code === 'Tab') {
+    return null
+  }
+
+  const mapped = DIALOG_KEY_MAP[input.key] ?? DIALOG_KEY_MAP[input.code]
+
+  const printable =
+    mapped === undefined &&
+    !input.alt &&
+    !input.control &&
+    !input.meta &&
+    input.key.length === 1
+      ? input.key
+      : undefined
+  const key = mapped ?? printable
+
+  if (key === undefined) {
+    return null
+  }
+
+  return {
+    surfaceId,
+    key,
+    code: input.code,
+    altKey: input.alt,
+    ctrlKey: input.control,
+    metaKey: input.meta,
+    shiftKey: input.shift,
+    repeat: input.isAutoRepeat,
+  }
+}
+
 export class NativeOverlayController {
   private readonly menuOverlayUrl: string
   private readonly tooltipOverlayUrl: string
   private readonly platform: NodeJS.Platform
   private readonly overlays = new Map<number, NativeOverlayRecord>()
   private readonly surfaces = new Map<string, NativeOverlaySurface>()
+  private readonly suspendedSurfaceIds = new Set<string>()
   private readonly pendingReady = new Map<string, (ready: boolean) => void>()
   private registeredIpc: IpcMainLike | null = null
 
@@ -756,6 +811,7 @@ export class NativeOverlayController {
       resolve(false)
     }
     this.pendingReady.clear()
+    this.suspendedSurfaceIds.clear()
 
     for (const record of [...this.overlays.values()]) {
       this.destroyOverlayRecord(record, 'owner-closed', false)
@@ -833,10 +889,14 @@ export class NativeOverlayController {
     record.menu.window.setAlwaysOnTop(true, 'screen-saver')
     record.menu.window.moveTop()
     record.activeSurfaceId = payload.surfaceId
+
+    const dialog =
+      payload.payload.kind === 'dialog' ? payload.payload.dialog : undefined
     this.surfaces.set(payload.surfaceId, {
       owner,
       parentId: parent.id,
       kind: payload.kind,
+      ...(dialog === undefined ? {} : { dialog }),
     })
 
     const readyPromise = this.waitForReady(payload.surfaceId)
@@ -1118,7 +1178,10 @@ export class NativeOverlayController {
         return
       }
 
-      if (record.activeSurfaceId !== null) {
+      if (
+        record.activeSurfaceId !== null &&
+        !this.suspendedSurfaceIds.has(record.activeSurfaceId)
+      ) {
         this.closeSurface(record.activeSurfaceId, 'outside', true, false)
       }
 
@@ -1144,11 +1207,16 @@ export class NativeOverlayController {
         return
       }
 
-      if (surface?.kind !== 'menu') {
+      const isKeyboardDialog =
+        surface?.kind === 'dialog' && surface.dialog === 'command-palette'
+      if (surface?.kind !== 'menu' && !isKeyboardDialog) {
         return
       }
 
-      const keyEvent = menuKeyboardEventFromInput(surfaceId, input)
+      const keyEvent =
+        surface.kind === 'dialog'
+          ? dialogKeyboardEventFromInput(surfaceId, input)
+          : menuKeyboardEventFromInput(surfaceId, input)
       if (keyEvent === null) {
         return
       }
@@ -1293,6 +1361,7 @@ export class NativeOverlayController {
         : record?.activeSurfaceId === surfaceId
 
     this.surfaces.delete(surfaceId)
+    this.suspendedSurfaceIds.delete(surfaceId)
     this.resolvePendingReady(surfaceId, false)
 
     if (record && isActiveSurface) {
@@ -1341,9 +1410,11 @@ export class NativeOverlayController {
     }
 
     const overlayWindow = record.menu.window
+    this.suspendedSurfaceIds.add(surfaceId)
     resetOverlayCursor(overlayWindow)
     overlayWindow.setAlwaysOnTop(false)
     overlayWindow.setIgnoreMouseEvents(true)
+    overlayWindow.hide()
   }
 
   private resumeSurface(surfaceId: string): void {
@@ -1362,6 +1433,7 @@ export class NativeOverlayController {
 
     record.syncBounds()
     const overlayWindow = record.menu.window
+    this.suspendedSurfaceIds.delete(surfaceId)
     overlayWindow.setIgnoreMouseEvents(false)
     overlayWindow.showInactive()
     overlayWindow.setAlwaysOnTop(true, 'screen-saver')

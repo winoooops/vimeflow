@@ -22,6 +22,7 @@ interface CommandPaletteNativeRequest {
     actions: {
       selectIndex: string
       executeIndex: string
+      setQuery: string
     }
   }
 }
@@ -221,7 +222,7 @@ describe('CommandPalette', () => {
     setNavigatorPlatform('MacIntel')
     const nativeBridge = installNativeOverlayBridge()
 
-    const { selectIndex, executeAt } = renderPalette({
+    const { setQuery, selectIndex, executeAt } = renderPalette({
       state: { isOpen: true, query: ':he' },
       filteredResults: [sampleCommand],
       clampedSelectedIndex: 0,
@@ -264,10 +265,17 @@ describe('CommandPalette', () => {
         actionId: request.payload.actions.executeIndex,
         index: 0,
       })
+
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: request.payload.actions.setQuery,
+        query: ':open',
+      })
     })
 
     expect(selectIndex).toHaveBeenCalledWith(0)
     expect(executeAt).toHaveBeenCalledWith(0)
+    expect(setQuery).toHaveBeenCalledWith(':open')
   })
 
   test('does not reopen the native overlay on unrelated parent rerenders', async () => {

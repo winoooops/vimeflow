@@ -7,7 +7,10 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import type { NativeOverlayRequest } from '@/components/base/floating/nativeOverlay'
+import type {
+  NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayRequest,
+} from '@/components/base/floating/nativeOverlay'
 import { NativeOverlayHost } from './NativeOverlayHost'
 
 const request: NativeOverlayRequest = {
@@ -160,7 +163,9 @@ const shortcutTooltipRequest: NativeOverlayRequest = {
   },
 }
 
-const commandPaletteRequest: NativeOverlayRequest = {
+const commandPaletteRequest: NativeOverlayRequest & {
+  payload: NativeOverlayCommandPaletteDialogPayload
+} = {
   surfaceId: 'dialog-1',
   kind: 'dialog',
   anchorRect: { x: 0, y: 0, width: 900, height: 600 },
@@ -184,6 +189,7 @@ const commandPaletteRequest: NativeOverlayRequest = {
     actions: {
       selectIndex: 'command-palette:select-index',
       executeIndex: 'command-palette:execute-index',
+      setQuery: 'command-palette:set-query',
     },
   },
 }
@@ -443,7 +449,7 @@ describe('NativeOverlayHost', () => {
       name: 'Command palette',
     })
     expect(dialog).toBeInTheDocument()
-    expect(dialog).toHaveClass('bg-scrim/40')
+    expect(dialog).toHaveClass('bg-scrim/60')
     expect(screen.getByRole('combobox')).toHaveValue(':')
     expect(screen.getByRole('combobox')).toHaveAttribute('readonly')
     expect(screen.getByRole('option', { name: /:help/i })).toHaveAttribute(
@@ -461,6 +467,219 @@ describe('NativeOverlayHost', () => {
     })
 
     expect(screen.getByRole('dialog', { name: 'Command palette' })).toBe(dialog)
+  })
+
+  test('forwards command palette typed query and keyboard actions', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(commandPaletteRequest)
+
+    await screen.findByRole('dialog', {
+      name: 'Command palette',
+    })
+
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'o',
+      code: 'KeyO',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:set-query',
+      closeOnSelect: false,
+      query: ':o',
+    })
+
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'p',
+      code: 'KeyP',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:set-query',
+      closeOnSelect: false,
+      query: ':op',
+    })
+
+    bridge.emitRender({
+      ...commandPaletteRequest,
+      payload: {
+        ...commandPaletteRequest.payload,
+        query: ':o',
+      },
+    })
+
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'Backspace',
+      code: 'Backspace',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:set-query',
+      closeOnSelect: false,
+      query: ':o',
+    })
+
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'Enter',
+      code: 'Enter',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:execute-index',
+      closeOnSelect: false,
+      index: 0,
+    })
+  })
+
+  test('does not execute a stale command palette selection', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender({
+      ...commandPaletteRequest,
+      payload: {
+        ...commandPaletteRequest.payload,
+        selectedIndex: 1,
+        results: [
+          ...commandPaletteRequest.payload.results,
+          {
+            id: 'open',
+            label: ':open',
+            description: 'Open file',
+            icon: 'folder_open',
+          },
+        ],
+      },
+    })
+
+    await screen.findByRole('dialog', {
+      name: 'Command palette',
+    })
+
+    bridge.emitRender({
+      ...commandPaletteRequest,
+      payload: {
+        ...commandPaletteRequest.payload,
+        selectedIndex: 1,
+        results: commandPaletteRequest.payload.results,
+      },
+    })
+
+    bridge.action.mockClear()
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'Enter',
+      code: 'Enter',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).not.toHaveBeenCalled()
+  })
+
+  test('resets optimistic command palette selection on query edits', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender({
+      ...commandPaletteRequest,
+      payload: {
+        ...commandPaletteRequest.payload,
+        results: [
+          ...commandPaletteRequest.payload.results,
+          {
+            id: 'open',
+            label: ':open',
+            description: 'Open file',
+            icon: 'folder_open',
+          },
+        ],
+      },
+    })
+
+    await screen.findByRole('dialog', {
+      name: 'Command palette',
+    })
+
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    bridge.action.mockClear()
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'o',
+      code: 'KeyO',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:set-query',
+      closeOnSelect: false,
+      query: ':o',
+    })
+
+    bridge.emitKeyDown({
+      surfaceId: 'dialog-1',
+      key: 'Enter',
+      code: 'Enter',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+    })
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-1',
+      actionId: 'command-palette:execute-index',
+      closeOnSelect: false,
+      index: 0,
+    })
   })
 
   test('renders new session dialog requests and dispatches actions', async () => {
@@ -542,6 +761,7 @@ describe('NativeOverlayHost', () => {
           actions: {
             selectIndex: 'command-palette:select-index',
             executeIndex: 'command-palette:execute-index',
+            setQuery: 'command-palette:set-query',
           },
         },
       })

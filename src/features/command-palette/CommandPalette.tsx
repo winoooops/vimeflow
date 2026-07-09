@@ -59,6 +59,7 @@ const DIALOG_CLOSE_ON_ESCAPE = false
 
 const NATIVE_ACTION_SELECT_INDEX = 'command-palette:select-index'
 const NATIVE_ACTION_EXECUTE_INDEX = 'command-palette:execute-index'
+const NATIVE_ACTION_SET_QUERY = 'command-palette:set-query'
 
 export const CommandPalette = ({
   state,
@@ -107,6 +108,7 @@ export const CommandPalette = ({
         actions: {
           selectIndex: NATIVE_ACTION_SELECT_INDEX,
           executeIndex: NATIVE_ACTION_EXECUTE_INDEX,
+          setQuery: NATIVE_ACTION_SET_QUERY,
         },
       }
     }, [
@@ -120,6 +122,17 @@ export const CommandPalette = ({
   const nativeOverlayActions = useMemo(
     (): ReadonlyMap<string, NativeOverlayActionHandler> =>
       new Map([
+        [
+          NATIVE_ACTION_SET_QUERY,
+          {
+            retainSession: true,
+            run: (event): void => {
+              if (event?.query !== undefined) {
+                setQuery(event.query)
+              }
+            },
+          },
+        ],
         [
           NATIVE_ACTION_SELECT_INDEX,
           {
@@ -143,7 +156,7 @@ export const CommandPalette = ({
           },
         ],
       ]),
-    [executeAt, selectIndex]
+    [executeAt, selectIndex, setQuery]
   )
 
   const handleOpenChange = useCallback(
