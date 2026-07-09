@@ -146,7 +146,7 @@ not become repeated unhandled main-process failures.
 - **Fix:** Split preview state from persisted state for the slider and commit
   only on pointer release, key release, or blur. Added a regression test that
   multiple drag changes do not save until the final value is committed.
-  
+
 ### 11. Delegated reviewer findings need a display bound
 
 - **Source:** github-claude | PR #677 round 2 | 2026-07-09
