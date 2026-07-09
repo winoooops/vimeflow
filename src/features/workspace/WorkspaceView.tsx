@@ -64,6 +64,7 @@ import {
   type FocusedPaneRef,
 } from '../command-palette/hooks/usePaneRenameChord'
 import { listen, renameAgentSession } from '../../lib/backend'
+import { registerCommandPaletteShortcutOpenerForE2e } from '../../lib/e2e-bridge'
 import { useSessionManager } from '../sessions/hooks/useSessionManager'
 import { cycleSession } from '../sessions/utils/cycleSession'
 import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
@@ -2066,6 +2067,11 @@ const WorkspaceViewContent = (): ReactElement => {
     isLeaderEvent: isPaletteLeaderEvent,
     isPaletteToggleEvent,
   })
+
+  useEffect(
+    () => registerCommandPaletteShortcutOpenerForE2e(commandPalette.open),
+    [commandPalette.open]
+  )
 
   // The palette owns focus while open (its Dialog focus-trap), and restoring to
   // whatever happened to be focused when it opened is unreliable — a theme

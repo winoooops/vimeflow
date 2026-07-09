@@ -441,3 +441,19 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Dispatch the shortcut at most once when the palette is not already
   visible, then wait only for the input to appear.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. E2E shortcut probes should not depend on async main-process listener delivery
+
+- **Source:** deterministic CI failure | PR #672 round 4 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/lib/e2e-bridge.ts`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The terminal keymap smoke helper received a handled
+  command-palette shortcut response from the Electron E2E IPC path, then timed
+  out waiting for the palette input. The helper depended on main sending a
+  toggle event back through the renderer listener before the assertion window,
+  so a successful IPC response did not prove the renderer opened the palette.
+- **Fix:** Register the renderer-owned `commandPalette.open` callback with the
+  E2E bridge while `WorkspaceView` is mounted. The E2E shortcut helper now
+  invokes that opener directly before falling back to the main-process shortcut
+  path, keeping production code inert outside `VITE_E2E`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

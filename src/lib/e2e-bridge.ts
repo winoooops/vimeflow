@@ -163,7 +163,35 @@ const getVisiblePtyId = (): string | null => {
 }
 
 const dispatchCommandPaletteShortcut = async (): Promise<boolean> =>
-  window.vimeflow?.e2e?.dispatchCommandPaletteShortcut() ?? false
+  commandPaletteShortcutOpener?.() ??
+  window.vimeflow?.e2e?.dispatchCommandPaletteShortcut() ??
+  false
+
+let commandPaletteShortcutOpener: (() => boolean) | null = null
+
+export const registerCommandPaletteShortcutOpenerForE2e = (
+  opener: () => void
+): (() => void) => {
+  if (!import.meta.env.VITE_E2E) {
+    return (): void => {
+      /* no-op outside e2e builds */
+    }
+  }
+
+  const registeredOpener = (): boolean => {
+    opener()
+
+    return true
+  }
+
+  commandPaletteShortcutOpener = registeredOpener
+
+  return (): void => {
+    if (commandPaletteShortcutOpener === registeredOpener) {
+      commandPaletteShortcutOpener = null
+    }
+  }
+}
 
 if (import.meta.env.VITE_E2E) {
   window.__VIMEFLOW_E2E__ = {
