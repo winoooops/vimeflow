@@ -2,7 +2,7 @@
 id: fail-closed-hooks
 category: security
 created: 2026-04-20
-last_updated: 2026-07-05
+last_updated: 2026-07-09
 ref_count: 3
 ---
 
@@ -88,6 +88,7 @@ When building any subprocess-based security hook for a CLI tool that uses
 - **Severity:** MEDIUM
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** `output_completion_status` for `CompletionMode::ExecCommandEnd` used `exec_function_output_exit_code(...).is_some_and(|code| code != 0)` to decide failure. When the `function_call_output` payload lacked a `"Process exited with code N"` line (crash, timeout, or non-standard output), the call was reported as `Done` instead of `Failed`, silently swallowing the failure.
+
 - **Fix:** Replaced the boolean check with an explicit `match`: `Some(0)` → `Done`, `Some(_)` → `Failed`, `None` → `Failed`. Added a unit test covering a `function_call_output` payload with no exit-code line.
 - **Commit:** same commit as this entry
 - **Note:** Non-security instance of the fail-closed principle: when an authoritative signal is missing, prefer the conservative (failure) default.
@@ -104,3 +105,18 @@ When building any subprocess-based security hook for a CLI tool that uses
   overlay layer, preserving external-link handling while blocking document
   replacement.
 - **Commit:** same commit as this entry
+
+### 6. E2E-only IPC handler skipped packaged-build guard
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** LOW
+- **File:** `electron/main.ts`
+- **Finding:** The e2e command-palette shortcut IPC handler was registered
+  whenever `isE2eRuntime()` was true, unlike the adjacent e2e backend-method
+  surface that also requires `!app.isPackaged`. A packaged build launched with
+  an inherited e2e flag could expose a renderer-invocable test-only shortcut
+  dispatch channel.
+- **Fix:** Reused the existing `allowE2eBackendMethods` guard for the shortcut
+  handler so all e2e-only IPC exposure in `main.ts` is blocked in packaged
+  builds.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

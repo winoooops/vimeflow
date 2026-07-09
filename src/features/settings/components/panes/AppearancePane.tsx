@@ -1,4 +1,10 @@
-import { type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import {
   resolveSwellVariant,
   type SwellVariant,
@@ -20,9 +26,28 @@ export const AppearancePane = ({
   activeTargetId = null,
 }: SettingsPaneTargetProps): ReactElement => {
   const { settings, update } = useSettings()
+  const [accentHuePreview, setAccentHuePreview] = useState(settings.accentHue)
+  const committedAccentHueRef = useRef(settings.accentHue)
 
   const colorSchemeActive =
     activeTargetId === SETTINGS_TARGET_IDS.appearanceColorScheme
+
+  useEffect(() => {
+    committedAccentHueRef.current = settings.accentHue
+    setAccentHuePreview(settings.accentHue)
+  }, [settings.accentHue])
+
+  const commitAccentHue = useCallback(
+    (value: number): void => {
+      if (committedAccentHueRef.current === value) {
+        return
+      }
+
+      committedAccentHueRef.current = value
+      update({ accentHue: value })
+    },
+    [update]
+  )
 
   const applyScheme = (scheme: (typeof BUILTIN_SCHEMES)[number]): void => {
     themeService.apply(scheme.themeId)
@@ -139,8 +164,11 @@ export const AppearancePane = ({
           min={240}
           max={360}
           step={2}
-          value={settings.accentHue}
-          onChange={(e) => update({ accentHue: Number(e.target.value) })}
+          value={accentHuePreview}
+          onChange={(e) => setAccentHuePreview(Number(e.target.value))}
+          onPointerUp={() => commitAccentHue(accentHuePreview)}
+          onKeyUp={() => commitAccentHue(accentHuePreview)}
+          onBlur={() => commitAccentHue(accentHuePreview)}
           className="w-[180px]"
           aria-label="Accent hue"
         />

@@ -74,9 +74,9 @@ describe('resolveBindings', () => {
     )
   })
 
-  test('stored overrides are preserved when they hit new-binding-only reservations', () => {
+  test('stored overrides colliding with fixed browser shortcuts are reverted', () => {
     expect(tokenOf({ 'focus-pane-2': 'Mod+KeyL' }, 'focus-pane-2')).toBe(
-      'Mod+KeyL'
+      'Mod+Digit2'
     )
   })
 
@@ -137,5 +137,11 @@ describe('resolveBindings', () => {
     }
     expect(tokenOf(overrides, 'focus-pane-1')).toBe('Mod+Digit1') // reverted
     expect(tokenOf(overrides, 'focus-pane-2')).toBe('Mod+KeyK') // survivor
+  })
+
+  test('stored overrides colliding with fixed settings shortcuts are reverted', () => {
+    expect(tokenOf({ 'dock-toggle': 'Mod+Comma' }, 'dock-toggle')).toBe(
+      'Mod+Digit0'
+    )
   })
 })

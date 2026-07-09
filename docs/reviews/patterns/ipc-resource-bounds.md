@@ -2,7 +2,7 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ref_count: 2
 ---
 
@@ -134,3 +134,16 @@ not become repeated unhandled main-process failures.
   keybinding counts and lengths, alias counts, and alias field lengths, then
   invoked them at the IPC boundary and cache write path with regression tests.
 - **Commit:** same commit as this entry
+
+### 10. Accent slider queued full settings saves for every drag tick
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/panes/AppearancePane.tsx`
+- **Finding:** The accent hue range input called the settings provider's
+  persisted `update()` on every drag event, enqueueing many full settings IPC
+  saves and disk writes for intermediate values the user did not settle on.
+- **Fix:** Split preview state from persisted state for the slider and commit
+  only on pointer release, key release, or blur. Added a regression test that
+  multiple drag changes do not save until the final value is committed.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

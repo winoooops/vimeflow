@@ -145,6 +145,49 @@ describe('SettingsProvider', () => {
     )
   })
 
+  test('merges pre-load updates onto loaded settings before saving', async () => {
+    const loaded = createLoadedSettings()
+    let resolveLoad: ((settings: AppSettings) => void) | undefined
+
+    const load = vi.fn(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          resolveLoad = resolve
+        })
+    )
+    const save = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: { load, save, openFile: vi.fn() },
+    } as unknown as Window['vimeflow']
+
+    render(
+      <SettingsProvider>
+        <TestConsumer />
+      </SettingsProvider>
+    )
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('nothing')
+    })
+
+    expect(save).not.toHaveBeenCalled()
+
+    act(() => {
+      resolveLoad?.(loaded)
+    })
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith({
+        ...loaded,
+        closeWithNoTabs: 'nothing',
+      })
+    })
+  })
+
   test('syncs an in-memory snapshot to the main process only on update', async () => {
     const loaded = createLoadedSettings()
     const load = vi.fn().mockResolvedValue(loaded)

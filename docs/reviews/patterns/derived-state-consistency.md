@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ref_count: 21
 ---
 
@@ -349,7 +349,7 @@ base data is technically "correct."
   thread `terminalFontFamily` through the native Ghostty update path, including
   frame dedupe and Electron parent/helper handling. Added renderer and Electron
   regression tests.
-  
+
 ### 27. Preserved native surface caches skipped replay on recreation
 
 - **Source:** github-codex-connector | PR #675 round 1 | 2026-07-08
@@ -358,3 +358,17 @@ base data is technically "correct."
 - **Finding:** Destroying a primary Ghostty surface while preserving its burner secondary left `lastBackgroundColor`, `lastForegroundColor`, and `lastShortcutDigits` populated. Recreating the native surface with the same theme and shortcut context then skipped the setter calls needed to initialize the new surface.
 - **Fix:** Reset the surface-scoped visual and shortcut caches whenever a native surface is torn down, including preserved-secondary destroys and window reparenting destroys. Added a regression test proving the same colors and shortcut digits are replayed onto the recreated surface.
 - **Commit:** same commit as this entry
+
+### 28. Shortcut tooltips ignored live keymap overrides
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** MEDIUM
+- **File:** `src/components/StatusBar.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Dock-toggle and sidebar-tab tooltips continued rendering static
+  shortcut chips even though those commands are rebindable through the new
+  keymap settings. After customization, hover text showed stale combinations
+  that no longer matched the active command bindings.
+- **Fix:** Derive dock and sidebar tooltip shortcuts from `bindingFor(...)`
+  using the same `chordToShortcutInput` path as the command palette tooltip.
+  Added status bar coverage for a custom dock shortcut chip.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

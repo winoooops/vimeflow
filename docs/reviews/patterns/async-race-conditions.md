@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ref_count: 84
 ---
 
@@ -1011,3 +1011,17 @@ prevent showing previous data.
   the pane, advances the debounce timer, and asserts only the original resize
   reached the sidecar.
 - **Commit:** same commit as this entry
+
+### 93. Settings updates before initial load saved defaults over persisted state
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/features/settings/SettingsProvider.tsx`
+- **Finding:** A fresh settings provider could accept an `update()` before the
+  initial async `load()` resolved, merge the patch onto `DEFAULT_SETTINGS`, and
+  persist that full default-backed object over the user's saved settings.
+- **Fix:** Track initial load completion and queue pre-load patches for replay
+  against the loaded settings object before saving. Added a regression test
+  proving pre-load edits are visible immediately but saved only after merging
+  with the persisted snapshot.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

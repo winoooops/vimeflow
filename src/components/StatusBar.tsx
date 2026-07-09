@@ -7,8 +7,8 @@ import {
 import { Tooltip } from './Tooltip'
 import type { ShortcutInput, ShortcutKey } from '../lib/formatShortcut'
 
-// Display-side fallbacks for the bottom-bar actions. WorkspaceView passes the
-// live palette binding so the tooltip chip follows persisted overrides.
+// Display-side fallbacks for the bottom-bar actions. WorkspaceView passes live
+// bindings so tooltip chips follow persisted overrides.
 const PALETTE_SHORTCUT = ['Mod', ';'] as const satisfies readonly ShortcutKey[]
 const DOCK_SHORTCUT = ['Mod', '0'] as const satisfies readonly ShortcutKey[]
 
@@ -38,6 +38,8 @@ export interface StatusBarProps {
   onOpenPalette: () => void
   /** Current command-palette shortcut — defaults to the app binding. */
   paletteShortcut?: ShortcutInput
+  /** Current dock-toggle shortcut — defaults to the app binding. */
+  dockShortcut?: ShortcutInput
   /** Whether the editor/diff dock is open — drives the toggle's icon tone. */
   dockOpen: boolean
   onToggleDock: () => void
@@ -317,6 +319,7 @@ export const StatusBar = ({
   contextPct,
   onOpenPalette,
   paletteShortcut = PALETTE_SHORTCUT,
+  dockShortcut = DOCK_SHORTCUT,
   dockOpen,
   onToggleDock,
   burnerCount = 0,
@@ -362,7 +365,7 @@ export const StatusBar = ({
         </Tooltip>
         <Tooltip
           content={dockOpen ? 'Hide editor & diff' : 'Show editor & diff'}
-          shortcut={DOCK_SHORTCUT}
+          shortcut={dockShortcut}
         >
           <button
             type="button"

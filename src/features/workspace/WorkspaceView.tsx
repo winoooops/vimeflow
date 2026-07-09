@@ -294,20 +294,26 @@ interface GhosttyNativeRenamePaneEvent {
   paneId: string
 }
 
-const SIDEBAR_TAB_ITEMS: readonly SidebarTabItem<SidebarTab>[] = [
+const buildSidebarTabItems = ({
+  sessionsShortcut,
+  filesShortcut,
+}: {
+  sessionsShortcut: SidebarTabItem<SidebarTab>['shortcut']
+  filesShortcut: SidebarTabItem<SidebarTab>['shortcut']
+}): readonly SidebarTabItem<SidebarTab>[] => [
   {
     id: 'sessions',
     label: 'SESSIONS',
     icon: 'view_agenda',
     tooltip: 'Sessions',
-    shortcut: ['Mod', 'Shift', 'S'],
+    shortcut: sessionsShortcut,
   },
   {
     id: 'files',
     label: 'FILES',
     icon: 'folder_open',
     tooltip: 'Files',
-    shortcut: ['Mod', 'Shift', 'F'],
+    shortcut: filesShortcut,
   },
 ]
 
@@ -2000,10 +2006,27 @@ const WorkspaceViewContent = (): ReactElement => {
   const { bindingFor, matches } = useKeybindings()
   const paletteBinding = bindingFor('palette')
   const paletteLeaderBinding = bindingFor('palette-leader')
+  const dockToggleBinding = bindingFor('dock-toggle')
+  const sidebarSessionsBinding = bindingFor('sidebar-sessions')
+  const sidebarFilesBinding = bindingFor('sidebar-files')
 
   const paletteShortcut = useMemo(
     () => chordToShortcutInput(paletteBinding),
     [paletteBinding]
+  )
+
+  const dockShortcut = useMemo(
+    () => chordToShortcutInput(dockToggleBinding),
+    [dockToggleBinding]
+  )
+
+  const sidebarTabItems = useMemo(
+    () =>
+      buildSidebarTabItems({
+        sessionsShortcut: chordToShortcutInput(sidebarSessionsBinding),
+        filesShortcut: chordToShortcutInput(sidebarFilesBinding),
+      }),
+    [sidebarFilesBinding, sidebarSessionsBinding]
   )
 
   const isPaletteToggleEvent = useCallback(
@@ -3122,7 +3145,7 @@ const WorkspaceViewContent = (): ReactElement => {
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex items-stretch gap-2 px-3 pb-3 pt-2.5">
                     <SidebarTabs<SidebarTab>
-                      tabs={SIDEBAR_TAB_ITEMS}
+                      tabs={sidebarTabItems}
                       activeId={activeTab}
                       onChange={setActiveTab}
                     />
@@ -3350,6 +3373,7 @@ const WorkspaceViewContent = (): ReactElement => {
           contextPct={statusBarContextPct}
           onOpenPalette={commandPalette.open}
           paletteShortcut={paletteShortcut}
+          dockShortcut={dockShortcut}
           dockOpen={isDockOpen}
           onToggleDock={handleToggleDock}
           burnerCount={openBurnerPaneKeys.size}

@@ -2,7 +2,7 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-07-08
+last_updated: 2026-07-09
 ref_count: 7
 ---
 
@@ -153,3 +153,18 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
   `update(...)` for every change. Added a regression test asserting the controls
   invoke persisted settings updates.
 - **Commit:** same commit as this entry
+
+### 16. Stored keymap overrides collided with fixed shortcuts
+
+- **Source:** github-claude | PR #672 round 2 | 2026-07-09
+- **Severity:** HIGH
+- **File:** `src/features/keymap/conflicts.ts`
+- **Finding:** `resolveBindings` skipped commands marked
+  `preserveStoredOverrides` when checking whether another stored override
+  collided with fixed shortcuts such as Settings or browser-location. A
+  hand-edited or migrated settings file could therefore load two commands with
+  the same chord.
+- **Fix:** Removed the broad skip so fixed commands remain collision obstacles
+  for other overrides, while intentional shadow pairs still bypass the check.
+  Added regression coverage for settings and browser shortcut collisions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

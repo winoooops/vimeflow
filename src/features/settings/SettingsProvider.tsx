@@ -32,6 +32,8 @@ export const SettingsProvider = ({
   const settingsRef = useRef<AppSettings>(settings)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const hasLocalUpdateRef = useRef(false)
+  const hasLoadedRef = useRef(false)
+  const pendingLoadPatchRef = useRef<Partial<AppSettings> | null>(null)
 
   settingsRef.current = settings
 
@@ -54,41 +56,6 @@ export const SettingsProvider = ({
     },
     []
   )
-
-  useEffect(() => {
-    const load = async (): Promise<void> => {
-      const bridge =
-        typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
-
-      if (!bridge) {
-        return
-      }
-
-      try {
-        const loaded = await bridge.load()
-        if (hasLocalUpdateRef.current) {
-          return
-        }
-        setSettings(loaded)
-        settingsRef.current = loaded
-      } catch {
-        // Fall back to defaults if the backend load fails.
-      }
-    }
-
-    void load()
-  }, [])
-
-  useEffect(() => {
-    const bridge =
-      typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
-
-    return bridge?.onDidChange?.((next) => {
-      settingsRef.current = next
-      setSettings(next)
-      setSaveError(null)
-    })
-  }, [])
 
   const saveNext = useCallback(
     async (previous: Promise<void>, next: AppSettings): Promise<void> => {
@@ -114,6 +81,54 @@ export const SettingsProvider = ({
     []
   )
 
+  useEffect(() => {
+    const load = async (): Promise<void> => {
+      const bridge =
+        typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
+
+      if (!bridge) {
+        hasLoadedRef.current = true
+
+        return
+      }
+
+      try {
+        const loaded = await bridge.load()
+        hasLoadedRef.current = true
+        const pendingPatch = pendingLoadPatchRef.current
+        pendingLoadPatchRef.current = null
+        if (pendingPatch !== null) {
+          const next = { ...loaded, ...pendingPatch }
+          settingsRef.current = next
+          setSettings(next)
+          setSaveError(null)
+          void syncSnapshotToMain(next)
+          saveQueueRef.current = saveNext(saveQueueRef.current, next)
+
+          return
+        }
+        setSettings(loaded)
+        settingsRef.current = loaded
+      } catch {
+        hasLoadedRef.current = true
+        // Fall back to defaults if the backend load fails.
+      }
+    }
+
+    void load()
+  }, [saveNext, syncSnapshotToMain])
+
+  useEffect(() => {
+    const bridge =
+      typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
+
+    return bridge?.onDidChange?.((next) => {
+      settingsRef.current = next
+      setSettings(next)
+      setSaveError(null)
+    })
+  }, [])
+
   const update = useCallback(
     (patch: Partial<AppSettings>): void => {
       const next = { ...settingsRef.current, ...patch }
@@ -121,6 +136,15 @@ export const SettingsProvider = ({
       settingsRef.current = next
       setSettings(next)
       setSaveError(null)
+
+      if (!hasLoadedRef.current) {
+        pendingLoadPatchRef.current = {
+          ...pendingLoadPatchRef.current,
+          ...patch,
+        }
+
+        return
+      }
 
       void syncSnapshotToMain(next)
       saveQueueRef.current = saveNext(saveQueueRef.current, next)

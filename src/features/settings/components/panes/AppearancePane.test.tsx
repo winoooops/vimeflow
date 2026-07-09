@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { SettingsProvider } from '../../SettingsProvider'
@@ -159,5 +159,37 @@ describe('AppearancePane', () => {
         })
       )
     })
+  })
+
+  test('previews accent hue while dragging and saves only the committed value', async () => {
+    const save = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),
+        save,
+        openFile: vi.fn(),
+      },
+    } as unknown as Window['vimeflow']
+
+    renderPane()
+
+    const slider = await screen.findByLabelText('Accent hue')
+
+    fireEvent.change(slider, { target: { value: '300' } })
+    fireEvent.change(slider, { target: { value: '320' } })
+
+    expect(save).not.toHaveBeenCalled()
+    expect(slider).toHaveValue('320')
+
+    fireEvent.pointerUp(slider)
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledTimes(1)
+    })
+
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ accentHue: 320 })
+    )
   })
 })

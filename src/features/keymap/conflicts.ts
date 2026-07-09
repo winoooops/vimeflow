@@ -88,9 +88,6 @@ export const overrideCollides = (
       continue
     }
     const other = getCommand(otherId)
-    if (other.preserveStoredOverrides) {
-      continue
-    }
     if (intentionallyShadowed(id, otherId)) {
       continue
     }

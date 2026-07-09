@@ -677,7 +677,7 @@ const setupApp = async (): Promise<void> => {
     }
   })
 
-  if (isE2eRuntime()) {
+  if (allowE2eBackendMethods) {
     ipcMain.handle(E2E_COMMAND_PALETTE_SHORTCUT, (ipcEvent): boolean => {
       const win = BrowserWindow.fromWebContents(ipcEvent.sender)
       if (win === null) {
