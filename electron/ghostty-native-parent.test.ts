@@ -1233,7 +1233,117 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('coalesces native resize bursts before resizing the PTY again', () => {
+  test('forwards a steady throttled resize stream during continuous drags', () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const callbacks: {
+        onResize?: (cols: number, rows: number) => void
+      } = {}
+      const surface = {}
+
+      const addon = {
+        create: vi.fn(
+          (
+            _bridge,
+            _handle,
+            _input,
+            resize,
+            _focus,
+            _shortcut,
+            _renamePane
+          ) => {
+            void _bridge
+            void _handle
+            void _input
+            void _focus
+            void _shortcut
+            void _renamePane
+            callbacks.onResize = resize
+
+            return surface
+          }
+        ),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+      }
+
+      const sidecar = {
+        invoke: vi.fn(() => Promise.resolve(undefined)),
+        onEvent: vi.fn(() => vi.fn()),
+        shutdown: vi.fn(() => Promise.resolve()),
+      } as unknown as Sidecar
+
+      controller = setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+        addon,
+      })
+
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+
+      // Leading edge: the first resize forwards immediately.
+      callbacks.onResize?.(80, 24)
+      callbacks.onResize?.(81, 24)
+      callbacks.onResize?.(82, 24)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+      expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 80, rows: 24 },
+      })
+
+      // Trailing edge: one throttle window later the freshest size forwards.
+      vi.advanceTimersByTime(16)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
+      })
+
+      // Continuous motion keeps the stream flowing once per window — the
+      // reset-on-change starvation (zero forwards until drag end) is gone.
+      callbacks.onResize?.(83, 24)
+      vi.advanceTimersByTime(16)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(3)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 83, rows: 24 },
+      })
+
+      // Idle closes the window; nothing extra fires.
+      vi.advanceTimersByTime(200)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(3)
+
+      // After idle the next change is leading-edge immediate again.
+      callbacks.onResize?.(90, 50)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(4)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 90, rows: 50 },
+      })
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  test('drops a pending resize that reverts to the last forwarded size', () => {
     vi.useFakeTimers()
     let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
 
@@ -1299,25 +1409,13 @@ describe('ghostty native parent', () => {
 
       callbacks.onResize?.(80, 24)
       callbacks.onResize?.(81, 24)
-      callbacks.onResize?.(82, 24)
+      callbacks.onResize?.(80, 24)
+      vi.advanceTimersByTime(200)
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(1)
       expect(sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
         request: { sessionId: 'pty-1', cols: 80, rows: 24 },
       })
-
-      vi.advanceTimersByTime(200)
-
-      expect(sidecar.invoke).toHaveBeenCalledTimes(2)
-      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
-        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
-      })
-
-      callbacks.onResize?.(83, 24)
-      callbacks.onResize?.(82, 24)
-      vi.advanceTimersByTime(200)
-
-      expect(sidecar.invoke).toHaveBeenCalledTimes(2)
     } finally {
       controller?.dispose()
       vi.useRealTimers()
