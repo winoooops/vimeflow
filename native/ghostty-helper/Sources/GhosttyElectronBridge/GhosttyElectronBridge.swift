@@ -295,6 +295,8 @@ private final class EmbeddedGhosttyChild {
         let view = TerminalView(frame: .zero)
         view.controller = controller
         view.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
+        // Same stale-contents pinning as the primary terminalView.
+        view.layerContentsPlacement = .topLeft
         self.terminalView = view
     }
 
@@ -439,6 +441,10 @@ private final class EmbeddedGhosttySurface: NSObject {
         view.controller = controller
         view.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
         view.autoresizingMask = [.width, .height]
+        // Ghostty.app pins stale surface contents to the top-left during live
+        // resize (kCAGravityTopLeft on IOSurfaceLayer) instead of letting the
+        // window server stretch the last frame across the new bounds.
+        view.layerContentsPlacement = .topLeft
 
         return view
     }()
@@ -483,18 +489,26 @@ private final class EmbeddedGhosttySurface: NSObject {
         let safeParentHeight = parentHeight.isFinite && parentHeight > 0 ? parentHeight : parentView.bounds.height
         let appKitY = safeParentHeight - y - safeHeight
 
+        // Direct layer writes (unlike AppKit-managed view geometry) pick up
+        // implicit ~0.25s animations, which smear the clip during drags —
+        // Ghostty.app nulls all layer actions. frame rides along so clip and
+        // geometry commit atomically. Clip unconditionally so a stale wider
+        // surface cannot bleed outside the pane between draws.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         container.layer?.cornerRadius = CGFloat(safeBottomCornerRadius)
         container.layer?.maskedCorners = [
             .layerMinXMinYCorner,
             .layerMaxXMinYCorner
         ]
-        container.layer?.masksToBounds = safeBottomCornerRadius > 0
+        container.layer?.masksToBounds = true
         container.frame = NSRect(
             x: x,
             y: appKitY,
             width: safeWidth,
             height: safeHeight
         )
+        CATransaction.commit()
         updateLiveResizePrediction(frame: container.frame)
         layoutChildren()
         container.isHidden = safeWidth <= 0 || safeHeight <= 0
