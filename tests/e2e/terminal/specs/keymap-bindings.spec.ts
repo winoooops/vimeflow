@@ -238,6 +238,49 @@ const hasElement = async (selector: string): Promise<boolean> =>
     selector
   )
 
+const waitForE2eBridge = async (): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => typeof window.__VIMEFLOW_E2E__ !== 'undefined'),
+    {
+      timeout: 20_000,
+      interval: 250,
+      timeoutMsg: 'window.__VIMEFLOW_E2E__ missing',
+    }
+  )
+}
+
+const activePtySessionIds = async (): Promise<string[]> =>
+  browser.execute(() => window.__VIMEFLOW_E2E__?.getActiveSessionIds() ?? [])
+
+const isSplitViewDisplayed = async (): Promise<boolean> =>
+  browser.execute(() => {
+    const element = document.querySelector<HTMLElement>(
+      '[data-testid="split-view"]'
+    )
+    if (element === null) {
+      return false
+    }
+
+    const rect = element.getBoundingClientRect()
+    const style = window.getComputedStyle(element)
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.display !== 'none' &&
+      style.visibility !== 'hidden'
+    )
+  })
+
+const waitForSplitViewDisplayed = async (): Promise<void> => {
+  await browser.waitUntil(async () => isSplitViewDisplayed(), {
+    timeout: 20_000,
+    interval: 250,
+    timeoutMsg: 'split-view did not become visible',
+  })
+}
+
 const activePaneIndex = async (): Promise<number> =>
   browser.execute(() => {
     const slots = Array.from(
@@ -323,16 +366,28 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
     await (
       await $('[data-testid="workspace-view"]')
     ).waitForDisplayed({ timeout: 20_000 })
+    await waitForE2eBridge()
 
     // Ensure a terminal session (and therefore a split-view) exists. The
     // app may launch with zero sessions depending on restore state.
-    const sv = await $('[data-testid="split-view"]')
-    if (!(await sv.isExisting())) {
+    if (
+      !(await isSplitViewDisplayed()) &&
+      (await activePtySessionIds()).length === 0
+    ) {
       await createNewSessionWithDefaults()
     }
-    await (
-      await $('[data-testid="split-view"]')
-    ).waitForDisplayed({ timeout: 20_000 })
+
+    await browser.waitUntil(
+      async () =>
+        (await activePtySessionIds()).length > 0 ||
+        (await isSplitViewDisplayed()),
+      {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: 'terminal session did not register',
+      }
+    )
+    await waitForSplitViewDisplayed()
   })
 
   it('Cmd+; opens the command palette', async () => {
