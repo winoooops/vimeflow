@@ -121,6 +121,7 @@ interface GhosttyNativeSurfaceState {
   lastFontFamily: string | null
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
+  pendingResize: { cols: number; rows: number } | null
   lastShortcutDigits: string | null
 }
 
@@ -158,7 +159,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const MAX_PENDING_CHUNKS = 64
 const MAX_SURFACES = 128
-const GHOSTTY_RESIZE_SETTLE_MS = 120
+// Leading+trailing throttle for PTY resize during live drags. Stock Ghostty
+// forwards every grid change with no timer (Surface.zig sizeCallback, dedupe
+// only); 16ms (~one frame) approximates that cadence while bounding bursts.
+// Env override is the tuning knob from the resize gray-band investigation.
+// An explicit 0 keeps a zero-delay window; empty/garbage/negative values
+// must fall back to the default (Number('') is 0, so guard before Number).
+const throttleMsRaw = process.env.GHOSTTY_RESIZE_THROTTLE_MS?.trim()
+const throttleMsOverride = throttleMsRaw ? Number(throttleMsRaw) : NaN
+
+const GHOSTTY_RESIZE_THROTTLE_MS =
+  Number.isFinite(throttleMsOverride) && throttleMsOverride >= 0
+    ? throttleMsOverride
+    : 16
 
 // Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in with
 // VITE_GHOSTTY_NATIVE_MACOS_PARENT so ordinary local runs can keep the fallback.
@@ -805,6 +818,7 @@ export class GhosttyNativeParentController {
       lastFontFamily: null,
       lastResize: null,
       resizeTimer: null,
+      pendingResize: null,
       lastShortcutDigits: null,
     }
     this.surfaces.set(key, state)
@@ -1066,6 +1080,11 @@ export class GhosttyNativeParentController {
     }
   }
 
+  // Leading+trailing throttle: forward immediately when idle, then hold a
+  // throttle window that flushes the freshest size once per interval while a
+  // drag keeps producing changes. A reset-on-change debounce here starves the
+  // PTY of size updates for the whole drag, which is what let codex's gray
+  // composer rows stack up (see the resize gray-band investigation).
   private queuePtyResize(
     resizeState: GhosttyNativeSurfaceState,
     sessionId: string,
@@ -1081,29 +1100,44 @@ export class GhosttyNativeParentController {
       resizeState.lastResize?.cols === cols &&
       resizeState.lastResize.rows === rows
     ) {
-      this.clearPendingResize(resizeState)
-
-      return
-    }
-
-    if (resizeState.lastResize === null) {
-      this.forwardPtyResize(resizeState, sessionId, cols, rows)
+      resizeState.pendingResize = null
 
       return
     }
 
     if (resizeState.resizeTimer !== null) {
-      clearTimeout(resizeState.resizeTimer)
+      resizeState.pendingResize = { cols, rows }
+
+      return
     }
 
+    this.forwardPtyResize(resizeState, sessionId, cols, rows)
+    this.armResizeThrottle(resizeState, sessionId, canForward)
+  }
+
+  private armResizeThrottle(
+    resizeState: GhosttyNativeSurfaceState,
+    sessionId: string,
+    canForward: () => boolean
+  ): void {
     resizeState.resizeTimer = setTimeout(() => {
       resizeState.resizeTimer = null
-      if (!canForward()) {
+      const pending = resizeState.pendingResize
+      resizeState.pendingResize = null
+      if (pending === null || !canForward()) {
         return
       }
 
-      this.forwardPtyResize(resizeState, sessionId, cols, rows)
-    }, GHOSTTY_RESIZE_SETTLE_MS)
+      if (
+        resizeState.lastResize?.cols === pending.cols &&
+        resizeState.lastResize.rows === pending.rows
+      ) {
+        return
+      }
+
+      this.forwardPtyResize(resizeState, sessionId, pending.cols, pending.rows)
+      this.armResizeThrottle(resizeState, sessionId, canForward)
+    }, GHOSTTY_RESIZE_THROTTLE_MS)
   }
 
   private forwardPtyResize(
@@ -1127,6 +1161,7 @@ export class GhosttyNativeParentController {
       clearTimeout(resizeState.resizeTimer)
     }
     resizeState.resizeTimer = null
+    resizeState.pendingResize = null
   }
 
   private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
