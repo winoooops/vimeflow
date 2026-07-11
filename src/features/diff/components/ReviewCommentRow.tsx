@@ -4,7 +4,7 @@ import {
   reviewCommentCategory,
   type ReviewComment,
 } from '../hooks/useFeedbackBatch'
-import { REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
+import { AGENT_OUTCOME_META, REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
 
 interface ReviewCommentRowProps {
   comment: ReviewComment
@@ -88,9 +88,19 @@ export const ReviewCommentRow = ({
               </span>
             </>
           ) : isAgent ? (
-            <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-success">
-              Agent reply
-            </span>
+            // An outcome-carrying turn (VIM-304 PR-3) shows its state chip;
+            // a plain reply keeps the legacy "Agent reply" treatment.
+            comment.outcome !== undefined ? (
+              <span
+                className={`inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium ${AGENT_OUTCOME_META[comment.outcome].chip}`}
+              >
+                {AGENT_OUTCOME_META[comment.outcome].label}
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium text-success">
+                Agent reply
+              </span>
+            )
           ) : (
             <span
               className={`inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium ${categoryMeta.chip}`}
