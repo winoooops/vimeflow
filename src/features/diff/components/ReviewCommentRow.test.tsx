@@ -303,6 +303,34 @@ describe('ReviewCommentRow', () => {
       screen.queryByRole('button', { name: 'Delete comment' })
     ).not.toBeInTheDocument()
   })
+
+  test.each([
+    ['reply', 'Replied'],
+    ['clarify', 'Awaiting you'],
+    ['resolved', 'Resolved'],
+    ['deferred', 'Deferred'],
+    ['rejected', 'Rejected'],
+  ] as const)(
+    'an agent turn with outcome %s renders its state chip',
+    (outcome, label) => {
+      render(
+        <ReviewCommentRow
+          comment={{
+            id: 'a',
+            text: 'x',
+            author: 'agent',
+            outcome,
+            createdAt: 1000,
+          }}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      )
+
+      expect(screen.getByText(label)).toBeInTheDocument()
+      expect(screen.queryByText('Agent reply')).not.toBeInTheDocument()
+    }
+  )
 })
 
 const MINUTE = 60_000

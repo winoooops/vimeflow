@@ -15,6 +15,21 @@ import {
 const note = (commentId: string, reviewer: string, text: string): void =>
   addReviewLevelNote('owner', { commentId, reviewer, text, nonce: 'abc' })
 
+test('a main-agent turn on a review-level finding shows its outcome chip', () => {
+  addReviewLevelNote('owner', {
+    commentId: 'c9',
+    reviewer: 'Agent',
+    text: 'Filed as VIM-999.',
+    nonce: 'abc',
+    outcome: 'deferred',
+  })
+
+  render(<ReviewLevelNotes ownerKey="owner" />)
+
+  expect(screen.getByText('Deferred')).toBeInTheDocument()
+  expect(screen.getByText('Filed as VIM-999.')).toBeInTheDocument()
+})
+
 afterEach(() => {
   // Wrap in act(): clearing emits to any still-mounted subscriber before
   // testing-library's auto-cleanup unmounts it.

@@ -3,6 +3,7 @@ import {
   reviewLevelNotes,
   subscribeReviewLevelNotes,
 } from '../services/pendingReviewRequests'
+import { AGENT_OUTCOME_META } from '../reviewCategoryMeta'
 
 interface ReviewLevelNotesProps {
   /** The active file's review; comments for other files are not shown. */
@@ -46,8 +47,17 @@ export const ReviewLevelNotes = ({
             key={note.commentId}
             className="flex flex-col gap-1 rounded-md bg-surface-container-high/70 px-3 py-2"
           >
-            <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-wide text-on-surface-variant">
-              {note.reviewer}
+            <span className="flex items-center gap-1.5">
+              <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-wide text-on-surface-variant">
+                {note.reviewer}
+              </span>
+              {note.outcome !== undefined ? (
+                <span
+                  className={`inline-flex items-center rounded bg-surface-container-highest/70 px-1.5 py-px text-[10px] font-medium ${AGENT_OUTCOME_META[note.outcome].chip}`}
+                >
+                  {AGENT_OUTCOME_META[note.outcome].label}
+                </span>
+              ) : null}
             </span>
             <span className="whitespace-pre-wrap text-xs leading-5 text-on-surface">
               {note.text}

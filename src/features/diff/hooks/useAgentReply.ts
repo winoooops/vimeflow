@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
-import type { AgentReplyEvent } from '@/bindings'
+import type { AgentReplyEvent, AgentReplyStatus } from '@/bindings'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { ReviewComment } from './useFeedbackBatch'
 import {
@@ -10,6 +10,14 @@ import {
   setPendingReview,
   type PendingReviewHandle,
 } from '../services/pendingReviews'
+import {
+  addReviewLevelNote,
+  getFindingThreadRecord,
+  type FindingThreadRecord,
+} from '../services/pendingReviewRequests'
+
+/** Identity label for a main-agent turn shown on the review-level surface. */
+const AGENT_REVIEW_LEVEL_LABEL = 'Agent'
 
 export interface UseAgentReplyOptions {
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
@@ -51,7 +59,8 @@ export const useAgentReply = ({
     const attachAgentNote = (
       ownerKey: string,
       handle: PendingReviewHandle,
-      text: string
+      text: string,
+      outcome?: AgentReplyStatus
     ): 'ok' | 'cap-reached' =>
       addAnnotationForOwner(
         ownerKey,
@@ -69,18 +78,88 @@ export const useAgentReply = ({
             // Inherit the original comment's scope so a file-level reply stays
             // file-scoped and a range reply keeps its span (VIM-249).
             ...(handle.target === undefined ? {} : { target: handle.target }),
+            ...(outcome === undefined ? {} : { outcome }),
           },
         }
       )
 
+    // A turn posted into a delegated finding's thread (VIM-304 PR-3). The
+    // record is never consumed — threads are multi-turn — so an exact
+    // duplicate turn is the replay no-op instead.
+    const handleFindingTurns = (
+      record: FindingThreadRecord,
+      event: AgentReplyEvent
+    ): void => {
+      // Malformed marker: degrade to one review-level note; the living thread
+      // record survives one garbled turn.
+      if (event.replies === null) {
+        addReviewLevelNote(record.ownerKey, {
+          commentId: nextCommentId(),
+          reviewer: AGENT_REVIEW_LEVEL_LABEL,
+          text: event.rawText,
+          nonce: record.nonce,
+        })
+
+        return
+      }
+
+      for (const reply of event.replies) {
+        if (reply.target !== 'finding') {
+          continue
+        }
+
+        const target = record.byOrdinal.get(reply.id)
+        if (target === undefined) {
+          continue
+        }
+
+        const turnKey = `${reply.id}\u0000${reply.status}\u0000${reply.text}`
+        if (record.seenReplies.has(turnKey)) {
+          continue
+        }
+
+        if (target.kind === 'anchored') {
+          const result = attachAgentNote(
+            record.ownerKey,
+            target.handle,
+            reply.text,
+            reply.status
+          )
+          if (result === 'ok') {
+            record.seenReplies.add(turnKey)
+          }
+          continue
+        }
+
+        addReviewLevelNote(record.ownerKey, {
+          commentId: nextCommentId(),
+          reviewer: AGENT_REVIEW_LEVEL_LABEL,
+          text: reply.text,
+          nonce: record.nonce,
+          outcome: reply.status,
+        })
+        record.seenReplies.add(turnKey)
+      }
+    }
+
     const handleReply = (event: AgentReplyEvent): void => {
+      if (event.nonce === null) {
+        return
+      }
+
+      // The nonce names the dispatch a turn answers: a review nonce resolves
+      // against the finding-thread record (same session + nonce gate), a
+      // feedback nonce against the pending [#n] handles below.
+      const record = getFindingThreadRecord(event.sessionId, event.nonce)
+      if (record !== undefined) {
+        handleFindingTurns(record, event)
+
+        return
+      }
+
       const pending = getPendingReview(event.sessionId)
       // Session + nonce gate: only a reply to the current dispatch proceeds.
-      if (
-        pending === undefined ||
-        event.nonce === null ||
-        event.nonce !== pending.nonce
-      ) {
+      if (event.nonce !== pending?.nonce) {
         return
       }
 
@@ -95,7 +174,12 @@ export const useAgentReply = ({
             continue
           }
 
-          const result = attachAgentNote(pending.ownerKey, handle, reply.text)
+          const result = attachAgentNote(
+            pending.ownerKey,
+            handle,
+            reply.text,
+            reply.status
+          )
           if (result === 'ok') {
             pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
           }

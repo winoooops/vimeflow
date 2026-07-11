@@ -114,9 +114,9 @@ export const formatFeedbackPayload = (
     ...blocks,
     '> ―',
     '> When done, end your reply with this exact block, echoing the nonce verbatim.',
-    '> status is one of: "answered" (a question), "changed" (you edited files), "skipped".',
+    '> status is one of: "reply" (answers a question), "clarify" (you need the user to answer — the thread awaits them), "resolved" (you made the change), "deferred" (punted for later; cite the issue # in text), "rejected" (declined).',
     '> <<<VIMEFLOW_REPLY',
-    `> {"v":1,"nonce":"${nonce}","replies":[{"id":1,"status":"answered","text":"..."}]}`,
+    `> {"v":1,"nonce":"${nonce}","replies":[{"id":1,"status":"reply","text":"..."}]}`,
     '> VIMEFLOW_REPLY>>>',
   ].join('\n')
 }

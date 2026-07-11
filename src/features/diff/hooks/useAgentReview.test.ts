@@ -8,8 +8,10 @@ import type { AgentReviewEvent, AgentReviewFinding } from '@/bindings'
 import { REVIEWER_FINDING_SOFT_CAP, useAgentReview } from './useAgentReview'
 import type { ReviewComment } from './useFeedbackBatch'
 import {
+  clearFindingThreadRecord,
   clearPendingReviewRequest,
   clearReviewLevelNotes,
+  getFindingThreadRecord,
   reviewLevelNotes,
   setPendingReviewRequest,
   type PendingReviewRequest,
@@ -115,6 +117,7 @@ beforeEach(() => {
 afterEach(() => {
   clearPendingReviewRequest('abc')
   clearReviewLevelNotes('owner')
+  clearFindingThreadRecord('pty-1', 'abc')
   delete window.vimeflow
 })
 
@@ -293,5 +296,85 @@ describe('useAgentReview', () => {
     expect(reviewLevelNotes('owner').map((note) => note.text)).toEqual([
       `2 additional reviewer findings were omitted because this review exceeded the ${REVIEWER_FINDING_SOFT_CAP}-finding display limit.`,
     ])
+  })
+})
+
+describe('finding-thread transition (VIM-304 PR-3)', () => {
+  test('transitions the processed request into a record keyed (ptyId, nonce)', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(
+      event({
+        findings: [
+          finding(), // line 42, in-hunk → anchored, ordinal 1
+          finding({ path: 'other.ts' }), // off-snapshot → review-level, ordinal 2
+        ],
+      })
+    )
+
+    const record = getFindingThreadRecord('pty-1', 'abc')
+    expect(record?.ownerKey).toBe('owner')
+
+    const anchored = record?.byOrdinal.get(1)
+    expect(anchored?.kind).toBe('anchored')
+    if (anchored?.kind === 'anchored') {
+      // The record's commentId is the placed annotation's id, so a later
+      // reply addresses the exact comment the finding rendered as.
+      const placed = addAnnotationForOwner.mock.calls[0][4]
+      expect(anchored.commentId).toBe(placed.metadata.id)
+      expect(anchored.handle).toEqual({
+        cwd: '/repo',
+        filePath: 'a.ts',
+        staged: false,
+        lineNumber: 42,
+        side: 'additions',
+        target: undefined,
+      })
+    }
+
+    const reviewLevel = record?.byOrdinal.get(2)
+    expect(reviewLevel?.kind).toBe('reviewLevel')
+    if (reviewLevel?.kind === 'reviewLevel') {
+      expect(reviewLevel.commentId).toBe(reviewLevelNotes('owner')[0].commentId)
+    }
+  })
+
+  test('an anchored range finding carries its range target into the handle', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(
+      event({
+        findings: [
+          finding({ scope: 'range', line: null, startLine: 41, endLine: 44 }),
+        ],
+      })
+    )
+
+    const target = getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(1)
+    expect(target?.kind).toBe('anchored')
+    if (target?.kind === 'anchored') {
+      expect(target.handle.target).toEqual({
+        scope: 'range',
+        side: 'additions',
+        startLine: 41,
+        endLine: 44,
+      })
+    }
+  })
+
+  test('a malformed event (findings: null) leaves no finding-thread record', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(event({ findings: null }))
+
+    expect(getFindingThreadRecord('pty-1', 'abc')).toBeUndefined()
+  })
+
+  test('a clean review (empty findings) leaves no record', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(event({ findings: [] }))
+
+    expect(getFindingThreadRecord('pty-1', 'abc')).toBeUndefined()
   })
 })

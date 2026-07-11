@@ -103,7 +103,7 @@ describe('inline agent Q&A thread (integration)', () => {
     render(<Harness />)
 
     // No agent reply yet.
-    expect(screen.queryByText('Agent reply')).not.toBeInTheDocument()
+    expect(screen.queryByText('Replied')).not.toBeInTheDocument()
 
     await emitReply({
       sessionId: 'pty-1',
@@ -114,8 +114,9 @@ describe('inline agent Q&A thread (integration)', () => {
       ],
     })
 
-    // The reply attached onto the dispatching owner and renders distinctly.
-    expect(screen.getByText('Agent reply')).toBeInTheDocument()
+    // The reply attached onto the dispatching owner and renders distinctly,
+    // carrying its outcome chip (VIM-304 PR-3: "reply" reads as "Replied").
+    expect(screen.getByText('Replied')).toBeInTheDocument()
     expect(screen.getByText('Because latency.')).toBeInTheDocument()
   })
 })

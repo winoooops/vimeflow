@@ -224,6 +224,32 @@ test('the footer instructs the agent to emit the reply block with the nonce', ()
   expect(payload).toContain('VIMEFLOW_REPLY>>>')
 })
 
+test('the footer teaches the outcome vocabulary, not the legacy literals', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: 'src/a.ts',
+        staged: false,
+        annotations: [makeAnnotation(5, 'additions', 'Why?', 'question')],
+      },
+    ],
+    'n0nc3'
+  )
+
+  for (const outcome of [
+    '"reply"',
+    '"clarify"',
+    '"resolved"',
+    '"deferred"',
+    '"rejected"',
+  ]) {
+    expect(payload).toContain(outcome)
+  }
+  expect(payload).toContain('"status":"reply"')
+  expect(payload).not.toContain('"answered"')
+  expect(payload).not.toContain('"skipped"')
+})
+
 test('dispatchFeedbackBatch calls writePty once with paste-bracketed payload', async () => {
   const writePty = vi.fn().mockResolvedValue(undefined)
 
