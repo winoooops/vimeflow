@@ -163,6 +163,28 @@ const shortcutTooltipRequest: NativeOverlayRequest = {
   },
 }
 
+const activityPopoverRequest: NativeOverlayRequest = {
+  surfaceId: 'activity-popover-1',
+  kind: 'popover',
+  anchorRect: { x: 640, y: 120, width: 240, height: 48 },
+  placement: 'left',
+  payload: {
+    kind: 'popover',
+    popover: 'activity',
+    ariaLabel: 'BASH activity details',
+    activateActionId: 'activity:activate',
+    event: {
+      id: 'activity-1',
+      kind: 'bash',
+      timestamp: '2026-07-10T12:00:00.000Z',
+      status: 'done',
+      body: 'npm test',
+      tool: 'Bash',
+      durationMs: 1200,
+    },
+  },
+}
+
 const commandPaletteRequest: NativeOverlayRequest & {
   payload: NativeOverlayCommandPaletteDialogPayload
 } = {
@@ -436,6 +458,35 @@ describe('NativeOverlayHost', () => {
     expect(
       within(tooltip).getByTestId('native-overlay-tooltip-shortcut')
     ).toHaveTextContent('⌘G')
+  })
+
+  test('renders activity popovers on the interactive menu layer', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(activityPopoverRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'BASH activity details',
+    })
+    expect(dialog).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
+    expect(within(dialog).getByText('npm test')).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('button', { name: 'Copy activity details' })
+    ).toBeInTheDocument()
+
+    const trigger = screen.getByRole('button', {
+      name: 'BASH activity details',
+    })
+
+    fireEvent.pointerDown(trigger)
+    expect(bridge.close).not.toHaveBeenCalled()
+    fireEvent.click(trigger)
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'activity-popover-1',
+      actionId: 'activity:activate',
+    })
   })
 
   test('renders command palette dialog requests on the menu layer', async () => {

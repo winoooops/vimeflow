@@ -21,7 +21,7 @@ import {
   type UseInteractionsReturn,
 } from '@floating-ui/react'
 
-interface FloatingVirtualRect {
+export interface FloatingVirtualRect {
   x: number
   y: number
   width?: number

@@ -12,12 +12,38 @@ type FocusFailure = 'no_pane' | 'no_textarea' | 'focus_failed'
 
 const focusActiveTerminalTextarea = async (): Promise<void> => {
   const status = await browser.execute<'ok' | FocusFailure, []>(() => {
-    const visible = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-testid="terminal-pane"]')
-    ).find((el) => {
+    const isVisible = (el: HTMLElement): boolean => {
       const r = el.getBoundingClientRect()
-      return r.width > 0 && r.height > 0
-    })
+      const style = window.getComputedStyle(el)
+
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden'
+      )
+    }
+
+    const visibleSessionId =
+      window.__VIMEFLOW_E2E__?.getVisibleSessionId() ?? null
+    const candidates = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-testid="terminal-pane"][data-session-id]'
+      )
+    ).filter(
+      (el) =>
+        (visibleSessionId === null ||
+          el.dataset.sessionId === visibleSessionId) &&
+        isVisible(el)
+    )
+    const visible =
+      candidates.find(
+        (el) =>
+          el.querySelector(
+            '[data-testid="terminal-pane-wrapper"][data-pane-active="true"]'
+          ) !== null
+      ) ?? candidates[0]
+
     if (!visible) return 'no_pane'
     const textarea = visible.querySelector<HTMLTextAreaElement>(
       '.xterm-helper-textarea'

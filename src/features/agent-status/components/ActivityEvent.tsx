@@ -1,24 +1,21 @@
 import {
-  useCallback,
-  useEffect,
-  useState,
   type FocusEventHandler,
   type KeyboardEventHandler,
   type ReactElement,
-  type ReactNode,
   type Ref,
 } from 'react'
 import { Chip } from '@/components/Chip'
-import { IconButton } from '@/components/IconButton'
+import {
+  ACTIVITY_CARD_SURFACE,
+  ACTIVITY_KIND_COLOR,
+  ACTIVITY_KIND_ICON,
+  NativeOverlayActivityCard,
+  activityBodyClass,
+  computeActivityAgo,
+} from '@/components/NativeOverlayActivityCard'
 import { Tooltip } from '@/components/Tooltip'
-import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
-import { formatShortcut } from '../../../lib/formatShortcut'
-import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
-import type {
-  ActivityEvent as ActivityEventType,
-  ActivityEventKind,
-  ToolActivityEvent,
-} from '../types/activityEvent'
+import { useNativeActivityPopoverSource } from '../hooks/useNativeActivityPopover'
+import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
 interface ActivityEventProps {
   ariaPosInSet?: number
@@ -29,30 +26,6 @@ interface ActivityEventProps {
   onKeyDown?: KeyboardEventHandler<HTMLElement>
   rowRef?: Ref<HTMLElement>
   tabIndex?: 0 | -1
-}
-
-const KIND_ICON: Record<ActivityEventKind, string> = {
-  edit: 'edit',
-  write: 'edit_note',
-  read: 'visibility',
-  bash: 'terminal',
-  grep: 'search',
-  glob: 'find_in_page',
-  think: 'psychology',
-  user: 'person',
-  meta: 'tune',
-}
-
-const KIND_COLOR: Record<ActivityEventKind, string> = {
-  edit: 'text-primary-container',
-  write: 'text-primary-container',
-  read: 'text-on-surface-variant',
-  bash: 'text-secondary',
-  grep: 'text-on-surface-variant',
-  glob: 'text-on-surface-variant',
-  think: 'text-primary-container',
-  user: 'text-tertiary',
-  meta: 'text-on-surface-muted',
 }
 
 export const getLabel = (event: ActivityEventType): string => {
@@ -79,325 +52,43 @@ export const getLabel = (event: ActivityEventType): string => {
   return event.kind.toUpperCase()
 }
 
-const getBodyClass = (kind: ActivityEventKind): string => {
-  if (kind === 'think') {
-    return 'text-xs text-on-surface italic'
-  }
-  if (kind === 'user') {
-    return 'text-xs text-on-surface'
-  }
+export const computeAgo = computeActivityAgo
 
-  return 'text-xs text-on-surface font-mono'
-}
-
-const COPY_FEEDBACK_MS = 1500
-
-// Exported so the live-action card can wrap its own Tooltip in the identical
-// floating surface as the feed rows — keeps the two detail popovers in lockstep.
-export const ACTIVITY_CARD_SURFACE =
-  'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-outline-variant/45 bg-[color-mix(in_srgb,var(--color-surface-container)_96%,transparent)] font-sans shadow-[0_16px_48px_color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--color-primary-container)_4%,transparent)] backdrop-blur-[20px] backdrop-saturate-[150%]'
-
-type CopyState = 'idle' | 'copied' | 'failed'
-
-const writeClipboardText = async (text: string): Promise<void> => {
-  const clipboard = (window.navigator as unknown as { clipboard?: Clipboard })
-    .clipboard
-
-  if (clipboard?.writeText === undefined) {
-    throw new Error('Clipboard API unavailable')
-  }
-
-  await clipboard.writeText(text)
-}
-
-const isToolEvent = (event: ActivityEventType): event is ToolActivityEvent =>
-  'tool' in event
-
-const buildCopyText = (event: ActivityEventType): string =>
-  'resultPreview' in event && event.resultPreview
-    ? `${event.body}\n\n${event.resultPreview}`
-    : event.body
-
-interface ActivityTooltipContentProps {
+interface ActivityDetailsTooltipProps {
   event: ActivityEventType
   now: Date
+  ariaLabel: string
+  onActivate?: () => void
+  children: ReactElement
 }
 
-const KIND_ACCENT: Record<ActivityEventKind, string> = {
-  bash: 'var(--color-secondary)',
-  edit: 'var(--color-primary)',
-  write: 'var(--color-primary)',
-  read: 'var(--color-on-surface-muted)',
-  grep: 'var(--color-secondary)',
-  glob: 'var(--color-secondary)',
-  meta: 'var(--color-secondary)',
-  think: 'var(--color-secondary-dim)',
-  user: 'var(--color-agent-shell-accent)',
-}
-
-const Pip = ({ children }: { children: ReactNode }): ReactElement => (
-  <span className="inline-flex items-center gap-[3px] whitespace-nowrap font-mono text-[10px] text-on-surface-muted">
-    {children}
-  </span>
-)
-
-const Dot = (): ReactElement => (
-  <span className="mr-px text-outline-variant">·</span>
-)
-
-const CommandBlock = ({
-  cmd,
-  accent,
-}: {
-  cmd: string
-  accent: string
-}): ReactElement => (
-  <pre className="relative m-0 max-h-[12rem] overflow-y-auto rounded-md border border-outline-variant/30 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-on-surface-variant">
-    <span
-      className="absolute left-[10px] top-2 text-sm"
-      style={{ color: accent, opacity: 0.8 }}
-    >
-      $
-    </span>
-    <span className="whitespace-pre-wrap break-all text-on-surface">{cmd}</span>
-  </pre>
-)
-
-const FilePathChip = ({
-  path,
-  accent,
-}: {
-  path: string
-  accent: string
-}): ReactElement => {
-  // Split on the last path separator — POSIX `/` or Windows `\` — so a native
-  // Windows path (`C:\repo\src\Button.tsx`) keeps its directory/filename
-  // separation instead of collapsing the whole path into the filename. Slicing
-  // by index preserves the original separators in the displayed string.
-  const sepIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  const dir = sepIndex >= 0 ? path.slice(0, sepIndex + 1) : ''
-  const file = sepIndex >= 0 ? path.slice(sepIndex + 1) : path
-
-  return (
-    <div className="flex items-start gap-1.5 rounded-md border border-outline-variant/30 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent)] px-2.5 py-2 font-mono text-[11.5px]">
-      <span
-        className="material-symbols-outlined shrink-0 text-xs"
-        style={{ color: accent, transform: 'translateY(2px)' }}
-        aria-hidden="true"
-      >
-        draft
-      </span>
-      <span className="min-w-0 break-all">
-        <span className="text-syn-comment">{dir}</span>
-        <span className="font-semibold text-on-surface">{file}</span>
-      </span>
-    </div>
-  )
-}
-
-const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
-  <Chip
-    tone="custom"
-    size="custom"
-    radius="chip"
-    className="justify-center rounded border border-outline-variant/35 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_50%,transparent)] px-1 py-px font-mono text-[9.5px] text-syn-comment"
-  >
-    {children}
-  </Chip>
-)
-
-// Shared relative-time string for the feed row, the tooltip header, and the
-// live-action card so the running-clock format and the negative-delta clamp
-// can't drift between them.
-export const computeAgo = (event: ActivityEventType, now: Date): string =>
-  event.status === 'running'
-    ? // Clamp negative deltas to zero so a tool whose emitted timestamp beats
-      // JS's Date.now() snapshot (sub-ms clock skew on fast machines, batch
-      // catch-up paths) doesn't read as 'running -1s' for a frame.
-      `running ${formatDuration(Math.max(0, now.getTime() - new Date(event.timestamp).getTime()))}`
-    : formatRelativeTime(event.timestamp, now)
-
-export const ActivityTooltipContent = ({
+export const ActivityDetailsTooltip = ({
   event,
   now,
-}: ActivityTooltipContentProps): ReactElement => {
-  const [copyState, setCopyState] = useState<CopyState>('idle')
-  const copyText = buildCopyText(event)
-
-  useEffect(() => {
-    setCopyState('idle')
-  }, [copyText])
-
-  useEffect(() => {
-    if (copyState === 'idle') {
-      return
-    }
-    const id = window.setTimeout(() => setCopyState('idle'), COPY_FEEDBACK_MS)
-
-    return (): void => window.clearTimeout(id)
-  }, [copyState])
-
-  const handleCopy = useCallback(async (): Promise<void> => {
-    try {
-      await writeClipboardText(copyText)
-      setCopyState('copied')
-    } catch {
-      setCopyState('failed')
-    }
-  }, [copyText])
-
-  const copyButtonLabel =
-    copyState === 'copied'
-      ? 'Copied activity details'
-      : copyState === 'failed'
-        ? 'Copy failed, try again'
-        : 'Copy activity details'
-
-  const copyFeedback =
-    copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : ''
-
-  const isRunning = event.status === 'running'
-
-  const ago = computeAgo(event, now)
-
-  const duration =
-    isToolEvent(event) && !isRunning && event.durationMs != null
-      ? formatDuration(event.durationMs)
-      : null
-
-  const accent = KIND_ACCENT[event.kind]
-  const kindLabel = event.kind.toLowerCase()
-
-  const showFooter =
-    event.kind === 'bash' ||
-    event.kind === 'edit' ||
-    event.kind === 'write' ||
-    event.kind === 'read'
-
-  // Platform-aware super key (⌘ on macOS, Ctrl elsewhere) so the placeholder
-  // footer hints don't show a macOS-only key on Windows/Linux.
-  const modKey = formatShortcut('Mod')
+  ariaLabel,
+  onActivate = undefined,
+  children,
+}: ActivityDetailsTooltipProps): ReactElement => {
+  const { payload, actions } = useNativeActivityPopoverSource({
+    event,
+    ariaLabel,
+    onActivate,
+  })
 
   return (
-    <>
-      {/* Accent stripe */}
-      <span
-        className="absolute left-3 right-3 top-0 h-[2px] opacity-[0.55]"
-        style={{
-          background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
-        }}
-      />
-
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
-        {/* Kind chip */}
-        <Chip
-          tone="custom"
-          size="custom"
-          radius="chip"
-          leadingIcon={KIND_ICON[event.kind]}
-          label={kindLabel}
-          iconClassName="material-symbols-outlined text-[11px]"
-          className="h-5 gap-[5px] rounded-[5px] border px-2 pl-1.5 font-mono text-[10px] font-semibold lowercase tracking-[0.06em]"
-          style={{
-            backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
-            borderColor: `color-mix(in srgb, ${accent} 24%, transparent)`,
-            color: accent,
-          }}
-        />
-
-        {/* Meta pips */}
-        <Pip>
-          <Dot />
-          {ago}
-        </Pip>
-        {duration ? <Pip>{duration}</Pip> : null}
-
-        <span className="flex-1" />
-
-        {/* Copy */}
-        <div className="flex shrink-0 items-center gap-2">
-          <span
-            aria-live="polite"
-            className="min-w-10 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted"
-          >
-            {copyFeedback}
-          </span>
-          <IconButton
-            icon={copyState === 'copied' ? 'check' : 'content_copy'}
-            label={copyButtonLabel}
-            size="sm"
-            showTooltip={TOOLTIP_SUPPRESSED} // row tooltip already provides the label
-            onClick={(): void => {
-              void handleCopy()
-            }}
-            className={
-              copyState === 'copied' ? 'text-agent-codex-accent' : undefined
-            }
-          />
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="px-3.5 py-1 pb-3">
-        {event.kind === 'bash' ||
-        event.kind === 'grep' ||
-        event.kind === 'glob' ||
-        event.kind === 'meta' ? (
-          <CommandBlock cmd={event.body} accent={accent} />
-        ) : null}
-
-        {event.kind === 'edit' ||
-        event.kind === 'write' ||
-        event.kind === 'read' ? (
-          <FilePathChip path={event.body} accent={accent} />
-        ) : null}
-
-        {event.kind === 'think' ? (
-          <div
-            className="border-l-2 pl-3 text-[13px] leading-[1.55] italic text-on-surface-variant"
-            style={{
-              borderColor: `color-mix(in srgb, ${accent} 40%, transparent)`,
-            }}
-          >
-            {event.body}
-          </div>
-        ) : null}
-
-        {event.kind === 'user' ? (
-          <div className="text-[13px] leading-[1.55] text-on-surface">
-            {event.body}
-          </div>
-        ) : null}
-      </div>
-
-      {/* Footer */}
-      {showFooter ? (
-        <div className="flex items-center gap-2 border-t border-outline-variant/25 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_60%,transparent)] px-3.5 py-[7px] font-mono text-[9.5px] tracking-[0.04em] text-syn-comment">
-          {event.kind === 'bash' && (
-            <>
-              <Kbd>↵</Kbd> rerun <Kbd>{modKey}</Kbd>
-              <Kbd>O</Kbd> open in terminal
-            </>
-          )}
-          {(event.kind === 'edit' || event.kind === 'write') && (
-            <>
-              <Kbd>{modKey}</Kbd>
-              <Kbd>O</Kbd> open file <Kbd>{modKey}</Kbd>
-              <Kbd>D</Kbd> view diff
-            </>
-          )}
-          {event.kind === 'read' && (
-            <>
-              <Kbd>{modKey}</Kbd>
-              <Kbd>O</Kbd> open file
-            </>
-          )}
-          <span className="flex-1" />
-          <span className="text-outline-variant">esc</span>
-        </div>
-      ) : null}
-    </>
+    <Tooltip
+      content={<NativeOverlayActivityCard event={event} now={now} />}
+      placement="left"
+      bare
+      interactive
+      ariaLabel={ariaLabel}
+      className={ACTIVITY_CARD_SURFACE}
+      nativeOverlay
+      nativeOverlayPayload={payload}
+      nativeOverlayActions={actions}
+    >
+      {children}
+    </Tooltip>
   )
 }
 
@@ -465,20 +156,17 @@ export const ActivityEvent = ({
   rowRef = undefined,
   tabIndex = 0,
 }: ActivityEventProps): ReactElement => {
-  const symbol = KIND_ICON[event.kind]
-  const colorClass = KIND_COLOR[event.kind]
+  const symbol = ACTIVITY_KIND_ICON[event.kind]
+  const colorClass = ACTIVITY_KIND_COLOR[event.kind]
   const label = getLabel(event)
 
-  const timestampText = computeAgo(event, now)
+  const timestampText = computeActivityAgo(event, now)
 
   return (
-    <Tooltip
-      content={<ActivityTooltipContent event={event} now={now} />}
-      placement="left"
-      bare
-      interactive
+    <ActivityDetailsTooltip
+      event={event}
+      now={now}
       ariaLabel={`${label} activity details`}
-      className={ACTIVITY_CARD_SURFACE}
     >
       <article
         ref={rowRef}
@@ -511,12 +199,14 @@ export const ActivityEvent = ({
               {timestampText}
             </span>
           </div>
-          <span className={`mt-0.5 block truncate ${getBodyClass(event.kind)}`}>
+          <span
+            className={`mt-0.5 block truncate ${activityBodyClass(event.kind)}`}
+          >
             {event.body}
           </span>
           <StatusChips event={event} />
         </div>
       </article>
-    </Tooltip>
+    </ActivityDetailsTooltip>
   )
 }

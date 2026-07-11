@@ -1,12 +1,6 @@
 import { type KeyboardEvent, type ReactElement } from 'react'
 import { Chip } from '@/components/Chip'
-import { Tooltip } from '@/components/Tooltip'
-import {
-  ACTIVITY_CARD_SURFACE,
-  ActivityTooltipContent,
-  computeAgo,
-  getLabel,
-} from './ActivityEvent'
+import { ActivityDetailsTooltip, computeAgo, getLabel } from './ActivityEvent'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
 interface LiveActionCardProps {
@@ -107,16 +101,14 @@ export const LiveActionCard = ({
   return (
     <div className="px-4 pb-3 pt-3.5">
       <div className={SECTION_LABEL}>NOW</div>
-      <Tooltip
-        content={<ActivityTooltipContent event={event} now={now} />}
-        placement="left"
-        bare
-        interactive
+      <ActivityDetailsTooltip
+        event={event}
+        now={now}
         ariaLabel={`${verb} live action details`}
-        className={ACTIVITY_CARD_SURFACE}
+        onActivate={onActivate}
       >
         {card}
-      </Tooltip>
+      </ActivityDetailsTooltip>
     </div>
   )
 }

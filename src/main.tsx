@@ -6,6 +6,10 @@ import App from './App.tsx'
 import { NativeOverlayHost } from './components/NativeOverlayHost'
 import { themeService } from './theme'
 import { initTerminalThemeBridge } from './features/terminal/theme/themeBridge'
+import {
+  isNativeOverlayHostMode,
+  nativeOverlayHostModeFrom,
+} from './nativeOverlayMode'
 
 themeService.init()
 // The bridge intentionally lives for the renderer lifetime; storing the
@@ -23,13 +27,8 @@ const nativeOverlayMode = new URLSearchParams(window.location.search).get(
   'nativeOverlay'
 )
 
-const isNativeOverlayWindow =
-  nativeOverlayMode === '1' ||
-  nativeOverlayMode === 'menu' ||
-  nativeOverlayMode === 'tooltip'
-
-const nativeOverlayHostMode =
-  nativeOverlayMode === 'tooltip' ? 'tooltip' : 'menu'
+const isNativeOverlayWindow = isNativeOverlayHostMode(nativeOverlayMode)
+const nativeOverlayHostMode = nativeOverlayHostModeFrom(nativeOverlayMode)
 
 createRoot(rootElement).render(
   <StrictMode>

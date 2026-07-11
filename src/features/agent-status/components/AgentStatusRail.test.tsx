@@ -1,8 +1,23 @@
+import type { ReactElement, ReactNode } from 'react'
 import { render, screen, within } from '@testing-library/react'
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import { AGENTS } from '../../../agents/registry'
 import { AgentStatusRail } from './AgentStatusRail'
 import { ctxTone } from '../utils/contextTone'
+
+const tooltipPropsSpy = vi.hoisted(() => vi.fn())
+
+vi.mock('@/components/Tooltip', () => ({
+  Tooltip: (props: {
+    children: ReactElement
+    content: ReactNode
+    nativeOverlay?: boolean
+  }): ReactElement => {
+    tooltipPropsSpy(props)
+
+    return props.children
+  },
+}))
 
 test('renders glyph chip, context meter, and cache meter', () => {
   render(
@@ -26,6 +41,31 @@ test('renders glyph chip, context meter, and cache meter', () => {
   expect(screen.getByRole('meter', { name: 'CACHE' })).toHaveAttribute(
     'aria-valuenow',
     '75'
+  )
+})
+
+test('routes collapsed context and cache labels through the native overlay', () => {
+  tooltipPropsSpy.mockClear()
+  render(
+    <AgentStatusRail
+      agent={AGENTS.claude}
+      contextUsedPercentage={42}
+      cacheHitPercentage={75}
+    />
+  )
+
+  expect(tooltipPropsSpy).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content: 'Context: 42%',
+      nativeOverlay: true,
+    })
+  )
+
+  expect(tooltipPropsSpy).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content: 'Current cache rate: 75%',
+      nativeOverlay: true,
+    })
   )
 })
 

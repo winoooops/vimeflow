@@ -168,28 +168,33 @@ const captureScreen = (): DecodedPng => {
   }
 }
 
-const clickEnabledCheckedOverlayCheckbox = async (): Promise<string | null> =>
-  browser.electron.execute(async (electron: ElectronModule) => {
-    const overlay = electron.webContents
-      .getAllWebContents()
-      .find((contents) => {
-        const mode = new URL(contents.getURL()).searchParams.get(
-          'nativeOverlay'
-        )
+interface OverlayCheckboxClickResult {
+  label: string
+  wasChecked: boolean
+}
 
-        return mode === '1' || mode === 'menu'
-      })
+const clickEnabledOverlayCheckbox =
+  async (): Promise<OverlayCheckboxClickResult | null> =>
+    browser.electron.execute(async (electron: ElectronModule) => {
+      const overlay = electron.webContents
+        .getAllWebContents()
+        .find((contents) => {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
 
-    if (!overlay) {
-      return null
-    }
+          return mode === '1' || mode === 'menu'
+        })
 
-    return overlay.executeJavaScript(`
+      if (!overlay) {
+        return null
+      }
+
+      return overlay.executeJavaScript(`
       (() => {
         const item = Array.from(
           document.querySelectorAll('[role="menuitemcheckbox"]')
         ).find((element) =>
-          element.getAttribute('aria-checked') === 'true' &&
           element.getAttribute('aria-disabled') !== 'true' &&
           element instanceof HTMLElement
         )
@@ -203,11 +208,12 @@ const clickEnabledCheckedOverlayCheckbox = async (): Promise<string | null> =>
           return null
         }
 
+        const wasChecked = item.getAttribute('aria-checked') === 'true'
         item.click()
-        return label
+        return { label, wasChecked }
       })()
-    `) as Promise<string | null>
-  })
+    `) as Promise<OverlayCheckboxClickResult | null>
+    })
 
 const getOverlayMenuRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
@@ -487,21 +493,20 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     await waitForOverlayPaint(before, mapping, paneRect)
 
-    const hiddenLayoutLabel = await clickEnabledCheckedOverlayCheckbox()
-    if (hiddenLayoutLabel === null) {
-      throw new Error('NativeOverlay menu had no enabled checked layout row')
+    const checkbox = await clickEnabledOverlayCheckbox()
+    if (checkbox === null) {
+      throw new Error('NativeOverlay menu had no enabled layout checkbox row')
     }
 
     await browser.waitUntil(
       async () =>
-        browser.execute(
-          (label) =>
-            document
-              .querySelector('[data-testid="layout-switcher"]')
-              ?.querySelector(`button[aria-label="${CSS.escape(label)}"]`) ===
-            null,
-          hiddenLayoutLabel
-        ),
+        browser.execute(({ label, wasChecked }) => {
+          const layoutButton = document
+            .querySelector('[data-testid="layout-switcher"]')
+            ?.querySelector(`button[aria-label="${CSS.escape(label)}"]`)
+
+          return wasChecked ? layoutButton === null : layoutButton !== null
+        }, checkbox),
       {
         timeout: 5_000,
         interval: 100,

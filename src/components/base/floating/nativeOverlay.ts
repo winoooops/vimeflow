@@ -1,5 +1,12 @@
 import { isMacPlatform } from '@/lib/formatShortcut'
 import { createLogger } from '@/lib/log'
+import type { NativeOverlayActivityPopoverPayload } from '../../nativeOverlayActivity'
+
+export type {
+  NativeOverlayActivityEvent,
+  NativeOverlayActivityPopoverPayload,
+  NativeOverlayActivityPopoverRequest,
+} from '../../nativeOverlayActivity'
 
 export type FloatingTransport = 'local' | 'native-overlay'
 
@@ -178,13 +185,12 @@ export type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
 
-// Native overlay payloads are plain data only. Menu and tooltip are supported
-// today; dialog has a narrow command-palette model. Popover and future dialog
-// variants should join this union only after they get their own serializable
-// models instead of arbitrary React children.
+// Native overlay payloads are plain data only. Each rich surface gets a narrow
+// serializable model instead of sending arbitrary React children over IPC.
 export type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
   | NativeOverlayTooltipPayload
+  | NativeOverlayActivityPopoverPayload
   | NativeOverlayDialogPayload
 
 export interface NativeOverlayRequest {

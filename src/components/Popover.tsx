@@ -4,7 +4,10 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
-import { useFloatingSurface } from '@/components/base/floating/useFloatingSurface'
+import {
+  useFloatingSurface,
+  type FloatingVirtualRect,
+} from '@/components/base/floating/useFloatingSurface'
 import { SurfacePanel } from '@/components/base/floating/SurfacePanel'
 import { type Placement } from '@/components/base/floating/glassSurface'
 import {
@@ -13,7 +16,7 @@ import {
 } from '@/components/base/floating/nativeOverlay'
 
 interface PopoverProps {
-  anchor: HTMLElement | null
+  anchor: HTMLElement | FloatingVirtualRect | null
   open: boolean
   onOpenChange: (open: boolean) => void
   placement?: Placement
@@ -22,6 +25,8 @@ interface PopoverProps {
   focus?: 'dialog' | 'none'
   // e.g. { ancestorScroll: false } for a plain-dismiss confirm dialog
   middleware?: { ancestorScroll?: boolean }
+  dismissWhen?: (event: MouseEvent) => boolean
+  className?: string
   'aria-label': string
   nativeOverlay?: boolean
   children: ReactNode
@@ -39,6 +44,8 @@ export const Popover = ({
   pointerEvents = undefined,
   focus = 'dialog',
   middleware = undefined,
+  dismissWhen = undefined,
+  className = undefined,
   'aria-label': ariaLabel,
   nativeOverlay = false,
   children,
@@ -51,6 +58,7 @@ export const Popover = ({
       placement,
       role: 'dialog',
       middleware,
+      dismissWhen,
     })
 
   useEffect(() => {
@@ -77,6 +85,7 @@ export const Popover = ({
       }
       context={context}
       width={width}
+      className={className}
       focus={focus === 'dialog' ? { initialFocus: 0, modal: true } : false}
       aria-label={ariaLabel}
       {...getFloatingProps()}

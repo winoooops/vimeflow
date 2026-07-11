@@ -24,14 +24,16 @@ import {
 } from './native-overlay-channels'
 import { dispatchCommandPaletteShortcutForWindow } from './command-palette-shortcut'
 import { installNavigationGuard } from './navigation-guard'
+import {
+  isNativeOverlayActivityPopoverPayload,
+  type NativeOverlayActivityPopoverPayload,
+} from '../src/components/nativeOverlayActivity'
 
 // cspell:ignore AppKit Ghostty minimizable maximizable fullscreenable NSView
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// TODO: add popover here when it gets a serializable native overlay payload
-// and host renderer.
-export type NativeOverlayKind = 'menu' | 'tooltip' | 'dialog'
+export type NativeOverlayKind = 'menu' | 'tooltip' | 'popover' | 'dialog'
 
 type NativeOverlayCloseReason =
   | 'outside'
@@ -200,6 +202,7 @@ type NativeOverlayDialogPayload =
 type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
   | NativeOverlayTooltipPayload
+  | NativeOverlayActivityPopoverPayload
   | NativeOverlayDialogPayload
 
 interface NativeOverlayThemeSnapshot {
@@ -650,6 +653,7 @@ const isSerializablePayloadForKind = (
 ): payload is SerializableOverlayPayload =>
   (kind === 'menu' && isMenuPayload(payload)) ||
   (kind === 'tooltip' && isTooltipPayload(payload)) ||
+  (kind === 'popover' && isNativeOverlayActivityPopoverPayload(payload)) ||
   (kind === 'dialog' && isDialogPayload(payload))
 
 const isNativeOverlayRequest = (
@@ -659,6 +663,7 @@ const isNativeOverlayRequest = (
   isString(value.surfaceId) &&
   (value.kind === 'menu' ||
     value.kind === 'tooltip' ||
+    value.kind === 'popover' ||
     value.kind === 'dialog') &&
   isRect(value.anchorRect) &&
   isString(value.placement) &&
@@ -1017,7 +1022,11 @@ export class NativeOverlayController {
       return
     }
 
-    if (surface.kind !== 'menu' && surface.kind !== 'dialog') {
+    if (
+      surface.kind !== 'menu' &&
+      surface.kind !== 'popover' &&
+      surface.kind !== 'dialog'
+    ) {
       return
     }
 
@@ -1142,9 +1151,9 @@ export class NativeOverlayController {
       return existing
     }
 
-    // NativeOverlay owns two transparent child windows: an interactive menu
-    // layer and a passive tooltip layer above it. Keeping them separate lets a
-    // hover tooltip appear while a menu is open without replacing that menu.
+    // NativeOverlay owns one interactive surface layer and one passive tooltip
+    // layer. Keeping them separate lets a pane-header tooltip remain click-through
+    // while menus and popovers use normal pointer input above Ghostty.
     const menu = this.createOverlayLayer(
       parent,
       this.menuOverlayUrl,
@@ -1210,7 +1219,8 @@ export class NativeOverlayController {
 
       const isKeyboardDialog =
         surface?.kind === 'dialog' && surface.dialog === 'command-palette'
-      if (surface?.kind !== 'menu' && !isKeyboardDialog) {
+      const isActivityPopover = surface?.kind === 'popover'
+      if (surface?.kind !== 'menu' && !isActivityPopover && !isKeyboardDialog) {
         return
       }
 
@@ -1218,7 +1228,10 @@ export class NativeOverlayController {
         surface.kind === 'dialog'
           ? dialogKeyboardEventFromInput(surfaceId, input)
           : menuKeyboardEventFromInput(surfaceId, input)
-      if (keyEvent === null) {
+      if (
+        keyEvent === null ||
+        (isActivityPopover && keyEvent.key !== 'Escape')
+      ) {
         return
       }
 
@@ -1384,7 +1397,9 @@ export class NativeOverlayController {
 
     if (!surface.owner.isDestroyed()) {
       if (
-        (surface.kind === 'menu' || surface.kind === 'dialog') &&
+        (surface.kind === 'menu' ||
+          surface.kind === 'popover' ||
+          surface.kind === 'dialog') &&
         isActiveSurface &&
         restoreOwnerFocus
       ) {

@@ -119,7 +119,11 @@ const fireCommandPaletteShortcutInput = async (): Promise<void> => {
 const runExCommand = async (command: string): Promise<void> => {
   await openCommandPalette()
   await setCommandPaletteQuery(command)
-  await fireKey({ key: 'Enter' })
+  if (command === ':vsplit') {
+    await waitForActiveCommand('command-vim-vsplit')
+  }
+  await fireCommandPaletteEnter()
+  await waitForCommandPaletteClosed()
 }
 
 const isCommandPaletteInputVisible = async (): Promise<boolean> =>
@@ -185,6 +189,43 @@ const setCommandPaletteQuery = async (query: string): Promise<void> => {
     commandPaletteInputSelector,
     query
   )
+}
+
+const waitForActiveCommand = async (commandId: string): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (selector: string, activeId: string) =>
+          document
+            .querySelector<HTMLInputElement>(selector)
+            ?.getAttribute('aria-activedescendant') === activeId,
+        commandPaletteInputSelector,
+        commandId
+      ),
+    {
+      timeout: 8_000,
+      interval: 100,
+      timeoutMsg: `command palette did not select ${commandId}`,
+    }
+  )
+}
+
+const fireCommandPaletteEnter = async (): Promise<void> => {
+  await browser.execute((selector: string) => {
+    const input = document.querySelector<HTMLInputElement>(selector)
+    if (input === null) {
+      throw new Error('command palette input not found')
+    }
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+  }, commandPaletteInputSelector)
 }
 
 const openCommandPalette = async (): Promise<void> => {
@@ -370,16 +411,13 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
     // Ensure a terminal session (and therefore a split-view) exists. The
     // app may launch with zero sessions depending on restore state.
-    if (
-      !(await isSplitViewDisplayed()) &&
-      (await activePtySessionIds()).length === 0
-    ) {
+    if (!(await isSplitViewDisplayed())) {
       await createNewSessionWithDefaults()
     }
 
     await browser.waitUntil(
       async () =>
-        (await activePtySessionIds()).length > 0 ||
+        (await activePtySessionIds()).length > 0 &&
         (await isSplitViewDisplayed()),
       {
         timeout: 20_000,
@@ -436,6 +474,9 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   })
 
   it('Cmd+\\ cycles the pane layout', async () => {
+    await setPreset('vimeflow')
+    await focusTerminalZone()
+
     const before = await currentLayout()
     await fireKey({ key: '\\', code: 'Backslash', ...modInit() })
     await browser.waitUntil(async () => (await currentLayout()) !== before, {

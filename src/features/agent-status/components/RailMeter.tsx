@@ -21,7 +21,7 @@ export const RailMeter = ({
   const clamped = Math.max(0, Math.min(100, pct))
 
   return (
-    <Tooltip content={tooltip} placement="left">
+    <Tooltip content={tooltip} placement="left" nativeOverlay>
       <div
         role="meter"
         aria-label={label}

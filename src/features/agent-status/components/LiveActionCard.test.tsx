@@ -163,6 +163,20 @@ describe('LiveActionCard — activation', () => {
 })
 
 describe('LiveActionCard — tooltip', () => {
+  test('keeps the detail card in the main view beside the right sidebar', async () => {
+    render(<LiveActionCard event={runningEvent()} now={now} />)
+    fireEvent.focus(screen.getByTestId('live-action-card'))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT live action details',
+    })
+
+    expect(details).toHaveAttribute(
+      'data-placement',
+      expect.stringMatching(/^(?:left|right)(?:-(?:start|end))?$/u)
+    )
+  })
+
   test('reveals the file-path detail on hover', async () => {
     const user = userEvent.setup()
     render(
