@@ -838,7 +838,8 @@ export const runSsmDispatch = async ({
 
         const isTransient =
           errorText.includes('InvocationDoesNotExist') ||
-          errorText.includes('InvalidCommandId')
+          errorText.includes('InvalidCommandId') ||
+          errorText.includes('Unable to locate credentials')
         if (isTransient) {
           await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
           continue

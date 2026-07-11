@@ -466,7 +466,7 @@ describe('runSsmDispatch', () => {
     vi.restoreAllMocks()
   })
 
-  test('retries transient InvocationDoesNotExist errors before succeeding', async () => {
+  test('retries transient SSM poll errors before succeeding', async () => {
     const mockSpawn = makeMockSpawn([
       {
         stdout: JSON.stringify({ Command: { CommandId: 'cmd-123' } }),
@@ -475,6 +475,11 @@ describe('runSsmDispatch', () => {
         code: 254,
         stderr:
           'An error occurred (InvocationDoesNotExist) when calling the GetCommandInvocation operation: Invocation does not exist',
+      },
+      {
+        code: 253,
+        stderr:
+          'Unable to locate credentials. You can configure credentials by running "aws login".',
       },
       {
         stdout: JSON.stringify({
@@ -500,7 +505,7 @@ describe('runSsmDispatch', () => {
       pollIntervalMs: 10,
     })
 
-    expect(mockSpawn).toHaveBeenCalledTimes(3)
+    expect(mockSpawn).toHaveBeenCalledTimes(4)
     expect(result).toEqual({ code: 0, signal: null })
   })
 
