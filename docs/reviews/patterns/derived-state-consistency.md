@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-09
-ref_count: 22
+last_updated: 2026-07-11
+ref_count: 23
 ---
 
 # Derived State Consistency
@@ -385,4 +385,19 @@ base data is technically "correct."
 - **Fix:** Retain the latest pre-load broadcast as the load base and overlay any
   pending local patch before rendering or saving. Added regression coverage for
   a broadcast arriving between a local pre-load edit and the load resolution.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Request-review gates ignored single-comment Finish popovers
+
+- **Source:** github-claude | PR #684 round 1 | 2026-07-11
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The Finish feedback popover's rendered open state was expanded
+  from `finishOpen` to `finishOpen || sendNowCommentId !== null`, but the
+  Request-review shortcut and toolbar gates still checked only `finishOpen`.
+  Opening "Send comment now" could therefore leave Request-review enabled and
+  allow two confirmation popovers to render at once.
+- **Fix:** Derived a single `isFinishPopoverOpen` value and reused it for the
+  Finish popover state plus both Request-review entry gates, so the shortcut
+  and toolbar share the same exclusivity contract.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

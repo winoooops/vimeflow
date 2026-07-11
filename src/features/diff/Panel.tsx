@@ -1943,6 +1943,8 @@ export const Panel = ({
     closeCommentEditor()
   }, [cancelVisualSelection, closeCommentEditor])
 
+  const isFinishPopoverOpen = finishOpen || sendNowCommentId !== null
+
   useKeyboard({
     enabled: true,
     rootRef: diffRootRef,
@@ -1977,7 +1979,7 @@ export const Panel = ({
       }
     },
     onRequestReview: (): void => {
-      if (!finishOpen) {
+      if (!isFinishPopoverOpen) {
         review.openPopover()
       }
     },
@@ -2096,7 +2098,7 @@ export const Panel = ({
       : undefined
 
   const finishFeedback = {
-    open: finishOpen || sendNowCommentId !== null,
+    open: isFinishPopoverOpen,
     result: resolveCandidatePanes({
       allPanes: feedbackDispatch?.candidates ?? [],
       diffCwd: cwd,
@@ -2116,7 +2118,7 @@ export const Panel = ({
   // The "Request review" affordance (VIM-304) — always available when a file
   // diff is loaded, independent of pending comments (unlike Finish).
   const onRequestReview =
-    review.canRequest && !finishOpen
+    review.canRequest && !isFinishPopoverOpen
       ? (): void => {
           setFinishOpen(false)
           review.openPopover()
