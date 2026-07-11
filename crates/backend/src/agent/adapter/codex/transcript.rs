@@ -96,7 +96,7 @@ fn decode_javascript_string(literal: &str) -> Option<String> {
 
 enum JavascriptToken<'a> {
     Identifier(&'a str),
-    String(&'a str),
+    String(&'a str, usize),
     Punctuation(u8),
 }
 
@@ -113,6 +113,35 @@ fn javascript_string_end(bytes: &[u8], opening: usize) -> Option<usize> {
         }
     }
     None
+}
+
+fn has_javascript_line_terminator(input: &str, mut index: usize) -> bool {
+    let bytes = input.as_bytes();
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\n' | b'\r' => return true,
+            b' ' | b'\t' | 0x0b | 0x0c => index += 1,
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += 2;
+                while index < bytes.len() && !matches!(bytes[index], b'\n' | b'\r') {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    if matches!(bytes[index], b'\n' | b'\r') {
+                        return true;
+                    }
+                    index += 1;
+                }
+                index = (index + 2).min(bytes.len());
+            }
+            _ => return false,
+        }
+    }
+    false
 }
 
 fn tokenize_javascript(input: &str) -> Vec<JavascriptToken<'_>> {
@@ -141,7 +170,7 @@ fn tokenize_javascript(input: &str) -> Vec<JavascriptToken<'_>> {
                 let Some(end) = javascript_string_end(bytes, index) else {
                     break;
                 };
-                tokens.push(JavascriptToken::String(&input[index..end]));
+                tokens.push(JavascriptToken::String(&input[index..end], end));
                 index = end;
             }
             byte if byte.is_ascii_alphabetic() || matches!(byte, b'_' | b'$') => {
@@ -204,13 +233,15 @@ fn extract_object_workdir(
 
     for index in opening + 1..closing {
         if stack.is_empty() {
-            let is_workdir_key = match tokens.get(index) {
-                Some(JavascriptToken::Identifier("workdir")) => true,
-                Some(JavascriptToken::String(key)) => {
-                    decode_javascript_string(key).as_deref() == Some("workdir")
-                }
-                _ => false,
-            };
+            let is_property_key = index == opening + 1 || is_punctuation(tokens, index - 1, b',');
+            let is_workdir_key = is_property_key
+                && match tokens.get(index) {
+                    Some(JavascriptToken::Identifier("workdir")) => true,
+                    Some(JavascriptToken::String(key, _)) => {
+                        decode_javascript_string(key).as_deref() == Some("workdir")
+                    }
+                    _ => false,
+                };
             if is_workdir_key {
                 if is_punctuation(tokens, index + 1, b':') {
                     let value_index = index + 2;
@@ -218,7 +249,9 @@ fn extract_object_workdir(
                         value_index + 1 == closing || is_punctuation(tokens, value_index + 1, b',');
                     if value_is_complete {
                         workdir = match tokens.get(value_index) {
-                            Some(JavascriptToken::String(value)) => decode_javascript_string(value),
+                            Some(JavascriptToken::String(value, _)) => {
+                                decode_javascript_string(value)
+                            }
                             Some(JavascriptToken::Identifier(name)) => bindings.get(name).cloned(),
                             _ => None,
                         };
@@ -253,13 +286,15 @@ fn extract_custom_exec_workdir(input: &str) -> Option<String> {
 
     while index < tokens.len() {
         if identifier_at(&tokens, index) == Some("const") {
-            if let (Some(name), Some(JavascriptToken::String(value))) =
+            if let (Some(name), Some(JavascriptToken::String(value, value_end))) =
                 (identifier_at(&tokens, index + 1), tokens.get(index + 3))
             {
                 let complete = is_punctuation(&tokens, index + 2, b'=')
                     && (index + 4 == tokens.len()
                         || is_punctuation(&tokens, index + 4, b';')
-                        || is_punctuation(&tokens, index + 4, b','));
+                        || is_punctuation(&tokens, index + 4, b',')
+                        || (identifier_at(&tokens, index + 4).is_some()
+                            && has_javascript_line_terminator(input, *value_end)));
                 if complete {
                     if let Some(value) = decode_javascript_string(value) {
                         bindings.insert(name, value);
@@ -1906,6 +1941,63 @@ mod tests {
                 "name": "exec",
                 "call_id": "c1",
                 "input": "const wd = '/workspace/B';\nconst result = await tools.exec_command({ cmd: \"pwd\", workdir: wd });\ntext(result.output);"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)).as_deref(),
+            Some("/workspace/B")
+        );
+    }
+
+    #[test]
+    fn extract_exec_workdir_resolves_asi_terminated_const() {
+        let dto: CodexLineDto = serde_json::from_value(json!({
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "call_id": "c1",
+                "input": "const wd = '/workspace/B'\nawait tools.exec_command({ cmd: 'pwd', workdir: wd })"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)).as_deref(),
+            Some("/workspace/B")
+        );
+    }
+
+    #[test]
+    fn extract_exec_workdir_rejects_multiline_computed_const() {
+        let dto: CodexLineDto = serde_json::from_value(json!({
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "call_id": "c1",
+                "input": "const wd = '/workspace'\n+ '/B'\nawait tools.exec_command({ cmd: 'pwd', workdir: wd })"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_exec_workdir_ignores_workdir_used_as_another_property_value() {
+        let dto: CodexLineDto = serde_json::from_value(json!({
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "call_id": "c1",
+                "input": "const workdir = '/workspace/decoy';\nawait tools.exec_command({ cmd: 'pwd', workdir: '/workspace/B' });\nawait tools.exec_command({ cmd: 'echo', cwd: workdir });"
             }
         }))
         .unwrap();
