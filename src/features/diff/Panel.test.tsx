@@ -5989,12 +5989,108 @@ describe('Panel', () => {
       // VIM-249: a pending review is recorded for this pty, keyed by [#n], so an
       // agent reply can be correlated back. The path is the repo-relative batch
       // key, not the absolute prompt path.
-      const pending = getPendingReview('pty-1')
+      // The record is keyed by the minted nonce (VIM-297) — read it from the
+      // dispatched payload, proving the stored record matches what the agent
+      // will echo back.
+      const nonce = /"nonce":"(\w+)"/.exec(payload as string)?.[1] ?? ''
+      const pending = getPendingReview('pty-1', nonce)
       expect(pending?.ownerKey).toBe('sess:pane-1')
       expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
       expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
 
-      clearPendingReview('pty-1') // module singleton — don't leak into other tests
+      clearPendingReview('pty-1', nonce) // module singleton — don't leak into other tests
+    })
+
+    test('Send now dispatches only the addressed comment; the rest stay pending (VIM-297)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockResolvedValue(undefined)
+      const focusTerminal = vi.fn()
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo',
+        status: 'running',
+        isFocused: true,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal,
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const gutterSlot = screen.getByTestId('gutter-utility-slot')
+
+      const addButton = within(gutterSlot).getByRole('button', {
+        name: 'Add comment on this line',
+      })
+
+      await user.click(addButton)
+      const first = screen.getByRole('dialog', { name: /Comment on line/ })
+      await user.type(
+        within(first).getByPlaceholderText('Request change'),
+        'First note'
+      )
+      await user.keyboard('{Enter}')
+
+      await user.click(addButton)
+      const second = screen.getByRole('dialog', { name: /Comment on line/ })
+      await user.type(
+        within(second).getByPlaceholderText('Request change'),
+        'Second note'
+      )
+      await user.keyboard('{Enter}')
+
+      expect(
+        await screen.findByRole('button', { name: /finish feedback \(2\)/i })
+      ).toBeInTheDocument()
+
+      const sendButtons = screen.getAllByRole('button', {
+        name: 'Send comment now',
+      })
+      expect(sendButtons).toHaveLength(2)
+      await user.click(sendButtons[0])
+
+      const popover = await screen.findByRole('dialog', {
+        name: 'Finish feedback',
+      })
+      expect(popover).toHaveTextContent(/Send 1 comment/)
+
+      await user.keyboard('Y')
+
+      await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+      const [, payload] = writePty.mock.calls[0]
+      expect(payload as string).toContain('First note')
+      expect(payload as string).not.toContain('Second note')
+      expect(payload as string).toContain('[#1')
+      expect(payload as string).not.toContain('[#2')
+
+      // The other comment is untouched and still dispatches on Finish.
+      expect(
+        await screen.findByRole('button', { name: /finish feedback \(1\)/i })
+      ).toBeInTheDocument()
+      expect(screen.getByText('Second note')).toBeInTheDocument()
+
+      // Its correlation record covers exactly the one dispatched handle.
+      const nonce = /"nonce":"(\w+)"/.exec(payload as string)?.[1] ?? ''
+      const pending = getPendingReview('pty-1', nonce)
+      expect(pending?.byHandle.size).toBe(1)
+      expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
+
+      clearPendingReview('pty-1', nonce)
     })
 
     test('preserves the comment draft and shows a notification when the feedback cap is reached', async (): Promise<void> => {

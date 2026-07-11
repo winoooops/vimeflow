@@ -154,6 +154,8 @@ interface PanelBodyProps {
   onAddComment: (lineNumber: number, side: AnnotationSide) => void
   onEditComment: (annotation: DiffLineAnnotation<ReviewComment>) => void
   onDeleteComment: (id: string) => void
+  /** Dispatch one pending comment to the agent now (VIM-297). */
+  onSendComment?: (id: string) => void
   onCommentTextChange: (text: string) => void
   onCommentCategoryChange: (category: ReviewCommentCategory) => void
   onConfirmComment: (text: string, category: ReviewCommentCategory) => void
@@ -180,6 +182,7 @@ export const PanelBody = ({
   onAddComment,
   onEditComment,
   onDeleteComment,
+  onSendComment = undefined,
   onCommentTextChange,
   onCommentCategoryChange,
   onConfirmComment,
@@ -260,6 +263,11 @@ export const PanelBody = ({
                 <ReviewCommentRow
                   comment={annotation.metadata}
                   targetLabel={annotationTargetLabel(annotation)}
+                  onSendNow={
+                    onSendComment === undefined
+                      ? undefined
+                      : (): void => onSendComment(annotation.metadata.id)
+                  }
                   onEdit={(): void => onEditComment(annotation)}
                   onDelete={(): void => onDeleteComment(annotation.metadata.id)}
                 />

@@ -74,7 +74,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  clearPendingReview('pty-1')
+  clearPendingReview('pty-1', 'abc')
   delete window.vimeflow
 })
 

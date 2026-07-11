@@ -27,25 +27,43 @@ export interface PendingReview {
   /** The feedback owner (sessionId:paneId) at dispatch — replies route here even
    * after the active pane changes. */
   ownerKey: string
-  /** The token the agent must echo; a superseded dispatch mints a new one. */
+  /** The token the agent must echo; each dispatch mints its own. */
   nonce: string
   dispatchedAt: number
   /** `[#n]` → the comment it addressed, in the order the dispatch numbered them. */
   byHandle: Map<number, PendingReviewHandle>
 }
 
-// ponytail: module-singleton keyed by ptyId — correlation state, not persisted
-// review data (comments persist via the feedback store). One in-flight review
-// per pty; a new dispatch replaces it.
+// Module-singleton keyed by (ptyId, nonce) — correlation state, not persisted
+// review data (comments persist via the feedback store). Multiple dispatches
+// can be in flight on one pty at once (VIM-297: a single comment sent now must
+// not clobber the batch's correlation, and vice versa); each reply resolves by
+// the nonce it echoes. Records are consumed when their replies land and are
+// pruned with their owner.
+const reviewKey = (ptyId: string, nonce: string): string =>
+  `${ptyId}\u0000${nonce}`
+
 const store = new Map<string, PendingReview>()
 
 export const setPendingReview = (review: PendingReview): void => {
-  store.set(review.ptyId, review)
+  store.set(reviewKey(review.ptyId, review.nonce), review)
 }
 
-export const getPendingReview = (ptyId: string): PendingReview | undefined =>
-  store.get(ptyId)
+export const getPendingReview = (
+  ptyId: string,
+  nonce: string
+): PendingReview | undefined => store.get(reviewKey(ptyId, nonce))
 
-export const clearPendingReview = (ptyId: string): void => {
-  store.delete(ptyId)
+export const clearPendingReview = (ptyId: string, nonce: string): void => {
+  store.delete(reviewKey(ptyId, nonce))
+}
+
+export const prunePendingReviewOwners = (
+  liveOwnerKeys: ReadonlySet<string>
+): void => {
+  for (const [key, review] of store) {
+    if (!liveOwnerKeys.has(review.ownerKey)) {
+      store.delete(key)
+    }
+  }
 }

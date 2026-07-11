@@ -2,7 +2,7 @@
 id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-04
+last_updated: 2026-07-11
 ref_count: 9
 ---
 
@@ -107,4 +107,13 @@ When a React component renders retained or stale content while fresh data for a 
 - **File:** `src/features/diff/Panel.tsx`
 - **Finding:** New-comment entry points cleared draft text when switching to a different annotation target, but left the independently retained comment category unchanged. A user could abandon a Question, Bug, or Suggestion draft, open another blank comment on a different line or file, and dispatch the unrelated comment with the stale intent category.
 - **Fix:** Mirrored the target-identity reset for comment category in the line, file, and body add-comment paths. When a new annotation target differs from the current draft target, the draft text is cleared and the category returns to the default together.
+- **Commit:** same commit as this entry
+
+### 11. Single-comment send cleared unrelated review drafts
+
+- **Source:** github-codex-connector | PR #684 round 1 | 2026-07-11
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The single-comment send-now flow dispatched only the addressed pending row, but still called the whole-batch `markDispatched` path that cleared the owner draft. Sending one existing pending comment could silently discard an unsaved draft for another comment in the same review owner.
+- **Fix:** Added a dispatch option that reserves whole-draft clearing for full-batch sends. Single-comment sends now clear only an editor draft whose `editId` matches the dispatched comment, and preserve unrelated drafts. Added hook regression coverage for both cases.
 - **Commit:** same commit as this entry

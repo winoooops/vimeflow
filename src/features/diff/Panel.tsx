@@ -720,6 +720,9 @@ export const Panel = ({
 
   // Finish feedback popover open state.
   const [finishOpen, setFinishOpen] = useState(false)
+  // The comment being single-sent (VIM-297); scopes the Finish popover +
+  // dispatch to exactly that comment. null = whole-batch behavior.
+  const [sendNowCommentId, setSendNowCommentId] = useState<string | null>(null)
 
   const [keyboardConfirmAction, setKeyboardConfirmAction] =
     useState<KeyboardConfirmAction | null>(null)
@@ -740,77 +743,97 @@ export const Panel = ({
 
   const sendingFeedbackRef = useRef(false)
 
-  const buildFeedbackEntries = useCallback((): {
-    entries: DispatchEntry[]
-    handles: Map<number, PendingReviewHandle>
-  } => {
-    // git reports file paths relative to the repo TOPLEVEL, but the target
-    // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
-    // toplevel (`response.repoRoot`) so the dispatched reference is an
-    // absolute path the agent can resolve regardless of its cwd. Falls back to
-    // the repo-relative path if the root is unavailable (not in a git repo).
-    // Prefer the per-batch cwd root; fall back to the current diff's root, then
-    // the last-known root when `response` is transiently null (file-switch
-    // loading/error) so an in-flight batch keeps absolute paths.
-    const repoRoot = response?.repoRoot ?? repoRootRef.current
-    const entries: DispatchEntry[] = []
-    // [#n] → the comment it addressed. The path fields are the annotation BATCH
-    // KEY (repo-relative), NOT the absolute prompt path, so an agent reply
-    // (VIM-249) attaches back onto the same batch the comment lives in.
-    const handles = new Map<number, PendingReviewHandle>()
-    let handle = 0
+  const buildFeedbackEntries = useCallback(
+    (
+      onlyCommentId?: string
+    ): {
+      entries: DispatchEntry[]
+      handles: Map<number, PendingReviewHandle>
+    } => {
+      // git reports file paths relative to the repo TOPLEVEL, but the target
+      // agent runs in the pane's cwd (possibly a repo subdirectory). Join the
+      // toplevel (`response.repoRoot`) so the dispatched reference is an
+      // absolute path the agent can resolve regardless of its cwd. Falls back to
+      // the repo-relative path if the root is unavailable (not in a git repo).
+      // Prefer the per-batch cwd root; fall back to the current diff's root, then
+      // the last-known root when `response` is transiently null (file-switch
+      // loading/error) so an in-flight batch keeps absolute paths.
+      const repoRoot = response?.repoRoot ?? repoRootRef.current
+      const entries: DispatchEntry[] = []
+      // [#n] → the comment it addressed. The path fields are the annotation BATCH
+      // KEY (repo-relative), NOT the absolute prompt path, so an agent reply
+      // (VIM-249) attaches back onto the same batch the comment lives in.
+      const handles = new Map<number, PendingReviewHandle>()
+      let handle = 0
 
-    for (const [key, annotations] of feedback.batch) {
-      // Only dispatch comments that have not been sent yet; already-dispatched
-      // thread anchors stay in the hunk but are never re-sent (VIM-282).
-      const pending = annotations.filter(isPendingReviewAnnotation)
-      if (pending.length === 0) {
-        continue
+      for (const [key, annotations] of feedback.batch) {
+        // Only dispatch comments that have not been sent yet; already-dispatched
+        // thread anchors stay in the hunk but are never re-sent (VIM-282).
+        const pending = annotations
+          .filter(isPendingReviewAnnotation)
+          // Single-send (VIM-297): scope the whole path to one comment.
+          .filter(
+            (annotation) =>
+              onlyCommentId === undefined ||
+              annotation.metadata.id === onlyCommentId
+          )
+        if (pending.length === 0) {
+          continue
+        }
+
+        const { cwd: entryCwd, filePath: relPath, staged } = parseBatchKey(key)
+
+        const entryRepoRoot = repoRootRef.repoRootForCwd?.(entryCwd)
+
+        const resolvedRepoRoot =
+          entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
+
+        const filePath = resolvedRepoRoot
+          ? `${resolvedRepoRoot}/${relPath}`
+          : relPath
+        entries.push({ filePath, staged, annotations: pending })
+
+        // Number handles in the SAME nested order formatFeedbackPayload assigns
+        // [#n], so handle N maps to the Nth dispatched comment.
+        for (const annotation of pending) {
+          handle += 1
+          handles.set(handle, {
+            cwd: entryCwd,
+            filePath: relPath,
+            staged,
+            lineNumber: annotation.lineNumber,
+            side: annotation.side,
+            target: annotation.metadata.target,
+          })
+        }
       }
 
-      const { cwd: entryCwd, filePath: relPath, staged } = parseBatchKey(key)
-
-      const entryRepoRoot = repoRootRef.repoRootForCwd?.(entryCwd)
-
-      const resolvedRepoRoot =
-        entryRepoRoot && entryRepoRoot.length > 0 ? entryRepoRoot : repoRoot
-
-      const filePath = resolvedRepoRoot
-        ? `${resolvedRepoRoot}/${relPath}`
-        : relPath
-      entries.push({ filePath, staged, annotations: pending })
-
-      // Number handles in the SAME nested order formatFeedbackPayload assigns
-      // [#n], so handle N maps to the Nth dispatched comment.
-      for (const annotation of pending) {
-        handle += 1
-        handles.set(handle, {
-          cwd: entryCwd,
-          filePath: relPath,
-          staged,
-          lineNumber: annotation.lineNumber,
-          side: annotation.side,
-          target: annotation.metadata.target,
-        })
-      }
-    }
-
-    return { entries, handles }
-  }, [feedback.batch, repoRootRef, response])
+      return { entries, handles }
+    },
+    [feedback.batch, repoRootRef, response]
+  )
 
   const handleSendFeedback = useCallback(
-    (pane: PaneCandidate): void => {
+    (pane: PaneCandidate, onlyCommentId?: string): void => {
       if (sendingFeedbackRef.current) {
         return
       }
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
-        const { entries, handles } = buildFeedbackEntries()
+        const { entries, handles } = buildFeedbackEntries(onlyCommentId)
         // Per-dispatch correlation token the agent echoes in its reply block
         // (VIM-249), recorded below so a reply can be matched to this send.
         const nonce = makeDispatchNonce()
 
         try {
+          // The addressed comment can vanish between opening the popover and
+          // confirming (edit/delete) — never dispatch an empty payload.
+          if (entries.length === 0) {
+            setFinishOpen(false)
+            setSendNowCommentId(null)
+
+            return
+          }
           if (feedbackDispatch) {
             await dispatchFeedbackBatch(
               pane.paneId,
@@ -820,8 +843,9 @@ export const Panel = ({
               feedbackDispatch.writePty
             )
             // Record the pending review so an agent-reply for this pty can be
-            // correlated back to these comments (VIM-249). Keyed by pty; a new
-            // dispatch replaces it. Only when there's an owner to attach onto.
+            // correlated back to these comments (VIM-249). Keyed by (pty,
+            // nonce) so concurrent dispatches coexist (VIM-297). Only when
+            // there's an owner to attach onto.
             if (feedbackOwnerKey !== undefined && handles.size > 0) {
               setPendingReview({
                 ptyId: pane.ptyId,
@@ -841,9 +865,11 @@ export const Panel = ({
               entries.flatMap((entry) =>
                 entry.annotations.map((annotation) => annotation.metadata.id)
               )
-            )
+            ),
+            { clearDraftForWholeBatch: onlyCommentId === undefined }
           )
           setFinishOpen(false)
+          setSendNowCommentId(null)
           const focusTerminal = feedbackDispatch?.focusTerminal
           if (focusTerminal !== undefined) {
             setTimeout(focusTerminal, 0)
@@ -868,29 +894,36 @@ export const Panel = ({
   // running to send to (comments are otherwise trapped in the batch). It uses
   // the same resolved paths as the send path so pasted feedback works from an
   // agent cwd below the repo root.
-  const handleCopyFeedback = useCallback((): void => {
-    const { entries } = buildFeedbackEntries()
+  const handleCopyFeedback = useCallback(
+    (onlyCommentId?: string): void => {
+      const { entries } = buildFeedbackEntries(onlyCommentId)
 
-    if (entries.length === 0) {
-      return
-    }
+      if (entries.length === 0) {
+        return
+      }
 
-    const count = feedback.pendingAnnotations()
-    setFinishOpen(false)
-
-    void (async (): Promise<void> => {
-      // Clipboard copy has no agent to reply, so the nonce is a throwaway that
-      // just satisfies the payload signature.
-      const copied = await writeClipboardText(
-        formatFeedbackPayload(entries, makeDispatchNonce())
+      const count = entries.reduce(
+        (sum, entry) => sum + entry.annotations.length,
+        0
       )
-      notifyInfo(
-        copied
-          ? `Copied ${count} comment${count === 1 ? '' : 's'} to the clipboard.`
-          : 'Could not copy comments to the clipboard.'
-      )
-    })()
-  }, [buildFeedbackEntries, feedback, notifyInfo])
+      setFinishOpen(false)
+      setSendNowCommentId(null)
+
+      void (async (): Promise<void> => {
+        // Clipboard copy has no agent to reply, so the nonce is a throwaway that
+        // just satisfies the payload signature.
+        const copied = await writeClipboardText(
+          formatFeedbackPayload(entries, makeDispatchNonce())
+        )
+        notifyInfo(
+          copied
+            ? `Copied ${count} comment${count === 1 ? '' : 's'} to the clipboard.`
+            : 'Could not copy comments to the clipboard.'
+        )
+      })()
+    },
+    [buildFeedbackEntries, notifyInfo]
+  )
 
   // Request review (VIM-304): the whole "arm a pending request, then dispatch or
   // copy it" flow lives in useRequestReview so this component stays a renderer.
@@ -1910,6 +1943,8 @@ export const Panel = ({
     closeCommentEditor()
   }, [cancelVisualSelection, closeCommentEditor])
 
+  const isFinishPopoverOpen = finishOpen || sendNowCommentId !== null
+
   useKeyboard({
     enabled: true,
     rootRef: diffRootRef,
@@ -1939,11 +1974,12 @@ export const Panel = ({
     onDeleteComment: deleteSelectedComment,
     onFinishReview: (): void => {
       if (feedback.pendingAnnotations() > 0 && !review.open) {
+        setSendNowCommentId(null)
         setFinishOpen(true)
       }
     },
     onRequestReview: (): void => {
-      if (!finishOpen) {
+      if (!isFinishPopoverOpen) {
         review.openPopover()
       }
     },
@@ -2056,27 +2092,33 @@ export const Panel = ({
     feedbackCount > 0 && !review.open
       ? (): void => {
           review.closePopover()
+          setSendNowCommentId(null)
           setFinishOpen(true)
         }
       : undefined
 
   const finishFeedback = {
-    open: finishOpen,
+    open: isFinishPopoverOpen,
     result: resolveCandidatePanes({
       allPanes: feedbackDispatch?.candidates ?? [],
       diffCwd: cwd,
     }),
-    commentCount: feedbackCount,
-    fileCount: pendingFileCount,
-    onCancel: (): void => setFinishOpen(false),
-    onSend: handleSendFeedback,
-    onCopy: handleCopyFeedback,
+    // Single-send (VIM-297) reuses the popover scoped to one comment.
+    commentCount: sendNowCommentId !== null ? 1 : feedbackCount,
+    fileCount: sendNowCommentId !== null ? 1 : pendingFileCount,
+    onCancel: (): void => {
+      setFinishOpen(false)
+      setSendNowCommentId(null)
+    },
+    onSend: (pane: PaneCandidate): void =>
+      handleSendFeedback(pane, sendNowCommentId ?? undefined),
+    onCopy: (): void => handleCopyFeedback(sendNowCommentId ?? undefined),
   }
 
   // The "Request review" affordance (VIM-304) — always available when a file
   // diff is loaded, independent of pending comments (unlike Finish).
   const onRequestReview =
-    review.canRequest && !finishOpen
+    review.canRequest && !isFinishPopoverOpen
       ? (): void => {
           setFinishOpen(false)
           review.openPopover()
@@ -2358,6 +2400,10 @@ export const Panel = ({
                     comment={annotation.metadata}
                     editShortcut="Shift+U"
                     deleteShortcut={null}
+                    onSendNow={(): void => {
+                      setFinishOpen(false)
+                      setSendNowCommentId(annotation.metadata.id)
+                    }}
                     onEdit={(): void => {
                       setFileCommentAnchorPoint(null)
                       setAnnotationTarget({
@@ -2406,6 +2452,10 @@ export const Panel = ({
             onAddComment={handleBodyAddComment}
             onEditComment={handleBodyEditComment}
             onDeleteComment={removeFeedbackAnnotation}
+            onSendComment={(id: string): void => {
+              setFinishOpen(false)
+              setSendNowCommentId(id)
+            }}
             onCommentTextChange={(text): void => {
               setCommentDraftText(text, false)
             }}

@@ -104,6 +104,7 @@ import { useFeedbackBatchStore } from '../diff/hooks/useFeedbackBatch'
 import { useAgentReply } from '../diff/hooks/useAgentReply'
 import { useAgentReview } from '../diff/hooks/useAgentReview'
 import { prunePendingReviewRequestOwners } from '../diff/services/pendingReviewRequests'
+import { prunePendingReviewOwners } from '../diff/services/pendingReviews'
 import type { PaneCandidate } from '../diff/services/activePanePicker'
 import { sumLines } from '../diff/utils/sumLines'
 import { findActivePane } from '../sessions/utils/activeSessionPane'
@@ -2260,6 +2261,7 @@ const WorkspaceViewContent = (): ReactElement => {
   useLayoutEffect(() => {
     pruneFeedbackOwners(livePaneKeys)
     prunePendingReviewRequestOwners(livePaneKeys)
+    prunePendingReviewOwners(livePaneKeys)
   }, [livePaneKeys, pruneFeedbackOwners])
 
   // Capture agent replies (VIM-249): the single subscription point, mounted

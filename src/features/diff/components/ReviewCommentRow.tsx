@@ -10,6 +10,9 @@ interface ReviewCommentRowProps {
   comment: ReviewComment
   editShortcut?: 'u' | 'Shift+U'
   deleteShortcut?: 'x' | null
+  /** Dispatch just this comment to the agent now (VIM-297). Omitted → hidden;
+   * read-only rows (dispatched anchors, agent/reviewer output) never show it. */
+  onSendNow?: () => void
   /** Range/line reference shown above the text (e.g. "lines R4-R6"); the diff
    * itself shows the code, so this only names the span. Omitted for plain line
    * comments. */
@@ -50,6 +53,7 @@ export const ReviewCommentRow = ({
   editShortcut = 'u',
   deleteShortcut = 'x',
   targetLabel = undefined,
+  onSendNow = undefined,
   onEdit,
   onDelete,
 }: ReviewCommentRowProps): ReactElement => {
@@ -125,6 +129,14 @@ export const ReviewCommentRow = ({
       </div>
       {readOnly ? null : (
         <div className="flex shrink-0 items-center gap-1">
+          {onSendNow !== undefined ? (
+            <IconButton
+              icon="send"
+              label="Send comment now"
+              size="sm"
+              onClick={(): void => onSendNow()}
+            />
+          ) : null}
           <IconButton
             icon="edit"
             label="Edit comment"
