@@ -5,6 +5,7 @@
  * compatible with VIM-297). Not persisted — the placed reviewer annotations
  * persist via the feedback store (VIM-282); this is just the routing + snapshot.
  */
+import type { AgentReplyStatus } from '@/bindings'
 import type { FileDiff } from '../types'
 import type { PendingReviewHandle } from './pendingReviews'
 
@@ -97,6 +98,12 @@ export interface ReviewLevelNote {
   reviewer: string
   text: string
   nonce: string
+  /**
+   * Set when the note is a main-agent turn on a review-level finding thread
+   * (VIM-304 PR-3) — the outcome axis, rendered as the same state chip the
+   * anchored agent turns get.
+   */
+  outcome?: AgentReplyStatus
 }
 
 const reviewLevelByOwner = new Map<string, ReviewLevelNote[]>()

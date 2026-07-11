@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
+import type { AgentReplyStatus } from '@/bindings'
 
 /**
  * The user's one-axis tag on a review comment (VIM-256/253). It is the
@@ -56,6 +57,13 @@ export interface ReviewComment {
    * (VIM-304). Absent → DEFAULT_REVIEW_COMMENT_CATEGORY. Not set on agent replies.
    */
   category?: ReviewCommentCategory
+  /**
+   * The outcome axis of an agent turn (VIM-304 PR-3), set when
+   * `author === 'agent'`: reply / clarify / resolved / deferred / rejected.
+   * The user/reviewer raise (category = intent); the main agent responds
+   * (outcome). A thread's rollup status derives from the latest agent turn.
+   */
+  outcome?: AgentReplyStatus
   createdAt: number
   /**
    * When set, the comment has been dispatched to an agent and now stays in the

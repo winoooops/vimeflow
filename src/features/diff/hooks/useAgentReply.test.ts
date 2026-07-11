@@ -13,6 +13,14 @@ import {
   type PendingReview,
   type PendingReviewHandle,
 } from '../services/pendingReviews'
+import {
+  clearFindingThreadRecord,
+  clearReviewLevelNotes,
+  getFindingThreadRecord,
+  reviewLevelNotes,
+  setFindingThreadRecord,
+  type FindingThreadRecord,
+} from '../services/pendingReviewRequests'
 
 type AddForOwner = (
   ownerKey: string,
@@ -104,7 +112,23 @@ beforeEach(() => {
 
 afterEach(() => {
   clearPendingReview('pty-1')
+  clearFindingThreadRecord('pty-1', 'rev')
+  clearReviewLevelNotes('owner-r')
   delete window.vimeflow
+})
+
+const findingRecord = (
+  overrides: Partial<FindingThreadRecord> = {}
+): FindingThreadRecord => ({
+  ptyId: 'pty-1',
+  nonce: 'rev',
+  ownerKey: 'owner-r',
+  byOrdinal: new Map([
+    [1, { kind: 'anchored', commentId: 'rev-1', handle: handle() }],
+    [2, { kind: 'reviewLevel', commentId: 'rev-2' }],
+  ]),
+  seenReplies: new Set(),
+  ...overrides,
 })
 
 describe('useAgentReply', () => {
@@ -135,6 +159,8 @@ describe('useAgentReply', () => {
     expect(annotation.metadata.author).toBe('agent')
     expect(annotation.metadata.text).toBe('Because latency.')
     expect(annotation.lineNumber).toBe(5)
+    // The agent turn carries its outcome (VIM-304 PR-3).
+    expect(annotation.metadata.outcome).toBe('reply')
   })
 
   test('ignores an event whose nonce does not match (superseded dispatch)', async () => {
@@ -305,5 +331,146 @@ describe('useAgentReply', () => {
     await emit(reply) // replay — record was cleared, so nothing happens
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('finding-thread replies (VIM-304 PR-3)', () => {
+  test('attaches a target:finding turn at the anchored finding with its outcome', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [
+          { id: 1, status: 'resolved', target: 'finding', text: 'Fixed it.' },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+
+    const [ownerKey, cwd, filePath, staged, annotation] =
+      addAnnotationForOwner.mock.calls[0]
+    expect(ownerKey).toBe('owner-r')
+    expect(cwd).toBe('/repo')
+    expect(filePath).toBe('a.ts')
+    expect(staged).toBe(false)
+    expect(annotation.lineNumber).toBe(5)
+    expect(annotation.side).toBe('additions')
+    expect(annotation.metadata.author).toBe('agent')
+    expect(annotation.metadata.outcome).toBe('resolved')
+    expect(annotation.metadata.text).toBe('Fixed it.')
+  })
+
+  test('gates on session: the same nonce from another pty is ignored', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+    await emit(
+      event({
+        sessionId: 'pty-2',
+        nonce: 'rev',
+        replies: [
+          { id: 1, status: 'resolved', target: 'finding', text: 'Fixed it.' },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+  })
+
+  test('a reviewLevel-target turn lands as a review-level note with outcome', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [
+          {
+            id: 2,
+            status: 'deferred',
+            target: 'finding',
+            text: 'Filed as VIM-999.',
+          },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+    const notes = reviewLevelNotes('owner-r')
+    expect(notes).toHaveLength(1)
+    expect(notes[0].text).toBe('Filed as VIM-999.')
+    expect(notes[0].outcome).toBe('deferred')
+  })
+
+  test('an unknown ordinal is skipped without touching the thread', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [{ id: 99, status: 'resolved', target: 'finding', text: 'x' }],
+      })
+    )
+
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+    expect(reviewLevelNotes('owner-r')).toHaveLength(0)
+  })
+
+  test('an exact duplicate turn attaches once; a new turn on the same finding attaches', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+
+    const turn = event({
+      nonce: 'rev',
+      replies: [
+        { id: 1, status: 'clarify', target: 'finding', text: 'Which env?' },
+      ],
+    })
+    await emit(turn)
+    await emit(turn) // replay of the same turn — no duplicate
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.outcome).toBe(
+      'clarify'
+    )
+
+    // The thread lives on: a later different turn attaches.
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [
+          { id: 1, status: 'resolved', target: 'finding', text: 'Done.' },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
+    expect(getFindingThreadRecord('pty-1', 'rev')).toBeDefined()
+  })
+
+  test('a malformed marker with a review nonce degrades to one review-level note', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+    await emit(event({ nonce: 'rev', replies: null, rawText: 'garbled block' }))
+
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+    const notes = reviewLevelNotes('owner-r')
+    expect(notes).toHaveLength(1)
+    expect(notes[0].text).toBe('garbled block')
+    // The record is NOT consumed — the thread can still continue.
+    expect(getFindingThreadRecord('pty-1', 'rev')).toBeDefined()
+  })
+
+  test('target:comment replies never resolve against the finding space', async () => {
+    setFindingThreadRecord(findingRecord())
+    mount()
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'x' }],
+      })
+    )
+
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
   })
 })
