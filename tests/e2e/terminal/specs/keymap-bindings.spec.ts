@@ -122,7 +122,8 @@ const runExCommand = async (command: string): Promise<void> => {
   if (command === ':vsplit') {
     await waitForActiveCommand('command-vim-vsplit')
   }
-  await fireKey({ key: 'Enter' })
+  await fireCommandPaletteEnter()
+  await waitForCommandPaletteClosed()
 }
 
 const isCommandPaletteInputVisible = async (): Promise<boolean> =>
@@ -207,6 +208,24 @@ const waitForActiveCommand = async (commandId: string): Promise<void> => {
       timeoutMsg: `command palette did not select ${commandId}`,
     }
   )
+}
+
+const fireCommandPaletteEnter = async (): Promise<void> => {
+  await browser.execute((selector: string) => {
+    const input = document.querySelector<HTMLInputElement>(selector)
+    if (input === null) {
+      throw new Error('command palette input not found')
+    }
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+  }, commandPaletteInputSelector)
 }
 
 const openCommandPalette = async (): Promise<void> => {
@@ -455,6 +474,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   })
 
   it('Cmd+\\ cycles the pane layout', async () => {
+    await setPreset('vimeflow')
     await focusTerminalZone()
 
     const before = await currentLayout()
