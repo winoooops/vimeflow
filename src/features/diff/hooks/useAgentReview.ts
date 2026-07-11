@@ -12,6 +12,8 @@ import {
   addReviewLevelNote,
   clearPendingReviewRequest,
   getPendingReviewRequest,
+  setFindingThreadRecord,
+  type FindingThreadTarget,
   type HunkRange,
   type ReviewedFile,
 } from '../services/pendingReviewRequests'
@@ -158,17 +160,25 @@ export const useAgentReview = ({
       const findingsToPlace = event.findings.slice(0, REVIEWER_FINDING_SOFT_CAP)
       const omittedCount = event.findings.length - findingsToPlace.length
 
-      for (const finding of findingsToPlace) {
+      // Each placed finding becomes a thread root the main agent can post into
+      // (VIM-304 PR-3): its 1-based block ordinal maps to where it landed.
+      // Cap-omitted findings have no entry — they were never placed.
+      const byOrdinal = new Map<number, FindingThreadTarget>()
+
+      for (const [index, finding] of findingsToPlace.entries()) {
+        const ordinal = index + 1
         const file = findFile(diffSnapshot, finding.path)
 
         // path not in the reviewed diff → no (path, staged) row to anchor under.
         if (file === undefined) {
+          const commentId = nextCommentId()
           addReviewLevelNote(ownerKey, {
-            commentId: nextCommentId(),
+            commentId,
             reviewer,
             text: finding.text,
             nonce,
           })
+          byOrdinal.set(ordinal, { kind: 'reviewLevel', commentId })
           continue
         }
 
@@ -183,13 +193,24 @@ export const useAgentReview = ({
             : finding.line !== null && lineInRanges(finding.line, ranges)
         const downgradeToFile = finding.scope !== 'file' && !targetInHunk
 
-        addAnnotationForOwner(
-          ownerKey,
-          cwd,
-          finding.path,
-          staged,
-          reviewerAnnotation(finding, reviewer, downgradeToFile)
+        const annotation = reviewerAnnotation(
+          finding,
+          reviewer,
+          downgradeToFile
         )
+        addAnnotationForOwner(ownerKey, cwd, finding.path, staged, annotation)
+        byOrdinal.set(ordinal, {
+          kind: 'anchored',
+          commentId: annotation.metadata.id,
+          handle: {
+            cwd,
+            filePath: finding.path,
+            staged,
+            lineNumber: annotation.lineNumber,
+            side: annotation.side,
+            target: annotation.metadata.target,
+          },
+        })
       }
 
       if (omittedCount > 0) {
@@ -201,6 +222,18 @@ export const useAgentReview = ({
         })
       }
 
+      // Transition (not merely clear): the request becomes the finding-thread
+      // record so `target:'finding'` replies can resolve; a replayed
+      // `agent-review` still finds no pending request and is a no-op.
+      if (byOrdinal.size > 0) {
+        setFindingThreadRecord({
+          ptyId: event.sessionId,
+          nonce,
+          ownerKey,
+          byOrdinal,
+          seenReplies: new Set(),
+        })
+      }
       clearPendingReviewRequest(event.nonce)
     }
 

@@ -6,6 +6,7 @@
  * persist via the feedback store (VIM-282); this is just the routing + snapshot.
  */
 import type { FileDiff } from '../types'
+import type { PendingReviewHandle } from './pendingReviews'
 
 /** A diff-side line range (inclusive) from the reviewed hunks. */
 export interface HunkRange {
@@ -145,12 +146,73 @@ export const clearReviewLevelNotes = (ownerKey: string): void => {
   emitNotes()
 }
 
+/**
+ * Where one placed finding landed (VIM-304 PR-3): an anchored hunk annotation
+ * (with the placement handle a later agent reply re-uses so the turn renders
+ * co-located with the finding) or a review-level note. Either way the stable
+ * `commentId` names the finding's thread root.
+ */
+export type FindingThreadTarget =
+  | { kind: 'anchored'; commentId: string; handle: PendingReviewHandle }
+  | { kind: 'reviewLevel'; commentId: string }
+
+/**
+ * A processed review request, transitioned (not cleared) so its findings stay
+ * addressable as thread roots: `target:'finding'` replies resolve
+ * `(sessionId, nonce, ordinal)` against this — the same session + nonce gate
+ * as the reply path. Ordinals are the finding's 1-based index in the review
+ * block, which the emitting agent knows. The record lives for the thread's
+ * life; a replayed `agent-review` finds no pending request and is a no-op.
+ */
+export interface FindingThreadRecord {
+  ptyId: string
+  nonce: string
+  /** The feedback owner (sessionId:paneId) the review routed to. */
+  ownerKey: string
+  /** 1-based block ordinal → where that finding landed. */
+  byOrdinal: Map<number, FindingThreadTarget>
+  /**
+   * Replay guard for a living thread: the record is never consumed (threads
+   * are multi-turn), so an exact duplicate turn (ordinal + outcome + text)
+   * attaches once and re-emissions are no-ops.
+   */
+  seenReplies: Set<string>
+}
+
+const threadKey = (ptyId: string, nonce: string): string =>
+  `${ptyId}\u0000${nonce}`
+
+const findingThreads = new Map<string, FindingThreadRecord>()
+
+export const setFindingThreadRecord = (record: FindingThreadRecord): void => {
+  findingThreads.set(threadKey(record.ptyId, record.nonce), record)
+}
+
+export const getFindingThreadRecord = (
+  ptyId: string,
+  nonce: string
+): FindingThreadRecord | undefined =>
+  findingThreads.get(threadKey(ptyId, nonce))
+
+export const clearFindingThreadRecord = (
+  ptyId: string,
+  nonce: string
+): void => {
+  findingThreads.delete(threadKey(ptyId, nonce))
+}
+
 export const prunePendingReviewRequestOwners = (
   liveOwnerKeys: ReadonlySet<string>
 ): void => {
   for (const [nonce, request] of store) {
     if (!liveOwnerKeys.has(request.ownerKey)) {
       store.delete(nonce)
+    }
+  }
+
+  for (const [key, record] of findingThreads) {
+    if (!liveOwnerKeys.has(record.ownerKey)) {
+      findingThreads.delete(key)
     }
   }
 

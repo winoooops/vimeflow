@@ -2,12 +2,16 @@ import { afterEach, describe, expect, test } from 'vitest'
 import {
   addReviewLevelNote,
   buildDiffSnapshot,
+  clearFindingThreadRecord,
   clearPendingReviewRequest,
   clearReviewLevelNotes,
+  getFindingThreadRecord,
   getPendingReviewRequest,
   prunePendingReviewRequestOwners,
   reviewLevelNotes,
+  setFindingThreadRecord,
   setPendingReviewRequest,
+  type FindingThreadRecord,
   type PendingReviewRequest,
 } from './pendingReviewRequests'
 import type { FileDiff } from '../types'
@@ -30,6 +34,35 @@ afterEach(() => {
   clearReviewLevelNotes('owner')
   clearReviewLevelNotes('sess:pane')
   clearReviewLevelNotes('stale-owner')
+  clearFindingThreadRecord('pty-1', 'abc')
+  clearFindingThreadRecord('pty-1', 'stale')
+})
+
+const threadRecord = (
+  overrides: Partial<FindingThreadRecord> = {}
+): FindingThreadRecord => ({
+  ptyId: 'pty-1',
+  nonce: 'abc',
+  ownerKey: 'sess:pane',
+  byOrdinal: new Map([
+    [
+      1,
+      {
+        kind: 'anchored',
+        commentId: 'rev-1',
+        handle: {
+          cwd: '/repo',
+          filePath: 'a.ts',
+          staged: false,
+          lineNumber: 42,
+          side: 'additions',
+          target: undefined,
+        },
+      },
+    ],
+  ]),
+  seenReplies: new Set(),
+  ...overrides,
 })
 
 describe('pendingReviewRequests', () => {
@@ -66,6 +99,38 @@ describe('pendingReviewRequests', () => {
 
     expect(getPendingReviewRequest('abc')?.ownerKey).toBe('sess:pane')
     expect(getPendingReviewRequest('stale')).toBeUndefined()
+  })
+})
+
+describe('findingThreadRecords', () => {
+  test('set then get keyed by (ptyId, nonce)', () => {
+    setFindingThreadRecord(threadRecord())
+
+    expect(getFindingThreadRecord('pty-1', 'abc')?.ownerKey).toBe('sess:pane')
+    expect(getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(1)?.kind).toBe(
+      'anchored'
+    )
+    // The pty is part of the key — the same nonce on another pty is no match.
+    expect(getFindingThreadRecord('pty-2', 'abc')).toBeUndefined()
+  })
+
+  test('clear removes the record', () => {
+    setFindingThreadRecord(threadRecord())
+    clearFindingThreadRecord('pty-1', 'abc')
+
+    expect(getFindingThreadRecord('pty-1', 'abc')).toBeUndefined()
+  })
+
+  test('prunePendingReviewRequestOwners removes records for closed owners', () => {
+    setFindingThreadRecord(threadRecord())
+    setFindingThreadRecord(
+      threadRecord({ nonce: 'stale', ownerKey: 'stale-owner' })
+    )
+
+    prunePendingReviewRequestOwners(new Set(['sess:pane']))
+
+    expect(getFindingThreadRecord('pty-1', 'abc')?.nonce).toBe('abc')
+    expect(getFindingThreadRecord('pty-1', 'stale')).toBeUndefined()
   })
 })
 
