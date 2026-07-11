@@ -293,9 +293,14 @@ const waitForE2eBridge = async (): Promise<void> => {
 
 const activePtySessionIds = async (): Promise<string[]> =>
   browser.execute(async () => {
-    const backendIds =
-      (await window.__VIMEFLOW_E2E__?.listActivePtySessions()) ?? []
-    const rendererIds = window.__VIMEFLOW_E2E__?.getActiveSessionIds() ?? []
+    const bridge = window.__VIMEFLOW_E2E__
+    const rendererIds = bridge?.getActiveSessionIds() ?? []
+    let backendIds: string[] = []
+    try {
+      backendIds = (await bridge?.listActivePtySessions()) ?? []
+    } catch {
+      backendIds = []
+    }
 
     return Array.from(new Set([...backendIds, ...rendererIds]))
   })
