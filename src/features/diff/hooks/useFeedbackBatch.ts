@@ -314,7 +314,8 @@ export interface UseFeedbackBatchReturn {
    */
   markDispatched: (
     dispatchedAt: number,
-    dispatchedAnnotationIds: ReadonlySet<string>
+    dispatchedAnnotationIds: ReadonlySet<string>,
+    options?: { clearDraftForWholeBatch?: boolean }
   ) => void
   /**
    * Drop the pending comments and the open draft, leaving already dispatched
@@ -615,13 +616,15 @@ export const useFeedbackBatchStore = (
   }, [ownerKey])
 
   // Send path (VIM-282): stamp sent pending comments as dispatched and keep
-  // them in the hunk as thread anchors, then close the draft. Unchanged file lists
-  // keep their identity so Pierre does not re-tokenize files with no pending
-  // comment.
+  // them in the hunk as thread anchors. Whole-batch sends close the active draft;
+  // single-comment sends only close an editor draft for the dispatched comment.
+  // Unchanged file lists keep their identity so Pierre does not re-tokenize files
+  // with no pending comment.
   const markDispatched = useCallback(
     (
       dispatchedAt: number,
-      dispatchedAnnotationIds: ReadonlySet<string>
+      dispatchedAnnotationIds: ReadonlySet<string>,
+      options?: { clearDraftForWholeBatch?: boolean }
     ): void => {
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(ownerKey)
@@ -669,9 +672,25 @@ export const useFeedbackBatchStore = (
         return next
       })
 
-      clearOwnerDraft()
+      setDraftsByOwner((prev) => {
+        const ownerDraft = prev.get(ownerKey)
+
+        const shouldClearDraft =
+          options?.clearDraftForWholeBatch === true ||
+          (ownerDraft?.editId !== undefined &&
+            dispatchedAnnotationIds.has(ownerDraft.editId))
+
+        if (!shouldClearDraft) {
+          return prev
+        }
+
+        const next = new Map(prev)
+        next.delete(ownerKey)
+
+        return next
+      })
     },
-    [clearOwnerDraft, ownerKey]
+    [ownerKey]
   )
 
   // Discard path (VIM-282): drop pending comments and the draft, but leave

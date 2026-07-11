@@ -292,7 +292,9 @@ const waitForE2eBridge = async (): Promise<void> => {
 }
 
 const activePtySessionIds = async (): Promise<string[]> =>
-  browser.execute(() => window.__VIMEFLOW_E2E__?.getActiveSessionIds() ?? [])
+  browser.execute(
+    async () => (await window.__VIMEFLOW_E2E__?.listActivePtySessions()) ?? []
+  )
 
 const isSplitViewDisplayed = async (): Promise<boolean> =>
   browser.execute(() => {

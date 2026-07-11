@@ -865,7 +865,8 @@ export const Panel = ({
               entries.flatMap((entry) =>
                 entry.annotations.map((annotation) => annotation.metadata.id)
               )
-            )
+            ),
+            { clearDraftForWholeBatch: onlyCommentId === undefined }
           )
           setFinishOpen(false)
           setSendNowCommentId(null)

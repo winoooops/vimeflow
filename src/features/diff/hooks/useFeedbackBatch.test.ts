@@ -797,12 +797,82 @@ describe('useFeedbackBatchStore', () => {
     })
 
     act(() => {
-      result.current.feedbackBatch.markDispatched(999, new Set(['owner-a']))
+      result.current.feedbackBatch.markDispatched(999, new Set(['owner-a']), {
+        clearDraftForWholeBatch: true,
+      })
     })
 
     expect(result.current.feedbackDraft.draft).toBeNull()
     // The dispatched comment stays in the hunk as a thread anchor.
     expect(result.current.feedbackBatch.totalAnnotations()).toBe(1)
+    expect(result.current.feedbackBatch.pendingAnnotations()).toBe(0)
+  })
+
+  test('single-comment dispatch preserves an unrelated owner draft', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        editId: 'owner-b',
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft b',
+      })
+
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+    })
+
+    act(() => {
+      result.current.feedbackBatch.markDispatched(999, new Set(['owner-a']), {
+        clearDraftForWholeBatch: false,
+      })
+    })
+
+    expect(result.current.feedbackDraft.draft?.text).toBe('draft b')
+    expect(result.current.feedbackBatch.pendingAnnotations()).toBe(0)
+  })
+
+  test('single-comment dispatch clears the draft for the sent edit', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setDraft({
+        cwd: '/repo-a',
+        filePath: 'src/a.ts',
+        staged: false,
+        editId: 'owner-a',
+        side: 'additions',
+        lineNumber: 7,
+        text: 'draft a',
+      })
+
+      result.current.feedbackBatch.addAnnotation(
+        '/repo-a',
+        'src/a.ts',
+        false,
+        makeAnnotation('owner-a')
+      )
+    })
+
+    act(() => {
+      result.current.feedbackBatch.markDispatched(999, new Set(['owner-a']), {
+        clearDraftForWholeBatch: false,
+      })
+    })
+
+    expect(result.current.feedbackDraft.draft).toBeNull()
     expect(result.current.feedbackBatch.pendingAnnotations()).toBe(0)
   })
 
