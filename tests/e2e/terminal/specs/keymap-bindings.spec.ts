@@ -370,16 +370,13 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
     // Ensure a terminal session (and therefore a split-view) exists. The
     // app may launch with zero sessions depending on restore state.
-    if (
-      !(await isSplitViewDisplayed()) &&
-      (await activePtySessionIds()).length === 0
-    ) {
+    if (!(await isSplitViewDisplayed())) {
       await createNewSessionWithDefaults()
     }
 
     await browser.waitUntil(
       async () =>
-        (await activePtySessionIds()).length > 0 ||
+        (await activePtySessionIds()).length > 0 &&
         (await isSplitViewDisplayed()),
       {
         timeout: 20_000,

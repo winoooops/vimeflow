@@ -9,8 +9,16 @@ import {
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
+import {
+  ACTIVITY_CARD_SURFACE,
+  NativeOverlayActivityCard,
+} from '@/components/NativeOverlayActivityCard'
 import { Popover } from '@/components/Popover'
-import type { NativeOverlayActivityPopoverRequest } from '@/components/nativeOverlayActivity'
+import {
+  type NativeOverlayActivityPopoverRequest,
+  isNativeActivityPopoverRequest,
+} from '@/components/nativeOverlayActivity'
+import { useNativeActivityPopoverHost } from '@/components/useNativeActivityPopoverHost'
 import type {
   NativeOverlayDialogRequest,
   NativeOverlayMenuItem,
@@ -23,14 +31,6 @@ import type {
   NativeOverlayTooltipRequest,
 } from '@/components/base/floating/nativeOverlay'
 import type { Placement } from '@/components/base/floating/glassSurface'
-import {
-  ACTIVITY_CARD_SURFACE,
-  ActivityTooltipContent,
-} from '@/features/agent-status/components/ActivityEvent'
-import {
-  isNativeActivityPopoverRequest,
-  useNativeActivityPopoverHost,
-} from '@/features/agent-status/hooks/useNativeActivityPopover'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 interface NativeOverlayHostBridge {
@@ -818,6 +818,8 @@ const NativeOverlayNewSession = ({
           <IconButton
             icon="close"
             label="Close"
+            variant="ghost"
+            size="md"
             onClick={(): void => dispatchAction(payload.actions.cancel, true)}
           />
         </div>
@@ -1059,7 +1061,7 @@ const NativeOverlayActivityPopover = ({
         aria-label={request.payload.ariaLabel}
         className={ACTIVITY_CARD_SURFACE}
       >
-        <ActivityTooltipContent event={request.payload.event} now={now} />
+        <NativeOverlayActivityCard event={request.payload.event} now={now} />
       </Popover>
     </>
   )

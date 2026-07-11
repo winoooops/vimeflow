@@ -7,6 +7,11 @@ type NativeOverlayActivityToolKind =
   | 'glob'
   | 'meta'
 
+export type NativeOverlayActivityEventKind =
+  | NativeOverlayActivityToolKind
+  | 'think'
+  | 'user'
+
 interface NativeOverlayActivityEventBase {
   id: string
   timestamp: string
@@ -25,6 +30,11 @@ export type NativeOverlayActivityEvent =
       resultPreview?: string | null
     })
   | (NativeOverlayActivityEventBase & { kind: 'think' | 'user' })
+
+export type NativeOverlayActivityToolEvent = Extract<
+  NativeOverlayActivityEvent,
+  { tool: string }
+>
 
 export interface NativeOverlayActivityPopoverPayload {
   kind: 'popover'
@@ -112,3 +122,10 @@ export const isNativeOverlayActivityPopoverPayload = (
   isActivityEvent(value.event) &&
   (value.activateActionId === undefined ||
     typeof value.activateActionId === 'string')
+
+export const isNativeActivityPopoverRequest = (
+  value: unknown
+): value is NativeOverlayActivityPopoverRequest =>
+  isRecord(value) &&
+  value.kind === 'popover' &&
+  isNativeOverlayActivityPopoverPayload(value.payload)

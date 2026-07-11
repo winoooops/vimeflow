@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-28
-ref_count: 7
+last_updated: 2026-07-11
+ref_count: 8
 ---
 
 # Module Boundaries
@@ -203,4 +203,13 @@ Don't widen the coupling by adding a second importer.
 - **File:** `electron/ghostty-native-helper.ts`, `electron/ghostty-native-parent.ts`
 - **Finding:** The helper and parent controllers each declared byte-for-byte copies of native pane/update/data request types and primitive guards. Future contract tightening in one controller could silently diverge from the other.
 - **Fix:** Extracted the shared request interfaces and primitive guards into `electron/ghostty-native-shared.ts`, imported them from both controllers, and added a sibling guard test for the new module.
+- **Commit:** same commit as this entry
+
+### 19. Shared native overlay host imported feature-domain activity UI directly
+
+- **Source:** github-codex-connector | PR #682 round 1 | 2026-07-11
+- **Severity:** P1 / HIGH
+- **File:** `src/components/NativeOverlayHost.tsx`
+- **Finding:** `NativeOverlayHost` lived under shared `src/components/**` but imported `ActivityTooltipContent`, `ACTIVITY_CARD_SURFACE`, and the activity popover host hook from `features/agent-status`. Because `src/main.tsx` mounts the shared host for every native overlay renderer, every overlay window paid for agent-status feature dependencies and the primitive layer became coupled to one feature surface.
+- **Fix:** Moved the serializable activity popover guard into the shared activity payload contract, moved the DOM hover/dismiss host hook into a shared React hook, extracted the activity popover card into `src/components/NativeOverlayActivityCard.tsx`, and rewired the agent-status row to reuse those shared components. `NativeOverlayHost` now imports only shared component modules for activity popovers.
 - **Commit:** same commit as this entry
