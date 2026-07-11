@@ -111,7 +111,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  clearPendingReview('pty-1')
+  clearPendingReview('pty-1', 'abc')
+  clearPendingReview('pty-1', 'xyz')
   clearFindingThreadRecord('pty-1', 'rev')
   clearReviewLevelNotes('owner-r')
   delete window.vimeflow
@@ -163,10 +164,10 @@ describe('useAgentReply', () => {
     expect(annotation.metadata.outcome).toBe('reply')
   })
 
-  test('ignores an event whose nonce does not match (superseded dispatch)', async () => {
+  test('ignores an event whose nonce matches no in-flight dispatch', async () => {
     setPendingReview(pending(new Map([[1, handle()]])))
     mount()
-    // A late reply for the old dispatch — its #1 collides but the nonce differs.
+    // Its #1 collides with a pending handle, but the nonce names no record.
     await emit(
       event({
         nonce: 'stale',
@@ -175,6 +176,37 @@ describe('useAgentReply', () => {
     )
 
     expect(addAnnotationForOwner).not.toHaveBeenCalled()
+  })
+
+  test('two concurrent dispatches each correlate their own reply (VIM-297)', async () => {
+    setPendingReview(pending(new Map([[1, handle({ lineNumber: 5 })]])))
+    setPendingReview({
+      ...pending(new Map([[1, handle({ lineNumber: 9 })]])),
+      nonce: 'xyz',
+    })
+    mount()
+
+    // The SECOND dispatch's reply arrives first — it must hit its own record,
+    // not clobber or shadow the first dispatch's correlation.
+    await emit(
+      event({
+        nonce: 'xyz',
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'B' }],
+      })
+    )
+
+    await emit(
+      event({
+        nonce: 'abc',
+        replies: [{ id: 1, status: 'resolved', target: 'comment', text: 'A' }],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
+    expect(addAnnotationForOwner.mock.calls[0][4].lineNumber).toBe(9)
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe('B')
+    expect(addAnnotationForOwner.mock.calls[1][4].lineNumber).toBe(5)
+    expect(addAnnotationForOwner.mock.calls[1][4].metadata.text).toBe('A')
   })
 
   test('ignores an event with no pending record for the session', async () => {

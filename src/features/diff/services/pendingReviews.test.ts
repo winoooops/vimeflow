@@ -2,13 +2,14 @@ import { afterEach, describe, expect, test } from 'vitest'
 import {
   clearPendingReview,
   getPendingReview,
+  prunePendingReviewOwners,
   setPendingReview,
   type PendingReview,
 } from './pendingReviews'
 
-const record = (nonce = 'abc'): PendingReview => ({
+const record = (nonce = 'abc', ownerKey = 'sess:pane'): PendingReview => ({
   ptyId: 'pty-1',
-  ownerKey: 'sess:pane',
+  ownerKey,
   nonce,
   dispatchedAt: 1,
   byHandle: new Map([
@@ -26,27 +27,54 @@ const record = (nonce = 'abc'): PendingReview => ({
   ]),
 })
 
-afterEach(() => clearPendingReview('pty-1'))
+afterEach(() => {
+  clearPendingReview('pty-1', 'abc')
+  clearPendingReview('pty-1', 'xyz')
+  clearPendingReview('pty-1', 'stale')
+})
 
 describe('pendingReviews', () => {
-  test('set then get by ptyId', () => {
+  test('set then get keyed by (ptyId, nonce)', () => {
     setPendingReview(record())
-    expect(getPendingReview('pty-1')?.nonce).toBe('abc')
+    expect(getPendingReview('pty-1', 'abc')?.nonce).toBe('abc')
+    // The pty is part of the key — the same nonce on another pty is no match.
+    expect(getPendingReview('pty-2', 'abc')).toBeUndefined()
   })
 
-  test('set replaces the prior record for the same pty', () => {
-    setPendingReview(record())
+  test('two dispatches on the same pty stay in flight concurrently (VIM-297)', () => {
+    setPendingReview(record('abc'))
     setPendingReview(record('xyz'))
-    expect(getPendingReview('pty-1')?.nonce).toBe('xyz')
+
+    expect(getPendingReview('pty-1', 'abc')?.nonce).toBe('abc')
+    expect(getPendingReview('pty-1', 'xyz')?.nonce).toBe('xyz')
   })
 
-  test('clear removes the record', () => {
-    setPendingReview(record())
-    clearPendingReview('pty-1')
-    expect(getPendingReview('pty-1')).toBeUndefined()
+  test('set replaces the prior record for the same (ptyId, nonce)', () => {
+    setPendingReview(record('abc'))
+    setPendingReview({ ...record('abc'), dispatchedAt: 2 })
+    expect(getPendingReview('pty-1', 'abc')?.dispatchedAt).toBe(2)
   })
 
-  test('get for an unknown pty is undefined', () => {
-    expect(getPendingReview('nope')).toBeUndefined()
+  test('clear removes exactly the addressed record', () => {
+    setPendingReview(record('abc'))
+    setPendingReview(record('xyz'))
+    clearPendingReview('pty-1', 'abc')
+
+    expect(getPendingReview('pty-1', 'abc')).toBeUndefined()
+    expect(getPendingReview('pty-1', 'xyz')?.nonce).toBe('xyz')
+  })
+
+  test('get for an unknown (ptyId, nonce) is undefined', () => {
+    expect(getPendingReview('nope', 'abc')).toBeUndefined()
+  })
+
+  test('prunePendingReviewOwners removes records for closed owners', () => {
+    setPendingReview(record('abc'))
+    setPendingReview(record('stale', 'stale-owner'))
+
+    prunePendingReviewOwners(new Set(['sess:pane']))
+
+    expect(getPendingReview('pty-1', 'abc')?.nonce).toBe('abc')
+    expect(getPendingReview('pty-1', 'stale')).toBeUndefined()
   })
 })

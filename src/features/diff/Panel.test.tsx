@@ -5989,12 +5989,16 @@ describe('Panel', () => {
       // VIM-249: a pending review is recorded for this pty, keyed by [#n], so an
       // agent reply can be correlated back. The path is the repo-relative batch
       // key, not the absolute prompt path.
-      const pending = getPendingReview('pty-1')
+      // The record is keyed by the minted nonce (VIM-297) — read it from the
+      // dispatched payload, proving the stored record matches what the agent
+      // will echo back.
+      const nonce = /"nonce":"(\w+)"/.exec(payload as string)?.[1] ?? ''
+      const pending = getPendingReview('pty-1', nonce)
       expect(pending?.ownerKey).toBe('sess:pane-1')
       expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
       expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
 
-      clearPendingReview('pty-1') // module singleton — don't leak into other tests
+      clearPendingReview('pty-1', nonce) // module singleton — don't leak into other tests
     })
 
     test('preserves the comment draft and shows a notification when the feedback cap is reached', async (): Promise<void> => {

@@ -820,8 +820,9 @@ export const Panel = ({
               feedbackDispatch.writePty
             )
             // Record the pending review so an agent-reply for this pty can be
-            // correlated back to these comments (VIM-249). Keyed by pty; a new
-            // dispatch replaces it. Only when there's an owner to attach onto.
+            // correlated back to these comments (VIM-249). Keyed by (pty,
+            // nonce) so concurrent dispatches coexist (VIM-297). Only when
+            // there's an owner to attach onto.
             if (feedbackOwnerKey !== undefined && handles.size > 0) {
               setPendingReview({
                 ptyId: pane.ptyId,

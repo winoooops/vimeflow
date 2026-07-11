@@ -157,9 +157,10 @@ export const useAgentReply = ({
         return
       }
 
-      const pending = getPendingReview(event.sessionId)
-      // Session + nonce gate: only a reply to the current dispatch proceeds.
-      if (event.nonce !== pending?.nonce) {
+      // Session + nonce gate — both are part of the store key (VIM-297), so
+      // only a reply echoing a live dispatch's nonce on its own pty resolves.
+      const pending = getPendingReview(event.sessionId, event.nonce)
+      if (pending === undefined) {
         return
       }
 
@@ -186,7 +187,7 @@ export const useAgentReply = ({
         }
 
         if (pending.byHandle.size === 0) {
-          clearPendingReview(event.sessionId)
+          clearPendingReview(event.sessionId, event.nonce)
         } else {
           setPendingReview(pending)
         }
@@ -207,7 +208,7 @@ export const useAgentReply = ({
           return
         }
       }
-      clearPendingReview(event.sessionId)
+      clearPendingReview(event.sessionId, event.nonce)
     }
 
     const subscribe = async (): Promise<void> => {
