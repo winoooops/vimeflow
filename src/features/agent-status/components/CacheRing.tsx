@@ -23,7 +23,11 @@ export const CacheRing = ({ pct, color }: CacheRingProps): ReactElement => {
   const offset = CIRCUMFERENCE - (clamped / 100) * CIRCUMFERENCE
 
   return (
-    <Tooltip content={`Current cache rate: ${rounded}%`} placement="left">
+    <Tooltip
+      content={`Current cache rate: ${rounded}%`}
+      placement="left"
+      nativeOverlay
+    >
       <div
         role="meter"
         aria-label="CACHE"

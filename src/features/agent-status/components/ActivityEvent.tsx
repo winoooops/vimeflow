@@ -14,6 +14,7 @@ import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import { formatShortcut } from '../../../lib/formatShortcut'
 import { formatRelativeTime, formatDuration } from '../utils/relativeTime'
+import { useNativeActivityPopoverSource } from '../hooks/useNativeActivityPopover'
 import type {
   ActivityEvent as ActivityEventType,
   ActivityEventKind,
@@ -92,8 +93,7 @@ const getBodyClass = (kind: ActivityEventKind): string => {
 
 const COPY_FEEDBACK_MS = 1500
 
-// Exported so the live-action card can wrap its own Tooltip in the identical
-// floating surface as the feed rows — keeps the two detail popovers in lockstep.
+// Exported so the native overlay host and local fallback share one card shell.
 export const ACTIVITY_CARD_SURFACE =
   'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-outline-variant/45 bg-[color-mix(in_srgb,var(--color-surface-container)_96%,transparent)] font-sans shadow-[0_16px_48px_color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--color-primary-container)_4%,transparent)] backdrop-blur-[20px] backdrop-saturate-[150%]'
 
@@ -401,6 +401,44 @@ export const ActivityTooltipContent = ({
   )
 }
 
+interface ActivityDetailsTooltipProps {
+  event: ActivityEventType
+  now: Date
+  ariaLabel: string
+  onActivate?: () => void
+  children: ReactElement
+}
+
+export const ActivityDetailsTooltip = ({
+  event,
+  now,
+  ariaLabel,
+  onActivate = undefined,
+  children,
+}: ActivityDetailsTooltipProps): ReactElement => {
+  const { payload, actions } = useNativeActivityPopoverSource({
+    event,
+    ariaLabel,
+    onActivate,
+  })
+
+  return (
+    <Tooltip
+      content={<ActivityTooltipContent event={event} now={now} />}
+      placement="left"
+      bare
+      interactive
+      ariaLabel={ariaLabel}
+      className={ACTIVITY_CARD_SURFACE}
+      nativeOverlay
+      nativeOverlayPayload={payload}
+      nativeOverlayActions={actions}
+    >
+      {children}
+    </Tooltip>
+  )
+}
+
 interface StatusChipsProps {
   event: ActivityEventType
 }
@@ -472,13 +510,10 @@ export const ActivityEvent = ({
   const timestampText = computeAgo(event, now)
 
   return (
-    <Tooltip
-      content={<ActivityTooltipContent event={event} now={now} />}
-      placement="left"
-      bare
-      interactive
+    <ActivityDetailsTooltip
+      event={event}
+      now={now}
       ariaLabel={`${label} activity details`}
-      className={ACTIVITY_CARD_SURFACE}
     >
       <article
         ref={rowRef}
@@ -517,6 +552,6 @@ export const ActivityEvent = ({
           <StatusChips event={event} />
         </div>
       </article>
-    </Tooltip>
+    </ActivityDetailsTooltip>
   )
 }

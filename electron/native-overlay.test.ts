@@ -261,6 +261,27 @@ const tooltipRequest = {
   },
 } as const
 
+const activityPopoverRequest = {
+  surfaceId: 'activity-popover-1',
+  kind: 'popover',
+  anchorRect: { x: 650, y: 120, width: 220, height: 40 },
+  placement: 'left',
+  payload: {
+    kind: 'popover',
+    popover: 'activity',
+    ariaLabel: 'BASH activity details',
+    event: {
+      id: 'activity-1',
+      kind: 'bash',
+      timestamp: '2026-07-10T12:00:00.000Z',
+      status: 'done',
+      body: 'npm test',
+      tool: 'Bash',
+      durationMs: 1200,
+    },
+  },
+} as const
+
 const dialogRequest = {
   surfaceId: 'dialog-1',
   kind: 'dialog',
@@ -499,6 +520,24 @@ describe('NativeOverlayController', () => {
     )
     expect(tooltipWindow.hide).toHaveBeenCalledOnce()
     expect(menuWindow.hide).not.toHaveBeenCalled()
+  })
+
+  test('opens activity popovers on the existing interactive layer', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      activityPopoverRequest
+    )
+    const menuWindow = finishOverlayLoad()
+
+    await Promise.resolve()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      activityPopoverRequest
+    )
+
+    await acknowledgeOverlayReady(menuWindow, activityPopoverRequest.surfaceId)
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+    expect(menuWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false)
   })
 
   test('closes active tooltip before opening an interactive menu', async () => {
@@ -750,6 +789,54 @@ describe('NativeOverlayController', () => {
         shiftKey: true,
         repeat: true,
       }
+    )
+  })
+
+  test('relays Escape for an activity popover without stealing trigger keys', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      activityPopoverRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    await acknowledgeOverlayReady(menuWindow, activityPopoverRequest.surfaceId)
+    await openPromise
+
+    menuWindow.webContents.send.mockClear()
+    const enterEvent = { preventDefault: vi.fn() }
+
+    const input = {
+      type: 'keyDown',
+      key: 'Enter',
+      code: 'Enter',
+      isAutoRepeat: false,
+      isComposing: false,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      location: 0,
+      modifiers: [],
+    } as const
+
+    electronMock.owner.webContents.emit('before-input-event', enterEvent, input)
+
+    expect(enterEvent.preventDefault).not.toHaveBeenCalled()
+    expect(menuWindow.webContents.send).not.toHaveBeenCalled()
+
+    const escapeEvent = { preventDefault: vi.fn() }
+    electronMock.owner.webContents.emit('before-input-event', escapeEvent, {
+      ...input,
+      key: 'Escape',
+      code: 'Escape',
+    })
+
+    expect(escapeEvent.preventDefault).toHaveBeenCalledOnce()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_KEYDOWN,
+      expect.objectContaining({
+        surfaceId: activityPopoverRequest.surfaceId,
+        key: 'Escape',
+      })
     )
   })
 

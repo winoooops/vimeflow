@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -34,6 +35,10 @@ import {
   openNativeOverlay,
   selectFloatingTransport,
   warnNativeOverlayFallback,
+  type NativeOverlayActionEvent,
+  type NativeOverlayActionHandler,
+  type NativeOverlayActionResult,
+  type NativeOverlayActivityPopoverPayload,
 } from '@/components/base/floating/nativeOverlay'
 import { formatShortcut, type ShortcutInput } from '../lib/formatShortcut'
 
@@ -45,6 +50,8 @@ interface TooltipCommonProps {
   disabled?: boolean
   className?: string
   nativeOverlay?: boolean
+  nativeOverlayPayload?: NativeOverlayActivityPopoverPayload
+  nativeOverlayActions?: ReadonlyMap<string, NativeOverlayActionHandler>
 }
 
 /**
@@ -110,6 +117,11 @@ const SHORTCUT_CHIP_CLASSES =
   'shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] ' +
   'text-on-surface-variant'
 
+const EMPTY_NATIVE_OVERLAY_ACTIONS = new Map<
+  string,
+  NativeOverlayActionHandler
+>()
+
 export const Tooltip = ({
   content,
   shortcut = undefined,
@@ -120,6 +132,8 @@ export const Tooltip = ({
   maxWidth = 320,
   className = '',
   nativeOverlay = false,
+  nativeOverlayPayload = undefined,
+  nativeOverlayActions = EMPTY_NATIVE_OVERLAY_ACTIONS,
   interactive = false,
   ariaLabel = undefined,
   bare = false,
@@ -134,6 +148,7 @@ export const Tooltip = ({
   const [open, setOpen] = useState(false)
 
   const [nativeFailed, setNativeFailed] = useState(false)
+  const nativePopoverLifecycleRef = useRef(false)
 
   const transport = selectFloatingTransport(nativeOverlay)
   const nativeTooltipText = typeof content === 'string' ? content : null
@@ -143,17 +158,80 @@ export const Tooltip = ({
     [shortcut]
   )
 
+  const textNativeOverlayPayload = useMemo(
+    () =>
+      nativeTooltipText === null
+        ? null
+        : {
+            kind: NATIVE_OVERLAY_KINDS.tooltip,
+            text: nativeTooltipText,
+            ...(formattedShortcut === undefined
+              ? {}
+              : { shortcut: formattedShortcut }),
+            maxWidth,
+          },
+    [formattedShortcut, maxWidth, nativeTooltipText]
+  )
+
+  const resolvedNativeOverlayPayload =
+    nativeOverlayPayload ?? textNativeOverlayPayload
+
+  const nativeSessionActions = useMemo<
+    ReadonlyMap<string, NativeOverlayActionHandler>
+  >(() => {
+    if (resolvedNativeOverlayPayload?.kind !== NATIVE_OVERLAY_KINDS.popover) {
+      return nativeOverlayActions
+    }
+
+    return new Map(
+      Array.from(nativeOverlayActions, ([actionId, action]) => [
+        actionId,
+        typeof action === 'function'
+          ? (event?: NativeOverlayActionEvent): NativeOverlayActionResult => {
+              nativePopoverLifecycleRef.current = false
+              setOpen(false)
+
+              return action(event)
+            }
+          : {
+              retainSession: true as const,
+              run: (
+                event?: NativeOverlayActionEvent
+              ): NativeOverlayActionResult => {
+                nativePopoverLifecycleRef.current = false
+                setOpen(false)
+
+                return action.run(event)
+              },
+            },
+      ])
+    )
+  }, [nativeOverlayActions, resolvedNativeOverlayPayload])
+
   const nativeUnsupportedReason =
-    nativeTooltipText === null
-      ? 'tooltip native overlay only supports plain text'
-      : interactive
-        ? 'interactive tooltip native overlay is not in v0'
-        : bare
-          ? 'bare tooltip native overlay is not in v0'
-          : null
+    nativeOverlayPayload !== undefined
+      ? null
+      : nativeTooltipText === null
+        ? 'tooltip native overlay only supports plain text'
+        : interactive
+          ? 'interactive tooltip native overlay is not in v0'
+          : bare
+            ? 'bare tooltip native overlay is not in v0'
+            : null
 
   const canUseNativeOverlay =
-    open && transport === 'native-overlay' && nativeUnsupportedReason === null
+    open &&
+    transport === 'native-overlay' &&
+    nativeUnsupportedReason === null &&
+    resolvedNativeOverlayPayload !== null
+
+  const handleOpenChange = useCallback((nextOpen: boolean): void => {
+    if (!nextOpen && nativePopoverLifecycleRef.current) {
+      return
+    }
+
+    setOpen(nextOpen)
+  }, [])
 
   // Reset stale open state when the tooltip becomes ineligible mid-flight
   // (consumer toggles disabled, or content drops to null/undefined). Without
@@ -172,7 +250,7 @@ export const Tooltip = ({
     placement: resolvedPlacement,
   } = useFloating({
     open,
-    onOpenChange: setOpen,
+    onOpenChange: handleOpenChange,
     placement,
     whileElementsMounted: autoUpdate,
     middleware: [offset(6), flip(), shift({ padding: 8 })],
@@ -199,8 +277,8 @@ export const Tooltip = ({
     }
   }, [nativeUnsupportedReason, open, transport])
 
-  const sendNativeTooltipRequest = useCallback(async (): Promise<boolean> => {
-    if (nativeTooltipText === null) {
+  const sendNativeOverlayRequest = useCallback(async (): Promise<boolean> => {
+    if (resolvedNativeOverlayPayload === null) {
       return false
     }
 
@@ -217,7 +295,10 @@ export const Tooltip = ({
     return openNativeOverlay(
       {
         surfaceId: nativeSurfaceId,
-        kind: NATIVE_OVERLAY_KINDS.tooltip,
+        kind:
+          resolvedNativeOverlayPayload.kind === NATIVE_OVERLAY_KINDS.popover
+            ? NATIVE_OVERLAY_KINDS.popover
+            : NATIVE_OVERLAY_KINDS.tooltip,
         anchorRect: {
           x: rect.x,
           y: rect.y,
@@ -225,32 +306,45 @@ export const Tooltip = ({
           height: rect.height,
         },
         placement,
-        payload: {
-          kind: 'tooltip',
-          text: nativeTooltipText,
-          ...(formattedShortcut === undefined
-            ? {}
-            : { shortcut: formattedShortcut }),
-          maxWidth,
-        },
+        payload: resolvedNativeOverlayPayload,
         theme: nativeOverlayThemeSnapshot(),
       },
       {
-        actions: new Map(),
-        onClose: () => setOpen(false),
+        actions: nativeSessionActions,
+        onClose: () => {
+          nativePopoverLifecycleRef.current = false
+          setOpen(false)
+        },
       }
     )
   }, [
-    formattedShortcut,
-    maxWidth,
     nativeSurfaceId,
-    nativeTooltipText,
+    nativeSessionActions,
     placement,
     refs.reference,
+    resolvedNativeOverlayPayload,
   ])
 
   useEffect(() => {
-    if (!canUseNativeOverlay || nativeTooltipText === null) {
+    if (
+      !canUseNativeOverlay ||
+      nativeFailed ||
+      resolvedNativeOverlayPayload.kind !== NATIVE_OVERLAY_KINDS.popover
+    ) {
+      nativePopoverLifecycleRef.current = false
+
+      return
+    }
+
+    nativePopoverLifecycleRef.current = true
+
+    return (): void => {
+      nativePopoverLifecycleRef.current = false
+    }
+  }, [canUseNativeOverlay, nativeFailed, resolvedNativeOverlayPayload])
+
+  useEffect(() => {
+    if (!canUseNativeOverlay) {
       if (!open) {
         setNativeFailed(false)
       }
@@ -262,7 +356,7 @@ export const Tooltip = ({
     setNativeFailed(false)
 
     void (async (): Promise<void> => {
-      const accepted = await sendNativeTooltipRequest()
+      const accepted = await sendNativeOverlayRequest()
 
       if (state.canceled) {
         if (accepted) {
@@ -274,6 +368,7 @@ export const Tooltip = ({
 
       if (!accepted) {
         warnNativeOverlayFallback('tooltip native overlay was rejected')
+        nativePopoverLifecycleRef.current = false
         setNativeFailed(true)
 
         return
@@ -287,13 +382,13 @@ export const Tooltip = ({
   }, [
     canUseNativeOverlay,
     nativeSurfaceId,
-    nativeTooltipText,
     open,
-    sendNativeTooltipRequest,
+    resolvedNativeOverlayPayload,
+    sendNativeOverlayRequest,
   ])
 
   useEffect(() => {
-    if (!canUseNativeOverlay || nativeTooltipText === null || nativeFailed) {
+    if (!canUseNativeOverlay || nativeFailed) {
       return
     }
 
@@ -309,7 +404,7 @@ export const Tooltip = ({
         frameId = null
 
         void (async (): Promise<void> => {
-          const accepted = await sendNativeTooltipRequest()
+          const accepted = await sendNativeOverlayRequest()
           if (disposed) {
             if (accepted) {
               closeNativeOverlay(nativeSurfaceId)
@@ -352,9 +447,9 @@ export const Tooltip = ({
     canUseNativeOverlay,
     nativeFailed,
     nativeSurfaceId,
-    nativeTooltipText,
     refs.reference,
-    sendNativeTooltipRequest,
+    resolvedNativeOverlayPayload,
+    sendNativeOverlayRequest,
   ])
 
   const childRef = isValidElement(children)

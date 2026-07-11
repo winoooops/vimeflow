@@ -9,6 +9,8 @@ import {
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
+import { Popover } from '@/components/Popover'
+import type { NativeOverlayActivityPopoverRequest } from '@/components/nativeOverlayActivity'
 import type {
   NativeOverlayDialogRequest,
   NativeOverlayMenuItem,
@@ -21,6 +23,14 @@ import type {
   NativeOverlayTooltipRequest,
 } from '@/components/base/floating/nativeOverlay'
 import type { Placement } from '@/components/base/floating/glassSurface'
+import {
+  ACTIVITY_CARD_SURFACE,
+  ActivityTooltipContent,
+} from '@/features/agent-status/components/ActivityEvent'
+import {
+  isNativeActivityPopoverRequest,
+  useNativeActivityPopoverHost,
+} from '@/features/agent-status/hooks/useNativeActivityPopover'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 interface NativeOverlayHostBridge {
@@ -1000,6 +1010,61 @@ const NativeOverlayNewSession = ({
   )
 }
 
+const NativeOverlayActivityPopover = ({
+  request,
+  close,
+}: {
+  request: NativeOverlayActivityPopoverRequest
+  close: () => void
+}): ReactElement => {
+  const { now, activateActionId, dismissWhen } = useNativeActivityPopoverHost({
+    request,
+    close,
+  })
+
+  return (
+    <>
+      {activateActionId === undefined ? null : (
+        <button
+          type="button"
+          aria-label={request.payload.ariaLabel}
+          data-native-activity-anchor
+          tabIndex={-1}
+          className="fixed z-40 cursor-default bg-transparent p-0"
+          style={{
+            left: request.anchorRect.x,
+            top: request.anchorRect.y,
+            width: request.anchorRect.width,
+            height: request.anchorRect.height,
+          }}
+          onClick={(): void => {
+            void nativeOverlayHostBridge()?.action({
+              surfaceId: request.surfaceId,
+              actionId: activateActionId,
+            })
+          }}
+        />
+      )}
+      <Popover
+        anchor={request.anchorRect}
+        open
+        onOpenChange={(open): void => {
+          if (!open) {
+            close()
+          }
+        }}
+        placement={request.placement as Placement}
+        focus="none"
+        dismissWhen={dismissWhen}
+        aria-label={request.payload.ariaLabel}
+        className={ACTIVITY_CARD_SURFACE}
+      >
+        <ActivityTooltipContent event={request.payload.event} now={now} />
+      </Popover>
+    </>
+  )
+}
+
 export const NativeOverlayHost = ({
   mode = 'menu',
 }: {
@@ -1057,7 +1122,10 @@ export const NativeOverlayHost = ({
 
     const cleanupRender = bridge.onRender((payload) => {
       const isMenuLayerRequest =
-        mode === 'menu' && (isMenuRequest(payload) || isDialogRequest(payload))
+        mode === 'menu' &&
+        (isMenuRequest(payload) ||
+          isDialogRequest(payload) ||
+          isNativeActivityPopoverRequest(payload))
 
       if (isMenuLayerRequest) {
         applyThemeSnapshot(payload.theme)
@@ -1165,6 +1233,10 @@ export const NativeOverlayHost = ({
         )}
       </div>
     )
+  }
+
+  if (isNativeActivityPopoverRequest(request)) {
+    return <NativeOverlayActivityPopover request={request} close={close} />
   }
 
   if (!isMenuRequest(request)) {

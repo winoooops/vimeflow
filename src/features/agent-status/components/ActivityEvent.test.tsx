@@ -633,6 +633,21 @@ describe('ActivityEvent — copy with resultPreview', () => {
 })
 
 describe('ActivityEvent — structured tooltip', () => {
+  test('keeps the detail card in the main view beside the right sidebar', async () => {
+    render(<ActivityEvent event={toolEvent()} now={now} />)
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT activity details',
+    })
+
+    expect(details).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
+    expect(details).toHaveAttribute(
+      'data-placement',
+      expect.stringMatching(/^(?:left|right)(?:-(?:start|end))?$/u)
+    )
+  })
+
   test('tooltip header shows the lowercase kind chip for a done tool call', async () => {
     render(
       <ActivityEvent

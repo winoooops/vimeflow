@@ -430,6 +430,64 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
+  test('routes serialized interactive content through the native popover layer', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const user = userEvent.setup()
+
+    const { unmount } = render(
+      <Tooltip
+        content={<button type="button">Copy activity details</button>}
+        delayMs={0}
+        placement="left"
+        bare
+        interactive
+        ariaLabel="BASH activity details"
+        nativeOverlay
+        nativeOverlayPayload={{
+          kind: 'popover',
+          popover: 'activity',
+          ariaLabel: 'BASH activity details',
+          event: {
+            id: 'activity-1',
+            kind: 'bash',
+            timestamp: '2026-07-10T12:00:00.000Z',
+            status: 'done',
+            body: 'npm test',
+            tool: 'Bash',
+            durationMs: 1200,
+          },
+        }}
+      >
+        <button type="button">trigger</button>
+      </Tooltip>
+    )
+
+    const trigger = screen.getByRole('button', { name: 'trigger' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(
+      rect({ x: 600, y: 100, width: 240, height: 40 })
+    )
+
+    await user.hover(trigger)
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+    expect(nativeBridge.open.mock.calls[0][0]).toMatchObject({
+      kind: 'popover',
+      placement: 'left',
+      payload: {
+        kind: 'popover',
+        popover: 'activity',
+      },
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.unhover(trigger)
+    expect(nativeBridge.close).not.toHaveBeenCalled()
+
+    unmount()
+    expect(nativeBridge.close).toHaveBeenCalled()
+  })
+
   test('keeps native shortcut tooltip open across equal inline shortcut rerenders', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
