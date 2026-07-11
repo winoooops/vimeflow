@@ -331,6 +331,82 @@ describe('ReviewCommentRow', () => {
       expect(screen.queryByText('Agent reply')).not.toBeInTheDocument()
     }
   )
+
+  test('a pending self comment with onSendNow renders the send button', async () => {
+    const user = userEvent.setup()
+    const onSendNow = vi.fn()
+    render(
+      <ReviewCommentRow
+        comment={{ id: 's', text: 'x', author: 'self', createdAt: 1000 }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onSendNow={onSendNow}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Send comment now' }))
+    expect(onSendNow).toHaveBeenCalledOnce()
+  })
+
+  test('send-now is absent when omitted and on dispatched rows', () => {
+    const { rerender } = render(
+      <ReviewCommentRow
+        comment={{ id: 's', text: 'x', author: 'self', createdAt: 1000 }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Send comment now' })
+    ).not.toBeInTheDocument()
+
+    // Dispatched rows are read-only thread anchors — never re-sendable.
+    rerender(
+      <ReviewCommentRow
+        comment={{
+          id: 's',
+          text: 'x',
+          author: 'self',
+          createdAt: 1000,
+          dispatchedAt: 2000,
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onSendNow={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Send comment now' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('agent and reviewer rows never render send-now', () => {
+    const { rerender } = render(
+      <ReviewCommentRow
+        comment={{ id: 'a', text: 'x', author: 'agent', createdAt: 1000 }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onSendNow={vi.fn()}
+      />
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Send comment now' })
+    ).not.toBeInTheDocument()
+
+    rerender(
+      <ReviewCommentRow
+        comment={{ id: 'r', text: 'x', author: 'reviewer', createdAt: 1000 }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onSendNow={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Send comment now' })
+    ).not.toBeInTheDocument()
+  })
 })
 
 const MINUTE = 60_000
