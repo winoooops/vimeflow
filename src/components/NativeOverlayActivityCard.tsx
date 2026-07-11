@@ -219,12 +219,14 @@ export const NativeOverlayActivityCard = ({
 
   const isRunning = event.status === 'running'
   const ago = computeActivityAgo(event, now)
+
   const duration =
     isToolEvent(event) && !isRunning && event.durationMs != null
       ? formatDuration(event.durationMs)
       : null
   const accent = KIND_ACCENT[event.kind]
   const kindLabel = event.kind.toLowerCase()
+
   const showFooter =
     event.kind === 'bash' ||
     event.kind === 'edit' ||

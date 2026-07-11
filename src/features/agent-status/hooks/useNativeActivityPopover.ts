@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import { type NativeOverlayActivityPopoverPayload } from '@/components/nativeOverlayActivity'
 import type { ActivityEvent } from '../types/activityEvent'
+
 export { isNativeActivityPopoverRequest } from '@/components/nativeOverlayActivity'
+
 export { useNativeActivityPopoverHost } from '@/components/useNativeActivityPopoverHost'
 
 const ACTIVITY_ACTIVATE_ACTION = 'activity:activate'
