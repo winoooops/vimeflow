@@ -277,7 +277,7 @@ fn extract_object_workdir(
 }
 
 fn extract_custom_exec_workdir(input: &str) -> Option<String> {
-    // ponytail: Parse only literal object arguments and simple const aliases;
+    // Parse only literal object arguments and simple const aliases;
     // computed JavaScript stays unresolved until Codex exposes nested metadata.
     let tokens = tokenize_javascript(input);
     let mut bindings = HashMap::new();
