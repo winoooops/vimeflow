@@ -119,6 +119,9 @@ const fireCommandPaletteShortcutInput = async (): Promise<void> => {
 const runExCommand = async (command: string): Promise<void> => {
   await openCommandPalette()
   await setCommandPaletteQuery(command)
+  if (command === ':vsplit') {
+    await waitForActiveCommand('command-vim-vsplit')
+  }
   await fireKey({ key: 'Enter' })
 }
 
@@ -184,6 +187,25 @@ const setCommandPaletteQuery = async (query: string): Promise<void> => {
     },
     commandPaletteInputSelector,
     query
+  )
+}
+
+const waitForActiveCommand = async (commandId: string): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (selector: string, activeId: string) =>
+          document
+            .querySelector<HTMLInputElement>(selector)
+            ?.getAttribute('aria-activedescendant') === activeId,
+        commandPaletteInputSelector,
+        commandId
+      ),
+    {
+      timeout: 8_000,
+      interval: 100,
+      timeoutMsg: `command palette did not select ${commandId}`,
+    }
   )
 }
 
@@ -433,6 +455,8 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
   })
 
   it('Cmd+\\ cycles the pane layout', async () => {
+    await focusTerminalZone()
+
     const before = await currentLayout()
     await fireKey({ key: '\\', code: 'Backslash', ...modInit() })
     await browser.waitUntil(async () => (await currentLayout()) !== before, {
