@@ -374,6 +374,7 @@ const WorkspaceViewContent = (): ReactElement => {
     appendPaneCacheReading,
     clearPaneCacheHistory,
     updatePaneAgentType,
+    invalidatePaneAgentSession,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
     setSessionActivePane,
@@ -749,6 +750,11 @@ const WorkspaceViewContent = (): ReactElement => {
     agentStatusResetGeneration
   )
 
+  const agentTokenTotal = agentStatus.contextWindow
+    ? agentStatus.contextWindow.totalInputTokens +
+      agentStatus.contextWindow.totalOutputTokens
+    : null
+
   // Watcher relocation recovery (VIM-188/192): a `/clear` on a codex or
   // opencode pane arms the red "needs reattach" indicator + a bounded
   // auto-reattach; the always-on drift tick additionally relocates the active
@@ -758,10 +764,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const agentReattach = useAgentReattach({
     sessionId: activePtyBackedPanePtyId ?? null,
     agentSessionId: agentStatus.agentSessionId,
-    agentTokenTotal: agentStatus.contextWindow
-      ? agentStatus.contextWindow.totalInputTokens +
-        agentStatus.contextWindow.totalOutputTokens
-      : null,
+    agentTokenTotal,
     staleGeneration: agentStatusResetGeneration,
     // Drift-detection (VIM-192) runs only for a live Codex pane: it re-locates
     // periodically so the panel follows an in-session `resume` (which is
@@ -830,7 +833,11 @@ const WorkspaceViewContent = (): ReactElement => {
       // opencode follows `/clear` via the command path only; its bridge writes
       // are append-close so the codex lsof open-FD drift signal doesn't apply.
       const followsClearReattach = at === 'codex' || at === 'opencode'
-      if (ptyId === activePtyBackedPanePtyId && followsClearReattach) {
+
+      const followsActiveAgent =
+        ptyId === activePtyBackedPanePtyId && followsClearReattach
+
+      if (followsActiveAgent) {
         setAgentStatusReset((prev) => ({
           ptyId,
           generation: prev?.ptyId === ptyId ? prev.generation + 1 : 1,
@@ -840,6 +847,14 @@ const WorkspaceViewContent = (): ReactElement => {
       for (const session of sessions) {
         const pane = session.panes.find((p) => p.ptyId === ptyId)
         if (pane) {
+          if (followsActiveAgent) {
+            invalidatePaneAgentSession(
+              session.id,
+              pane.id,
+              agentStatus.agentSessionId,
+              agentTokenTotal
+            )
+          }
           clearPaneCacheHistory(session.id, pane.id)
 
           return
@@ -848,8 +863,11 @@ const WorkspaceViewContent = (): ReactElement => {
     },
     [
       activePtyBackedPanePtyId,
+      agentStatus.agentSessionId,
       agentStatus.agentType,
+      agentTokenTotal,
       clearPaneCacheHistory,
+      invalidatePaneAgentSession,
       sessions,
     ]
   )

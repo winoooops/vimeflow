@@ -120,6 +120,26 @@ pub(crate) struct ReplayActivity {
 }
 
 impl ReplayActivity {
+    /// Fold another decoder's replay into this one. Kimi tails its main and
+    /// sub-agent wires concurrently, so the supervisor joins their local
+    /// accumulators before emitting one session-level summary.
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.total = self.total.saturating_add(other.total);
+        for (tool, count) in other.by_type {
+            let total = self.by_type.entry(tool).or_default();
+            *total = total.saturating_add(count);
+        }
+        self.running.extend(other.running);
+        self.recent.extend(other.recent);
+
+        let mut recent: Vec<_> = self.recent.drain(..).collect();
+        recent.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        if recent.len() > RECENT_TOOL_CALLS_LIMIT {
+            recent.drain(..recent.len() - RECENT_TOOL_CALLS_LIMIT);
+        }
+        self.recent = recent.into();
+    }
+
     /// Fold one completed (done/failed) tool call into the running totals.
     fn record_completed(&mut self, event: AgentToolCallEvent) {
         self.running.remove(&event.tool_use_id);
@@ -285,6 +305,28 @@ mod tests {
         let running = activity.take_running();
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].tool_use_id, "c1");
+    }
+
+    #[test]
+    fn replay_activity_merge_sums_decoders_and_orders_by_timestamp() {
+        let sink: Arc<dyn crate::runtime::EventSink> = Arc::new(FakeEventSink::new());
+        let mut main = ReplayActivity::default();
+        let mut sub = ReplayActivity::default();
+        let mut newer = tool_call("main", "Bash", ToolCallStatus::Done);
+        newer.timestamp = "2026-06-24T00:00:02Z".into();
+        let mut older = tool_call("sub", "Read", ToolCallStatus::Failed);
+        older.timestamp = "2026-06-24T00:00:01Z".into();
+        record_tool_call(&sink, newer, &mut main, false);
+        record_tool_call(&sink, older, &mut sub, false);
+
+        main.merge(sub);
+        let summary = main.into_summary("sid".into(), 1, None);
+
+        assert_eq!(summary.tool_call_total, 2);
+        assert_eq!(summary.tool_call_by_type.get("Bash"), Some(&1));
+        assert_eq!(summary.tool_call_by_type.get("Read"), Some(&1));
+        assert_eq!(summary.recent_tool_calls[0].tool_use_id, "main");
+        assert_eq!(summary.recent_tool_calls[1].tool_use_id, "sub");
     }
 
     #[test]

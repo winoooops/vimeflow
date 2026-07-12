@@ -59,6 +59,9 @@ export interface Pane {
   /** Detected agent CLI for this pane. */
   agentType: 'claude-code' | 'codex' | 'kimi' | 'opencode' | 'aider' | 'generic'
 
+  /** Agent-owned conversation id used by the CLI's native resume command. */
+  agentSessionId?: string
+
   /**
    * Title emitted by the agent for the agent session bound to this PTY.
    * `undefined` when no agent has emitted a title yet for this pane.

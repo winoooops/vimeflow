@@ -48,7 +48,10 @@ use crate::agent::adapter::claude_code::test_runners::matcher::match_command;
 use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_test_file;
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
-use crate::agent::events::{emit_agent_cwd, emit_agent_tool_call, emit_agent_turn};
+use crate::agent::events::{
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_tool_call, emit_agent_turn,
+    record_tool_call, ReplayActivity,
+};
 use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
 use crate::runtime::EventSink;
 
@@ -134,8 +137,8 @@ pub(crate) fn start_tailing(
 }
 
 /// Per-session opencode decoder: owns the in-flight tool-call map, the
-/// seen-turn message ids, turn count, last-seen cwd, the replay-aware test-run
-/// emitter, and a `replay_done` one-shot guard. Driven by
+/// seen-turn message ids, turn count, last-seen cwd, the replay accumulators,
+/// and a `replay_done` one-shot guard. Driven by
 /// [`TranscriptTailService`], which owns the read/buffer/poll loop.
 pub(crate) struct OpencodeTranscriptDecoder {
     events: Arc<dyn EventSink>,
@@ -160,6 +163,8 @@ pub(crate) struct OpencodeTranscriptDecoder {
     /// Last cwd surfaced via `agent-cwd`; transitions only.
     last_cwd: Option<String>,
     emitter: TestRunEmitter,
+    /// Historical tool calls are folded here until the first clean EOF.
+    replay_activity: ReplayActivity,
     /// One-shot guard: false during replay, true after the first on_caught_up.
     replay_done: bool,
 }
@@ -185,6 +190,7 @@ impl OpencodeTranscriptDecoder {
             num_turns: 0,
             last_cwd,
             emitter,
+            replay_activity: ReplayActivity::default(),
             replay_done: false,
         }
     }
@@ -240,12 +246,14 @@ impl OpencodeTranscriptDecoder {
         }
 
         self.num_turns = self.num_turns.saturating_add(1);
-        let event = AgentTurnEvent {
-            session_id: self.session_id.clone(),
-            num_turns: self.num_turns,
-        };
-        if let Err(e) = emit_agent_turn(self.events.as_ref(), &event) {
-            log::warn!("Failed to emit opencode agent-turn event: {}", e);
+        if self.replay_done {
+            let event = AgentTurnEvent {
+                session_id: self.session_id.clone(),
+                num_turns: self.num_turns,
+            };
+            if let Err(e) = emit_agent_turn(self.events.as_ref(), &event) {
+                log::warn!("Failed to emit opencode agent-turn event: {}", e);
+            }
         }
     }
 
@@ -395,18 +403,16 @@ impl OpencodeTranscriptDecoder {
             return;
         }
 
-        if self.replay_done {
-            self.emit_tool_call(AgentToolCallEvent {
-                session_id: self.session_id.clone(),
-                tool_use_id: call_key.to_string(),
-                tool,
-                args,
-                status: ToolCallStatus::Running,
-                timestamp: timestamp.to_string(),
-                duration_ms: 0,
-                is_test_file,
-            });
-        }
+        self.emit_tool_call(AgentToolCallEvent {
+            session_id: self.session_id.clone(),
+            tool_use_id: call_key.to_string(),
+            tool,
+            args,
+            status: ToolCallStatus::Running,
+            timestamp: timestamp.to_string(),
+            duration_ms: 0,
+            is_test_file,
+        });
     }
 
     /// Terminal part updates are authoritative only for calls that started from
@@ -586,21 +592,26 @@ impl OpencodeTranscriptDecoder {
             .as_deref()
             .map_or(true, |seen| seen != observed)
         {
-            let event = AgentCwdEvent {
-                session_id: self.session_id.clone(),
-                cwd: observed.to_string(),
-            };
-            if let Err(e) = emit_agent_cwd(self.events.as_ref(), &event) {
-                log::warn!("Failed to emit opencode agent-cwd event: {}", e);
+            if self.replay_done {
+                let event = AgentCwdEvent {
+                    session_id: self.session_id.clone(),
+                    cwd: observed.to_string(),
+                };
+                if let Err(e) = emit_agent_cwd(self.events.as_ref(), &event) {
+                    log::warn!("Failed to emit opencode agent-cwd event: {}", e);
+                }
             }
             self.last_cwd = Some(observed.to_string());
         }
     }
 
-    fn emit_tool_call(&self, event: AgentToolCallEvent) {
-        if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
-            log::warn!("Failed to emit opencode agent-tool-call event: {}", e);
-        }
+    fn emit_tool_call(&mut self, event: AgentToolCallEvent) {
+        record_tool_call(
+            &self.events,
+            event,
+            &mut self.replay_activity,
+            self.replay_done,
+        );
     }
 }
 
@@ -615,22 +626,20 @@ impl TranscriptDecoder for OpencodeTranscriptDecoder {
     fn on_caught_up(&mut self) {
         if !self.replay_done {
             self.replay_done = true;
-            // Surface any tool calls still running at the replay→live boundary
-            // so the activity feed shows them as in-progress (mirrors Codex's
-            // `emit_replay_in_flight_tool_calls`). Each is keyed `Running` in
-            // the dedup set already, so a later live terminal update still
-            // emits its done/failed exactly once.
-            for (call_id, call) in &self.in_flight {
-                self.emit_tool_call(AgentToolCallEvent {
-                    session_id: self.session_id.clone(),
-                    tool_use_id: call_id.clone(),
-                    tool: call.tool.clone(),
-                    args: call.args.clone(),
-                    status: ToolCallStatus::Running,
-                    timestamp: call.started_at_iso.clone(),
-                    duration_ms: 0,
-                    is_test_file: call.is_test_file,
-                });
+            for event in self.replay_activity.take_running() {
+                if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
+                    log::warn!("Failed to emit opencode agent-tool-call event: {}", e);
+                }
+            }
+            let summary = std::mem::take(&mut self.replay_activity).into_summary(
+                self.session_id.clone(),
+                self.num_turns,
+                self.last_cwd.clone(),
+            );
+            if summary.tool_call_total > 0 || summary.num_turns > 0 || summary.cwd.is_some() {
+                if let Err(e) = emit_agent_replay_summary(self.events.as_ref(), &summary) {
+                    log::warn!("Failed to emit agent-replay-summary event: {}", e);
+                }
             }
         }
         self.emitter.finish_replay();
@@ -1265,13 +1274,12 @@ mod tests {
     }
 
     /// End-to-end: feeding the authored `sample_bridge.jsonl` (REAL live shapes)
-    /// through `start_tailing` emits the expected sequence — one `agent-turn`
-    /// (the user `message.updated`; the assistant message is NOT a turn) and two
-    /// settled tool-calls (`done`), one bash + one read. Each tool arrives as a
+    /// through `start_tailing` coalesces one user turn and two settled tool calls
+    /// into one replay summary. Each tool arrives as a
     /// `message.part.updated` `pending` (EMPTY args) FOLLOWED by its `tool.before`
     /// (real args) and `tool.after`, all during replay ⇒ each settles to a
-    /// single `done` event carrying the AUTHORITATIVE `tool.before` args (Bug A:
-    /// the args are NOT the empty `{}` from the pending part).
+    /// single summary entry carrying the AUTHORITATIVE `tool.before` args (Bug
+    /// A: the args are NOT the empty `{}` from the pending part).
     ///
     /// No `test-run` is asserted: the fixture's bash `result.output` uses a
     /// Jest-style summary (`Tests: 12 passed, 12 total`), which the v1 vitest
@@ -1309,29 +1317,34 @@ mod tests {
         .expect("tailing should start");
 
         assert!(
-            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
-            "expected 1 agent-turn from the user message.updated line",
-        );
-        assert!(
-            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
-            "expected the two settled tool calls' done events",
+            sink.wait_for_count("agent-replay-summary", 1, Duration::from_secs(5)),
+            "expected one coalesced replay summary",
         );
         handle.stop();
 
-        let turns: Vec<Value> = sink
+        assert_eq!(sink.count("agent-turn"), 0);
+        assert_eq!(sink.count("agent-tool-call"), 0);
+        let summaries: Vec<Value> = sink
             .recorded()
             .into_iter()
-            .filter(|(n, _)| n == "agent-turn")
+            .filter(|(name, _)| name == "agent-replay-summary")
             .map(|(_, p)| p)
             .collect();
-        assert_eq!(turns.len(), 1, "only the user message is a turn");
-        assert_eq!(turns[0]["numTurns"], 1);
+        assert_eq!(summaries.len(), 1);
+        let summary = &summaries[0];
+        assert_eq!(summary["sessionId"], "sid-sample");
+        assert_eq!(summary["numTurns"], 1);
+        assert_eq!(summary["toolCallTotal"], 2);
+        assert_eq!(summary["toolCallByType"]["bash"], 1);
+        assert_eq!(summary["toolCallByType"]["read"], 1);
 
-        let tool_calls = tool_call_payloads(&sink);
         // The fixture's bash tool (call_bash001): pending(empty) → tool.before →
         // tool.after, all during replay ⇒ a single settled `done` carrying the
         // authoritative `tool.before` args (Bug A regression — NOT `{}`).
-        let bash_calls: Vec<&Value> = tool_calls
+        let recent = summary["recentToolCalls"]
+            .as_array()
+            .expect("recent tool calls");
+        let bash_calls: Vec<&Value> = recent
             .iter()
             .filter(|p| p["toolUseId"] == "call_bash001")
             .collect();
@@ -1342,7 +1355,7 @@ mod tests {
 
         // The non-bash read tool (call_read001): same ordering, args from
         // `tool.before` (filePath), proving the fix covers non-bash tools too.
-        let read_calls: Vec<&Value> = tool_calls
+        let read_calls: Vec<&Value> = recent
             .iter()
             .filter(|p| p["toolUseId"] == "call_read001")
             .collect();

@@ -53,7 +53,7 @@ const activeUserDataDirs = new Set<string>()
  */
 export const injectFreshUserDataDir = (
   capabilities: WebdriverIO.Capabilities
-): void => {
+): string => {
   const dir = fs.mkdtempSync(path.join(e2eTempRoot(), 'vimeflow-e2e-'))
   activeUserDataDirs.add(dir)
   const electronOpts = capabilities['wdio:electronServiceOptions'] ?? {}
@@ -70,6 +70,25 @@ export const injectFreshUserDataDir = (
     ...electronOpts,
     appArgs: [...baseArgs, `--user-data-dir=${dir}`],
   }
+
+  // @wdio/electron-service converts its custom capability to Chrome options
+  // in onPrepare, before WDIO calls this hook. Update that resolved argv too;
+  // mutating only electronServiceOptions is too late for the current session.
+  const chromeOpts = capabilities['goog:chromeOptions'] as
+    | { args?: string[]; [key: string]: unknown }
+    | undefined
+  if (chromeOpts !== undefined) {
+    const chromeArgs = (chromeOpts.args ?? []).filter(
+      (arg) => !arg.startsWith('--user-data-dir=')
+    )
+
+    capabilities['goog:chromeOptions'] = {
+      ...chromeOpts,
+      args: [...chromeArgs, `--user-data-dir=${dir}`],
+    }
+  }
+
+  return dir
 }
 
 /**

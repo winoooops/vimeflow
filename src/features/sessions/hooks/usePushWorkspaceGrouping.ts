@@ -52,8 +52,7 @@ const pushShapeWithLog = async (
 /**
  * Pure conversion of the in-memory `Session[]` shape into the shape-only DTO
  * main consumes. Browser tab/history is omitted (main owns it); shell panes
- * carry their restore fields. `agentSessionId` is reserved (`null`) until the
- * `--resume` feature populates it. Exposed for testability.
+ * carry their restore fields. Exposed for testability.
  */
 export const buildWorkspaceShape = (
   sessions: readonly Session[],
@@ -90,7 +89,7 @@ export const buildWorkspaceShape = (
                   ptyId: pane.ptyId,
                   cwd: pane.cwd,
                   agentType: pane.agentType,
-                  agentSessionId: null,
+                  agentSessionId: pane.agentSessionId ?? null,
                 }
               : {
                   kind: 'browser',
@@ -123,6 +122,7 @@ const structuralSignature = (shape: PersistedWorkspaceShape): string =>
         paneIndex: pane.paneIndex,
         active: pane.active,
         ptyId: pane.kind === 'shell' ? pane.ptyId : null,
+        agentSessionId: pane.kind === 'shell' ? pane.agentSessionId : null,
       })),
     })),
   })

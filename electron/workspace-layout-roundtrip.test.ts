@@ -115,7 +115,7 @@ const roundTripShape = (): PersistedWorkspaceShape => ({
           ptyId: 'pty-dead',
           cwd: '/repo/sub',
           agentType: 'codex',
-          agentSessionId: null,
+          agentSessionId: 'codex-conversation-1',
         },
         { kind: 'browser', paneId: 'p1', paneIndex: 1, active: true },
       ],

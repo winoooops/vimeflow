@@ -46,6 +46,7 @@ const shellPane = (over: Partial<Pane> = {}): Pane => ({
   ptyId: 'pty-0',
   cwd: '/repo',
   agentType: 'claude-code',
+  agentSessionId: 'claude-session-id',
   status: 'running',
   active: true,
   ...over,
@@ -121,7 +122,7 @@ describe('buildWorkspaceShape', () => {
               ptyId: 'pty-0',
               cwd: '/repo',
               agentType: 'claude-code',
-              agentSessionId: null,
+              agentSessionId: 'claude-session-id',
             },
             { kind: 'browser', paneId: 'p1', paneIndex: 1, active: false },
           ],
@@ -236,6 +237,35 @@ describe('usePushWorkspaceGrouping', () => {
       activeSessionId: 's1',
       loading: false,
     })
+    expect(pushWorkspaceShape).toHaveBeenCalledTimes(2)
+  })
+
+  test('pushes eagerly when the agent conversation changes', () => {
+    const { rerender } = renderHook(
+      (props: UsePushWorkspaceGroupingOptions) =>
+        usePushWorkspaceGrouping(props),
+      {
+        initialProps: {
+          sessions: [makeSession()],
+          activeSessionId: 's1',
+          loading: false,
+        },
+      }
+    )
+
+    rerender({
+      sessions: [
+        makeSession({
+          panes: [
+            shellPane({ agentSessionId: 'next-conversation' }),
+            browserPane(),
+          ],
+        }),
+      ],
+      activeSessionId: 's1',
+      loading: false,
+    })
+
     expect(pushWorkspaceShape).toHaveBeenCalledTimes(2)
   })
 

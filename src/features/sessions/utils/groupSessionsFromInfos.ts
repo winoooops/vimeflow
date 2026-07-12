@@ -324,8 +324,10 @@ const reconcileActivePane = (
 const buildReattachedShellPane = (
   live: SessionInfo,
   shape: PersistedShellPaneShape
-): Pane =>
-  buildPane(live, shape.paneId, toAgentType(shape.agentType), shape.active)
+): Pane => ({
+  ...buildPane(live, shape.paneId, toAgentType(shape.agentType), shape.active),
+  agentSessionId: shape.agentSessionId ?? undefined,
+})
 
 // A shell pane whose PTY is gone (graceful quit / crash) returns as a
 // restartable `completed` placeholder seeded with the persisted cwd + agent —
@@ -335,6 +337,7 @@ const buildPlaceholderShellPane = (shape: PersistedShellPaneShape): Pane => ({
   ptyId: shape.ptyId,
   cwd: shape.cwd,
   agentType: toAgentType(shape.agentType),
+  agentSessionId: shape.agentSessionId ?? undefined,
   status: 'completed',
   active: shape.active,
 })

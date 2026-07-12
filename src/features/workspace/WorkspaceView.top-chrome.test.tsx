@@ -193,6 +193,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       updatePaneCwd: vi.fn(),
       appendPaneCacheReading: vi.fn(),
       updatePaneAgentType: vi.fn(),
+      invalidatePaneAgentSession: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
