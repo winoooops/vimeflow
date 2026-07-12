@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-09
+last_updated: 2026-07-12
 ref_count: 25
 ---
 
@@ -316,4 +316,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `src/features/diff/services/pendingReviewRequests.ts`
 - **Finding:** The delegated-review request store and review-level-note store were module singletons keyed by nonce and owner, but only successful `agent-review` replies cleared requests and no production path cleared review-level notes. Closing a pane could leave abandoned requests and stale notes retained for the app lifetime.
 - **Fix:** Added an owner-prune helper that deletes pending requests and review-level notes for owners no longer in the live pane set, then invoked it from the existing workspace pane-pruning effect. Regression tests cover pruning both requests and notes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Exact resume reservations must be released with their owning pane
+
+- **Source:** github-claude | PR #688 round 1 | 2026-07-12
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Exact-identity agent resumes reserved the canonical latest-resume key for an agent type and cwd, but the reservation was not tied to the restarted pane's lifecycle. After the pane was closed, later legacy panes in the same cwd could still be downgraded to generic because the stale reservation remained.
+- **Fix:** Track canonical latest-resume claims by owner PTY, roll back uncommitted claims, and release committed claims from restart disposal, pane removal, and session removal. Added a regression test that removes an exact-resumed pane and verifies a later legacy pane still receives the latest-resume command.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

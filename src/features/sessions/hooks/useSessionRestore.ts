@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import type { SessionInfo } from '../../../bindings'
 import type { Session } from '../types'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PtyBufferDrain } from '../../terminal/orchestration/usePtyBufferDrain'
@@ -8,11 +7,7 @@ import { registerPtySession } from '../../terminal/ptySessionMap'
 import { createLogger } from '../../../lib/log'
 import { reconstructWorkspace } from '../utils/groupSessionsFromInfos'
 import { isBrowserPane } from '../utils/paneKind'
-import type {
-  PersistedWorkspaceShape,
-  PersistedWorkspacePaneShape,
-  PersistedShellPaneShape,
-} from '../workspaceLayoutBridge'
+import type { PersistedWorkspaceShape } from '../workspaceLayoutBridge'
 import {
   beginWorkspaceHydration,
   endWorkspaceHydration,
@@ -26,130 +21,6 @@ const log = createLogger('restore')
 // hydration guard open forever — main keeps suppressing writes until restore
 // settles. Treat a stuck create as timed-out so hydration always completes.
 const RESTORE_PANE_TIMEOUT_MS = 4000
-
-const isShapeShellPane = (
-  pane: PersistedWorkspacePaneShape
-): pane is PersistedShellPaneShape => pane.kind === 'shell'
-
-interface StoreShellSelection {
-  sessionId: string
-  paneId: string
-  pane: PersistedShellPaneShape
-}
-
-interface RestartedStoreShell {
-  storeShape: PersistedWorkspaceShape
-  liveSession: SessionInfo
-}
-
-const findActiveStoreShell = (
-  storeShape: PersistedWorkspaceShape | null
-): StoreShellSelection | null => {
-  const activeSession = storeShape?.sessions.find((session) => session.active)
-  if (!activeSession?.open) {
-    return null
-  }
-
-  // Normalize the active pane the same way reconstructWorkspace does: sort by
-  // paneIndex and treat the first flagged pane as active. A transient snapshot
-  // can mark both a browser and a shell pane active; in that case the browser
-  // (the normalized active pane) wins and we must NOT restart a background
-  // shell.
-  const ordered = [...activeSession.panes].sort(
-    (a, b) => a.paneIndex - b.paneIndex
-  )
-  if (ordered.length === 0) {
-    return null
-  }
-
-  const firstActiveIdx = ordered.findIndex((pane) => pane.active)
-
-  const activePane =
-    firstActiveIdx === -1 ? ordered[0] : ordered[firstActiveIdx]
-
-  if (!isShapeShellPane(activePane)) {
-    return null
-  }
-
-  return {
-    sessionId: activeSession.id,
-    paneId: activePane.paneId,
-    pane: activePane,
-  }
-}
-
-const shapeWithRestartedShell = (
-  storeShape: PersistedWorkspaceShape,
-  selection: StoreShellSelection,
-  liveSession: SessionInfo
-): PersistedWorkspaceShape => ({
-  customPaneLayouts: storeShape.customPaneLayouts,
-  sessions: storeShape.sessions.map((session) =>
-    session.id !== selection.sessionId
-      ? session
-      : {
-          ...session,
-          panes: session.panes.map((pane) =>
-            pane.kind === 'shell' && pane.paneId === selection.paneId
-              ? {
-                  ...pane,
-                  ptyId: liveSession.id,
-                  cwd: liveSession.cwd,
-                  agentType: 'generic',
-                  agentSessionId: null,
-                }
-              : pane
-          ),
-        }
-  ),
-})
-
-const restartPersistedActiveShell = async (
-  service: ITerminalService,
-  storeShape: PersistedWorkspaceShape | null,
-  liveSessions: readonly SessionInfo[]
-): Promise<RestartedStoreShell | null> => {
-  const hasLiveSession = liveSessions.some(
-    (session) => session.status.kind === 'Alive'
-  )
-  if (!storeShape || hasLiveSession) {
-    return null
-  }
-
-  const selection = findActiveStoreShell(storeShape)
-  if (!selection) {
-    return null
-  }
-
-  try {
-    const spawned = await service.spawn({
-      cwd: selection.pane.cwd,
-      env: {},
-      enableAgentBridge: true,
-    })
-
-    const liveSession: SessionInfo = {
-      id: spawned.sessionId,
-      cwd: spawned.cwd,
-      shell: spawned.shell,
-      status: {
-        kind: 'Alive',
-        pid: spawned.pid,
-        replay_data: '',
-        replay_end_offset: 0n,
-      },
-    }
-
-    return {
-      storeShape: shapeWithRestartedShell(storeShape, selection, liveSession),
-      liveSession,
-    }
-  } catch (err) {
-    log.warn('failed to restart persisted active shell during restore', err)
-
-    return null
-  }
-}
 
 export interface UseSessionRestoreOptions {
   service: ITerminalService
@@ -329,24 +200,6 @@ export const useSessionRestore = ({
     }
 
     let hydrationStarted = false
-    let pendingRestartId: string | null = null
-
-    const disposePendingRestart = (): void => {
-      if (pendingRestartId) {
-        const sessionId = pendingRestartId
-        pendingRestartId = null
-        void (async (): Promise<void> => {
-          try {
-            await service.kill({ sessionId })
-          } catch (err) {
-            log.warn(
-              'failed to kill orphaned restarted PTY on restore cancel',
-              err
-            )
-          }
-        })()
-      }
-    }
 
     void (async (): Promise<void> => {
       try {
@@ -405,8 +258,8 @@ export const useSessionRestore = ({
           )
         }
 
-        let liveSessions = list.sessions
-        let activePtyId = list.activeSessionId
+        const liveSessions = list.sessions
+        const activePtyId = list.activeSessionId
 
         log.info(
           `listSessions returned ${list.sessions.length} PTY session(s); ` +
@@ -417,26 +270,6 @@ export const useSessionRestore = ({
             storeSessionCount: storeShape?.sessions.length ?? 0,
           }
         )
-
-        const restarted = await restartPersistedActiveShell(
-          service,
-          storeShape,
-          liveSessions
-        )
-        if (restarted) {
-          storeShape = restarted.storeShape
-          liveSessions = [restarted.liveSession]
-          activePtyId = restarted.liveSession.id
-          pendingRestartId = restarted.liveSession.id
-        }
-
-        // If cleanup ran while spawn was in flight, kill the orphaned PTY.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (cancelled) {
-          disposePendingRestart()
-
-          return
-        }
 
         const restored = attachBuffers(
           reconstructWorkspace(storeShape, liveSessions, activePtyId)
@@ -468,15 +301,10 @@ export const useSessionRestore = ({
 
         onRestoreRef.current(restored)
         activate(storeShape, restored, activePtyId)
-        pendingRestartId = null
 
         setLoading(false)
       } catch (err) {
         log.error('restore failed; starting empty', err)
-        // If a restarted PTY was spawned but restore threw before it was
-        // committed, kill the orphaned session so it does not leak as a
-        // phantom session in later restore rounds.
-        disposePendingRestart()
         // F15 (claude LOW): intentionally do NOT call stopBuffering() here.
         // The pty-data buffering listener stays alive for the lifetime of
         // useSessionManager so createSession (post-restore) still benefits
@@ -501,7 +329,6 @@ export const useSessionRestore = ({
     return (): void => {
       cancelled = true
       stopBuffering?.()
-      disposePendingRestart()
     }
   }, [service, projectId, workingDirectory])
 

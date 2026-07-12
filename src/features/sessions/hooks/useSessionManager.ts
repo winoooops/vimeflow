@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import type {
@@ -16,7 +17,7 @@ import type {
   AgentPhase,
   AgentSessionTitleEvent,
 } from '../../../bindings'
-import { listen, type UnlistenFn } from '../../../lib/backend'
+import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import {
@@ -50,7 +51,7 @@ import {
 import {
   deriveShellSessionStatus,
   hasLivePane,
-  isLiveStatus,
+  isOpenSession,
   isTerminalStatus,
 } from '../utils/sessionStatus'
 import {
@@ -62,7 +63,8 @@ import {
   deleteCacheHistory,
 } from '../utils/cacheHistoryStore'
 import { pushCacheReading } from '../../agent-status/utils/cacheRate'
-import { isBrowserPane, isShellPane } from '../utils/paneKind'
+import type { AgentStatusEvent } from '../../agent-status/types'
+import { isShellPane } from '../utils/paneKind'
 import { commandToPane } from '../utils/commandToPane'
 import { deriveSessionName } from '../utils/sessionPaths'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
@@ -75,6 +77,7 @@ import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
+import { buildAgentResumeCommand } from '../utils/agentResumeCommand'
 import { createLogger } from '../../../lib/log'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
@@ -113,14 +116,14 @@ export interface SessionManager {
   addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
   /**
-   * Restart an Exited session in the same cwd. Idempotent on the kill side:
-   * any remaining cache entry for `id` is killed (no-op if already gone),
-   * then a new PTY is spawned at the cached cwd. The React-state entry is
-   * replaced with metadata for the new session — status flips to 'running'
-   * and id is the new sessionId returned by spawn.
+   * Recreate a shell pane in its saved cwd. Resume its exact agent conversation
+   * when a safe persisted identity is available; legacy panes without one use
+   * the agent's native latest-conversation command once per agent/canonical cwd
+   * so duplicate panes cannot attach to the same conversation. The stable
+   * workspace and pane ids remain unchanged while `pane.ptyId` rotates.
    *
-   * No-op if the id isn't in `sessions`. Surfaces spawn errors via the
-   * configured terminal-spawn error callback.
+   * No-op if the session/pane is unknown. Spawn and resume-write errors leave
+   * the old pane retryable and surface through the configured error callback.
    */
   restartSession: (id: string, paneId?: string) => void
   renameSession: (id: string, name: string) => void
@@ -143,6 +146,12 @@ export interface SessionManager {
     sessionId: string,
     paneId: string,
     agentType: Session['agentType']
+  ) => void
+  invalidatePaneAgentSession: (
+    sessionId: string,
+    paneId: string,
+    agentSessionId: string | null,
+    tokenTotal: number | null
   ) => void
   appendPaneCacheReading: (
     sessionId: string,
@@ -278,7 +287,22 @@ const phaseToStatus: Record<AgentPhase, SessionStatus> = {
   awaiting: 'awaiting',
 }
 
+const bindAgentSessionId = (pane: Pane, agentSessionId: string | null): Pane =>
+  agentSessionId && pane.agentSessionId !== agentSessionId
+    ? { ...pane, agentSessionId }
+    : pane
+
 const log = createLogger('sessions')
+const RESUMED_AGENT_WATCHER_MAX_RETRY_DELAY_MS = 2000
+const RESUMED_AGENT_WATCHER_MAX_ATTEMPTS = 20
+
+const stopAgentWatcher = async (ptyId: string): Promise<void> => {
+  try {
+    await invoke('stop_agent_watcher', { sessionId: ptyId })
+  } catch {
+    // The watcher may already have stopped with its agent/PTY.
+  }
+}
 
 export const useSessionManager = (
   service: ITerminalService,
@@ -430,6 +454,113 @@ export const useSessionManager = (
   // previous agent run that share the same ptyId but a different agentSessionId
   // (Codex P2 finding on PR #421).
   const agentSessionIdsRef = useRef(new Map<string, string>())
+
+  const invalidatedAgentSessionsRef = useRef(
+    new Map<string, { agentSessionId: string; tokenTotal: number | null }>()
+  )
+  const autoStartedAgentWatcherPtyIds = useRef(new Set<string>())
+
+  const acceptAgentSessionEvent = useCallback(
+    (
+      ptyId: string,
+      agentSessionId: string,
+      tokenTotal?: number | null
+    ): boolean => {
+      const invalidated = invalidatedAgentSessionsRef.current.get(ptyId)
+      if (invalidated === undefined) {
+        return true
+      }
+
+      const identityChanged = agentSessionId !== invalidated.agentSessionId
+
+      const tokensReset =
+        tokenTotal !== undefined &&
+        tokenTotal !== null &&
+        (tokenTotal === 0 ||
+          (invalidated.tokenTotal !== null &&
+            tokenTotal < invalidated.tokenTotal))
+      if (!identityChanged && !tokensReset) {
+        return false
+      }
+
+      invalidatedAgentSessionsRef.current.delete(ptyId)
+
+      return true
+    },
+    []
+  )
+
+  const invalidatePaneAgentSession = useCallback(
+    (
+      sessionId: string,
+      paneId: string,
+      agentSessionId: string | null,
+      tokenTotal: number | null
+    ): void => {
+      const pane = sessionsRef.current
+        .find((session) => session.id === sessionId)
+        ?.panes.find((candidate) => candidate.id === paneId)
+      if (pane === undefined || !isShellPane(pane)) {
+        return
+      }
+
+      const invalidatedId =
+        agentSessionId ??
+        pane.agentSessionId ??
+        agentSessionIdsRef.current.get(pane.ptyId)
+      if (invalidatedId === undefined) {
+        invalidatedAgentSessionsRef.current.delete(pane.ptyId)
+      } else {
+        invalidatedAgentSessionsRef.current.set(pane.ptyId, {
+          agentSessionId: invalidatedId,
+          tokenTotal,
+        })
+      }
+      agentSessionIdsRef.current.delete(pane.ptyId)
+
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                panes: session.panes.map((candidate) =>
+                  candidate.id === paneId &&
+                  candidate.agentSessionId !== undefined
+                    ? { ...candidate, agentSessionId: undefined }
+                    : candidate
+                ),
+              }
+            : session
+        )
+      )
+    },
+    []
+  )
+
+  const releaseAutoStartedAgentWatcher = useCallback(
+    (ptyId: string): void => {
+      if (!autoStartedAgentWatcherPtyIds.current.delete(ptyId)) {
+        return
+      }
+
+      const activePaneOwnsWatcher = sessionsRef.current
+        .find((session) => session.id === activeSessionIdRef.current)
+        ?.panes.some(
+          (pane) =>
+            isShellPane(pane) &&
+            pane.ptyId === ptyId &&
+            pane.active &&
+            !isTerminalStatus(pane.status)
+        )
+
+      if (activePaneOwnsWatcher) {
+        return
+      }
+
+      void stopAgentWatcher(ptyId)
+    },
+    [activeSessionIdRef]
+  )
 
   const buffer = usePtyBufferDrain()
   const { notifyPaneReady, registerPending, dropAllForPty } = buffer
@@ -625,6 +756,15 @@ export const useSessionManager = (
         fn = await listen<AgentSessionTitleEvent>(
           'agent-session-title',
           (payload) => {
+            if (
+              !acceptAgentSessionEvent(
+                payload.sessionId,
+                payload.agentSessionId
+              )
+            ) {
+              return
+            }
+
             // Title events are a reliable run-start signal: a new
             // agentSessionId here means the pane's active agent run has
             // changed, so future lifecycle comparisons must use this id.
@@ -632,6 +772,7 @@ export const useSessionManager = (
               payload.sessionId,
               payload.agentSessionId
             )
+            releaseAutoStartedAgentWatcher(payload.sessionId)
 
             const cleared = payload.title.length === 0
             const nextTitle = cleared ? undefined : payload.title
@@ -651,6 +792,11 @@ export const useSessionManager = (
                   if (pane.ptyId !== payload.sessionId) {
                     return pane
                   }
+
+                  const boundPane = bindAgentSessionId(
+                    pane,
+                    payload.agentSessionId
+                  )
 
                   // Once the pane's title was set by an explicit user
                   // rename (agentTitleSource === 'user-renamed'), the
@@ -672,7 +818,7 @@ export const useSessionManager = (
                     pane.agentTitleSource === 'user-renamed' &&
                     payload.source === 'ai-generated'
                   ) {
-                    return pane
+                    return boundPane
                   }
 
                   // A matching confirmed `/rename` (`user-renamed`) means the
@@ -690,7 +836,7 @@ export const useSessionManager = (
                       : pane.userLabel
 
                   return {
-                    ...pane,
+                    ...boundPane,
                     agentTitle: nextTitle,
                     agentTitleSource: nextSource,
                     userLabel: nextUserLabel,
@@ -717,7 +863,82 @@ export const useSessionManager = (
       cancelled = true
       unlistenFn?.()
     }
-  }, [])
+  }, [acceptAgentSessionEvent, releaseAutoStartedAgentWatcher])
+
+  // Status snapshots are the shared identity source for every supported
+  // adapter, including Kimi and OpenCode which do not emit title events.
+  useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
+    let cancelled = false
+    let unlistenFn: UnlistenFn | undefined
+
+    void (async (): Promise<void> => {
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentStatusEvent>('agent-status', (payload) => {
+          if (!payload.agentSessionId) {
+            return
+          }
+
+          const tokenTotal =
+            payload.contextWindow === null
+              ? null
+              : Number(payload.contextWindow.totalInputTokens) +
+                Number(payload.contextWindow.totalOutputTokens)
+          if (
+            !acceptAgentSessionEvent(
+              payload.sessionId,
+              payload.agentSessionId,
+              tokenTotal
+            )
+          ) {
+            return
+          }
+
+          agentSessionIdsRef.current.set(
+            payload.sessionId,
+            payload.agentSessionId
+          )
+          releaseAutoStartedAgentWatcher(payload.sessionId)
+
+          setSessions((prev) => {
+            const matchExists = prev.some((session) =>
+              session.panes.some((pane) => pane.ptyId === payload.sessionId)
+            )
+            if (!matchExists) {
+              return prev
+            }
+
+            return prev.map((session) => ({
+              ...session,
+              panes: session.panes.map((pane) =>
+                pane.ptyId === payload.sessionId
+                  ? bindAgentSessionId(pane, payload.agentSessionId)
+                  : pane
+              ),
+            }))
+          })
+        })
+      } catch {
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [acceptAgentSessionEvent, releaseAutoStartedAgentWatcher])
 
   // Bridge: write the agent's derived lifecycle phase into pane.status.
   useEffect(() => {
@@ -732,6 +953,12 @@ export const useSessionManager = (
       let fn: UnlistenFn
       try {
         fn = await listen<AgentLifecycleEvent>('agent-lifecycle', (payload) => {
+          if (
+            !acceptAgentSessionEvent(payload.sessionId, payload.agentSessionId)
+          ) {
+            return
+          }
+
           setSessions((prev) =>
             prev.map((session) => {
               const idx = session.panes.findIndex(
@@ -765,7 +992,11 @@ export const useSessionManager = (
 
               const newPanes = session.panes.map((pane, i) =>
                 i === idx
-                  ? { ...pane, status: phaseToStatus[payload.phase] }
+                  ? {
+                      ...pane,
+                      agentSessionId: payload.agentSessionId,
+                      status: phaseToStatus[payload.phase],
+                    }
                   : pane
               )
 
@@ -793,7 +1024,7 @@ export const useSessionManager = (
       cancelled = true
       unlistenFn?.()
     }
-  }, [])
+  }, [acceptAgentSessionEvent])
 
   // Create session — spawn + append, then mark the pane as 'attach'.
   //
@@ -831,6 +1062,233 @@ export const useSessionManager = (
   // and fires the auto-create that the round-10 comment promised.
   const [pendingSpawns, setPendingSpawns] = useState(0)
   const pendingPaneOps = useRef<Set<string>>(new Set())
+  const pendingRestartPaneKeys = useRef<Set<string>>(new Set())
+  const autoHydratedSessionIds = useRef<Set<string>>(new Set())
+
+  const claimedLatestAgentResumeKeys = useRef<Map<string, Set<string>>>(
+    new Map()
+  )
+  const resumeClaimQueueTailRef = useRef(Promise.resolve())
+  const inFlightRestartPtyIds = useRef<Set<string>>(new Set())
+  const restartMountedRef = useRef(true)
+
+  const hasClaimedLatestAgentResumeKey = useCallback((key: string): boolean => {
+    const owners = claimedLatestAgentResumeKeys.current.get(key)
+
+    return owners !== undefined && owners.size > 0
+  }, [])
+
+  const claimLatestAgentResumeKey = useCallback(
+    (key: string, ptyId: string): void => {
+      const owners = claimedLatestAgentResumeKeys.current.get(key)
+      if (owners !== undefined) {
+        owners.add(ptyId)
+
+        return
+      }
+
+      claimedLatestAgentResumeKeys.current.set(key, new Set([ptyId]))
+    },
+    []
+  )
+
+  const releaseLatestAgentResumeKey = useCallback(
+    (key: string, ptyId: string): void => {
+      const owners = claimedLatestAgentResumeKeys.current.get(key)
+      if (owners === undefined) {
+        return
+      }
+
+      owners.delete(ptyId)
+      if (owners.size === 0) {
+        claimedLatestAgentResumeKeys.current.delete(key)
+      }
+    },
+    []
+  )
+
+  const releaseLatestAgentResumeClaimsForPty = useCallback(
+    (ptyId: string): void => {
+      for (const [key, owners] of claimedLatestAgentResumeKeys.current) {
+        owners.delete(ptyId)
+        if (owners.size === 0) {
+          claimedLatestAgentResumeKeys.current.delete(key)
+        }
+      }
+    },
+    []
+  )
+
+  const disposeRestartPty = useCallback(
+    async (ptyId: string): Promise<void> => {
+      if (!inFlightRestartPtyIds.current.delete(ptyId)) {
+        return
+      }
+
+      releaseLatestAgentResumeClaimsForPty(ptyId)
+      dropAllForPty(ptyId)
+      restoreDataRef.current.delete(ptyId)
+      agentSessionIdsRef.current.delete(ptyId)
+      invalidatedAgentSessionsRef.current.delete(ptyId)
+      unregisterPtySession(ptyId)
+
+      try {
+        await service.kill({ sessionId: ptyId })
+      } catch (err) {
+        log.warn(`failed to kill uncommitted restart PTY ${ptyId}`, err)
+      }
+    },
+    [dropAllForPty, releaseLatestAgentResumeClaimsForPty, service]
+  )
+
+  useEffect(() => {
+    restartMountedRef.current = true
+    const inFlightPtyIds = inFlightRestartPtyIds.current
+    const autoStartedWatcherPtyIds = autoStartedAgentWatcherPtyIds.current
+
+    return (): void => {
+      restartMountedRef.current = false
+      const pendingPtyIds = [...inFlightPtyIds]
+
+      for (const ptyId of pendingPtyIds) {
+        void disposeRestartPty(ptyId)
+      }
+
+      for (const ptyId of autoStartedWatcherPtyIds) {
+        autoStartedWatcherPtyIds.delete(ptyId)
+        void stopAgentWatcher(ptyId)
+      }
+    }
+  }, [disposeRestartPty])
+
+  useEffect(() => {
+    for (const ptyId of autoStartedAgentWatcherPtyIds.current) {
+      const pane = sessions
+        .flatMap((session) => session.panes)
+        .find(
+          (candidate) => isShellPane(candidate) && candidate.ptyId === ptyId
+        )
+
+      if (
+        pane === undefined ||
+        isTerminalStatus(pane.status) ||
+        pane.agentType === 'generic'
+      ) {
+        releaseAutoStartedAgentWatcher(ptyId)
+      }
+    }
+  }, [releaseAutoStartedAgentWatcher, sessions])
+
+  const attachResumedAgentWatcher = useCallback(
+    async (ptyId: string, agentType: Pane['agentType']): Promise<void> => {
+      if (!isDesktop()) {
+        return
+      }
+
+      let retryDelayMs = 0
+      const isRestartMounted = (): boolean => restartMountedRef.current
+
+      for (
+        let attempt = 0;
+        attempt < RESUMED_AGENT_WATCHER_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        if (retryDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+        }
+
+        const pane = sessionsRef.current
+          .flatMap((session) => session.panes)
+          .find(
+            (candidate) => isShellPane(candidate) && candidate.ptyId === ptyId
+          )
+        if (
+          !isRestartMounted() ||
+          pane === undefined ||
+          isTerminalStatus(pane.status) ||
+          pane.agentSessionId !== undefined ||
+          pane.agentType !== agentType
+        ) {
+          return
+        }
+
+        try {
+          await invoke<boolean>('start_agent_watcher', { sessionId: ptyId })
+
+          const currentPane = sessionsRef.current
+            .flatMap((session) => session.panes)
+            .find(
+              (candidate) => isShellPane(candidate) && candidate.ptyId === ptyId
+            )
+          if (
+            !isRestartMounted() ||
+            currentPane === undefined ||
+            isTerminalStatus(currentPane.status) ||
+            currentPane.agentType !== agentType
+          ) {
+            void stopAgentWatcher(ptyId)
+
+            return
+          }
+
+          autoStartedAgentWatcherPtyIds.current.add(ptyId)
+          if (
+            agentSessionIdsRef.current.has(ptyId) ||
+            currentPane.agentSessionId !== undefined
+          ) {
+            releaseAutoStartedAgentWatcher(ptyId)
+          }
+
+          return
+        } catch {
+          if (attempt === RESUMED_AGENT_WATCHER_MAX_ATTEMPTS - 1) {
+            break
+          }
+
+          // Keep a capped background retry while this exact legacy pane still
+          // needs identity; agent startup/transcript creation can be delayed.
+          retryDelayMs =
+            retryDelayMs === 0
+              ? 100
+              : Math.min(
+                  retryDelayMs * 2,
+                  RESUMED_AGENT_WATCHER_MAX_RETRY_DELAY_MS
+                )
+        }
+      }
+
+      log.warn(`agent watcher did not attach after resume for PTY ${ptyId}`)
+      agentSessionIdsRef.current.delete(ptyId)
+      invalidatedAgentSessionsRef.current.delete(ptyId)
+      setSessions((prev) =>
+        prev.map((session) => {
+          const pane = session.panes.find(
+            (candidate) =>
+              isShellPane(candidate) &&
+              candidate.ptyId === ptyId &&
+              candidate.agentType === agentType &&
+              candidate.agentSessionId === undefined
+          )
+          if (pane === undefined) {
+            return session
+          }
+
+          const panes = session.panes.map((candidate) =>
+            candidate === pane
+              ? { ...candidate, agentType: 'generic' as const }
+              : candidate
+          )
+
+          return {
+            ...session,
+            agentType: pane.active ? 'generic' : session.agentType,
+            panes,
+          }
+        })
+      )
+    },
+    [releaseAutoStartedAgentWatcher]
+  )
 
   const createSession = useCallback(
     (opts?: CreateSessionOptions): void => {
@@ -1105,12 +1563,12 @@ export const useSessionManager = (
   //
   // This effect runs ONCE after the initial restore completes (loading
   // transitions from true to false). If the merged session list contains
-  // no LIVE session at that point, we fire createSession() to seed a
+  // no usable/open session at that point, we fire createSession() to seed a
   // default tab. The ref-guard prevents this from re-firing — if the
   // user later closes all tabs, we DO NOT auto-create another (closing
   // all tabs is intentional; re-creating one would be confusing).
   //
-  // "No live session" — not just "empty list" — covers the post-crash
+  // "No open session" — not just "empty list" — covers the post-crash
   // path: if the previous app was killed (SIGKILL, OOM, wdio session
   // teardown without graceful exit), `list_sessions` lazy-reconciles
   // every cached "alive" entry to Exited. The user (or E2E suite) lands
@@ -1119,16 +1577,10 @@ export const useSessionManager = (
   // terminal on first paint. Treat that case the same as empty cache
   // and seed a fresh tab; the Exited tabs remain available for the user
   // to Restart in their original cwd if they want to.
-  // A live session = a running shell PTY OR a browser pane. A browser-only
-  // session restored from the durable store has no shell but is a usable
-  // workspace, so it must not trigger the empty-workspace seed.
-  const hasLiveSession = sessions.some((s) =>
-    s.panes.some(
-      (pane) =>
-        (isShellPane(pane) && isLiveStatus(pane.status)) ||
-        (isBrowserPane(pane) && isLiveStatus(pane.status))
-    )
-  )
+  // Graceful-quit placeholders explicitly remain open while their PTYs hydrate,
+  // and browser-only sessions are usable without a shell. Both must suppress a
+  // duplicate default tab; naturally exited legacy/cache sessions do not.
+  const hasLiveSession = sessions.some(isOpenSession)
   useAutoCreateOnEmpty({
     enabled: autoCreateOnEmpty,
     loading,
@@ -1261,10 +1713,12 @@ export const useSessionManager = (
         // orphans).
         const allKilledPtyIds = [...snapshotPtyIds, ...newPtyIds]
         for (const ptyId of allKilledPtyIds) {
+          releaseLatestAgentResumeClaimsForPty(ptyId)
           dropAllForPty(ptyId)
           deleteCacheHistory(ptyId)
           restoreDataRef.current.delete(ptyId)
           agentSessionIdsRef.current.delete(ptyId)
+          invalidatedAgentSessionsRef.current.delete(ptyId)
           unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
@@ -1310,6 +1764,7 @@ export const useSessionManager = (
     [
       activeSessionIdRef,
       dropAllForPty,
+      releaseLatestAgentResumeClaimsForPty,
       service,
       setActiveSessionId,
       setActiveSessionIdRaw,
@@ -1700,6 +2155,8 @@ export const useSessionManager = (
             deleteCacheHistory(target.ptyId)
             restoreDataRef.current.delete(target.ptyId)
             agentSessionIdsRef.current.delete(target.ptyId)
+            invalidatedAgentSessionsRef.current.delete(target.ptyId)
+            releaseLatestAgentResumeClaimsForPty(target.ptyId)
             unregisterPtySession(target.ptyId)
           } else {
             try {
@@ -1759,96 +2216,70 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionIdRef, dropAllForPty, layoutRegistry, service]
+    [
+      activeSessionIdRef,
+      dropAllForPty,
+      layoutRegistry,
+      releaseLatestAgentResumeClaimsForPty,
+      service,
+    ]
   )
 
-  // F5 (round 2): restart an Exited session in the same cwd.
-  //
-  // Round 4, Finding 2 (codex P2): SPAWN-THEN-KILL ordering. The previous
-  // kill-then-spawn flow removed the old session from cache.sessions and
-  // cache.session_order BEFORE we knew the spawn would succeed. If the
-  // user restarted a tab whose cwd no longer existed (rm -rf, branch
-  // switch, etc.), spawn returned an error and the React tab stayed
-  // visible as `completed`, but the backend had already forgotten it —
-  // the next reload silently dropped the tab and any later IPC against
-  // the old id rejected as unknown.
-  //
-  // Spawn-first means: if spawn fails, the OLD session still exists in
-  // the cache (still `exited: true`, still restorable later — the user
-  // can recover by fixing the cwd and clicking Restart again, or by
-  // using a different tab). If spawn succeeds, we then kill the old —
-  // safe because the new session is already alive. The only caveat is
-  // that during the spawn the cache briefly contains BOTH ids (old as
-  // exited, new as alive), which is harmless: list_sessions still
-  // returns the right set and the in-memory React state replaces the
-  // old entry atomically once spawn resolves.
-  //
-  // Flow (spawn-then-kill):
-  //   1. Look up cached cwd for the exited tab from React state
-  //   2. service.spawn({ cwd: cachedCwd }) — gets a fresh sessionId/pid;
-  //      bail early if it fails (old session preserved)
-  //   3. service.kill(oldId) — only after the new PTY exists; idempotent
-  //   4. Replace the old session in React state with the new metadata
-  //   5. If the restarted tab was active, refresh activeSessionId + IPC
-  //   6. Seed restoreData with empty replay so TerminalPane attaches
-  //      instead of triggering the legacy spawn fallback
-  //
-  // The new session id differs from the old one — Rust's spawn_pty
-  // assigns a fresh UUID. Callers (TerminalPane) re-render with the new
-  // id and useTerminal mounts a fresh attach lifecycle.
-  const restartSession = useCallback(
-    (sessionId: string, paneId?: string): void => {
-      void (async (): Promise<void> => {
-        const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
-        if (!oldSession) {
-          log.warn(`restartSession: no session with id ${sessionId}`)
+  // Shared explicit-restart and relaunch-hydration primitive. Spawn first so a
+  // failure cannot retire the old cache entry, arm output buffering before an
+  // optional resume write, then rotate only the ephemeral PTY id. SplitView's
+  // ptyId key remounts either Ghostty or xterm downstream of this boundary.
+  const restartPane = useCallback(
+    async (sessionId: string, paneId: string): Promise<void> => {
+      const paneKey = `${sessionId}:${paneId}`
+      if (pendingRestartPaneKeys.current.has(paneKey)) {
+        return
+      }
 
-          return
+      const oldSession = sessionsRef.current.find((s) => s.id === sessionId)
+      const oldPane = oldSession?.panes.find((pane) => pane.id === paneId)
+      if (!oldSession || !oldPane || !isShellPane(oldPane)) {
+        log.warn(`restartPane: no shell pane ${paneId} in session ${sessionId}`)
+
+        return
+      }
+
+      pendingRestartPaneKeys.current.add(paneKey)
+      let claimedLatestResumeKey: string | null = null
+      let claimedLatestResumePtyId: string | null = null
+      let resumeClaimCommitted = false
+      let resumeClaimPredecessor: Promise<void> | null = null
+      let releaseResumeClaim = (): void => undefined
+
+      try {
+        const candidateResumeCommand = buildAgentResumeCommand(
+          oldPane.agentType,
+          oldPane.agentSessionId
+        )
+        let resumeCommand = candidateResumeCommand
+
+        if (candidateResumeCommand !== null) {
+          const predecessor = resumeClaimQueueTailRef.current
+
+          const claim = new Promise<void>((resolve) => {
+            releaseResumeClaim = resolve
+          })
+          resumeClaimPredecessor = predecessor
+          resumeClaimQueueTailRef.current = (async (): Promise<void> => {
+            await predecessor
+            await claim
+          })()
         }
 
-        const requestedPane =
-          paneId !== undefined
-            ? oldSession.panes.find((pane) => pane.id === paneId)
-            : undefined
-
-        if (paneId !== undefined && requestedPane === undefined) {
-          log.warn(`restartSession: no pane ${paneId} in session ${sessionId}`)
-
-          return
-        }
-
-        // Restart the explicitly requested shell when one is supplied by pane
-        // chrome. Legacy callers without a pane id keep the active-pane
-        // behavior, falling back to another shell only when a browser is active.
-        const activePane =
-          paneId === undefined ? getActivePane(oldSession) : null
-
-        const oldPane =
-          requestedPane ??
-          (activePane !== null && isShellPane(activePane)
-            ? activePane
-            : oldSession.panes.find(isShellPane))
-        if (!oldPane || !isShellPane(oldPane)) {
-          log.warn('restartSession: no shell pane found')
-
-          return
-        }
-        const cachedCwd = oldPane.cwd
-
-        let result: {
-          sessionId: string
-          pid: number
-          cwd: string
-          shell: string
-        }
+        let result: PTYSpawnResult
         try {
           result = await service.spawn({
-            cwd: cachedCwd,
+            cwd: oldPane.cwd,
             env: {},
             enableAgentBridge: true,
           })
         } catch (err) {
-          log.warn('restartSession: spawn failed; old session preserved', err)
+          log.warn('restartPane: spawn failed; old pane preserved', err)
           onTerminalSpawnError?.(
             spawnErrorMessage('Failed to restart terminal', err)
           )
@@ -1856,7 +2287,81 @@ export const useSessionManager = (
           return
         }
 
-        // Skip the kill when the seed ptyId is already gone (restore placeholder).
+        inFlightRestartPtyIds.current.add(result.sessionId)
+        registerPending(result.sessionId)
+
+        const paneIsCurrent = (): boolean =>
+          sessionsRef.current
+            .find((session) => session.id === sessionId)
+            ?.panes.some(
+              (pane) =>
+                pane.id === paneId &&
+                isShellPane(pane) &&
+                pane.ptyId === oldPane.ptyId
+            ) === true
+
+        const restartCanCommit = (): boolean =>
+          restartMountedRef.current && paneIsCurrent()
+
+        if (resumeClaimPredecessor !== null) {
+          await resumeClaimPredecessor
+
+          if (!restartCanCommit()) {
+            await disposeRestartPty(result.sessionId)
+
+            return
+          }
+
+          const canonicalResumeKey = `${oldPane.agentType}\0${result.cwd}`
+          if (oldPane.agentSessionId === undefined) {
+            if (hasClaimedLatestAgentResumeKey(canonicalResumeKey)) {
+              resumeCommand = null
+            } else {
+              claimLatestAgentResumeKey(canonicalResumeKey, result.sessionId)
+              claimedLatestResumeKey = canonicalResumeKey
+              claimedLatestResumePtyId = result.sessionId
+            }
+          } else {
+            // Exact identities always resume, but reserve the canonical cwd so
+            // a later legacy pane cannot select the same run as "latest".
+            claimLatestAgentResumeKey(canonicalResumeKey, result.sessionId)
+            claimedLatestResumeKey = canonicalResumeKey
+            claimedLatestResumePtyId = result.sessionId
+          }
+        }
+
+        if (!restartCanCommit()) {
+          await disposeRestartPty(result.sessionId)
+
+          return
+        }
+
+        if (resumeCommand !== null) {
+          try {
+            await service.write({
+              sessionId: result.sessionId,
+              data: `${resumeCommand}\r`,
+            })
+          } catch (err) {
+            log.warn('restartPane: agent resume write failed', err)
+            onTerminalSpawnError?.(
+              spawnErrorMessage('Failed to resume agent conversation', err)
+            )
+            await disposeRestartPty(result.sessionId)
+
+            return
+          }
+        }
+
+        if (!restartCanCommit()) {
+          await disposeRestartPty(result.sessionId)
+
+          return
+        }
+
+        // Restored placeholders no longer have a backend PTY. A manual restart
+        // can still target a cached exited/live PTY, so retire it only when it
+        // is actually present.
         let oldPtyPresent = true
         try {
           const live = await service.listSessions()
@@ -1865,9 +2370,15 @@ export const useSessionManager = (
           )
         } catch (err) {
           log.warn(
-            'restartSession: listSessions failed; assuming old pty present',
+            'restartPane: listSessions failed; assuming old PTY present',
             err
           )
+        }
+
+        if (!restartCanCommit()) {
+          await disposeRestartPty(result.sessionId)
+
+          return
         }
 
         if (oldPtyPresent) {
@@ -1875,21 +2386,14 @@ export const useSessionManager = (
             await service.kill({ sessionId: oldPane.ptyId })
           } catch (err) {
             log.warn(
-              'restartSession: kill of old ptyId failed; killing new orphan',
+              'restartPane: old PTY kill failed; preserving the old pane',
               err
             )
-            // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
-            service.kill({ sessionId: result.sessionId }).catch((): void => {})
+            await disposeRestartPty(result.sessionId)
 
             return
           }
         }
-
-        dropAllForPty(oldPane.ptyId)
-        deleteCacheHistory(oldPane.ptyId)
-        restoreDataRef.current.delete(oldPane.ptyId)
-        restoreDataRef.current.delete(oldSession.id)
-        unregisterPtySession(oldPane.ptyId)
 
         const restoreData: RestoreData = {
           sessionId: result.sessionId,
@@ -1900,55 +2404,61 @@ export const useSessionManager = (
           bufferedEvents: [],
         }
 
-        // F4 (codex MEDIUM follow-up): single React-Session.id key only.
-        // restartSession preserves session.id; the ptyId-keyed entry was
-        // unused by drain logic (see comment in createSession).
-        restoreDataRef.current.set(oldSession.id, restoreData)
-        registerPending(result.sessionId)
-        registerPtySession(result.sessionId, result.sessionId, result.cwd)
+        const replacementAgentType =
+          resumeCommand === null ? 'generic' : oldPane.agentType
 
-        let orphanedSessionId = null as string | null
+        const replacementAgentSessionId =
+          resumeCommand === null ? undefined : oldPane.agentSessionId
+
         flushSync(() => {
           setSessions((prev) => {
-            const idx = prev.findIndex((s) => s.id === sessionId)
+            const idx = prev.findIndex((session) => session.id === sessionId)
             if (idx === -1) {
-              orphanedSessionId = result.sessionId
-
               return prev
             }
 
-            const next = [...prev]
             const current = prev[idx]
+            const currentPane = current.panes.find((pane) => pane.id === paneId)
+            if (
+              currentPane === undefined ||
+              !isShellPane(currentPane) ||
+              currentPane.ptyId !== oldPane.ptyId
+            ) {
+              return prev
+            }
 
             const replacementPane: Pane = {
-              ...oldPane,
+              ...currentPane,
               ptyId: result.sessionId,
               cwd: result.cwd,
               shell: result.shell,
               status: 'running',
-              agentType: 'generic',
+              agentType: replacementAgentType,
+              agentSessionId: replacementAgentSessionId,
               pid: result.pid,
               restoreData,
-              // Clear sticky title state so the new PTY session starts
-              // fresh — a user-renamed pane must not block ai-generated
-              // titles from the new agent session.
               agentTitle: undefined,
               agentTitleSource: undefined,
               userLabel: undefined,
               cacheHistory: [],
             }
-            const restartedActivePane = oldPane.active
+
+            const panes = current.panes.map((pane) =>
+              pane.id === paneId ? replacementPane : pane
+            )
+            const next = [...prev]
 
             next[idx] = {
               ...current,
-              status: 'running',
-              workingDirectory: restartedActivePane
+              open: true,
+              status: deriveShellSessionStatus(panes),
+              workingDirectory: currentPane.active
                 ? result.cwd
                 : current.workingDirectory,
-              agentType: restartedActivePane ? 'generic' : current.agentType,
-              panes: current.panes.map((pane) =>
-                pane.id === oldPane.id ? replacementPane : pane
-              ),
+              agentType: currentPane.active
+                ? replacementAgentType
+                : current.agentType,
+              panes,
               lastActivityAt: new Date().toISOString(),
             }
 
@@ -1956,32 +2466,157 @@ export const useSessionManager = (
           })
         })
 
-        if (orphanedSessionId !== null) {
-          // eslint-disable-next-line promise/prefer-await-to-then,@typescript-eslint/no-empty-function
-          service.kill({ sessionId: orphanedSessionId }).catch((): void => {})
-          restoreDataRef.current.delete(orphanedSessionId)
-          restoreDataRef.current.delete(oldSession.id)
-          dropAllForPty(orphanedSessionId)
-          unregisterPtySession(orphanedSessionId)
+        const committed =
+          sessionsRef.current
+            .find((session) => session.id === sessionId)
+            ?.panes.some(
+              (pane) => pane.id === paneId && pane.ptyId === result.sessionId
+            ) === true
+        if (!committed) {
+          await disposeRestartPty(result.sessionId)
+
+          return
+        }
+        resumeClaimCommitted = true
+
+        inFlightRestartPtyIds.current.delete(result.sessionId)
+        releaseLatestAgentResumeClaimsForPty(oldPane.ptyId)
+        dropAllForPty(oldPane.ptyId)
+        deleteCacheHistory(oldPane.ptyId)
+        restoreDataRef.current.delete(oldPane.ptyId)
+        restoreDataRef.current.delete(oldSession.id)
+        restoreDataRef.current.set(oldSession.id, restoreData)
+        agentSessionIdsRef.current.delete(oldPane.ptyId)
+        invalidatedAgentSessionsRef.current.delete(oldPane.ptyId)
+        if (replacementAgentSessionId !== undefined) {
+          agentSessionIdsRef.current.set(
+            result.sessionId,
+            replacementAgentSessionId
+          )
+        }
+        unregisterPtySession(oldPane.ptyId)
+        registerPtySession(result.sessionId, result.sessionId, result.cwd)
+
+        if (resumeCommand !== null && oldPane.agentSessionId === undefined) {
+          void attachResumedAgentWatcher(result.sessionId, oldPane.agentType)
         }
 
-        // Cache ordering is persisted by `usePushWorkspaceGrouping` on the
-        // sessions[] change above (see createSession for the rationale).
-
+        // Cache ordering is persisted by usePushWorkspaceGrouping after the
+        // state rotation. Keep the stable workspace/session id selected while
+        // the pane's backend PTY id changes underneath it.
         if (activeSessionIdRef.current === sessionId) {
           setActiveSessionId(sessionId)
         }
-      })()
+      } finally {
+        if (
+          !resumeClaimCommitted &&
+          claimedLatestResumeKey !== null &&
+          claimedLatestResumePtyId !== null
+        ) {
+          releaseLatestAgentResumeKey(
+            claimedLatestResumeKey,
+            claimedLatestResumePtyId
+          )
+        }
+        releaseResumeClaim()
+        pendingRestartPaneKeys.current.delete(paneKey)
+      }
     },
     [
       activeSessionIdRef,
+      attachResumedAgentWatcher,
+      claimLatestAgentResumeKey,
+      disposeRestartPty,
       dropAllForPty,
+      hasClaimedLatestAgentResumeKey,
       onTerminalSpawnError,
       registerPending,
+      releaseLatestAgentResumeClaimsForPty,
+      releaseLatestAgentResumeKey,
       service,
       setActiveSessionId,
     ]
   )
+
+  const restartSession = useCallback(
+    (sessionId: string, paneId?: string): void => {
+      const session = sessionsRef.current.find((item) => item.id === sessionId)
+      if (!session) {
+        log.warn(`restartSession: no session with id ${sessionId}`)
+
+        return
+      }
+
+      const requestedPane =
+        paneId === undefined
+          ? undefined
+          : session.panes.find((pane) => pane.id === paneId)
+      if (paneId !== undefined && requestedPane === undefined) {
+        log.warn(`restartSession: no pane ${paneId} in session ${sessionId}`)
+
+        return
+      }
+
+      const activePane = paneId === undefined ? getActivePane(session) : null
+
+      const shellPane =
+        requestedPane ??
+        (activePane !== null && isShellPane(activePane)
+          ? activePane
+          : session.panes.find(isShellPane))
+      if (!shellPane || !isShellPane(shellPane)) {
+        log.warn('restartSession: no shell pane found')
+
+        return
+      }
+
+      void restartPane(sessionId, shellPane.id)
+    },
+    [restartPane]
+  )
+
+  // Graceful quit persists every open workspace but intentionally retires its
+  // PTYs. Rehydrate all shell placeholders only when their workspace becomes
+  // active; inactive workspaces remain cheap serialized state until selected.
+  useEffect(() => {
+    if (loading || activeSessionId === null) {
+      return
+    }
+
+    const session = sessionsRef.current.find(
+      (item) => item.id === activeSessionId
+    )
+    if (session?.open !== true) {
+      return
+    }
+
+    if (autoHydratedSessionIds.current.has(session.id)) {
+      return
+    }
+
+    const shellPlaceholders = session.panes.filter(
+      (pane) => isShellPane(pane) && isTerminalStatus(pane.status)
+    )
+    if (shellPlaceholders.length === 0) {
+      return
+    }
+
+    autoHydratedSessionIds.current.add(session.id)
+
+    const orderedShellPlaceholders = [
+      ...shellPlaceholders.filter((pane) => pane.agentSessionId !== undefined),
+      ...shellPlaceholders.filter(
+        (pane) => pane.agentSessionId === undefined && pane.active
+      ),
+      ...shellPlaceholders.filter(
+        (pane) => pane.agentSessionId === undefined && !pane.active
+      ),
+    ]
+
+    for (const pane of orderedShellPlaceholders) {
+      void restartPane(session.id, pane.id)
+    }
+  }, [activeSessionId, loading, restartPane])
 
   // Rename session — in-memory only (no IPC)
   const renameSession = useCallback((id: string, name: string): void => {
@@ -2343,6 +2978,7 @@ export const useSessionManager = (
     appendPaneCacheReading,
     clearPaneCacheHistory,
     updatePaneAgentType,
+    invalidatePaneAgentSession,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
     updateSessionCwd,

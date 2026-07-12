@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+: "${VIMEFLOW_E2E_AGENT_LOG:?VIMEFLOW_E2E_AGENT_LOG is required}"
+: "${VIMEFLOW_E2E_AGENT_FOLLOW_UP_LOG:?VIMEFLOW_E2E_AGENT_FOLLOW_UP_LOG is required}"
+
+agent=${0##*/}
+
+# Vimeflow's Claude bridge adds its status-line settings overlay before the
+# resume arguments. It is orthogonal to conversation selection, so remove it
+# before validating and recording the resume argv shared by this fixture.
+if [ "$agent" = 'claude' ] && [ "${1-}" = '--settings' ]; then
+  [ "$#" -ge 2 ] || exit 64
+  shift 2
+fi
+
+case "$agent" in
+  claude)
+    if [ "$#" -eq 1 ] && [ "$1" = '--continue' ]; then
+      conversation='claude-conversation-e2e'
+    else
+      [ "$#" -eq 2 ] && [ "$1" = '--resume' ]
+      conversation=$2
+    fi
+    ;;
+  codex)
+    [ "$#" -eq 2 ] && [ "$1" = 'resume' ]
+    conversation=$2
+    ;;
+  kimi|opencode)
+    [ "$#" -eq 2 ] && [ "$1" = '--session' ]
+    conversation=$2
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+
+if [ "$#" -eq 1 ]; then
+  printf '%s\t%s\n' "$agent" "$1" >> "$VIMEFLOW_E2E_AGENT_LOG"
+else
+  printf '%s\t%s\t%s\n' "$agent" "$1" "$2" >> "$VIMEFLOW_E2E_AGENT_LOG"
+fi
+printf '%s\t%s\n' "$agent" "$conversation" >> "$VIMEFLOW_E2E_AGENT_FOLLOW_UP_LOG"
+printf '__VIMEFLOW_FAKE_FOLLOW_UP__ agent=%s conversation=%s\n' "$agent" "$conversation"
+
+# Model a real interactive agent: remain in the foreground until Vimeflow
+# tears down the PTY during graceful quit or test cleanup.
+exec cat >/dev/null

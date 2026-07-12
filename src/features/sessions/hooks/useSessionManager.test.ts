@@ -3,18 +3,25 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import type { PTYSpawnResult } from '../../terminal/types'
 import type {
   AgentLifecycleEvent,
   AgentSessionTitleEvent,
   SessionList,
 } from '../../../bindings'
+import type { AgentStatusEvent } from '../../agent-status/types'
 import {
   clearPtySessionMap,
   getAllPtySessionIds,
   registerPtySession,
 } from '../../terminal/ptySessionMap'
 import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
-import type { PersistedWorkspaceShape } from '../workspaceLayoutBridge'
+import type {
+  PersistedShellPaneShape,
+  PersistedWorkspacePaneShape,
+  PersistedWorkspaceSessionShape,
+  PersistedWorkspaceShape,
+} from '../workspaceLayoutBridge'
 import {
   loadWorkspaceForRestore,
   pushWorkspaceShape,
@@ -106,8 +113,10 @@ const mockListen = vi.hoisted(() =>
     }
   )
 )
+const mockInvoke = vi.hoisted(() => vi.fn(() => Promise.resolve(false)))
 
 vi.mock('../../../lib/backend', () => ({
+  invoke: mockInvoke,
   listen: mockListen,
 }))
 
@@ -164,14 +173,77 @@ const createMockService = (): ITerminalService => ({
   setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 })
 
+const persistedShellPane = (
+  overrides: Partial<PersistedShellPaneShape> = {}
+): PersistedShellPaneShape => ({
+  kind: 'shell',
+  paneId: 'p0',
+  paneIndex: 0,
+  active: true,
+  ptyId: 'pty-old',
+  cwd: '/repo',
+  agentType: 'codex',
+  agentSessionId: null,
+  ...overrides,
+})
+
+const persistedWorkspace = (
+  panes: PersistedWorkspacePaneShape[],
+  overrides: Partial<Omit<PersistedWorkspaceSessionShape, 'panes'>> = {}
+): PersistedWorkspaceShape => ({
+  sessions: [
+    {
+      id: 'ws-shell',
+      projectId: 'proj-1',
+      layout: panes.length > 1 ? 'vsplit' : 'single',
+      workingDirectory: '/repo',
+      active: true,
+      open: true,
+      ...overrides,
+      panes,
+    },
+  ],
+})
+
+const agentStatusEvent = (
+  overrides: Partial<AgentStatusEvent>
+): AgentStatusEvent => ({
+  sessionId: 'pty-1',
+  agentSessionId: null,
+  modelId: null,
+  modelDisplayName: null,
+  version: null,
+  contextWindow: null,
+  cost: null,
+  rateLimits: null,
+  usageFetched: false,
+  ...overrides,
+})
+
+const contextWindow = (
+  tokenTotal: number
+): AgentStatusEvent['contextWindow'] => ({
+  usedPercentage: 0,
+  remainingPercentage: 100,
+  contextWindowSize: BigInt(200_000),
+  totalInputTokens: BigInt(tokenTotal),
+  totalOutputTokens: BigInt(0),
+  currentUsage: null,
+})
+
 const titleListener = ():
   | ((payload: AgentSessionTitleEvent) => void)
   | undefined =>
   mockListen.mock.calls.find(([event]) => event === 'agent-session-title')?.[1]
 
+const statusListener = (): ((payload: AgentStatusEvent) => void) | undefined =>
+  mockListen.mock.calls.find(([event]) => event === 'agent-status')?.[1]
+
 describe('useSessionManager', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockInvoke.mockReset()
+    mockInvoke.mockResolvedValue(false)
     window.vimeflow = {
       invoke: vi.fn(),
       listen: vi.fn(),
@@ -327,6 +399,45 @@ describe('useSessionManager', () => {
     )
     expect(pane?.agentTitle).toBe('My Task')
     expect(pane?.agentTitleSource).toBe('ai-generated')
+    expect(pane?.agentSessionId).toBe('agent-uuid')
+  })
+
+  test('agent-status binds conversation identity without a title event', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-1',
+      sessions: [
+        {
+          id: 'pty-1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(statusListener()).toBeDefined())
+
+    act(() => {
+      statusListener()?.(
+        agentStatusEvent({
+          sessionId: 'pty-1',
+          agentSessionId: 'ses_opencode001',
+        })
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBe(
+      'ses_opencode001'
+    )
   })
 
   test('appendPaneCacheReading appends a changed reading once and persists by ptyId', async () => {
@@ -1112,6 +1223,7 @@ describe('useSessionManager', () => {
     })
     expect(result.current.sessions[0].panes[0].status).toBe('idle')
     expect(result.current.sessions[0].status).toBe('idle')
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBe('x')
 
     // ...and a running event moves it back.
     act(() => {
@@ -1188,6 +1300,108 @@ describe('useSessionManager', () => {
       })
     })
     expect(result.current.sessions[0].panes[0].status).toBe('completed')
+  })
+
+  test('invalidating a conversation rejects stale events until fresh identity evidence arrives', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('pty-1'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(statusListener()).toBeDefined())
+    await waitFor(() => expect(titleListener()).toBeDefined())
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+
+    act(() => {
+      statusListener()?.(
+        agentStatusEvent({
+          agentSessionId: 'conversation-old',
+          contextWindow: contextWindow(100),
+        })
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBe(
+      'conversation-old'
+    )
+
+    vi.mocked(pushWorkspaceShape).mockClear()
+    act(() => {
+      result.current.invalidatePaneAgentSession(
+        'pty-1',
+        'p0',
+        'conversation-old',
+        100
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBeUndefined()
+    await waitFor(() =>
+      expect(
+        vi.mocked(pushWorkspaceShape).mock.lastCall?.[0].sessions[0].panes[0]
+      ).toMatchObject({ agentSessionId: null })
+    )
+
+    act(() => {
+      statusListener()?.(
+        agentStatusEvent({
+          agentSessionId: 'conversation-old',
+          contextWindow: contextWindow(100),
+        })
+      )
+
+      titleListener()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'conversation-old',
+        title: 'Stale title',
+        source: 'ai-generated',
+      })
+
+      getLifecycleCallback()?.({
+        sessionId: 'pty-1',
+        agentSessionId: 'conversation-old',
+        phase: 'idle',
+      })
+    })
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBeUndefined()
+    expect(result.current.sessions[0].panes[0].agentTitle).toBeUndefined()
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+
+    act(() => {
+      statusListener()?.(
+        agentStatusEvent({
+          agentSessionId: 'conversation-old',
+          contextWindow: contextWindow(0),
+        })
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBe(
+      'conversation-old'
+    )
+
+    act(() => {
+      result.current.invalidatePaneAgentSession(
+        'pty-1',
+        'p0',
+        'conversation-old',
+        0
+      )
+
+      statusListener()?.(
+        agentStatusEvent({
+          agentSessionId: 'conversation-new',
+          contextWindow: contextWindow(100),
+        })
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBe(
+      'conversation-new'
+    )
   })
 
   test('events received between listSessions call and drain land in restoreData buffer', async () => {
@@ -1632,21 +1846,10 @@ describe('useSessionManager', () => {
   // but its idle browser pane makes it a usable workspace — auto-create must
   // NOT seed an extra terminal tab on top of it.
   test('auto-create is skipped for a restored browser-only session', async () => {
-    const store: PersistedWorkspaceShape = {
-      sessions: [
-        {
-          id: 'ws-browser',
-          projectId: 'proj-1',
-          layout: 'single',
-          workingDirectory: '/home/will/proj',
-          active: true,
-          open: true,
-          panes: [
-            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
-          ],
-        },
-      ],
-    }
+    const store = persistedWorkspace(
+      [{ kind: 'browser', paneId: 'p0', paneIndex: 0, active: true }],
+      { id: 'ws-browser', workingDirectory: '/home/will/proj' }
+    )
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(store)
 
     const service = createMockService()
@@ -1666,31 +1869,12 @@ describe('useSessionManager', () => {
     expect(service.spawn).not.toHaveBeenCalled()
   })
 
-  test('restores a graceful-quit shell workspace in place without auto-creating a second session', async () => {
-    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
-      sessions: [
-        {
-          id: 'ws-shell',
-          projectId: 'proj-1',
-          layout: 'single',
-          workingDirectory: '/home/will/proj',
-          active: true,
-          open: true,
-          panes: [
-            {
-              kind: 'shell',
-              paneId: 'p0',
-              paneIndex: 0,
-              active: true,
-              ptyId: 'pty-old',
-              cwd: '/home/will/proj',
-              agentType: 'codex',
-              agentSessionId: null,
-            },
-          ],
-        },
-      ],
-    })
+  test('restores a graceful-quit shell workspace and resumes its latest conversation', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace([persistedShellPane({ cwd: '/home/will/proj' })], {
+        workingDirectory: '/home/will/proj',
+      })
+    )
 
     const service = createMockService()
     service.listSessions = vi
@@ -1704,7 +1888,11 @@ describe('useSessionManager', () => {
       shell: '/bin/zsh',
     })
 
-    const { result } = renderHook(() => useSessionManager(service))
+    mockInvoke
+      .mockRejectedValueOnce(new Error('agent not ready'))
+      .mockResolvedValueOnce(false)
+
+    const { result, unmount } = renderHook(() => useSessionManager(service))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
@@ -1719,7 +1907,678 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].status).toBe('running')
     expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-restarted')
     expect(result.current.sessions[0].panes[0].status).toBe('running')
+    expect(result.current.sessions[0].panes[0].agentType).toBe('codex')
     expect(result.current.activeSessionId).toBe('ws-shell')
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-restarted',
+      data: 'codex resume --last\r',
+    })
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2))
+    expect(mockInvoke).toHaveBeenLastCalledWith('start_agent_watcher', {
+      sessionId: 'pty-restarted',
+    })
+
+    unmount()
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-restarted',
+      })
+    )
+  })
+
+  test('releases the latest-conversation claim when spawn fails so retry can resume', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace([persistedShellPane({ cwd: '/home/will/proj' })], {
+        workingDirectory: '/home/will/proj',
+      })
+    )
+
+    const service = createMockService()
+    const onTerminalSpawnError = vi.fn()
+    service.spawn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('bridge unavailable'))
+      .mockResolvedValueOnce({
+        sessionId: 'pty-retried',
+        pid: 92,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, {
+        autoCreateOnEmpty: false,
+        onTerminalSpawnError,
+      })
+    )
+
+    await waitFor(() =>
+      expect(onTerminalSpawnError).toHaveBeenCalledWith(
+        'Failed to restart terminal: bridge unavailable'
+      )
+    )
+
+    act(() => result.current.restartSession('ws-shell'))
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-retried')
+    )
+
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-retried',
+      data: 'codex resume --last\r',
+    })
+  })
+
+  test.each(['/home/will/proj', '/home/will/proj-link'])(
+    'resumes latest only once for duplicate legacy panes when inactive cwd is %s',
+    async (inactiveCwd) => {
+      vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+        persistedWorkspace(
+          [
+            persistedShellPane({
+              active: false,
+              ptyId: 'pty-inactive-old',
+              cwd: inactiveCwd,
+            }),
+            persistedShellPane({
+              paneId: 'p1',
+              paneIndex: 1,
+              ptyId: 'pty-active-old',
+              cwd: '/home/will/proj',
+            }),
+          ],
+          { workingDirectory: '/home/will/proj' }
+        )
+      )
+
+      const service = createMockService()
+      service.spawn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          sessionId: 'pty-active-new',
+          pid: 91,
+          cwd: '/home/will/proj',
+          shell: '/bin/zsh',
+        })
+        .mockResolvedValueOnce({
+          sessionId: 'pty-inactive-new',
+          pid: 92,
+          cwd: '/home/will/proj',
+          shell: '/bin/zsh',
+        })
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+
+      await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+      await waitFor(() =>
+        expect(
+          result.current.sessions[0].panes.map((pane) => pane.ptyId)
+        ).toEqual(['pty-inactive-new', 'pty-active-new'])
+      )
+
+      expect(service.write).toHaveBeenCalledOnce()
+      expect(service.write).toHaveBeenCalledWith({
+        sessionId: 'pty-active-new',
+        data: 'codex resume --last\r',
+      })
+      expect(result.current.sessions[0].panes[0].agentType).toBe('generic')
+      expect(result.current.sessions[0].panes[1].agentType).toBe('codex')
+    }
+  )
+
+  test('gives the active legacy pane first claim on a canonical cwd when spawns resolve out of order', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace([
+        persistedShellPane({
+          active: false,
+          ptyId: 'pty-inactive-old',
+          cwd: '/repo',
+        }),
+        persistedShellPane({
+          paneId: 'p1',
+          paneIndex: 1,
+          ptyId: 'pty-active-old',
+          cwd: '/repo-link',
+        }),
+      ])
+    )
+
+    let resolveActive: (result: PTYSpawnResult) => void = vi.fn()
+    let resolveInactive: (result: PTYSpawnResult) => void = vi.fn()
+
+    const activeSpawn = new Promise<PTYSpawnResult>((resolve) => {
+      resolveActive = resolve
+    })
+
+    const inactiveSpawn = new Promise<PTYSpawnResult>((resolve) => {
+      resolveInactive = resolve
+    })
+
+    const service = createMockService()
+    vi.mocked(service.spawn).mockImplementation(({ cwd }) =>
+      cwd === '/repo-link' ? activeSpawn : inactiveSpawn
+    )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      resolveInactive({
+        sessionId: 'pty-inactive-new',
+        pid: 92,
+        cwd: '/repo',
+        shell: '/bin/zsh',
+      })
+      await Promise.resolve()
+    })
+    expect(service.write).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveActive({
+        sessionId: 'pty-active-new',
+        pid: 91,
+        cwd: '/repo',
+        shell: '/bin/zsh',
+      })
+      await Promise.all([activeSpawn, inactiveSpawn])
+    })
+
+    await waitFor(() =>
+      expect(
+        result.current.sessions[0].panes.map((pane) => pane.ptyId)
+      ).toEqual(['pty-inactive-new', 'pty-active-new'])
+    )
+    expect(service.write).toHaveBeenCalledOnce()
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-active-new',
+      data: 'codex resume --last\r',
+    })
+    expect(result.current.sessions[0].panes[0].agentType).toBe('generic')
+    expect(result.current.sessions[0].panes[1].agentType).toBe('codex')
+  })
+
+  test('stops an auto-started watcher after an inactive fallback pane captures identity', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            active: false,
+            ptyId: 'pty-claude-old',
+            cwd: '/home/will/proj',
+            agentType: 'claude-code',
+          }),
+          persistedShellPane({
+            paneId: 'p1',
+            paneIndex: 1,
+            ptyId: 'pty-codex-old',
+            cwd: '/home/will/proj',
+            agentSessionId: 'codex-conversation',
+          }),
+        ],
+        { workingDirectory: '/home/will/proj' }
+      )
+    )
+
+    const service = createMockService()
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty-codex-new',
+        pid: 91,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-claude-new',
+        pid: 92,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-claude-new',
+      })
+    )
+
+    act(() => {
+      titleListener()?.({
+        sessionId: 'pty-claude-new',
+        agentSessionId: 'claude-conversation',
+        title: '',
+        source: 'ai-generated',
+      })
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].agentSessionId).toBe(
+        'claude-conversation'
+      )
+    )
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-claude-new',
+      })
+    )
+  })
+
+  test('stops retrying a missing resumed-agent watcher and degrades the pane', async () => {
+    vi.useFakeTimers()
+    let unmount: (() => void) | undefined
+
+    try {
+      vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+        persistedWorkspace([persistedShellPane()])
+      )
+      mockInvoke.mockRejectedValue(new Error('agent not ready'))
+
+      const service = createMockService()
+
+      const hook = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      unmount = hook.unmount
+
+      await act(async () => {
+        await vi.runAllTimersAsync()
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+
+      const watcherAttemptCount = (): number =>
+        mockInvoke.mock.calls.filter(
+          (call) => (call as unknown as [string])[0] === 'start_agent_watcher'
+        ).length
+      expect(watcherAttemptCount()).toBe(20)
+      expect(hook.result.current.sessions[0].panes[0].agentType).toBe('generic')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+      expect(watcherAttemptCount()).toBe(20)
+    } finally {
+      unmount?.()
+      vi.useRealTimers()
+    }
+  })
+
+  test('reattaches a live close-without-quit PTY without spawning or injecting resume', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            ptyId: 'pty-live',
+            agentSessionId: 'codex-session',
+          }),
+        ],
+        { id: 'ws-live' }
+      )
+    )
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-live',
+      sessions: [
+        {
+          id: 'pty-live',
+          cwd: '/repo',
+          shell: '/bin/zsh',
+          status: {
+            kind: 'Alive',
+            pid: 18,
+            replay_data: 'existing output',
+            replay_end_offset: 15n,
+          },
+        },
+      ],
+    } satisfies SessionList)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-live')
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+    expect(service.spawn).not.toHaveBeenCalled()
+    expect(service.write).not.toHaveBeenCalled()
+  })
+
+  test('hydrates every shell pane when the active restored workspace focuses a browser', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          persistedShellPane({
+            paneId: 'p1',
+            paneIndex: 1,
+            active: false,
+            ptyId: 'pty-codex-old',
+            cwd: '/repo/codex',
+            agentSessionId: 'codex-session',
+          }),
+          persistedShellPane({
+            paneId: 'p2',
+            paneIndex: 2,
+            active: false,
+            ptyId: 'pty-opencode-old',
+            cwd: '/repo/opencode',
+            agentType: 'opencode',
+            agentSessionId: 'ses_opencode',
+          }),
+        ],
+        { id: 'ws-active', layout: 'threeRight' }
+      )
+    )
+
+    const service = createMockService()
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty-codex-new',
+        pid: 11,
+        cwd: '/repo/codex',
+        shell: '/bin/zsh',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-opencode-new',
+        pid: 12,
+        cwd: '/repo/opencode',
+        shell: '/bin/zsh',
+      })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(
+        result.current.sessions[0].panes.map((pane) => pane.ptyId)
+      ).toEqual([
+        expect.stringMatching(/^browser:/),
+        'pty-codex-new',
+        'pty-opencode-new',
+      ])
+    )
+
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-codex-new',
+      data: "codex resume 'codex-session'\r",
+    })
+
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-opencode-new',
+      data: "opencode --session 'ses_opencode'\r",
+    })
+    expect(result.current.sessions[0].panes[0].active).toBe(true)
+  })
+
+  test('lazily hydrates an inactive workspace once across rapid tab switches', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-active',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/active',
+          active: true,
+          open: true,
+          panes: [
+            { kind: 'browser', paneId: 'p0', paneIndex: 0, active: true },
+          ],
+        },
+        {
+          id: 'ws-lazy',
+          projectId: 'proj-1',
+          layout: 'single',
+          workingDirectory: '/lazy',
+          active: false,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-lazy-old',
+              cwd: '/lazy',
+              agentType: 'kimi',
+              agentSessionId: 'kimi-session',
+            },
+          ],
+        },
+      ],
+    })
+
+    let resolveSpawn: ((value: unknown) => void) | undefined
+
+    const spawn = new Promise((resolve) => {
+      resolveSpawn = resolve
+    })
+    const service = createMockService()
+    service.spawn = vi.fn().mockReturnValue(spawn)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(service.spawn).not.toHaveBeenCalled()
+
+    act(() => {
+      result.current.setActiveSessionId('ws-lazy')
+    })
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      result.current.setActiveSessionId('ws-active')
+      result.current.setActiveSessionId('ws-lazy')
+    })
+    expect(service.spawn).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveSpawn?.({
+        sessionId: 'pty-lazy-new',
+        pid: 13,
+        cwd: '/lazy',
+        shell: '/bin/zsh',
+      })
+      await spawn
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions[1].panes[0].ptyId).toBe('pty-lazy-new')
+    )
+    expect(result.current.sessions[1].panes[0].status).toBe('running')
+    expect(service.write).toHaveBeenCalledOnce()
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-lazy-new',
+      data: "kimi --session 'kimi-session'\r",
+    })
+  })
+
+  test('kills a failed resume PTY and lets explicit Restart retry the placeholder', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            ptyId: 'pty-agent-old',
+            agentType: 'claude-code',
+            agentSessionId: 'claude-session',
+          }),
+        ],
+        { id: 'ws-agent' }
+      )
+    )
+
+    const service = createMockService()
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty-agent-failed',
+        pid: 14,
+        cwd: '/repo',
+        shell: '/bin/zsh',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-agent-retried',
+        pid: 15,
+        cwd: '/repo',
+        shell: '/bin/zsh',
+      })
+
+    service.write = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('write failed'))
+      .mockResolvedValue(undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(service.write).toHaveBeenCalledOnce())
+    await waitFor(() =>
+      expect(service.kill).toHaveBeenCalledWith({
+        sessionId: 'pty-agent-failed',
+      })
+    )
+
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-agent-old')
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
+
+    act(() => {
+      result.current.restartSession('ws-agent', 'p0')
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe(
+        'pty-agent-retried'
+      )
+    )
+    expect(service.spawn).toHaveBeenCalledTimes(2)
+    expect(service.write).toHaveBeenCalledTimes(2)
+    expect(service.write).toHaveBeenLastCalledWith({
+      sessionId: 'pty-agent-retried',
+      data: "claude --resume 'claude-session'\r",
+    })
+  })
+
+  test('hydrates sibling panes independently when one spawn fails', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            ptyId: 'pty-claude-old',
+            cwd: '/repo/claude',
+            agentType: 'claude-code',
+            agentSessionId: 'claude-session',
+          }),
+          persistedShellPane({
+            paneId: 'p1',
+            paneIndex: 1,
+            active: false,
+            ptyId: 'pty-codex-old',
+            cwd: '/repo/codex',
+            agentSessionId: 'codex-session',
+          }),
+        ],
+        { id: 'ws-partial' }
+      )
+    )
+
+    const service = createMockService()
+    service.spawn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('claude unavailable'))
+      .mockResolvedValueOnce({
+        sessionId: 'pty-codex-new',
+        pid: 16,
+        cwd: '/repo/codex',
+        shell: '/bin/zsh',
+      })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[1].ptyId).toBe('pty-codex-new')
+    )
+
+    expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-claude-old')
+    expect(result.current.sessions[0].panes[0].status).toBe('completed')
+    expect(service.write).toHaveBeenCalledOnce()
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty-codex-new',
+      data: "codex resume 'codex-session'\r",
+    })
+  })
+
+  test('kills a restart PTY that resolves after manager unmount', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            ptyId: 'pty-cancelled-old',
+            agentSessionId: 'codex-session',
+          }),
+        ],
+        { id: 'ws-cancelled' }
+      )
+    )
+
+    let resolveSpawn: ((value: unknown) => void) | undefined
+
+    const spawn = new Promise((resolve) => {
+      resolveSpawn = resolve
+    })
+
+    const service = createMockService()
+    service.spawn = vi.fn().mockReturnValue(spawn)
+
+    const { result, unmount } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(service.spawn).toHaveBeenCalledOnce())
+    unmount()
+
+    await act(async () => {
+      resolveSpawn?.({
+        sessionId: 'pty-cancelled-new',
+        pid: 17,
+        cwd: '/repo',
+        shell: '/bin/zsh',
+      })
+      await spawn
+    })
+
+    await waitFor(() =>
+      expect(service.kill).toHaveBeenCalledWith({
+        sessionId: 'pty-cancelled-new',
+      })
+    )
+    expect(service.write).not.toHaveBeenCalled()
   })
 
   // When the durable store is authoritative, the legacy localStorage browser
@@ -4122,7 +4981,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions).toBe(after1)
   })
 
-  test('restartSession seeds agentType to generic on the new session entry', async () => {
+  test('restartSession preserves agentType when latest resume is available', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 's1',
@@ -4153,7 +5012,7 @@ describe('useSessionManager', () => {
     )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    // Stamp a non-generic agentType so the reset is observable.
+    // Stamp a resumable agentType so the latest-conversation fallback is used.
     act(() => result.current.updateSessionAgentType('s1', 'claude-code'))
     expect(result.current.sessions[0].agentType).toBe('claude-code')
 
@@ -4168,7 +5027,125 @@ describe('useSessionManager', () => {
       )
     })
 
-    expect(result.current.sessions[0].agentType).toBe('generic')
+    expect(result.current.sessions[0].agentType).toBe('claude-code')
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 's2',
+      data: 'claude --continue\r',
+    })
+  })
+
+  test('restartSession releases exact identity resume claim when pane is removed', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'vsplit',
+          workingDirectory: '/repo',
+          active: true,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-exact',
+              cwd: '/repo',
+              agentType: 'claude-code',
+              agentSessionId: 'conversation-exact',
+            },
+            {
+              kind: 'shell',
+              paneId: 'p1',
+              paneIndex: 1,
+              active: false,
+              ptyId: 'pty-legacy',
+              cwd: '/repo',
+              agentType: 'claude-code',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-exact',
+      sessions: [
+        {
+          id: 'pty-exact',
+          cwd: '/repo',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'pty-legacy',
+          cwd: '/repo',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty-exact-new',
+        pid: 3,
+        cwd: '/repo',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-exact-newer',
+        pid: 4,
+        cwd: '/repo',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-legacy-new',
+        pid: 5,
+        cwd: '/repo',
+      })
+    service.kill = vi.fn().mockResolvedValue(undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.restartSession('ws-shell', 'p0'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-exact-new')
+    )
+
+    act(() => result.current.restartSession('ws-shell', 'p0'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-exact-newer')
+    )
+
+    act(() => result.current.removePane('ws-shell', 'p0'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes).toHaveLength(1)
+    )
+
+    act(() => result.current.restartSession('ws-shell', 'p1'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-legacy-new')
+    )
+
+    expect(service.write).toHaveBeenLastCalledWith({
+      sessionId: 'pty-legacy-new',
+      data: 'claude --continue\r',
+    })
+    expect(result.current.sessions[0].panes[0].agentType).toBe('claude-code')
   })
 
   test('restartSession clears sticky title fields so the new PTY starts fresh', async () => {

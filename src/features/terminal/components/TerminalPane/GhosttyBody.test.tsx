@@ -168,6 +168,61 @@ describe('GhosttyBody', () => {
     expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
   })
 
+  test('destroys the old native surface and attaches the rotated PTY id', async () => {
+    const service = createService()
+
+    const { rerender } = render(
+      <GhosttyBody
+        key="pty-old"
+        paneId="pane-1"
+        ptyId="pty-old"
+        cwd="/tmp"
+        active
+        service={service}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'pty-old',
+          paneId: 'pane-1',
+        })
+      )
+    })
+
+    rerender(
+      <GhosttyBody
+        key="pty-new"
+        paneId="pane-1"
+        ptyId="pty-new"
+        cwd="/tmp"
+        active
+        service={service}
+      />
+    )
+
+    await waitFor(() => {
+      expect(destroyNativeGhostty).toHaveBeenCalledWith({
+        sessionId: 'pty-old',
+        paneId: 'pane-1',
+      })
+
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'pty-new',
+          paneId: 'pane-1',
+        })
+      )
+    })
+    expect(unregisterPtySession).toHaveBeenCalledWith('pty-old')
+    expect(registerPtySession).toHaveBeenCalledWith(
+      'pty-new',
+      'pty-new',
+      '/tmp'
+    )
+  })
+
   test('sends displayed theme colors to native frame updates', async () => {
     render(
       <GhosttyBody

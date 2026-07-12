@@ -6,12 +6,12 @@
 //! per-session [`KimiTranscriptDecoder`]) without the codex test-runner
 //! machinery (deferred per the kimi state spec).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Instant, SystemTime};
 
@@ -21,7 +21,8 @@ use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, Transcrip
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::types::{stamp_snapshot, StatusSnapshot, ValidateTranscriptError};
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_status, emit_agent_tool_call, emit_agent_turn, record_lifecycle,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_status, emit_agent_tool_call,
+    emit_agent_turn, record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::types::{
     AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
@@ -46,6 +47,98 @@ struct InFlightToolCall {
 
 type InFlightToolCalls = HashMap<String, InFlightToolCall>;
 type ChildTailers = HashMap<PathBuf, (Arc<AtomicBool>, JoinHandle<()>)>;
+
+#[derive(Default)]
+struct ReplayCoordinatorState {
+    expected: usize,
+    completed: usize,
+    num_turns: u32,
+    activity: ReplayActivity,
+    flushed: bool,
+}
+
+/// Joins the main and sub-agent wire replays into one PTY-level summary. A
+/// clean EOF is a session-wide barrier: every initial decoder drains running
+/// calls first, the last decoder emits the aggregate summary, then all tailers
+/// resume live delivery together.
+struct KimiReplayCoordinator {
+    events: Arc<dyn EventSink>,
+    session_id: String,
+    cwd: Option<String>,
+    state: Mutex<ReplayCoordinatorState>,
+    flushed: Condvar,
+}
+
+impl KimiReplayCoordinator {
+    fn new(events: Arc<dyn EventSink>, session_id: String, cwd: Option<String>) -> Self {
+        Self {
+            events,
+            session_id,
+            cwd,
+            state: Mutex::new(ReplayCoordinatorState::default()),
+            flushed: Condvar::new(),
+        }
+    }
+
+    /// Register before spawning the decoder. Once the first generation has
+    /// flushed, newly discovered wires are live and must not start a new
+    /// replacement summary generation.
+    fn register(&self) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.flushed {
+            return false;
+        }
+        state.expected = state.expected.saturating_add(1);
+        true
+    }
+
+    fn finish(&self, activity: ReplayActivity, num_turns: u32, stop: Option<&AtomicBool>) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+            return;
+        }
+
+        state.activity.merge(activity);
+        state.num_turns = state.num_turns.saturating_add(num_turns);
+        state.completed = state.completed.saturating_add(1);
+
+        if state.completed == state.expected {
+            if stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+                return;
+            }
+            let summary = std::mem::take(&mut state.activity).into_summary(
+                self.session_id.clone(),
+                state.num_turns,
+                self.cwd.clone(),
+            );
+            if summary.tool_call_total > 0 || summary.num_turns > 0 || summary.cwd.is_some() {
+                if let Err(e) = emit_agent_replay_summary(self.events.as_ref(), &summary) {
+                    log::warn!("Failed to emit agent-replay-summary event: {}", e);
+                }
+            }
+            state.flushed = true;
+            self.flushed.notify_all();
+            return;
+        }
+
+        while !state.flushed {
+            if stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+                return;
+            }
+            let (next, _) = self
+                .flushed
+                .wait_timeout(state, std::time::Duration::from_millis(50))
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state = next;
+        }
+    }
+}
 
 /// Dedupe key for supervisor `agent-status` refreshes: the token metrics that
 /// move the context display, plus the effective rate-limit values so a
@@ -136,11 +229,18 @@ pub(super) fn start_tailing(
 ) -> Result<TranscriptHandle, String> {
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_clone = stop_flag.clone();
+    let summary_cwd = cwd.as_deref().and_then(Path::to_str).map(str::to_string);
 
     let Some(session_dir) = session_dir_from_wire(&transcript_path) else {
         // No resolvable session dir — tail the single wire (legacy path).
         let file = open_wire(&transcript_path)?;
-        let decoder = KimiTranscriptDecoder::new(events, session_id, String::new(), String::new());
+        let decoder = KimiTranscriptDecoder::new_with_cwd(
+            events,
+            session_id,
+            String::new(),
+            String::new(),
+            summary_cwd,
+        );
         let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
         let join_handle = std::thread::spawn(move || {
             service.run(BufReader::new(file), stop_clone);
@@ -158,6 +258,7 @@ pub(super) fn start_tailing(
             session_id,
             session_dir,
             transcript_path,
+            summary_cwd,
             locator,
             stop_clone,
         );
@@ -334,6 +435,7 @@ fn run_session_supervisor(
     session_id: String,
     session_dir: PathBuf,
     main_wire: PathBuf,
+    cwd: Option<String>,
     locator: Arc<KimiLocator>,
     stop: Arc<AtomicBool>,
 ) {
@@ -352,6 +454,11 @@ fn run_session_supervisor(
     let mut last_status_snapshot: Option<StatusSnapshot> = None;
     let mut last_status_turn_count: Option<u64> = None;
     let mut last_status_mtime: Option<SystemTime> = None;
+    let mut replay = Arc::new(KimiReplayCoordinator::new(
+        events.clone(),
+        session_id.clone(),
+        cwd.clone(),
+    ));
     // Track the refresh generation so a UI-requested refresh forces one fetch
     // (the start value is already covered by the attach catch-up).
     let mut acted_refresh_gen = crate::agent::kimi_usage_consent::refresh_gen();
@@ -377,6 +484,11 @@ fn run_session_supervisor(
                     last_status_snapshot = None;
                     last_status_turn_count = None;
                     last_status_mtime = None;
+                    replay = Arc::new(KimiReplayCoordinator::new(
+                        events.clone(),
+                        session_id.clone(),
+                        cwd.clone(),
+                    ));
                     locator.disarm_usage();
                 }
             }
@@ -399,21 +511,27 @@ fn run_session_supervisor(
                 targets.push((wire.wire, prefix));
             }
         }
-        for (wire, prefix) in targets {
-            if children.contains_key(&wire) {
-                continue;
-            }
-            let Ok(file) = File::open(&wire) else {
-                continue;
-            };
-            let decoder = KimiTranscriptDecoder::new(
+        let mut pending_paths = HashSet::new();
+        let pending: Vec<_> = targets
+            .into_iter()
+            .filter(|(wire, _)| !children.contains_key(wire) && pending_paths.insert(wire.clone()))
+            .filter_map(|(wire, prefix)| File::open(&wire).ok().map(|file| (wire, prefix, file)))
+            .collect();
+        // Register the whole batch before spawning any thread so a fast main
+        // decoder cannot flush while a sibling wire is still being enrolled.
+        let replaying: Vec<_> = pending.iter().map(|_| replay.register()).collect();
+        for ((wire, prefix, file), replaying) in pending.into_iter().zip(replaying) {
+            let child_stop = Arc::new(AtomicBool::new(false));
+            let decoder = KimiTranscriptDecoder::with_replay(
                 events.clone(),
                 session_id.clone(),
                 agent_session_id.clone(),
                 prefix,
+                replay.clone(),
+                replaying.then(|| child_stop.clone()),
+                !replaying,
             );
             let service = TranscriptTailService::new(Box::new(decoder), "kimi wire transcript");
-            let child_stop = Arc::new(AtomicBool::new(false));
             let child_stop_run = child_stop.clone();
             let join = std::thread::spawn(move || {
                 service.run(BufReader::new(file), child_stop_run);
@@ -459,15 +577,17 @@ fn run_session_supervisor(
 }
 
 fn stop_child_tailers(children: &mut ChildTailers) {
-    for (_, (child_stop, join)) in children.drain() {
-        child_stop.store(true, Ordering::Relaxed);
+    for (child_stop, _) in children.values() {
+        child_stop.store(true, Ordering::Release);
+    }
+    for (_, (_, join)) in children.drain() {
         let _ = join.join();
     }
 }
 
-/// Per-session kimi decoder: owns the in-flight tool-call map, turn count,
-/// and the replay-bounded lifecycle slots, turning each complete
-/// `wire.jsonl` line into `agent-*` events.
+/// Per-session kimi decoder: owns the in-flight tool-call map, turn count, and
+/// replay accumulators, turning each complete `wire.jsonl` line into live
+/// `agent-*` events or one catch-up summary.
 struct KimiTranscriptDecoder {
     events: Arc<dyn EventSink>,
     session_id: String,
@@ -483,15 +603,57 @@ struct KimiTranscriptDecoder {
     num_turns: u32,
     last_phase: Option<AgentPhase>,
     replay_phase: Option<AgentPhase>,
+    /// Historical tool calls are folded here until the first clean EOF.
+    replay_activity: ReplayActivity,
+    replay: Arc<KimiReplayCoordinator>,
+    replay_stop: Option<Arc<AtomicBool>>,
     replay_done: bool,
 }
 
 impl KimiTranscriptDecoder {
+    #[cfg(test)]
     fn new(
         events: Arc<dyn EventSink>,
         session_id: String,
         agent_session_id: String,
         agent_prefix: String,
+    ) -> Self {
+        Self::new_with_cwd(events, session_id, agent_session_id, agent_prefix, None)
+    }
+
+    fn new_with_cwd(
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        agent_session_id: String,
+        agent_prefix: String,
+        cwd: Option<String>,
+    ) -> Self {
+        let replay = Arc::new(KimiReplayCoordinator::new(
+            events.clone(),
+            session_id.clone(),
+            cwd,
+        ));
+        let replaying = replay.register();
+        debug_assert!(replaying);
+        Self::with_replay(
+            events,
+            session_id,
+            agent_session_id,
+            agent_prefix,
+            replay,
+            None,
+            false,
+        )
+    }
+
+    fn with_replay(
+        events: Arc<dyn EventSink>,
+        session_id: String,
+        agent_session_id: String,
+        agent_prefix: String,
+        replay: Arc<KimiReplayCoordinator>,
+        replay_stop: Option<Arc<AtomicBool>>,
+        replay_done: bool,
     ) -> Self {
         Self {
             events,
@@ -502,7 +664,10 @@ impl KimiTranscriptDecoder {
             num_turns: 0,
             last_phase: None,
             replay_phase: None,
-            replay_done: false,
+            replay_activity: ReplayActivity::default(),
+            replay,
+            replay_stop,
+            replay_done,
         }
     }
 
@@ -539,7 +704,6 @@ impl TranscriptDecoder for KimiTranscriptDecoder {
 
     fn on_caught_up(&mut self) {
         if !self.replay_done {
-            self.replay_done = true;
             if let Some(phase) = self.replay_phase.take() {
                 let mut last = self.last_phase;
                 crate::agent::events::emit_lifecycle_on_change(
@@ -551,6 +715,17 @@ impl TranscriptDecoder for KimiTranscriptDecoder {
                 );
                 self.last_phase = last;
             }
+            for event in self.replay_activity.take_running() {
+                if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
+                    log::warn!("Failed to emit agent-tool-call event: {}", e);
+                }
+            }
+            self.replay.finish(
+                std::mem::take(&mut self.replay_activity),
+                self.num_turns,
+                self.replay_stop.as_deref(),
+            );
+            self.replay_done = true;
         }
     }
 }
@@ -575,12 +750,14 @@ impl KimiTranscriptDecoder {
         }
 
         self.num_turns = self.num_turns.saturating_add(1);
-        let event = AgentTurnEvent {
-            session_id: self.session_id.clone(),
-            num_turns: self.num_turns,
-        };
-        if let Err(e) = emit_agent_turn(self.events.as_ref(), &event) {
-            log::warn!("Failed to emit agent-turn event: {}", e);
+        if self.replay_done {
+            let event = AgentTurnEvent {
+                session_id: self.session_id.clone(),
+                num_turns: self.num_turns,
+            };
+            if let Err(e) = emit_agent_turn(self.events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-turn event: {}", e);
+            }
         }
 
         // A new user prompt moves the agent into the running phase.
@@ -676,10 +853,13 @@ impl KimiTranscriptDecoder {
         );
     }
 
-    fn emit_tool_call(&self, event: AgentToolCallEvent) {
-        if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
-            log::warn!("Failed to emit agent-tool-call event: {}", e);
-        }
+    fn emit_tool_call(&mut self, event: AgentToolCallEvent) {
+        record_tool_call(
+            &self.events,
+            event,
+            &mut self.replay_activity,
+            self.replay_done,
+        );
     }
 }
 
@@ -923,6 +1103,27 @@ mod tests {
         }
     }
 
+    fn wait_for_replay_summary(
+        sink: &FakeEventSink,
+        num_turns: u64,
+        tool_call_total: u64,
+        timeout: Duration,
+    ) -> Option<Value> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let summary = sink.recorded().into_iter().find_map(|(name, payload)| {
+                (name == "agent-replay-summary"
+                    && payload["numTurns"] == num_turns
+                    && payload["toolCallTotal"] == tool_call_total)
+                    .then_some(payload)
+            });
+            if summary.is_some() || Instant::now() >= deadline {
+                return summary;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     #[test]
     fn fixture_replays_one_user_turn_and_paired_tool_call() {
         let sink = Arc::new(FakeEventSink::new());
@@ -941,48 +1142,50 @@ mod tests {
         .expect("tailing starts");
 
         assert!(
-            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
-            "expected 2 agent-tool-call events (one START + one DONE)",
-        );
-        assert!(
-            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
-            "expected exactly one user agent-turn",
+            sink.wait_for_count("agent-replay-summary", 1, Duration::from_secs(5)),
+            "expected one coalesced replay summary",
         );
         handle.stop();
 
-        let tool_calls = tool_call_events(&sink);
-        assert_eq!(tool_calls.len(), 2, "one START + one DONE only");
-        assert_eq!(tool_calls[0]["toolUseId"], "tool_6antsBfZmrEAWM7d0ZbyUfAt");
-        assert_eq!(tool_calls[0]["tool"], "Read");
-        assert_eq!(tool_calls[0]["status"], "running");
-        assert_eq!(tool_calls[1]["toolUseId"], "tool_6antsBfZmrEAWM7d0ZbyUfAt");
-        assert_eq!(tool_calls[1]["status"], "done");
-
-        let turns: Vec<Value> = sink
+        assert_eq!(sink.count("agent-tool-call"), 0);
+        assert_eq!(sink.count("agent-turn"), 0);
+        let summaries: Vec<Value> = sink
             .recorded()
             .into_iter()
-            .filter(|(name, _)| name == "agent-turn")
+            .filter(|(name, _)| name == "agent-replay-summary")
             .map(|(_, payload)| payload)
             .collect();
-        assert_eq!(turns.len(), 1);
-        assert_eq!(turns[0]["numTurns"], 1);
-        assert_eq!(turns[0]["sessionId"], "sid-kimi");
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0]["sessionId"], "sid-kimi");
+        assert_eq!(summaries[0]["numTurns"], 1);
+        assert_eq!(summaries[0]["toolCallTotal"], 1);
+        assert_eq!(summaries[0]["toolCallByType"]["Read"], 1);
+        assert_eq!(
+            summaries[0]["recentToolCalls"][0]["toolUseId"],
+            "tool_6antsBfZmrEAWM7d0ZbyUfAt",
+        );
+        assert_eq!(summaries[0]["recentToolCalls"][0]["status"], "done");
     }
 
     #[test]
     fn supervisor_surfaces_sub_agent_tool_calls() {
         let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("tempdir");
+        let workspace = tmp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace");
         let session = tmp.path().join("sessions").join("wd_x").join("session_y");
         let main_dir = session.join("agents").join("main");
         let sub_dir = session.join("agents").join("agent-0");
         std::fs::create_dir_all(&main_dir).expect("main dir");
         std::fs::create_dir_all(&sub_dir).expect("sub dir");
 
-        // main only opens a user turn; the sub-agent does the tool work.
+        // Main opens a user turn and leaves one tool running; the sub-agent
+        // completes another tool. All initial wires belong to one replay
+        // generation and must flush one aggregate summary.
         std::fs::write(
             main_dir.join("wire.jsonl"),
-            "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+            "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
+             {\"type\":\"context.append_loop_event\",\"time\":1781345364300,\"event\":{\"type\":\"tool.call\",\"toolCallId\":\"main-running\",\"name\":\"Bash\",\"args\":{\"command\":\"sleep 10\"}}}\n",
         )
         .expect("main wire");
         std::fs::write(
@@ -1006,27 +1209,104 @@ mod tests {
             sink.clone(),
             "sid".to_string(),
             main_wire,
-            None,
+            Some(workspace.clone()),
             test_locator(),
         )
         .expect("tailing starts");
 
-        assert!(
-            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
-            "sub-agent START + DONE must surface",
-        );
-        assert!(
-            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
-            "main's user turn must surface",
-        );
+        let summary = wait_for_replay_summary(&sink, 1, 1, Duration::from_secs(5))
+            .expect("one aggregate main + sub-agent replay summary");
         handle.stop();
 
-        let calls = tool_call_events(&sink);
-        assert_eq!(calls.len(), 2);
+        assert_eq!(sink.count("agent-replay-summary"), 1);
+        assert_eq!(sink.count("agent-turn"), 0);
+        assert_eq!(sink.count("agent-cwd"), 1);
+        assert_eq!(summary["cwd"], workspace.to_string_lossy().as_ref());
+        let calls = summary["recentToolCalls"]
+            .as_array()
+            .expect("recent tool calls");
+        assert_eq!(calls.len(), 1);
         // The sub-agent's tool id is namespaced so it can't collide with main.
         assert_eq!(calls[0]["toolUseId"], "agent-0:t1");
         assert_eq!(calls[0]["tool"], "Read");
-        assert_eq!(calls[1]["toolUseId"], "agent-0:t1");
+        assert_eq!(calls[0]["status"], "done");
+
+        let recorded = sink.recorded();
+        let running_index = recorded
+            .iter()
+            .position(|(name, payload)| {
+                name == "agent-tool-call" && payload["toolUseId"] == "main-running"
+            })
+            .expect("replayed running call surfaces at the boundary");
+        let summary_index = recorded
+            .iter()
+            .position(|(name, _)| name == "agent-replay-summary")
+            .expect("aggregate summary");
+        assert!(running_index < summary_index);
+    }
+
+    #[test]
+    fn supervisor_treats_sub_agent_discovered_after_replay_as_live() {
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let session = tmp.path().join("sessions").join("wd_x").join("session_y");
+        let main_dir = session.join("agents").join("main");
+        let sub_dir = session.join("agents").join("agent-0");
+        std::fs::create_dir_all(&main_dir).expect("main dir");
+        std::fs::write(
+            main_dir.join("wire.jsonl"),
+            "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+        )
+        .expect("main wire");
+        std::fs::write(
+            session.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}}}}}}",
+                main_dir.display(),
+            ),
+        )
+        .expect("state.json");
+
+        let handle = start_tailing(
+            sink.clone(),
+            "sid".to_string(),
+            main_dir.join("wire.jsonl"),
+            None,
+            test_locator(),
+        )
+        .expect("tailing starts");
+        wait_for_replay_summary(&sink, 1, 0, Duration::from_secs(5))
+            .expect("initial replay summary");
+
+        std::fs::create_dir_all(&sub_dir).expect("sub dir");
+        std::fs::write(
+            sub_dir.join("wire.jsonl"),
+            "{\"type\":\"context.append_loop_event\",\"time\":1781345364384,\"event\":{\"type\":\"tool.call\",\"toolCallId\":\"late\",\"name\":\"Read\",\"args\":{\"path\":\"a\"}}}\n\
+             {\"type\":\"context.append_loop_event\",\"time\":1781345364999,\"event\":{\"type\":\"tool.result\",\"toolCallId\":\"late\"}}\n",
+        )
+        .expect("sub wire");
+        std::fs::write(
+            session.join("state.json"),
+            format!(
+                "{{\"agents\":{{\"main\":{{\"homedir\":\"{}\",\"type\":\"main\"}},\"agent-0\":{{\"homedir\":\"{}\",\"type\":\"sub\"}}}}}}",
+                main_dir.display(),
+                sub_dir.display(),
+            ),
+        )
+        .expect("state.json");
+
+        assert!(
+            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
+            "late sub-agent START + DONE must stay live",
+        );
+        handle.stop();
+
+        assert_eq!(sink.count("agent-replay-summary"), 1);
+        let calls = tool_call_events(&sink);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["toolUseId"], "agent-0:late");
+        assert_eq!(calls[0]["status"], "running");
+        assert_eq!(calls[1]["toolUseId"], "agent-0:late");
         assert_eq!(calls[1]["status"], "done");
     }
 
@@ -1084,21 +1364,22 @@ mod tests {
             ],
         );
 
-        assert!(
-            sink.wait_for_count("agent-tool-call", 2, Duration::from_secs(5)),
-            "new session START + DONE must surface after supervisor switch",
-        );
+        let summary = wait_for_replay_summary(&sink, 1, 1, Duration::from_secs(5))
+            .expect("new session replay summary must surface after supervisor switch");
         assert!(
             wait_for_agent_status_session(&sink, "session_new", Duration::from_secs(5)),
             "status must carry the new kimi session id after supervisor switch",
         );
         handle.stop();
 
-        let calls = tool_call_events(&sink);
+        assert_eq!(sink.count("agent-tool-call"), 0);
+        assert_eq!(summary["cwd"], work.path().to_string_lossy().as_ref());
+        let calls = summary["recentToolCalls"]
+            .as_array()
+            .expect("recent tool calls");
         assert_eq!(calls[0]["toolUseId"], "new-tool");
         assert_eq!(calls[0]["tool"], "Glob");
-        assert_eq!(calls[1]["toolUseId"], "new-tool");
-        assert_eq!(calls[1]["status"], "done");
+        assert_eq!(calls[0]["status"], "done");
     }
 
     /// The supervisor's status refresh merges the locator's fetched plan-usage
@@ -1306,16 +1587,17 @@ mod tests {
         .expect("tailing starts");
 
         assert!(
-            sink.wait_for_count("agent-turn", 1, Duration::from_secs(5)),
-            "main's user turn must surface exactly once",
+            sink.wait_for_count("agent-replay-summary", 1, Duration::from_secs(5)),
+            "main's replay summary must surface exactly once",
         );
         // Give any duplicate tailer time to emit a second event.
         std::thread::sleep(Duration::from_millis(400));
         assert_eq!(
-            sink.count("agent-turn"),
+            sink.count("agent-replay-summary"),
             1,
             "symlinked main wire must not be tailed twice"
         );
+        assert_eq!(sink.count("agent-turn"), 0);
         handle.stop();
     }
 
@@ -1336,6 +1618,7 @@ mod tests {
         decoder.decode_line(
             r#"{"type":"context.append_loop_event","event":{"type":"step.end","finishReason":"end_turn"}}"#,
         );
+        decoder.on_caught_up();
         let names: Vec<String> = sink.recorded().into_iter().map(|(name, _)| name).collect();
         assert!(
             names.iter().any(|n| n == "agent-tool-call"),
@@ -1356,6 +1639,7 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder =
             KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
         // Mirrors the fixture's tool.call envelope `time` (epoch-ms).
         decoder.decode_line(
             r#"{"type":"context.append_loop_event","time":1781345364384,"event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"}}}"#,
@@ -1384,6 +1668,7 @@ mod tests {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder =
             KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
         let start = r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"t1","name":"Read","args":{"path":"a"},"display":{"path":"/tmp/a"}}}"#;
         decoder.decode_line(start);
         decoder.decode_line(start);

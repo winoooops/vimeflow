@@ -28,6 +28,10 @@ export interface QuotaNotice {
 export interface AgentDef extends PaneIdentity {
   id: string
   model: string | null
+  resumeCommands: {
+    latest: string
+    byIdPrefix: string
+  } | null
   Icon?: AgentIcon
   /**
    * Set only for agents that have no readable usage/quota API: the status card
@@ -46,6 +50,10 @@ export const AGENTS = {
     glyph: '∴',
     Icon: ClaudeCode,
     model: 'sonnet-4',
+    resumeCommands: {
+      latest: 'claude --continue',
+      byIdPrefix: 'claude --resume',
+    },
     accent: 'var(--color-agent-claude-accent)',
     accentDim: 'var(--color-agent-claude-accent-dim)',
     accentSoft: 'var(--color-agent-claude-accent-soft)',
@@ -58,6 +66,10 @@ export const AGENTS = {
     glyph: '◇',
     Icon: Codex,
     model: 'gpt-5-codex',
+    resumeCommands: {
+      latest: 'codex resume --last',
+      byIdPrefix: 'codex resume',
+    },
     accent: 'var(--color-agent-codex-accent)',
     accentDim: 'var(--color-agent-codex-accent-dim)',
     accentSoft: 'var(--color-agent-codex-accent-soft)',
@@ -70,6 +82,10 @@ export const AGENTS = {
     glyph: '☾',
     Icon: Kimi,
     model: 'k2.7',
+    resumeCommands: {
+      latest: 'kimi --continue',
+      byIdPrefix: 'kimi --session',
+    },
     accent: 'var(--color-agent-kimi-accent)',
     accentDim: 'var(--color-agent-kimi-accent-dim)',
     accentSoft: 'var(--color-agent-kimi-accent-soft)',
@@ -82,6 +98,7 @@ export const AGENTS = {
     glyph: '$',
     Icon: undefined,
     model: null,
+    resumeCommands: null,
     accent: 'var(--color-agent-shell-accent)',
     accentDim: 'var(--color-agent-shell-accent-dim)',
     accentSoft: 'var(--color-agent-shell-accent-soft)',
@@ -94,6 +111,10 @@ export const AGENTS = {
     glyph: '◈',
     Icon: OpenCode,
     model: null,
+    resumeCommands: {
+      latest: 'opencode --continue',
+      byIdPrefix: 'opencode --session',
+    },
     accent: 'var(--color-agent-opencode-accent)',
     accentDim: 'var(--color-agent-opencode-accent-dim)',
     accentSoft: 'var(--color-agent-opencode-accent-soft)',

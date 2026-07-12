@@ -524,13 +524,13 @@ pub struct AgentToolCallEvent {
 
 /// One-shot summary of agent activity accumulated during transcript replay.
 ///
-/// On resume, the codex/claude_code decoders replay the whole transcript and
-/// would otherwise emit one `agent-tool-call` / `agent-turn` / `agent-cwd`
-/// event per historical line — thousands of events that flood the IPC stdout
-/// queue and freeze the UI. Instead, during replay the per-line events are
-/// suppressed and their effect is accumulated; this single event is emitted
-/// once at the replay→live boundary (`on_caught_up`) carrying the aggregated
-/// state. Live events resume after the boundary.
+/// On resume, transcript decoders replay the whole transcript and would
+/// otherwise emit one `agent-tool-call` / `agent-turn` / `agent-cwd` event per
+/// historical line — thousands of events that flood the IPC stdout queue and
+/// freeze the UI. Instead, during replay the per-line events are suppressed
+/// and their effect is accumulated; this single event is emitted once at the
+/// replay→live boundary (`on_caught_up`) carrying the aggregated state. Live
+/// events resume after the boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]

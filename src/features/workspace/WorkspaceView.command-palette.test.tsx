@@ -321,6 +321,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       updatePaneCwd: vi.fn(),
       appendPaneCacheReading: vi.fn(),
       updatePaneAgentType: vi.fn(),
+      invalidatePaneAgentSession: vi.fn(),
       setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
@@ -471,6 +472,17 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
       return call[0]
     }
+
+  const latestTerminalZoneProps = (): TerminalZoneProps => {
+    const call = terminalZonePropsSpy.mock.calls[
+      terminalZonePropsSpy.mock.calls.length - 1
+    ] as [TerminalZoneProps] | undefined
+    if (!call) {
+      throw new Error('TerminalZone was not rendered')
+    }
+
+    return call[0]
+  }
 
   test('syncs separate palette and leader bindings to Electron', async () => {
     const setCommandPaletteBindings = vi.fn()
@@ -647,6 +659,46 @@ describe('WorkspaceView - Command Palette Integration', () => {
         'codex'
       )
     )
+  })
+
+  test('invalidates the active Codex identity only for context switches', async () => {
+    const { useAgentStatus } =
+      await import('../agent-status/hooks/useAgentStatus')
+    vi.mocked(useAgentStatus).mockReturnValue(
+      createAgentStatus({
+        isActive: true,
+        agentType: 'codex',
+        sessionId: 'pty-session-1',
+        agentSessionId: 'codex-session-1',
+        contextWindow: {
+          usedPercentage: 10,
+          contextWindowSize: 200000,
+          totalInputTokens: 1200,
+          totalOutputTokens: 300,
+          currentUsage: null,
+        },
+      })
+    )
+
+    render(<WorkspaceView />)
+
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', '/resume')
+    })
+
+    expect(mockSessionManager.invalidatePaneAgentSession).toHaveBeenCalledWith(
+      'session-1',
+      'p0',
+      'codex-session-1',
+      1500
+    )
+
+    vi.mocked(mockSessionManager.invalidatePaneAgentSession).mockClear()
+    act(() => {
+      latestTerminalZoneProps().onCommandSubmit?.('pty-session-1', 'status')
+    })
+
+    expect(mockSessionManager.invalidatePaneAgentSession).not.toHaveBeenCalled()
   })
 
   test('resets active pane chrome to shell after a detected agent exits', async () => {

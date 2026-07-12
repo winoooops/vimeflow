@@ -49,7 +49,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 31       | 25   | 2026-07-09   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 32       | 25   | 2026-07-12   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 14       | 12   | 2026-07-09   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 30       | 23   | 2026-07-11   |
@@ -77,10 +77,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 27       | 12   | 2026-07-03   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 48   | 2026-07-05   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 49   | 2026-07-12   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 38       | 18   | 2026-07-09   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 39       | 18   | 2026-07-12   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 19       | 8    | 2026-07-11   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 37       | 11   | 2026-07-09   |
