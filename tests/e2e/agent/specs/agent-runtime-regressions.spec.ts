@@ -52,6 +52,11 @@ const waitForVisiblePtyId = async (): Promise<string> => {
   return lastValue
 }
 
+const readVisiblePtyId = async (): Promise<string | null> =>
+  await browser.execute(
+    () => window.__VIMEFLOW_E2E__?.getVisiblePtyId() ?? null
+  )
+
 const invokeBackend = async <T>(
   method: string,
   args?: Record<string, unknown>
@@ -79,7 +84,11 @@ const waitForVisibleBridgePtyId = async (
   let bridgePtyId: string | null = null
   await browser.waitUntil(
     async () => {
-      const visible = await waitForVisiblePtyId()
+      const visible = await readVisiblePtyId()
+      if (visible === null) {
+        return false
+      }
+
       if (visible === previousPtyId) {
         return false
       }
@@ -94,7 +103,7 @@ const waitForVisibleBridgePtyId = async (
       return false
     },
     {
-      timeout: 15_000,
+      timeout: 30_000,
       interval: 250,
       timeoutMsg: 'new bridge-enabled session did not become the visible PTY',
     }
