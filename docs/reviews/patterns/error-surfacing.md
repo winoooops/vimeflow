@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-05
-ref_count: 48
+last_updated: 2026-07-12
+ref_count: 49
 ---
 
 # Error Surfacing
@@ -488,4 +488,18 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Added an optional terminal-spawn error callback to `useSessionManager`
   and wired `WorkspaceView` to the existing alert banner. Added hook coverage
   for create/add/restart failures and a workspace-level banner regression test.
+- **Commit:** same commit as this entry
+
+### 49. `debug_assert!` owned a required release-mode side effect
+
+- **Source:** github-claude + github-codex-connector | PR #688 round 1 | 2026-07-12
+- **Severity:** HIGH / P1
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** The Kimi legacy single-wire decoder called `replay.register()`
+  only inside `debug_assert!`. Debug builds registered the replay coordinator,
+  but release builds compiled the call away, so the first EOF could increment
+  `completed` while `expected` stayed zero and the replay summary never flushed.
+- **Fix:** Store the `register()` result in a local before asserting it. The
+  side effect now runs in every build mode, while debug builds still check the
+  expected invariant.
 - **Commit:** same commit as this entry

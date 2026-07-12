@@ -633,7 +633,8 @@ impl KimiTranscriptDecoder {
             session_id.clone(),
             cwd,
         ));
-        debug_assert!(replay.register());
+        let replaying = replay.register();
+        debug_assert!(replaying);
         Self::with_replay(
             events,
             session_id,
