@@ -295,8 +295,6 @@ private final class EmbeddedGhosttyChild {
         let view = TerminalView(frame: .zero)
         view.controller = controller
         view.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
-        // Same stale-contents pinning as the primary terminalView.
-        view.layerContentsPlacement = .topLeft
         self.terminalView = view
     }
 
@@ -441,10 +439,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         view.controller = controller
         view.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
         view.autoresizingMask = [.width, .height]
-        // Ghostty.app pins stale surface contents to the top-left during live
-        // resize (kCAGravityTopLeft on IOSurfaceLayer) instead of letting the
-        // window server stretch the last frame across the new bounds.
-        view.layerContentsPlacement = .topLeft
 
         return view
     }()
