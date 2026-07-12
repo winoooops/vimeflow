@@ -5034,6 +5034,120 @@ describe('useSessionManager', () => {
     })
   })
 
+  test('restartSession releases exact identity resume claim when pane is removed', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'ws-shell',
+          projectId: 'proj-1',
+          layout: 'vsplit',
+          workingDirectory: '/repo',
+          active: true,
+          open: true,
+          panes: [
+            {
+              kind: 'shell',
+              paneId: 'p0',
+              paneIndex: 0,
+              active: true,
+              ptyId: 'pty-exact',
+              cwd: '/repo',
+              agentType: 'claude-code',
+              agentSessionId: 'conversation-exact',
+            },
+            {
+              kind: 'shell',
+              paneId: 'p1',
+              paneIndex: 1,
+              active: false,
+              ptyId: 'pty-legacy',
+              cwd: '/repo',
+              agentType: 'claude-code',
+              agentSessionId: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 'pty-exact',
+      sessions: [
+        {
+          id: 'pty-exact',
+          cwd: '/repo',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+        {
+          id: 'pty-legacy',
+          cwd: '/repo',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty-exact-new',
+        pid: 3,
+        cwd: '/repo',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-exact-newer',
+        pid: 4,
+        cwd: '/repo',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-legacy-new',
+        pid: 5,
+        cwd: '/repo',
+      })
+    service.kill = vi.fn().mockResolvedValue(undefined)
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.restartSession('ws-shell', 'p0'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-exact-new')
+    )
+
+    act(() => result.current.restartSession('ws-shell', 'p0'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-exact-newer')
+    )
+
+    act(() => result.current.removePane('ws-shell', 'p0'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes).toHaveLength(1)
+    )
+
+    act(() => result.current.restartSession('ws-shell', 'p1'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-legacy-new')
+    )
+
+    expect(service.write).toHaveBeenLastCalledWith({
+      sessionId: 'pty-legacy-new',
+      data: 'claude --continue\r',
+    })
+    expect(result.current.sessions[0].panes[0].agentType).toBe('claude-code')
+  })
+
   test('restartSession clears sticky title fields so the new PTY starts fresh', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

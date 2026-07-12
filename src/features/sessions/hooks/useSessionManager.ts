@@ -1064,10 +1064,60 @@ export const useSessionManager = (
   const pendingPaneOps = useRef<Set<string>>(new Set())
   const pendingRestartPaneKeys = useRef<Set<string>>(new Set())
   const autoHydratedSessionIds = useRef<Set<string>>(new Set())
-  const claimedLatestAgentResumeKeys = useRef<Set<string>>(new Set())
+
+  const claimedLatestAgentResumeKeys = useRef<Map<string, Set<string>>>(
+    new Map()
+  )
   const resumeClaimQueueTailRef = useRef(Promise.resolve())
   const inFlightRestartPtyIds = useRef<Set<string>>(new Set())
   const restartMountedRef = useRef(true)
+
+  const hasClaimedLatestAgentResumeKey = useCallback((key: string): boolean => {
+    const owners = claimedLatestAgentResumeKeys.current.get(key)
+
+    return owners !== undefined && owners.size > 0
+  }, [])
+
+  const claimLatestAgentResumeKey = useCallback(
+    (key: string, ptyId: string): void => {
+      const owners = claimedLatestAgentResumeKeys.current.get(key)
+      if (owners !== undefined) {
+        owners.add(ptyId)
+
+        return
+      }
+
+      claimedLatestAgentResumeKeys.current.set(key, new Set([ptyId]))
+    },
+    []
+  )
+
+  const releaseLatestAgentResumeKey = useCallback(
+    (key: string, ptyId: string): void => {
+      const owners = claimedLatestAgentResumeKeys.current.get(key)
+      if (owners === undefined) {
+        return
+      }
+
+      owners.delete(ptyId)
+      if (owners.size === 0) {
+        claimedLatestAgentResumeKeys.current.delete(key)
+      }
+    },
+    []
+  )
+
+  const releaseLatestAgentResumeClaimsForPty = useCallback(
+    (ptyId: string): void => {
+      for (const [key, owners] of claimedLatestAgentResumeKeys.current) {
+        owners.delete(ptyId)
+        if (owners.size === 0) {
+          claimedLatestAgentResumeKeys.current.delete(key)
+        }
+      }
+    },
+    []
+  )
 
   const disposeRestartPty = useCallback(
     async (ptyId: string): Promise<void> => {
@@ -1075,6 +1125,7 @@ export const useSessionManager = (
         return
       }
 
+      releaseLatestAgentResumeClaimsForPty(ptyId)
       dropAllForPty(ptyId)
       restoreDataRef.current.delete(ptyId)
       agentSessionIdsRef.current.delete(ptyId)
@@ -1087,7 +1138,7 @@ export const useSessionManager = (
         log.warn(`failed to kill uncommitted restart PTY ${ptyId}`, err)
       }
     },
-    [dropAllForPty, service]
+    [dropAllForPty, releaseLatestAgentResumeClaimsForPty, service]
   )
 
   useEffect(() => {
@@ -1662,6 +1713,7 @@ export const useSessionManager = (
         // orphans).
         const allKilledPtyIds = [...snapshotPtyIds, ...newPtyIds]
         for (const ptyId of allKilledPtyIds) {
+          releaseLatestAgentResumeClaimsForPty(ptyId)
           dropAllForPty(ptyId)
           deleteCacheHistory(ptyId)
           restoreDataRef.current.delete(ptyId)
@@ -1712,6 +1764,7 @@ export const useSessionManager = (
     [
       activeSessionIdRef,
       dropAllForPty,
+      releaseLatestAgentResumeClaimsForPty,
       service,
       setActiveSessionId,
       setActiveSessionIdRaw,
@@ -2103,6 +2156,7 @@ export const useSessionManager = (
             restoreDataRef.current.delete(target.ptyId)
             agentSessionIdsRef.current.delete(target.ptyId)
             invalidatedAgentSessionsRef.current.delete(target.ptyId)
+            releaseLatestAgentResumeClaimsForPty(target.ptyId)
             unregisterPtySession(target.ptyId)
           } else {
             try {
@@ -2162,7 +2216,13 @@ export const useSessionManager = (
         }
       })()
     },
-    [activeSessionIdRef, dropAllForPty, layoutRegistry, service]
+    [
+      activeSessionIdRef,
+      dropAllForPty,
+      layoutRegistry,
+      releaseLatestAgentResumeClaimsForPty,
+      service,
+    ]
   )
 
   // Shared explicit-restart and relaunch-hydration primitive. Spawn first so a
@@ -2186,6 +2246,7 @@ export const useSessionManager = (
 
       pendingRestartPaneKeys.current.add(paneKey)
       let claimedLatestResumeKey: string | null = null
+      let claimedLatestResumePtyId: string | null = null
       let resumeClaimCommitted = false
       let resumeClaimPredecessor: Promise<void> | null = null
       let releaseResumeClaim = (): void => undefined
@@ -2253,16 +2314,19 @@ export const useSessionManager = (
 
           const canonicalResumeKey = `${oldPane.agentType}\0${result.cwd}`
           if (oldPane.agentSessionId === undefined) {
-            if (claimedLatestAgentResumeKeys.current.has(canonicalResumeKey)) {
+            if (hasClaimedLatestAgentResumeKey(canonicalResumeKey)) {
               resumeCommand = null
             } else {
-              claimedLatestAgentResumeKeys.current.add(canonicalResumeKey)
+              claimLatestAgentResumeKey(canonicalResumeKey, result.sessionId)
               claimedLatestResumeKey = canonicalResumeKey
+              claimedLatestResumePtyId = result.sessionId
             }
           } else {
             // Exact identities always resume, but reserve the canonical cwd so
             // a later legacy pane cannot select the same run as "latest".
-            claimedLatestAgentResumeKeys.current.add(canonicalResumeKey)
+            claimLatestAgentResumeKey(canonicalResumeKey, result.sessionId)
+            claimedLatestResumeKey = canonicalResumeKey
+            claimedLatestResumePtyId = result.sessionId
           }
         }
 
@@ -2416,6 +2480,7 @@ export const useSessionManager = (
         resumeClaimCommitted = true
 
         inFlightRestartPtyIds.current.delete(result.sessionId)
+        releaseLatestAgentResumeClaimsForPty(oldPane.ptyId)
         dropAllForPty(oldPane.ptyId)
         deleteCacheHistory(oldPane.ptyId)
         restoreDataRef.current.delete(oldPane.ptyId)
@@ -2443,8 +2508,15 @@ export const useSessionManager = (
           setActiveSessionId(sessionId)
         }
       } finally {
-        if (!resumeClaimCommitted && claimedLatestResumeKey !== null) {
-          claimedLatestAgentResumeKeys.current.delete(claimedLatestResumeKey)
+        if (
+          !resumeClaimCommitted &&
+          claimedLatestResumeKey !== null &&
+          claimedLatestResumePtyId !== null
+        ) {
+          releaseLatestAgentResumeKey(
+            claimedLatestResumeKey,
+            claimedLatestResumePtyId
+          )
         }
         releaseResumeClaim()
         pendingRestartPaneKeys.current.delete(paneKey)
@@ -2453,10 +2525,14 @@ export const useSessionManager = (
     [
       activeSessionIdRef,
       attachResumedAgentWatcher,
+      claimLatestAgentResumeKey,
       disposeRestartPty,
       dropAllForPty,
+      hasClaimedLatestAgentResumeKey,
       onTerminalSpawnError,
       registerPending,
+      releaseLatestAgentResumeClaimsForPty,
+      releaseLatestAgentResumeKey,
       service,
       setActiveSessionId,
     ]
