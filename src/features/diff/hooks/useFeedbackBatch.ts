@@ -81,6 +81,21 @@ export interface ReviewComment {
         startLine: number
         endLine: number
       }
+  /**
+   * Root comment id of the thread this turn belongs to (VIM-298). Stamped on
+   * dispatch (`threadId ?? id` — a follow-up keeps its root, a root self-roots);
+   * agent replies inherit it from the dispatch handle. Pending comments never
+   * carry one — they are not conversations yet.
+   */
+  threadId?: string
+  /**
+   * Local thread resolution (VIM-298), set on the thread ROOT only. Purely
+   * client-side — nothing is dispatched on resolve; a late agent turn does not
+   * clear it (resolution is authoritative).
+   */
+  resolvedAt?: number
+  /** ptyId of the session this comment was dispatched to (VIM-298 affinity). */
+  dispatchedTo?: string
 }
 
 /**
@@ -315,7 +330,7 @@ export interface UseFeedbackBatchReturn {
   markDispatched: (
     dispatchedAt: number,
     dispatchedAnnotationIds: ReadonlySet<string>,
-    options?: { clearDraftForWholeBatch?: boolean }
+    options?: { clearDraftForWholeBatch?: boolean; dispatchedTo?: string }
   ) => void
   /**
    * Drop the pending comments and the open draft, leaving already dispatched
@@ -439,7 +454,7 @@ export const useFeedbackBatchStore = (
         optimisticBatchesRef.current.get(targetOwnerKey) ?? EMPTY_BATCH
 
       if (
-        annotation.metadata.author === 'self' &&
+        isPendingReviewAnnotation(annotation) &&
         countPendingInBatch(optimisticBatch) >= SOFT_CAP
       ) {
         addAnnotationResultRef.current = 'cap-reached'
@@ -460,7 +475,7 @@ export const useFeedbackBatchStore = (
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(targetOwnerKey) ?? EMPTY_BATCH
         if (
-          annotation.metadata.author === 'self' &&
+          isPendingReviewAnnotation(annotation) &&
           countPendingInBatch(currentBatch) >= SOFT_CAP
         ) {
           addAnnotationResultRef.current = 'cap-reached'
@@ -624,7 +639,7 @@ export const useFeedbackBatchStore = (
     (
       dispatchedAt: number,
       dispatchedAnnotationIds: ReadonlySet<string>,
-      options?: { clearDraftForWholeBatch?: boolean }
+      options?: { clearDraftForWholeBatch?: boolean; dispatchedTo?: string }
     ): void => {
       setBatchesByOwner((prev) => {
         const currentBatch = prev.get(ownerKey)
@@ -655,7 +670,15 @@ export const useFeedbackBatchStore = (
               dispatchedAnnotationIds.has(annotation.metadata.id)
                 ? {
                     ...annotation,
-                    metadata: { ...annotation.metadata, dispatchedAt },
+                    metadata: {
+                      ...annotation.metadata,
+                      dispatchedAt,
+                      threadId:
+                        annotation.metadata.threadId ?? annotation.metadata.id,
+                      ...(options?.dispatchedTo === undefined
+                        ? {}
+                        : { dispatchedTo: options.dispatchedTo }),
+                    },
                   }
                 : annotation
             )

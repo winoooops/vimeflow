@@ -1030,3 +1030,126 @@ describe('review annotation category + agent predicates (VIM-256)', () => {
     expect(result.current.pendingAnnotations()).toBe(1)
   })
 })
+
+describe('thread fields on ReviewComment (VIM-298)', () => {
+  test('markDispatched stamps threadId as its own id on a root comment', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation('/repo', 'a.ts', false, makeAnnotation('c1'))
+    })
+
+    act(() => {
+      result.current.markDispatched(1000, new Set(['c1']))
+    })
+
+    const annotation = result.current.annotationsForFile('/repo', 'a.ts', false)[0]
+    expect(annotation.metadata.dispatchedAt).toBe(1000)
+    expect(annotation.metadata.threadId).toBe('c1')
+  })
+
+  test('markDispatched preserves an existing threadId (follow-up must not fork)', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation('/repo', 'a.ts', false, {
+        side: 'additions',
+        lineNumber: 1,
+        metadata: {
+          id: 'c2',
+          text: 'follow-up',
+          author: 'self',
+          createdAt: 1,
+          threadId: 'root-1',
+        },
+      })
+    })
+
+    act(() => {
+      result.current.markDispatched(1000, new Set(['c2']))
+    })
+
+    const annotation = result.current.annotationsForFile('/repo', 'a.ts', false)[0]
+    expect(annotation.metadata.threadId).toBe('root-1')
+  })
+
+  test('markDispatched stamps dispatchedTo when provided', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      result.current.addAnnotation('/repo', 'a.ts', false, makeAnnotation('c1'))
+    })
+
+    act(() => {
+      result.current.markDispatched(1000, new Set(['c1']), {
+        dispatchedTo: 'pty-9',
+      })
+    })
+
+    const annotation = result.current.annotationsForFile('/repo', 'a.ts', false)[0]
+    expect(annotation.metadata.dispatchedTo).toBe('pty-9')
+  })
+
+  test('an already-dispatched self insert succeeds at the 50-pending cap', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      for (let i = 0; i < 50; i++) {
+        result.current.addAnnotation(
+          '/repo',
+          `file-${i}.ts`,
+          false,
+          makeAnnotation(`id-${i}`, 'x', i + 1)
+        )
+      }
+    })
+
+    let addResult: 'ok' | 'cap-reached' = 'cap-reached'
+    act(() => {
+      addResult = result.current.addAnnotation('/repo', 'follow.ts', false, {
+        side: 'additions',
+        lineNumber: 1,
+        metadata: {
+          id: 'f1',
+          text: 'follow',
+          author: 'self',
+          createdAt: 1,
+          dispatchedAt: 1000,
+          threadId: 'root-1',
+        },
+      })
+    })
+
+    expect(addResult).toBe('ok')
+    const list = result.current.annotationsForFile('/repo', 'follow.ts', false)
+    expect(list).toHaveLength(1)
+    expect(list[0].metadata.id).toBe('f1')
+  })
+
+  test('a pending self insert is still rejected at the cap', () => {
+    const { result } = renderHook(() => useFeedbackBatch())
+
+    act(() => {
+      for (let i = 0; i < 50; i++) {
+        result.current.addAnnotation(
+          '/repo',
+          `file-${i}.ts`,
+          false,
+          makeAnnotation(`id-${i}`, 'x', i + 1)
+        )
+      }
+    })
+
+    let addResult: 'ok' | 'cap-reached' = 'ok'
+    act(() => {
+      addResult = result.current.addAnnotation(
+        '/repo',
+        'extra.ts',
+        false,
+        makeAnnotation('extra-1')
+      )
+    })
+
+    expect(addResult).toBe('cap-reached')
+  })
+})
