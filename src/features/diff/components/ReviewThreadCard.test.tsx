@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ThreadGroup } from '../services/threadGroups'
 import { ReviewThreadCard } from './ReviewThreadCard'
 
@@ -172,5 +173,48 @@ describe('ReviewThreadCard', () => {
     )
 
     expect(screen.queryByText('Why does the cap live here?')).toBeNull()
+  })
+
+  test('the disclosure activates via Enter and Space', async () => {
+    const user = userEvent.setup()
+    render(
+      <ReviewThreadCard
+        group={group({
+          resolved: true,
+          rollup: { label: 'Resolved', chip: 'text-success' },
+        })}
+        anchorLabel="line R40"
+        actions={actions()}
+      />
+    )
+
+    const disclosure = screen.getByRole('button', { name: /thread/i })
+    disclosure.focus()
+    await user.keyboard('{Enter}')
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard(' ')
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('reviewer turns show the reviewer name with its initial avatar', () => {
+    const g = group()
+    g.turns.push({
+      side: 'additions',
+      lineNumber: 40,
+      metadata: {
+        id: 'r1',
+        text: 'Consider pooling here.',
+        author: 'reviewer',
+        reviewer: 'codex',
+        category: 'suggestion',
+        createdAt: 3,
+        threadId: 'c1',
+      },
+    })
+    render(<ReviewThreadCard group={g} anchorLabel="line R40" />)
+
+    expect(screen.getByText('codex')).toBeInTheDocument()
+    expect(screen.getByText('C')).toBeInTheDocument()
+    expect(screen.getByText('Suggestion')).toBeInTheDocument()
   })
 })
