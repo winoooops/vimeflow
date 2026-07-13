@@ -20,6 +20,11 @@ interface ReviewCommentEditorBaseProps {
   onCategoryChange?: (category: ReviewCommentCategory) => void
   onConfirm: (text: string, category: ReviewCommentCategory) => void
   onCancel: () => void
+  /**
+   * 'reply' = a typeless thread follow-up (VIM-298): category tabs hidden and
+   * the cycle shortcuts inert, chrome copy reads Reply. Default 'comment'.
+   */
+  mode?: 'comment' | 'reply'
 }
 
 type ReviewCommentEditorProps = ReviewCommentEditorBaseProps & {
@@ -113,6 +118,7 @@ export const ReviewCommentEditor = ({
   onCategoryChange = undefined,
   onConfirm,
   onCancel,
+  mode = 'comment',
 }: ReviewCommentEditorProps): ReactElement => {
   const [uncontrolledText, setUncontrolledText] = useState(initialText)
 
@@ -132,6 +138,9 @@ export const ReviewCommentEditor = ({
 
   // Ctrl+H / Ctrl+L cycle the category (vim h/l).
   const cycleCategory = (direction: 1 | -1): void => {
+    if (mode === 'reply') {
+      return
+    }
     const count = REVIEW_COMMENT_CATEGORIES.length
     const index = REVIEW_COMMENT_CATEGORIES.indexOf(selectedCategory)
 
@@ -188,37 +197,39 @@ export const ReviewCommentEditor = ({
           >
             comment
           </span>
-          Local comment
+          {mode === 'reply' ? 'Reply to thread' : 'Local comment'}
         </span>
         <span className="min-w-0 truncate text-right text-on-surface-variant text-[0.7rem]">
           Comment on {targetDescription}
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-1">
-        {REVIEW_COMMENT_CATEGORIES.map((option) => {
-          const meta = REVIEW_CATEGORY_META[option]
-          const active = option === selectedCategory
+      {mode === 'reply' ? null : (
+        <div className="flex flex-wrap items-center gap-1">
+          {REVIEW_COMMENT_CATEGORIES.map((option) => {
+            const meta = REVIEW_CATEGORY_META[option]
+            const active = option === selectedCategory
 
-          return (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={active}
-              onClick={(): void => updateCategory(option)}
-              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                active
-                  ? `bg-surface-container-highest ${meta.chip}`
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              {meta.label}
-            </button>
-          )
-        })}
-        <span className="ml-auto text-[10px] text-on-surface-variant/70">
-          ⌃H / ⌃L
-        </span>
-      </div>
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={(): void => updateCategory(option)}
+                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  active
+                    ? `bg-surface-container-highest ${meta.chip}`
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {meta.label}
+              </button>
+            )
+          })}
+          <span className="ml-auto text-[10px] text-on-surface-variant/70">
+            ⌃H / ⌃L
+          </span>
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         value={text}
@@ -272,7 +283,9 @@ export const ReviewCommentEditor = ({
         }}
         rows={3}
         className="resize-none rounded bg-surface-container/60 p-2 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-1 focus:ring-primary"
-        placeholder="Request change"
+        placeholder={
+          mode === 'reply' ? 'Reply to the agent…' : 'Request change'
+        }
       />
       <div className="flex justify-end gap-2">
         <button
@@ -288,7 +301,7 @@ export const ReviewCommentEditor = ({
           disabled={text.trim().length === 0}
           className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 disabled:opacity-50"
         >
-          Comment
+          {mode === 'reply' ? 'Reply' : 'Comment'}
         </button>
       </div>
     </div>

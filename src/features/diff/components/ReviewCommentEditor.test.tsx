@@ -403,4 +403,41 @@ describe('ReviewCommentEditor', () => {
     await user.keyboard('{Control>}l{/Control}')
     expect(handleCategoryChange).toHaveBeenCalledWith('suggestion')
   })
+
+  test('reply mode hides category tabs and relabels the chrome', () => {
+    render(
+      <ReviewCommentEditor
+        mode="reply"
+        chrome="plain"
+        surfaceRole="none"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Reply to thread')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Question' })).toBeNull()
+    expect(
+      screen.getByPlaceholderText('Reply to the agent…')
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reply' })).toBeInTheDocument()
+  })
+
+  test('reply mode ignores the ctrl+h/l category cycle', async () => {
+    const onConfirm = vi.fn()
+    render(
+      <ReviewCommentEditor
+        mode="reply"
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const textarea = screen.getByPlaceholderText('Reply to the agent…')
+    fireEvent.keyDown(textarea, { key: 'l', ctrlKey: true })
+    fireEvent.change(textarea, { target: { value: 'follow-up' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    expect(onConfirm).toHaveBeenCalledWith('follow-up', 'change')
+  })
 })
