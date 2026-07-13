@@ -487,6 +487,16 @@ const createWindow = (): BrowserWindow => {
   })
 
   installRendererDiagnosticLogging(win)
+  // VIM-306: this window is an app shell, not a web page to be zoomed. Chromium
+  // persists page zoom per-origin; the sidebar toggle is DOM so it scales with
+  // zoom, but the native macOS traffic-light buttons do not — so a <100% zoom
+  // (e.g. a stray pinch gesture) drifts the toggle onto them, and there is no
+  // in-app way to reset it. Lock zoom to 100% on every load — this also clears
+  // any already-persisted zoom — and disable pinch-to-zoom.
+  void win.webContents.setVisualZoomLevelLimits(1, 1)
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomLevel(0)
+  })
   installCommandPaletteShortcutOverride(win)
   installNavigationGuard(win, openExternalUrl)
 

@@ -12,6 +12,10 @@ Architecture design documents and exploration notes. Contains dated spec files (
 
 Note: `.superpowers/` at the repo root is a separate working directory used by the superpowers plugin — it is not documentation.
 
+### `superpowers/retros/`
+
+Post-mortems and investigation write-ups — what actually happened, which theories were dead ends, and what we'd do differently. Dated, self-contained files (e.g. `2026-07-13-vim306-toggle-overlap-zoom-investigation.md` — why the packaged sidebar-toggle overlap was a persisted page zoom, not a code bug). Read one when a similar class of problem recurs (packaged-only bugs, DOM-vs-native alignment, diagnostics-before-fixes).
+
 ### `reviews/`
 
 Review knowledge base — patterns learned from local Codex and GitHub Codex code reviews. Each pattern file in `patterns/` collects related findings with their fixes and commit links. Agents may consult relevant patterns before implementing to avoid repeating past mistakes. See `reviews/CLAUDE.md` for the index.
