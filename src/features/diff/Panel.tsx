@@ -43,6 +43,7 @@ import { useDiffSearch } from './hooks/useDiffSearch'
 import { useDiffRangeBars } from './hooks/useDiffRangeBars'
 import {
   dispatchFeedbackBatch,
+  followUpContextLine,
   formatFeedbackPayload,
   makeDispatchNonce,
   type DispatchEntry,
@@ -67,8 +68,15 @@ import { useToolbarState } from './hooks/useToolbarState'
 import { useReviewTargetNavigation } from './hooks/useReviewTargetNavigation'
 import { useVisualSelection } from './hooks/useVisualSelection'
 import { useRequestReview } from './hooks/useRequestReview'
+import {
+  buildThreadGroups,
+  threadAnchorLabel,
+  threadGroupKey,
+  type ThreadGroup,
+} from './services/threadGroups'
 import { Notifier } from './components/Notifier'
 import { PanelBody } from './components/PanelBody'
+import { ReviewThreadCard } from './components/ReviewThreadCard'
 import { DiffSearchButton } from './components/DiffSearchButton'
 import { DiffSearchPopup } from './components/DiffSearchPopup'
 import { ReviewCommentEditor } from './components/ReviewCommentEditor'
@@ -701,6 +709,35 @@ export const Panel = ({
     focusDiffRoot,
   })
 
+  const lineThreads = useMemo(
+    () =>
+      buildThreadGroups(lineAnnotations, {
+        cwd,
+        filePath: selectedFilePath ?? '',
+        staged: selectedFileStaged,
+      }),
+    [lineAnnotations, cwd, selectedFilePath, selectedFileStaged]
+  )
+
+  const fileThreads = useMemo(
+    () =>
+      buildThreadGroups(fileCommentsForSelectedFile, {
+        cwd,
+        filePath: selectedFileEntry?.path ?? '',
+        staged: selectedFileEntry?.staged ?? false,
+      }),
+    [fileCommentsForSelectedFile, cwd, selectedFileEntry]
+  )
+
+  const threadGroupById = useMemo((): Map<string, ThreadGroup> => {
+    const merged = new Map(lineThreads.groups)
+    for (const [key, group] of fileThreads.groups) {
+      merged.set(key, group)
+    }
+
+    return merged
+  }, [lineThreads, fileThreads])
+
   const fileCommentDraftTarget =
     annotationTarget !== null && isFileAnnotationTarget(annotationTarget)
       ? annotationTarget
@@ -723,6 +760,22 @@ export const Panel = ({
   // The comment being single-sent (VIM-297); scopes the Finish popover +
   // dispatch to exactly that comment. null = whole-batch behavior.
   const [sendNowCommentId, setSendNowCommentId] = useState<string | null>(null)
+
+  // Thread reply drafts (VIM-298), keyed by threadId so starting a reply on
+  // one thread never discards another thread's typed text. Panel-owned so a
+  // MultiFileDiff remount cannot erase them; an entry is cleared ONLY by that
+  // thread's explicit cancel or its successful dispatch.
+  const [replyDrafts, setReplyDrafts] = useState<ReadonlyMap<string, string>>(
+    new Map()
+  )
+  // Thread whose reply editor is currently open; null = none.
+  const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null)
+
+  // Thread whose follow-up is awaiting the scoped confirm popover (VIM-298);
+  // mutually exclusive with finishOpen / sendNowCommentId.
+  const [replyDispatchThreadId, setReplyDispatchThreadId] = useState<
+    string | null
+  >(null)
 
   const [keyboardConfirmAction, setKeyboardConfirmAction] =
     useState<KeyboardConfirmAction | null>(null)
@@ -894,6 +947,163 @@ export const Panel = ({
     ]
   )
 
+  // VIM-298: dispatch a thread follow-up. The comment is never stored pending —
+  // it is built ephemerally for the payload and inserted post-write already
+  // stamped (dispatchedAt/dispatchedTo/threadId), so whole-batch Finish can
+  // never sweep it and a write failure leaves no local record.
+  const handleSendThreadReply = useCallback(
+    (pane: PaneCandidate): void => {
+      if (sendingFeedbackRef.current || replyDispatchThreadId === null) {
+        return
+      }
+      const draftText = replyDrafts.get(replyDispatchThreadId) ?? ''
+      const group = threadGroupById.get(replyDispatchThreadId)
+      if (
+        group === undefined ||
+        feedbackDispatch === undefined ||
+        draftText.trim().length === 0
+      ) {
+        setReplyDispatchThreadId(null)
+
+        return
+      }
+      sendingFeedbackRef.current = true
+      void (async (): Promise<void> => {
+        try {
+          // `group.turns` is guaranteed non-empty by buildThreadGroups (the
+          // constructor always pushes the first annotation before creating a group).
+          const [anchor] = group.turns
+          const previous = group.turns[group.turns.length - 1]
+
+          const comment: ReviewComment = {
+            id: nextFeedbackCommentId(),
+            text: draftText,
+            author: 'self',
+            createdAt: Date.now(),
+            threadId: group.threadId,
+            ...(anchor.metadata.target === undefined
+              ? {}
+              : { target: anchor.metadata.target }),
+          }
+
+          // Same repo-root resolution as buildFeedbackEntries: absolute prompt
+          // path for the agent, repo-relative coordinates for the handle.
+          const entryRepoRoot = repoRootRef.repoRootForCwd?.(group.cwd)
+
+          const resolvedRepoRoot =
+            entryRepoRoot && entryRepoRoot.length > 0
+              ? entryRepoRoot
+              : (response?.repoRoot ?? repoRootRef.current)
+
+          const promptPath = resolvedRepoRoot
+            ? `${resolvedRepoRoot}/${group.filePath}`
+            : group.filePath
+
+          const nonce = makeDispatchNonce()
+          await dispatchFeedbackBatch(
+            pane.paneId,
+            pane.ptyId,
+            [
+              {
+                filePath: promptPath,
+                staged: group.staged,
+                annotations: [
+                  {
+                    side: anchor.side,
+                    lineNumber: anchor.lineNumber,
+                    metadata: comment,
+                  },
+                ],
+              },
+            ],
+            nonce,
+            feedbackDispatch.writePty,
+            followUpContextLine(previous.metadata)
+          )
+
+          if (feedbackOwnerKey !== undefined) {
+            setPendingReview({
+              ptyId: pane.ptyId,
+              ownerKey: feedbackOwnerKey,
+              nonce,
+              dispatchedAt: Date.now(),
+              byHandle: new Map([
+                [
+                  1,
+                  {
+                    cwd: group.cwd,
+                    filePath: group.filePath,
+                    staged: group.staged,
+                    lineNumber: anchor.lineNumber,
+                    side: anchor.side,
+                    target: anchor.metadata.target,
+                    threadId: group.threadId,
+                  },
+                ],
+              ]),
+            })
+          }
+
+          // Post-write insert, pre-stamped: never observable as pending.
+          feedback.addAnnotation(group.cwd, group.filePath, group.staged, {
+            side: anchor.side,
+            lineNumber: anchor.lineNumber,
+            metadata: {
+              ...comment,
+              dispatchedAt: Date.now(),
+              dispatchedTo: pane.ptyId,
+            },
+          })
+
+          // Reply implies reopen — only after a successful dispatch.
+          if (group.resolved) {
+            feedback.updateAnnotation(
+              group.cwd,
+              group.filePath,
+              group.staged,
+              group.threadId,
+              { resolvedAt: undefined }
+            )
+          }
+
+          // Clear ONLY this thread's draft (successful dispatch).
+          setReplyDrafts((prev) => {
+            const next = new Map(prev)
+            next.delete(group.threadId)
+
+            return next
+          })
+
+          setReplyingThreadId((current) =>
+            current === group.threadId ? null : current
+          )
+          setReplyDispatchThreadId(null)
+          const focusTerminal = feedbackDispatch.focusTerminal
+          if (focusTerminal !== undefined) {
+            setTimeout(focusTerminal, 0)
+          }
+        } catch {
+          // Write failed: keep the editor open with its text; nothing was inserted.
+          setReplyDispatchThreadId(null)
+          notifyInfo('Terminal session ended; reply not sent.')
+        } finally {
+          sendingFeedbackRef.current = false
+        }
+      })()
+    },
+    [
+      replyDispatchThreadId,
+      replyDrafts,
+      threadGroupById,
+      feedback,
+      feedbackDispatch,
+      feedbackOwnerKey,
+      notifyInfo,
+      repoRootRef,
+      response,
+    ]
+  )
+
   // Copy the whole review to the clipboard — the escape hatch when no agent is
   // running to send to (comments are otherwise trapped in the batch). It uses
   // the same resolved paths as the send path so pasted feedback works from an
@@ -928,6 +1138,84 @@ export const Panel = ({
     },
     [buildFeedbackEntries, notifyInfo]
   )
+
+  const resolveThread = useCallback(
+    (threadId: string): void => {
+      const group = threadGroupById.get(threadId)
+      if (group !== undefined) {
+        feedback.updateAnnotation(
+          group.cwd,
+          group.filePath,
+          group.staged,
+          threadId,
+          {
+            resolvedAt: Date.now(),
+          }
+        )
+      }
+    },
+    [feedback, threadGroupById]
+  )
+
+  const reopenThread = useCallback(
+    (threadId: string): void => {
+      const group = threadGroupById.get(threadId)
+      if (group !== undefined) {
+        feedback.updateAnnotation(
+          group.cwd,
+          group.filePath,
+          group.staged,
+          threadId,
+          {
+            resolvedAt: undefined,
+          }
+        )
+      }
+    },
+    [feedback, threadGroupById]
+  )
+
+  const threadProps = {
+    replyingThreadId,
+    replyDraft:
+      replyingThreadId === null
+        ? ''
+        : (replyDrafts.get(replyingThreadId) ?? ''),
+    // Switching to another thread's Reply closes the first editor but its
+    // draft stays in the map — reopening restores it.
+    onStartReply: (threadId: string): void => setReplyingThreadId(threadId),
+    onReplyDraftChange: (text: string): void => {
+      setReplyDrafts((prev) => {
+        if (replyingThreadId === null) {
+          return prev
+        }
+        const next = new Map(prev)
+        next.set(replyingThreadId, text)
+
+        return next
+      })
+    },
+    onSubmitReply: (threadId: string, text: string): void => {
+      setReplyDrafts((prev) => new Map(prev).set(threadId, text))
+      setFinishOpen(false)
+      setSendNowCommentId(null)
+      setReplyDispatchThreadId(threadId)
+    },
+    // Explicit cancel clears ONLY the active thread's draft.
+    onCancelReply: (): void => {
+      if (replyingThreadId !== null) {
+        setReplyDrafts((prev) => {
+          const next = new Map(prev)
+          next.delete(replyingThreadId)
+
+          return next
+        })
+      }
+      setReplyingThreadId(null)
+    },
+    onResolve: resolveThread,
+    onReopen: reopenThread,
+  }
 
   // Request review (VIM-304): the whole "arm a pending request, then dispatch or
   // copy it" flow lives in useRequestReview so this component stays a renderer.
@@ -1947,7 +2235,8 @@ export const Panel = ({
     closeCommentEditor()
   }, [cancelVisualSelection, closeCommentEditor])
 
-  const isFinishPopoverOpen = finishOpen || sendNowCommentId !== null
+  const isFinishPopoverOpen =
+    finishOpen || sendNowCommentId !== null || replyDispatchThreadId !== null
 
   useKeyboard({
     enabled: true,
@@ -2097,6 +2386,7 @@ export const Panel = ({
       ? (): void => {
           review.closePopover()
           setSendNowCommentId(null)
+          setReplyDispatchThreadId(null)
           setFinishOpen(true)
         }
       : undefined
@@ -2107,16 +2397,35 @@ export const Panel = ({
       allPanes: feedbackDispatch?.candidates ?? [],
       diffCwd: cwd,
     }),
-    // Single-send (VIM-297) reuses the popover scoped to one comment.
-    commentCount: sendNowCommentId !== null ? 1 : feedbackCount,
-    fileCount: sendNowCommentId !== null ? 1 : pendingFileCount,
+    // Single-send (VIM-297) or reply dispatch (VIM-298) reuses the popover
+    // scoped to one comment.
+    commentCount:
+      sendNowCommentId !== null || replyDispatchThreadId !== null
+        ? 1
+        : feedbackCount,
+    fileCount:
+      sendNowCommentId !== null || replyDispatchThreadId !== null
+        ? 1
+        : pendingFileCount,
     onCancel: (): void => {
       setFinishOpen(false)
       setSendNowCommentId(null)
+      setReplyDispatchThreadId(null)
     },
-    onSend: (pane: PaneCandidate): void =>
-      handleSendFeedback(pane, sendNowCommentId ?? undefined),
-    onCopy: (): void => handleCopyFeedback(sendNowCommentId ?? undefined),
+    onSend: (pane: PaneCandidate): void => {
+      if (replyDispatchThreadId !== null) {
+        handleSendThreadReply(pane)
+
+        return
+      }
+      handleSendFeedback(pane, sendNowCommentId ?? undefined)
+    },
+    // A follow-up has no persisted comment to copy — hide Copy for reply sends.
+    ...(replyDispatchThreadId !== null
+      ? {}
+      : {
+          onCopy: (): void => handleCopyFeedback(sendNowCommentId ?? undefined),
+        }),
   }
 
   // The "Request review" affordance (VIM-304) — always available when a file
@@ -2398,40 +2707,85 @@ export const Panel = ({
                 data-testid="file-level-comments-list"
                 className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1"
               >
-                {fileCommentsForSelectedFile.map((annotation) => (
-                  <ReviewCommentRow
-                    key={annotation.metadata.id}
-                    comment={annotation.metadata}
-                    editShortcut="Shift+U"
-                    deleteShortcut={null}
-                    onSendNow={(): void => {
-                      setFinishOpen(false)
-                      setSendNowCommentId(annotation.metadata.id)
-                    }}
-                    onEdit={(): void => {
-                      setFileCommentAnchorPoint(null)
-                      setAnnotationTarget({
-                        scope: 'file',
-                        filePath: selectedFileEntry.path,
-                        staged: selectedFileEntry.staged,
-                        editId: annotation.metadata.id,
-                      })
-                      setCommentDraftText(annotation.metadata.text, false)
-                      setCommentCategory(
-                        reviewCommentCategory(annotation.metadata)
-                      )
-                    }}
-                    onDelete={(): void => {
-                      focusDiffRoot()
-                      feedback.removeAnnotation(
-                        cwd,
-                        selectedFileEntry.path,
-                        selectedFileEntry.staged,
-                        annotation.metadata.id
-                      )
-                    }}
-                  />
-                ))}
+                {fileThreads.collapsed.map((annotation) => {
+                  const fileGroupKey = threadGroupKey(annotation)
+
+                  const fileGroup =
+                    fileGroupKey === undefined
+                      ? undefined
+                      : fileThreads.groups.get(fileGroupKey)
+
+                  if (fileGroup !== undefined) {
+                    return (
+                      <ReviewThreadCard
+                        key={`thread:${fileGroup.threadId}`}
+                        group={fileGroup}
+                        anchorLabel={threadAnchorLabel(
+                          fileGroup.turns[0] ?? annotation
+                        )}
+                        actions={
+                          feedbackDispatch === undefined
+                            ? undefined
+                            : {
+                                replying:
+                                  threadProps.replyingThreadId ===
+                                  fileGroup.threadId,
+                                replyDraft: threadProps.replyDraft,
+                                onStartReply: (): void =>
+                                  threadProps.onStartReply(fileGroup.threadId),
+                                onReplyDraftChange:
+                                  threadProps.onReplyDraftChange,
+                                onSubmitReply: (text): void =>
+                                  threadProps.onSubmitReply(
+                                    fileGroup.threadId,
+                                    text
+                                  ),
+                                onCancelReply: threadProps.onCancelReply,
+                                onResolve: (): void =>
+                                  threadProps.onResolve(fileGroup.threadId),
+                                onReopen: (): void =>
+                                  threadProps.onReopen(fileGroup.threadId),
+                              }
+                        }
+                      />
+                    )
+                  }
+
+                  return (
+                    <ReviewCommentRow
+                      key={annotation.metadata.id}
+                      comment={annotation.metadata}
+                      editShortcut="Shift+U"
+                      deleteShortcut={null}
+                      onSendNow={(): void => {
+                        setFinishOpen(false)
+                        setSendNowCommentId(annotation.metadata.id)
+                      }}
+                      onEdit={(): void => {
+                        setFileCommentAnchorPoint(null)
+                        setAnnotationTarget({
+                          scope: 'file',
+                          filePath: selectedFileEntry.path,
+                          staged: selectedFileEntry.staged,
+                          editId: annotation.metadata.id,
+                        })
+                        setCommentDraftText(annotation.metadata.text, false)
+                        setCommentCategory(
+                          reviewCommentCategory(annotation.metadata)
+                        )
+                      }}
+                      onDelete={(): void => {
+                        focusDiffRoot()
+                        feedback.removeAnnotation(
+                          cwd,
+                          selectedFileEntry.path,
+                          selectedFileEntry.staged,
+                          annotation.metadata.id
+                        )
+                      }}
+                    />
+                  )
+                })}
               </div>
             </div>
           ) : null}
@@ -2445,7 +2799,7 @@ export const Panel = ({
             renderKey={panelRenderKey}
             options={diffOptionsWithSearch}
             selectedLines={selectedLines}
-            lineAnnotations={lineAnnotations}
+            lineAnnotations={lineThreads.collapsed}
             annotationTarget={annotationTarget}
             commentDraftText={commentDraftText}
             commentCategory={commentCategory}
@@ -2466,6 +2820,11 @@ export const Panel = ({
             onCommentCategoryChange={setCommentCategory}
             onConfirmComment={confirmCommentEditor}
             onCancelComment={cancelCommentEditor}
+            thread={{
+              groups: lineThreads.groups,
+              // Capability gating: no dispatch surface → footer-less cards.
+              actions: feedbackDispatch === undefined ? undefined : threadProps,
+            }}
           />
         </div>
       </div>

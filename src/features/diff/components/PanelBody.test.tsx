@@ -1,16 +1,18 @@
-import { createRef, type ReactNode } from 'react'
+import { createRef, type ReactElement, type ReactNode } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import type { FileDiffOptions } from '@pierre/diffs'
+import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { PanelBody } from './PanelBody'
 import type { ReviewComment } from '../hooks/useFeedbackBatch'
 import type { PierreFileInputs } from '../services/pierreAdapter'
+import type { ThreadGroup } from '../services/threadGroups'
 
 interface MultiFileDiffMockProps {
   oldFile: { name: string }
   newFile: { name: string }
-  lineAnnotations: unknown[]
+  lineAnnotations: DiffLineAnnotation<ReviewComment>[]
   options: { diffStyle?: string }
+  renderAnnotation?: (a: DiffLineAnnotation<ReviewComment>) => ReactElement
 }
 
 interface WorkerPoolMock {
@@ -30,6 +32,7 @@ vi.mock('@pierre/diffs/react', () => ({
     newFile,
     lineAnnotations,
     options,
+    renderAnnotation = undefined,
   }: MultiFileDiffMockProps): ReactNode => {
     pierreReactMock.renderCount += 1
 
@@ -41,7 +44,13 @@ vi.mock('@pierre/diffs/react', () => ({
         data-annotations={lineAnnotations.length}
         data-diff-style={options.diffStyle}
         data-render-count={pierreReactMock.renderCount}
-      />
+      >
+        {renderAnnotation !== undefined
+          ? lineAnnotations.map((a) => (
+              <div key={a.metadata.id}>{renderAnnotation(a)}</div>
+            ))
+          : null}
+      </div>
     )
   },
 }))
@@ -172,5 +181,118 @@ describe('PanelBody', () => {
         '2'
       )
     )
+  })
+
+  test('a grouped anchor renders the thread card instead of a row', () => {
+    const anchorAnnotation: DiffLineAnnotation<ReviewComment> = {
+      side: 'additions',
+      lineNumber: 40,
+      metadata: {
+        id: 'c1',
+        text: 'Why does the cap live here?',
+        author: 'self',
+        category: 'question',
+        createdAt: 1,
+        dispatchedAt: 1000,
+        threadId: 'c1',
+      },
+    }
+
+    const group: ThreadGroup = {
+      threadId: 'c1',
+      turns: [
+        anchorAnnotation,
+        {
+          side: 'additions',
+          lineNumber: 40,
+          metadata: {
+            id: 'g1',
+            text: 'The pool applies backpressure.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2,
+            threadId: 'c1',
+          },
+        },
+      ],
+      rollup: { label: 'Replied', chip: 'text-success' },
+      resolved: false,
+      cwd: '/repo',
+      filePath: 'src/foo.ts',
+      staged: false,
+    }
+
+    renderBody({
+      lineAnnotations: [anchorAnnotation],
+      thread: {
+        groups: new Map([['c1', group]]),
+        actions: {
+          replyingThreadId: null,
+          replyDraft: '',
+          onStartReply: vi.fn(),
+          onReplyDraftChange: vi.fn(),
+          onSubmitReply: vi.fn(),
+          onCancelReply: vi.fn(),
+          onResolve: vi.fn(),
+          onReopen: vi.fn(),
+        },
+      },
+    })
+
+    // Both turn texts render inside one card container.
+    expect(screen.getByText('Why does the cap live here?')).toBeInTheDocument()
+    expect(
+      screen.getByText('The pool applies backpressure.')
+    ).toBeInTheDocument()
+
+    // No send/edit/delete buttons from ReviewCommentRow for the dispatched anchor.
+    expect(
+      screen.queryByRole('button', { name: 'Send comment now' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: 'Edit comment' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('thread without actions renders a footer-less card', () => {
+    const anchorAnnotation: DiffLineAnnotation<ReviewComment> = {
+      side: 'additions',
+      lineNumber: 40,
+      metadata: {
+        id: 'c2',
+        text: 'Finding text here.',
+        author: 'reviewer',
+        createdAt: 1,
+        threadId: 'c2',
+      },
+    }
+
+    const group: ThreadGroup = {
+      threadId: 'c2',
+      turns: [anchorAnnotation],
+      rollup: { label: 'Open', chip: 'text-on-surface-variant' },
+      resolved: false,
+      cwd: '/repo',
+      filePath: 'src/foo.ts',
+      staged: false,
+    }
+
+    renderBody({
+      lineAnnotations: [anchorAnnotation],
+      thread: {
+        groups: new Map([['c2', group]]),
+        actions: undefined,
+      },
+    })
+
+    expect(screen.getByText('Finding text here.')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /reply/i })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /resolve/i })
+    ).not.toBeInTheDocument()
   })
 })

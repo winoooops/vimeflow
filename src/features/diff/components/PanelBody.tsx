@@ -21,10 +21,16 @@ import {
 } from '../hooks/useFeedbackBatch'
 import type { AnnotationTarget } from '../hooks/useReviewCommentDraft'
 import type { PierreFileInputs } from '../services/pierreAdapter'
+import {
+  threadAnchorLabel,
+  threadGroupKey,
+  type ThreadGroup,
+} from '../services/threadGroups'
 import { DiffNarrowPlaceholder } from './DiffNarrowPlaceholder'
 import { DIFF_MIN_WIDTH_PX } from './toolbar'
 import { ReviewCommentEditor } from './ReviewCommentEditor'
 import { ReviewCommentRow } from './ReviewCommentRow'
+import { ReviewThreadCard } from './ReviewThreadCard'
 
 const ErrorCard = ({ message }: { message: string }): ReactElement => (
   <div
@@ -134,6 +140,24 @@ const useHighlightCacheRevision = (diffCacheKey: string | null): number => {
   return revision
 }
 
+export interface PanelThreadActions {
+  /** threadId whose reply editor is open; null = none. */
+  replyingThreadId: string | null
+  replyDraft: string
+  onStartReply: (threadId: string) => void
+  onReplyDraftChange: (text: string) => void
+  onSubmitReply: (threadId: string, text: string) => void
+  onCancelReply: () => void
+  onResolve: (threadId: string) => void
+  onReopen: (threadId: string) => void
+}
+
+export interface PanelThreadProps {
+  groups: Map<string, ThreadGroup>
+  /** Omitted → footer-less cards (no dispatch capability, spec Section 3). */
+  actions?: PanelThreadActions
+}
+
 interface PanelBodyProps {
   scrollBodyRef: RefObject<HTMLDivElement | null>
   diffError: Error | null
@@ -160,6 +184,8 @@ interface PanelBodyProps {
   onCommentCategoryChange: (category: ReviewCommentCategory) => void
   onConfirmComment: (text: string, category: ReviewCommentCategory) => void
   onCancelComment: () => void
+  /** Thread grouping data for VIM-298 card rendering. */
+  thread?: PanelThreadProps
 }
 
 export const PanelBody = ({
@@ -187,6 +213,7 @@ export const PanelBody = ({
   onCommentCategoryChange,
   onConfirmComment,
   onCancelComment,
+  thread = undefined,
 }: PanelBodyProps): ReactElement => {
   const highlightCacheRevision = useHighlightCacheRevision(
     pierreInputs?.diffCacheKey ?? null
@@ -255,6 +282,46 @@ export const PanelBody = ({
                     onCategoryChange={onCommentCategoryChange}
                     onConfirm={onConfirmComment}
                     onCancel={onCancelComment}
+                  />
+                )
+              }
+
+              const groupKey = threadGroupKey(annotation)
+
+              const group =
+                groupKey === undefined
+                  ? undefined
+                  : thread?.groups.get(groupKey)
+              if (group !== undefined) {
+                const threadActions = thread?.actions
+
+                return (
+                  <ReviewThreadCard
+                    key={`thread:${group.threadId}`}
+                    group={group}
+                    anchorLabel={threadAnchorLabel(
+                      group.turns[0] ?? annotation
+                    )}
+                    actions={
+                      threadActions === undefined
+                        ? undefined
+                        : {
+                            replying:
+                              threadActions.replyingThreadId === group.threadId,
+                            replyDraft: threadActions.replyDraft,
+                            onStartReply: (): void =>
+                              threadActions.onStartReply(group.threadId),
+                            onReplyDraftChange:
+                              threadActions.onReplyDraftChange,
+                            onSubmitReply: (text): void =>
+                              threadActions.onSubmitReply(group.threadId, text),
+                            onCancelReply: threadActions.onCancelReply,
+                            onResolve: (): void =>
+                              threadActions.onResolve(group.threadId),
+                            onReopen: (): void =>
+                              threadActions.onReopen(group.threadId),
+                          }
+                    }
                   />
                 )
               }
