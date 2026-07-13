@@ -255,6 +255,91 @@ describe('PanelBody', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('reply draft survives a MultiFileDiff remount triggered by renderKey change (VIM-298)', () => {
+    const anchorAnnotation: DiffLineAnnotation<ReviewComment> = {
+      side: 'additions',
+      lineNumber: 40,
+      metadata: {
+        id: 'c-draft',
+        text: 'Original question.',
+        author: 'self',
+        category: 'question',
+        createdAt: 1,
+        dispatchedAt: 1000,
+        threadId: 'c-draft',
+      },
+    }
+
+    const group: ThreadGroup = {
+      threadId: 'c-draft',
+      turns: [
+        anchorAnnotation,
+        {
+          side: 'additions',
+          lineNumber: 40,
+          metadata: {
+            id: 'g-draft',
+            text: 'Agent answer.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2,
+            threadId: 'c-draft',
+          },
+        },
+      ],
+      rollup: { label: 'Replied', chip: 'text-success' },
+      resolved: false,
+      cwd: '/repo',
+      filePath: 'src/foo.ts',
+      staged: false,
+    }
+
+    const sharedActions = {
+      replyingThreadId: 'c-draft',
+      replyDraft: 'typed text',
+      onStartReply: vi.fn(),
+      onReplyDraftChange: vi.fn(),
+      onSubmitReply: vi.fn(),
+      onCancelReply: vi.fn(),
+      onResolve: vi.fn(),
+      onReopen: vi.fn(),
+    }
+
+    const threadProp = {
+      groups: new Map([['c-draft', group]]),
+      actions: sharedActions,
+    }
+
+    const { rerender } = renderBody({
+      lineAnnotations: [anchorAnnotation],
+      thread: threadProp,
+    })
+
+    // The reply editor is open; confirm the textarea shows the draft text.
+    const textareaBefore = screen.getByPlaceholderText('Reply to the agent…')
+    expect(textareaBefore).toHaveValue('typed text')
+
+    // Change renderKey — this causes effectiveRenderKey to change, which
+    // remounts MultiFileDiff (it is keyed by effectiveRenderKey in PanelBody).
+    rerender(
+      <PanelBody
+        {...createBodyProps({
+          renderKey: 'pierre-dark:word:remounted',
+          lineAnnotations: [anchorAnnotation],
+          thread: threadProp,
+        })}
+      />
+    )
+
+    // The MultiFileDiff was remounted — DOM node identity must have changed.
+    const textareaAfter = screen.getByPlaceholderText('Reply to the agent…')
+    expect(textareaAfter).not.toBe(textareaBefore)
+
+    // Draft value is still present because it flows from props above the
+    // remount boundary, not from internal textarea state.
+    expect(textareaAfter).toHaveValue('typed text')
+  })
+
   test('thread without actions renders a footer-less card', () => {
     const anchorAnnotation: DiffLineAnnotation<ReviewComment> = {
       side: 'additions',

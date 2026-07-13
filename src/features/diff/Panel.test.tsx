@@ -6527,6 +6527,147 @@ describe('Panel', () => {
         within(annotationSlot).getByPlaceholderText('Reply to the agent…')
       ).toHaveValue('Typed draft text')
     })
+
+    test('repo-subdirectory cwd: writePty receives absolute path and pending handle carries repo-relative coords (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockResolvedValue(undefined)
+      const focusTerminal = vi.fn()
+
+      // Re-mock with the subdirectory cwd so the Panel does not enter loading state.
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/foo.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo/sub',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+          repoRoot: '/repo',
+        })
+      )
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo/sub',
+        status: 'running',
+        isFocused: true,
+      }
+
+      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      // Annotations keyed under the subdirectory cwd.
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-sub1',
+            text: 'Root question from sub.',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            threadId: 'root-sub1',
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-sub1',
+            text: 'Agent sub reply.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2000,
+            threadId: 'root-sub1',
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo/sub', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 2,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo/sub"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo/sub' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal,
+          }}
+          feedbackRepoRootRef={{
+            current: '',
+            repoRootForCwd: (entryCwd: string): string =>
+              entryCwd === '/repo/sub' ? '/repo' : '',
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /reply/i })
+      )
+
+      const replyTextarea = within(annotationSlot).getByPlaceholderText(
+        'Reply to the agent…'
+      )
+      await user.type(replyTextarea, 'Sub-directory follow-up')
+      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+
+      const popover = await screen.findByRole('dialog', {
+        name: 'Finish feedback',
+      })
+      expect(popover).toHaveTextContent(/Send 1 comment/)
+
+      await user.keyboard('Y')
+
+      await waitFor(() => expect(writePty).toHaveBeenCalledOnce())
+
+      // The prompt sent to the agent must carry the ABSOLUTE path so the agent
+      // can resolve it from any working directory.
+      const [, payload] = writePty.mock.calls[0]
+      expect(payload as string).toContain('/repo/src/foo.ts')
+
+      // The pending handle must carry REPO-RELATIVE coordinates (cwd + relative
+      // filePath) matching the batch key, not the absolute prompt path.
+      const nonce = /"nonce":"(\w+)"/.exec(payload as string)?.[1] ?? ''
+      const pending = getPendingReview('pty-1', nonce)
+      expect(pending?.byHandle.get(1)?.cwd).toBe('/repo/sub')
+      expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
+
+      clearPendingReview('pty-1', nonce)
+    })
   })
 
   describe('diff search wiring', () => {
