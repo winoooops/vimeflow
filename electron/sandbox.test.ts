@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   VIMEFLOW_NO_SANDBOX_ENV,
+  VIMEFLOW_USER_DATA_DIR_ENV,
   electronStartupArgs,
   isElectronNoSandboxRequested,
 } from './sandbox'
@@ -25,5 +26,15 @@ describe('Electron sandbox startup args', () => {
         WAYLAND_DISPLAY: undefined,
       })
     ).toEqual(['.'])
+  })
+
+  test('redirects userData only when a dir is provided', () => {
+    expect(
+      electronStartupArgs({ [VIMEFLOW_USER_DATA_DIR_ENV]: '/tmp/vimeflow-dev' })
+    ).toEqual(['.', '--user-data-dir=/tmp/vimeflow-dev'])
+
+    expect(electronStartupArgs({ [VIMEFLOW_USER_DATA_DIR_ENV]: '  ' })).toEqual(
+      ['.']
+    )
   })
 })
