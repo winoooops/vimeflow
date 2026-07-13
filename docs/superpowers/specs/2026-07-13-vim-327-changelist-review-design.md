@@ -192,3 +192,5 @@ Delegate-target resolution (`ResolveResult` one-agent fast path vs copy-fallback
 ### Rollout
 
 In-memory stores only — no persistence or migration. Single PR on `feature/vim-327` (auto-review/auto-approve), body `Closes VIM-327` + `Part of VIM-284`. v2 escape hatch pre-filed as VIM-341.
+
+<!-- codex-reviewed: 2026-07-13T17:05:58Z -->
