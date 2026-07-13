@@ -181,6 +181,8 @@ test('a placed finding self-roots its thread', async () => {
 
 In `Panel.test.tsx`, if the file already has a dispatch-path test asserting `setPendingReview` contents, extend it to assert each handle now carries `threadId` equal to the dispatched comment's id; otherwise add one following the file's existing dispatch test setup.
 
+**Existing assertion to update:** `useAgentReview.test.ts` (~lines 325–332) exactly compares the anchored handle shape — it will fail once handles carry `threadId`. Extend that expected object with `threadId: <the placed finding's comment id>` as part of this task (it is the behavior change, not collateral).
+
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run src/features/diff/hooks/useAgentReply.test.ts src/features/diff/hooks/useAgentReview.test.ts src/features/diff/Panel.test.tsx`
@@ -351,11 +353,15 @@ describe('buildThreadGroups', () => {
 })
 
 describe('threadRollup', () => {
-  test('is total over the latest turn', () => {
+  test('is total over the latest turn (full outcome matrix)', () => {
     const agent = (outcome?: ReviewComment['outcome']) =>
       annotation({ id: 'g', author: 'agent', ...(outcome ? { outcome } : {}) })
 
+    expect(threadRollup([agent('reply')], false).label).toBe('Replied')
     expect(threadRollup([agent('clarify')], false).label).toBe('Awaiting you')
+    expect(threadRollup([agent('resolved')], false).label).toBe('Resolved')
+    expect(threadRollup([agent('deferred')], false).label).toBe('Deferred')
+    expect(threadRollup([agent('rejected')], false).label).toBe('Rejected')
     expect(threadRollup([agent()], false).label).toBe('Replied')
     expect(
       threadRollup(
@@ -366,6 +372,7 @@ describe('threadRollup', () => {
     expect(
       threadRollup([annotation({ id: 'r', author: 'reviewer' })], false).label
     ).toBe('Open')
+    // Local resolve overrides every derived state.
     expect(threadRollup([agent('rejected')], true).label).toBe('Resolved')
   })
 })
@@ -751,6 +758,21 @@ test('followUpContextLine phrases by author, truncates, and strips controls', ()
   expect(hostile).not.toContain('\x1b')
   expect(hostile).not.toContain('\r')
 })
+
+test('a category-less dispatched ROOT is not a follow-up', () => {
+  // threadId === id (self-rooted) + no category → still the default Change
+  // request in the payload, NOT [#n · Follow-up].
+  expect(
+    isFollowUpComment({
+      id: 'c1',
+      threadId: 'c1',
+      text: 't',
+      author: 'self',
+      createdAt: 1,
+      dispatchedAt: 1000,
+    })
+  ).toBe(false)
+})
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -763,10 +785,16 @@ Expected: FAIL — `followUpContextLine` not exported; label renders `Change req
 (a) After `CATEGORY_INSTRUCTION`, add:
 
 ```ts
-/** A typeless thread follow-up (VIM-298): threadId set, no category chosen. */
+/**
+ * A typeless thread follow-up (VIM-298): belongs to ANOTHER root's thread and
+ * has no category. `threadId !== id` is load-bearing — a dispatched ROOT
+ * self-stamps `threadId === id` and may legitimately omit category (defaults
+ * to a change request); it must NOT be classified as a follow-up.
+ */
 export const isFollowUpComment = (comment: ReviewComment): boolean =>
   comment.author === 'self' &&
   comment.threadId !== undefined &&
+  comment.threadId !== comment.id &&
   comment.category === undefined
 
 const FOLLOW_UP_LABEL = 'Follow-up'
@@ -970,6 +998,28 @@ describe('ReviewThreadCard', () => {
     expect(screen.getByText('Why does the cap live here?')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /reopen/i })).toBeInTheDocument()
   })
+
+  test('re-resolving after an expanded reopen collapses again', () => {
+    // expand-while-resolved is reset when the thread reopens: render resolved,
+    // expand via the disclosure, rerender with resolved: false (reopened),
+    // then rerender resolved: true again → the card must be COLLAPSED.
+    const resolved = group({
+      resolved: true,
+      rollup: { label: 'Resolved', chip: 'text-success' },
+    })
+    const { rerender } = render(
+      <ReviewThreadCard group={resolved} anchorLabel="line R40" actions={actions()} />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /thread/i }))
+    rerender(
+      <ReviewThreadCard group={group()} anchorLabel="line R40" actions={actions()} />
+    )
+    rerender(
+      <ReviewThreadCard group={resolved} anchorLabel="line R40" actions={actions()} />
+    )
+
+    expect(screen.queryByText('Why does the cap live here?')).toBeNull()
+  })
 })
 ```
 
@@ -981,7 +1031,7 @@ Expected: FAIL — module does not exist.
 - [ ] **Step 3: Implement** — create `src/features/diff/components/ReviewThreadCard.tsx`:
 
 ```tsx
-import { useState, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import {
   reviewCommentCategory,
@@ -1130,6 +1180,15 @@ export const ReviewThreadCard = ({
   actions = undefined,
 }: ReviewThreadCardProps): ReactElement => {
   const [expandedWhileResolved, setExpandedWhileResolved] = useState(false)
+
+  // Reset the read-only expansion whenever the thread reopens, so the NEXT
+  // resolve collapses again (expand → Reopen → Resolve must not stay open).
+  useEffect((): void => {
+    if (!group.resolved) {
+      setExpandedWhileResolved(false)
+    }
+  }, [group.resolved])
+
   const collapsed = group.resolved && !expandedWhileResolved
   const expanded = !collapsed
 
@@ -1265,20 +1324,26 @@ git commit -m "feat(diff): GitHub-style thread card component (VIM-298)"
 
 **Files:**
 - Modify: `src/features/diff/components/PanelBody.tsx`
+- Modify: `src/features/diff/components/Notifier.tsx` (`FinishFeedbackState.onCopy` becomes optional — `onCopy?: () => void`; `FinishFeedbackPopover` already treats it as optional)
 - Modify: `src/features/diff/Panel.tsx`
 - Test: `src/features/diff/Panel.test.tsx`, `src/features/diff/components/PanelBody.test.tsx`
 
 - [ ] **Step 1: Write the failing tests.**
 
-In `PanelBody.test.tsx` (follow the file's existing render harness for `MultiFileDiff` — it already mocks/mounts Pierre):
+In `PanelBody.test.tsx`: the file's existing Pierre mock **ignores `renderAnnotation`** — extend the mock first so annotations are observable, e.g. have the mocked `MultiFileDiff` render `props.lineAnnotations?.map((a) => <div key={…}>{props.renderAnnotation?.(a)}</div>)`. Then:
 
 ```ts
 test('a grouped anchor renders the thread card instead of a row', () => {
   // Render PanelBody with lineAnnotations = [anchor] and
-  // thread={{ groups: new Map([['c1', <group with 2 turns>]]), replyingThreadId: null,
-  //   replyDraft: '', onStartReply: vi.fn(), ... }}
+  // thread={{ groups: new Map([['c1', <group with 2 turns>]]),
+  //   actions: { replyingThreadId: null, replyDraft: '', onStartReply: vi.fn(), ... } }}
   // Assert both turn texts render inside one container and no send/edit/delete
   // IconButtons are present for those turns.
+})
+
+test('thread without actions renders a footer-less card', () => {
+  // Same render with thread={{ groups, actions: undefined }} —
+  // assert no Reply/Resolve buttons (capability gating, spec Section 3).
 })
 ```
 
@@ -1298,6 +1363,26 @@ test('thread reply dispatches alone, inserts post-write pre-stamped, and reopens
   //    - the root's resolvedAt is cleared (reply implies reopen)
   // 4. Failure path: make writePty reject → assert no comment was inserted and the
   //    reply editor is still open with its text.
+})
+
+test('popover cancel preserves the draft and creates nothing', () => {
+  // Reply → confirm (popover opens) → cancel the popover.
+  // Assert: no writePty call, no new annotation, and reopening Reply shows the
+  // same draft text (the per-thread draft map was not cleared).
+})
+
+test('the reply draft survives a MultiFileDiff remount', () => {
+  // Open the reply editor, type text, then force PanelBody's render key to
+  // change (the harness can bump the diff/highlight revision or rerender with a
+  // new key). Assert the editor still shows the typed text — it is controlled
+  // from Panel state, not textarea-local.
+})
+
+test('a repo-subdirectory cwd resolves both path forms', () => {
+  // Batch under cwd '/repo/sub' with repoRootForCwd('/repo/sub') → '/repo'.
+  // Dispatch a follow-up and assert: the payload path is '/repo/src/foo.ts'
+  // (repo-root-resolved), while the registered handle carries the
+  // repo-relative batch coordinates { cwd: '/repo/sub', filePath: 'src/foo.ts' }.
 })
 ```
 
@@ -1322,8 +1407,7 @@ import { ReviewThreadCard } from './ReviewThreadCard'
 (b) New prop types + prop:
 
 ```ts
-export interface PanelThreadProps {
-  groups: Map<string, ThreadGroup>
+export interface PanelThreadActions {
   /** threadId whose reply editor is open; null = none. */
   replyingThreadId: string | null
   replyDraft: string
@@ -1333,6 +1417,12 @@ export interface PanelThreadProps {
   onCancelReply: () => void
   onResolve: (threadId: string) => void
   onReopen: (threadId: string) => void
+}
+
+export interface PanelThreadProps {
+  groups: Map<string, ThreadGroup>
+  /** Omitted → footer-less cards (no dispatch capability, spec Section 3). */
+  actions?: PanelThreadActions
 }
 ```
 
@@ -1344,24 +1434,33 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
               const groupKey = threadGroupKey(annotation)
               const group =
                 groupKey === undefined ? undefined : thread?.groups.get(groupKey)
-              if (group !== undefined && thread !== undefined) {
+              if (group !== undefined) {
+                const actions = thread?.actions
+
                 return (
                   <ReviewThreadCard
                     key={`thread:${group.threadId}`}
                     group={group}
                     anchorLabel={threadAnchorLabel(group.turns[0] ?? annotation)}
-                    actions={{
-                      replying: thread.replyingThreadId === group.threadId,
-                      replyDraft: thread.replyDraft,
-                      onStartReply: (): void =>
-                        thread.onStartReply(group.threadId),
-                      onReplyDraftChange: thread.onReplyDraftChange,
-                      onSubmitReply: (text): void =>
-                        thread.onSubmitReply(group.threadId, text),
-                      onCancelReply: thread.onCancelReply,
-                      onResolve: (): void => thread.onResolve(group.threadId),
-                      onReopen: (): void => thread.onReopen(group.threadId),
-                    }}
+                    actions={
+                      actions === undefined
+                        ? undefined
+                        : {
+                            replying:
+                              actions.replyingThreadId === group.threadId,
+                            replyDraft: actions.replyDraft,
+                            onStartReply: (): void =>
+                              actions.onStartReply(group.threadId),
+                            onReplyDraftChange: actions.onReplyDraftChange,
+                            onSubmitReply: (text): void =>
+                              actions.onSubmitReply(group.threadId, text),
+                            onCancelReply: actions.onCancelReply,
+                            onResolve: (): void =>
+                              actions.onResolve(group.threadId),
+                            onReopen: (): void =>
+                              actions.onReopen(group.threadId),
+                          }
+                    }
                   />
                 )
               }
@@ -1374,13 +1473,15 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
 (b) State, next to `sendNowCommentId`:
 
 ```ts
-  // Thread reply draft (VIM-298) — Panel-owned so a MultiFileDiff remount
-  // cannot erase typed text. Cleared only by explicit cancel or a successful
-  // dispatch.
-  const [threadReply, setThreadReply] = useState<{
-    threadId: string
-    text: string
-  } | null>(null)
+  // Thread reply drafts (VIM-298), keyed by threadId so starting a reply on
+  // one thread never discards another thread's typed text. Panel-owned so a
+  // MultiFileDiff remount cannot erase them; an entry is cleared ONLY by that
+  // thread's explicit cancel or its successful dispatch.
+  const [replyDrafts, setReplyDrafts] = useState<ReadonlyMap<string, string>>(
+    new Map()
+  )
+  // Thread whose reply editor is currently open; null = none.
+  const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null)
   // Thread whose follow-up is awaiting the scoped confirm popover (VIM-298);
   // mutually exclusive with finishOpen / sendNowCommentId.
   const [replyDispatchThreadId, setReplyDispatchThreadId] = useState<
@@ -1430,11 +1531,16 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
   // never sweep it and a write failure leaves no local record.
   const handleSendThreadReply = useCallback(
     (pane: PaneCandidate): void => {
-      if (sendingFeedbackRef.current || threadReply === null) {
+      if (sendingFeedbackRef.current || replyDispatchThreadId === null) {
         return
       }
-      const group = threadGroupById.get(threadReply.threadId)
-      if (group === undefined || feedbackDispatch === undefined) {
+      const draftText = replyDrafts.get(replyDispatchThreadId) ?? ''
+      const group = threadGroupById.get(replyDispatchThreadId)
+      if (
+        group === undefined ||
+        feedbackDispatch === undefined ||
+        draftText.trim().length === 0
+      ) {
         setReplyDispatchThreadId(null)
 
         return
@@ -1450,7 +1556,7 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
 
           const comment: ReviewComment = {
             id: nextFeedbackCommentId(),
-            text: threadReply.text,
+            text: draftText,
             author: 'self',
             createdAt: Date.now(),
             threadId: group.threadId,
@@ -1537,7 +1643,16 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
             )
           }
 
-          setThreadReply(null)
+          // Clear ONLY this thread's draft (successful dispatch).
+          setReplyDrafts((prev) => {
+            const next = new Map(prev)
+            next.delete(group.threadId)
+
+            return next
+          })
+          setReplyingThreadId((current) =>
+            current === group.threadId ? null : current
+          )
           setReplyDispatchThreadId(null)
           const focusTerminal = feedbackDispatch.focusTerminal
           if (focusTerminal !== undefined) {
@@ -1553,7 +1668,8 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
       })()
     },
     [
-      threadReply,
+      replyDispatchThreadId,
+      replyDrafts,
       threadGroupById,
       feedback,
       feedbackDispatch,
@@ -1595,19 +1711,43 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
   )
 
   const threadProps = {
-    replyingThreadId: threadReply?.threadId ?? null,
-    replyDraft: threadReply?.text ?? '',
-    onStartReply: (threadId: string): void =>
-      setThreadReply({ threadId, text: '' }),
-    onReplyDraftChange: (text: string): void =>
-      setThreadReply((prev) => (prev === null ? prev : { ...prev, text })),
+    replyingThreadId,
+    replyDraft:
+      replyingThreadId === null
+        ? ''
+        : (replyDrafts.get(replyingThreadId) ?? ''),
+    // Switching to another thread's Reply closes the first editor but its
+    // draft stays in the map — reopening restores it.
+    onStartReply: (threadId: string): void => setReplyingThreadId(threadId),
+    onReplyDraftChange: (text: string): void => {
+      setReplyDrafts((prev) => {
+        if (replyingThreadId === null) {
+          return prev
+        }
+        const next = new Map(prev)
+        next.set(replyingThreadId, text)
+
+        return next
+      })
+    },
     onSubmitReply: (threadId: string, text: string): void => {
-      setThreadReply({ threadId, text })
+      setReplyDrafts((prev) => new Map(prev).set(threadId, text))
       setFinishOpen(false)
       setSendNowCommentId(null)
       setReplyDispatchThreadId(threadId)
     },
-    onCancelReply: (): void => setThreadReply(null),
+    // Explicit cancel clears ONLY the active thread's draft.
+    onCancelReply: (): void => {
+      if (replyingThreadId !== null) {
+        setReplyDrafts((prev) => {
+          const next = new Map(prev)
+          next.delete(replyingThreadId)
+
+          return next
+        })
+      }
+      setReplyingThreadId(null)
+    },
     onResolve: resolveThread,
     onReopen: reopenThread,
   }
@@ -1663,7 +1803,11 @@ Also update `onFinishFeedback` to clear the reply scope: add `setReplyDispatchTh
 ```tsx
             lineAnnotations={lineThreads.collapsed}
             ...
-            thread={{ groups: lineThreads.groups, ...threadProps }}
+            thread={{
+              groups: lineThreads.groups,
+              // Capability gating: no dispatch surface → footer-less cards.
+              actions: feedbackDispatch === undefined ? undefined : threadProps,
+            }}
 ```
 
 (h) File strip — replace the `fileCommentsForSelectedFile.map(...)` body: map over `fileThreads.collapsed` instead; for each annotation, look up `threadGroupKey(annotation)` in `fileThreads.groups`; when a group exists render:
@@ -1673,22 +1817,31 @@ Also update `onFinishFeedback` to clear the reply scope: add `setReplyDispatchTh
                     key={`thread:${group.threadId}`}
                     group={group}
                     anchorLabel={threadAnchorLabel(group.turns[0] ?? annotation)}
-                    actions={{
-                      replying: threadProps.replyingThreadId === group.threadId,
-                      replyDraft: threadProps.replyDraft,
-                      onStartReply: (): void =>
-                        threadProps.onStartReply(group.threadId),
-                      onReplyDraftChange: threadProps.onReplyDraftChange,
-                      onSubmitReply: (text): void =>
-                        threadProps.onSubmitReply(group.threadId, text),
-                      onCancelReply: threadProps.onCancelReply,
-                      onResolve: (): void => threadProps.onResolve(group.threadId),
-                      onReopen: (): void => threadProps.onReopen(group.threadId),
-                    }}
+                    actions={
+                      feedbackDispatch === undefined
+                        ? undefined
+                        : {
+                            replying:
+                              threadProps.replyingThreadId === group.threadId,
+                            replyDraft: threadProps.replyDraft,
+                            onStartReply: (): void =>
+                              threadProps.onStartReply(group.threadId),
+                            onReplyDraftChange: threadProps.onReplyDraftChange,
+                            onSubmitReply: (text): void =>
+                              threadProps.onSubmitReply(group.threadId, text),
+                            onCancelReply: threadProps.onCancelReply,
+                            onResolve: (): void =>
+                              threadProps.onResolve(group.threadId),
+                            onReopen: (): void =>
+                              threadProps.onReopen(group.threadId),
+                          }
+                    }
                   />
 ```
 
 otherwise keep the existing `ReviewCommentRow` branch unchanged (pending file comments keep send-now/edit/delete).
+
+(i) `Notifier.tsx` — change `FinishFeedbackState`'s `onCopy: () => void` to `onCopy?: () => void` (it is forwarded to `FinishFeedbackPopover`, whose prop is already optional; a reply-scoped popover passes no `onCopy`).
 
 - [ ] **Step 5: Run the diff feature suite**
 
@@ -1698,7 +1851,7 @@ Expected: PASS — including all pre-existing Panel/PanelBody/integration tests 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/features/diff/Panel.tsx src/features/diff/components/PanelBody.tsx src/features/diff/Panel.test.tsx src/features/diff/components/PanelBody.test.tsx
+git add src/features/diff/Panel.tsx src/features/diff/components/PanelBody.tsx src/features/diff/components/Notifier.tsx src/features/diff/Panel.test.tsx src/features/diff/components/PanelBody.test.tsx
 git commit -m "feat(diff): thread cards + follow-up dispatch wiring (VIM-298)"
 ```
 
@@ -1712,15 +1865,24 @@ git commit -m "feat(diff): thread cards + follow-up dispatch wiring (VIM-298)"
 - [ ] **Step 1: Extend the harness.** The file already mounts a real `useFeedbackBatchStore` + `useAgentReply` with a mocked `agent-reply` listener. Add a second Harness that renders thread cards through the real selector:
 
 ```tsx
+// Captured so tests can seed the store from OUTSIDE the component (the store
+// exists only inside the harness). Reset in beforeEach.
+let capturedStore: ReturnType<typeof useFeedbackBatchStore> | null = null
+
 const ThreadHarness = (): ReactElement => {
   const store = useFeedbackBatchStore(OWNER, CWD)
+  capturedStore = store
+
+  // Stable across rerenders: a changing nextCommentId identity would
+  // resubscribe useAgentReply on every render.
+  const [nextCommentId] = useState(() => {
+    let n = 0
+
+    return (): string => `agent-${++n}`
+  })
   useAgentReply({
     addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
-    nextCommentId: (() => {
-      let n = 0
-
-      return (): string => `agent-${++n}`
-    })(),
+    nextCommentId,
   })
 
   const annotations = store.feedbackBatch.annotationsForFile(CWD, FILE, false)
@@ -1749,7 +1911,7 @@ const ThreadHarness = (): ReactElement => {
 }
 ```
 
-(Watch the `nextCommentId` closure — create it with `useRef`/`useState` initializer if StrictMode double-invocation makes the counter unstable; follow the existing harness's approach to ids.)
+Seed operations run through `capturedStore` inside `act(...)` after the initial `render(<ThreadHarness />)` — e.g. `act(() => { capturedStore?.feedbackBatch.addAnnotationForOwner(OWNER, CWD, FILE, false, …) })`.
 
 - [ ] **Step 2: Write the loop test:**
 
@@ -1777,6 +1939,14 @@ test('comment → reply → follow-up → second reply renders one 4-turn card',
   // → assert 4 turns in order (Why? / clarify text / follow-up text / resolved
   //   text), rollup 'Resolved' (from the outcome, thread NOT collapsed —
   //   resolvedAt is unset), and the follow-up turn shows no category chip.
+})
+
+test('a late agent reply after local resolve appends without unresolving', async () => {
+  // Seed a dispatched root WITH resolvedAt set (locally resolved) + a live
+  // pendingReview handle for nonce 'n3'. emitReply for 'n3'.
+  // → assert the card stays collapsed (rollup 'Resolved', turn count ticked
+  //   up to 2) and the root's resolvedAt is unchanged — local resolution is
+  //   authoritative (spec Section 5).
 })
 ```
 
