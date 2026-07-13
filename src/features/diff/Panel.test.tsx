@@ -6171,7 +6171,9 @@ describe('Panel', () => {
       }
 
       // Seed: dispatched root (resolved) + agent turn + unrelated pending comment
-      const addAnnotation = vi.fn(() => 'ok' as const)
+      const addAnnotation = vi.fn<UseFeedbackBatchReturn['addAnnotation']>(
+        () => 'ok'
+      )
       const updateAnnotation = vi.fn()
 
       const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
@@ -6295,8 +6297,7 @@ describe('Panel', () => {
       // Post-write addAnnotation is called with pre-stamped metadata.
       expect(addAnnotation).toHaveBeenCalledOnce()
 
-      const addedAnnotation = addAnnotation.mock
-        .calls[0][3] as DiffLineAnnotation<ReviewComment>
+      const addedAnnotation = addAnnotation.mock.calls[0][3]
       expect(addedAnnotation.metadata.dispatchedAt).toBeDefined()
       expect(addedAnnotation.metadata.dispatchedTo).toBe('pty-1')
       expect(addedAnnotation.metadata.threadId).toBe('root-c1')

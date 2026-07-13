@@ -53,7 +53,8 @@ export const threadRollup = (
     return THREAD_ROLLUP_META.resolved
   }
 
-  const latest = turns[turns.length - 1]?.metadata
+  const latestTurn = turns.length === 0 ? undefined : turns[turns.length - 1]
+  const latest = latestTurn?.metadata
   if (latest === undefined || latest.author === 'reviewer') {
     return THREAD_ROLLUP_META.open
   }
@@ -101,11 +102,15 @@ export const buildThreadGroups = (
     const root =
       group.turns.find((turn) => turn.metadata.id === group.threadId) ??
       group.turns[0]
-    group.resolved = root?.metadata.resolvedAt !== undefined
+    group.resolved = root.metadata.resolvedAt !== undefined
     group.rollup = threadRollup(group.turns, group.resolved)
   }
 
-  return { collapsed, groups }
+  // No groups → collapsed is element-wise identical to the input; returning
+  // the input preserves array identity so a still-mounted MultiFileDiff does
+  // not re-tokenize on a mere batch-key switch (the stable-EMPTY discipline
+  // useFeedbackBatch documents).
+  return { collapsed: groups.size === 0 ? annotations : collapsed, groups }
 }
 
 /**

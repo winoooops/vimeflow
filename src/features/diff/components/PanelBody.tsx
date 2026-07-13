@@ -30,7 +30,10 @@ import { DiffNarrowPlaceholder } from './DiffNarrowPlaceholder'
 import { DIFF_MIN_WIDTH_PX } from './toolbar'
 import { ReviewCommentEditor } from './ReviewCommentEditor'
 import { ReviewCommentRow } from './ReviewCommentRow'
-import { ReviewThreadCard } from './ReviewThreadCard'
+import {
+  ReviewThreadCard,
+  type ReviewThreadCardActions,
+} from './ReviewThreadCard'
 
 const ErrorCard = ({ message }: { message: string }): ReactElement => (
   <div
@@ -157,6 +160,25 @@ export interface PanelThreadProps {
   /** Omitted → footer-less cards (no dispatch capability, spec Section 3). */
   actions?: PanelThreadActions
 }
+
+/**
+ * Curries a thread's id into the Panel-level action bundle, producing the
+ * per-card actions ReviewThreadCard expects. Shared by the line-level card
+ * branch below and Panel's file-comments strip so the two sites cannot drift.
+ */
+export const bindThreadCardActions = (
+  actions: PanelThreadActions,
+  threadId: string
+): ReviewThreadCardActions => ({
+  replying: actions.replyingThreadId === threadId,
+  replyDraft: actions.replyDraft,
+  onStartReply: (): void => actions.onStartReply(threadId),
+  onReplyDraftChange: actions.onReplyDraftChange,
+  onSubmitReply: (text): void => actions.onSubmitReply(threadId, text),
+  onCancelReply: actions.onCancelReply,
+  onResolve: (): void => actions.onResolve(threadId),
+  onReopen: (): void => actions.onReopen(threadId),
+})
 
 interface PanelBodyProps {
   scrollBodyRef: RefObject<HTMLDivElement | null>
@@ -305,22 +327,7 @@ export const PanelBody = ({
                     actions={
                       threadActions === undefined
                         ? undefined
-                        : {
-                            replying:
-                              threadActions.replyingThreadId === group.threadId,
-                            replyDraft: threadActions.replyDraft,
-                            onStartReply: (): void =>
-                              threadActions.onStartReply(group.threadId),
-                            onReplyDraftChange:
-                              threadActions.onReplyDraftChange,
-                            onSubmitReply: (text): void =>
-                              threadActions.onSubmitReply(group.threadId, text),
-                            onCancelReply: threadActions.onCancelReply,
-                            onResolve: (): void =>
-                              threadActions.onResolve(group.threadId),
-                            onReopen: (): void =>
-                              threadActions.onReopen(group.threadId),
-                          }
+                        : bindThreadCardActions(threadActions, group.threadId)
                     }
                   />
                 )

@@ -75,7 +75,7 @@ import {
   type ThreadGroup,
 } from './services/threadGroups'
 import { Notifier } from './components/Notifier'
-import { PanelBody } from './components/PanelBody'
+import { bindThreadCardActions, PanelBody } from './components/PanelBody'
 import { ReviewThreadCard } from './components/ReviewThreadCard'
 import { DiffSearchButton } from './components/DiffSearchButton'
 import { DiffSearchPopup } from './components/DiffSearchPopup'
@@ -2268,6 +2268,7 @@ export const Panel = ({
     onFinishReview: (): void => {
       if (feedback.pendingAnnotations() > 0 && !review.open) {
         setSendNowCommentId(null)
+        setReplyDispatchThreadId(null)
         setFinishOpen(true)
       }
     },
@@ -2726,26 +2727,10 @@ export const Panel = ({
                         actions={
                           feedbackDispatch === undefined
                             ? undefined
-                            : {
-                                replying:
-                                  threadProps.replyingThreadId ===
-                                  fileGroup.threadId,
-                                replyDraft: threadProps.replyDraft,
-                                onStartReply: (): void =>
-                                  threadProps.onStartReply(fileGroup.threadId),
-                                onReplyDraftChange:
-                                  threadProps.onReplyDraftChange,
-                                onSubmitReply: (text): void =>
-                                  threadProps.onSubmitReply(
-                                    fileGroup.threadId,
-                                    text
-                                  ),
-                                onCancelReply: threadProps.onCancelReply,
-                                onResolve: (): void =>
-                                  threadProps.onResolve(fileGroup.threadId),
-                                onReopen: (): void =>
-                                  threadProps.onReopen(fileGroup.threadId),
-                              }
+                            : bindThreadCardActions(
+                                threadProps,
+                                fileGroup.threadId
+                              )
                         }
                       />
                     )
@@ -2759,6 +2744,7 @@ export const Panel = ({
                       deleteShortcut={null}
                       onSendNow={(): void => {
                         setFinishOpen(false)
+                        setReplyDispatchThreadId(null)
                         setSendNowCommentId(annotation.metadata.id)
                       }}
                       onEdit={(): void => {
@@ -2812,6 +2798,7 @@ export const Panel = ({
             onDeleteComment={removeFeedbackAnnotation}
             onSendComment={(id: string): void => {
               setFinishOpen(false)
+              setReplyDispatchThreadId(null)
               setSendNowCommentId(id)
             }}
             onCommentTextChange={(text): void => {
