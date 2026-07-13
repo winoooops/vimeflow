@@ -5997,9 +5997,12 @@ describe('Panel', () => {
       expect(pending?.ownerKey).toBe('sess:pane-1')
       expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
       expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
-      // VIM-298: handle carries the threadId so a reply lands in the right thread.
+      // VIM-298: handle carries the threadId so a reply lands in the right
+      // thread. The only dispatched comment is a fresh root, which self-roots —
+      // its threadId must be its own generated comment id (counter value is
+      // order-dependent across tests, hence a shape match, not a literal).
       const handle1 = pending?.byHandle.get(1)
-      expect(handle1?.threadId).toBeDefined()
+      expect(handle1?.threadId).toMatch(/^feedback-comment-\d+$/)
 
       clearPendingReview('pty-1', nonce) // module singleton — don't leak into other tests
     })
