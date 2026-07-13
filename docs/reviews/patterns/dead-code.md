@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-07-09
+last_updated: 2026-07-13
 ref_count: 7
 ---
 
@@ -90,4 +90,17 @@ code and should be removed.
   assignment remained. The stale state no longer affected behavior and implied
   a guard that did not exist.
 - **Fix:** Removed the obsolete ref and assignment.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Alias config snapshot ref stayed write-only after stale-cache fix
+
+- **Source:** github-claude | PR #693 round 1 | 2026-07-13
+- **Severity:** LOW
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `agentAliasConfigSnapshotRef` was still assigned on every alias
+  config load after the cache read path had been removed to avoid stale alias
+  launcher decisions. The write-only ref implied caching semantics that no
+  longer existed.
+- **Fix:** Removed the obsolete snapshot ref and returned the in-flight alias
+  config promise result directly.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -471,7 +471,6 @@ export const useSessionManager = (
   const agentAliasConfigInFlightRef = useRef<Promise<AgentAliasConfig> | null>(
     null
   )
-  const agentAliasConfigSnapshotRef = useRef<AgentAliasConfig | null>(null)
 
   const readAgentAliasConfig =
     useCallback(async (): Promise<AgentAliasConfig> => {
@@ -480,10 +479,7 @@ export const useSessionManager = (
       agentAliasConfigInFlightRef.current = pending
 
       try {
-        const config = await pending
-        agentAliasConfigSnapshotRef.current = config
-
-        return config
+        return await pending
       } finally {
         if (agentAliasConfigInFlightRef.current === pending) {
           agentAliasConfigInFlightRef.current = null

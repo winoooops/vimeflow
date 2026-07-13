@@ -2,7 +2,7 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 ref_count: 19
 ---
 
@@ -465,4 +465,21 @@ already exists` before the spec could assert agent status rendering.
 - **File:** `tests/e2e/terminal/specs/agent-resume-lifecycle.spec.ts`
 - **Finding:** The macOS Ghostty terminal smoke suite failed the 384-pane agent-resume stress test with `performance.now()` at 15254.5 ms against a hard 15000 ms ceiling. The lazy-hydration behavior passed, but the budget left too little headroom for current macos-26 runner variance.
 - **Fix:** Raised the stress budget to 17500 ms while keeping the bound tight enough to catch real lazy-hydration regressions. Added an inline comment documenting the runner-variance reason for the threshold.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 40. E2E split-view assertions counted hidden sessions
+
+- **Source:** local-codex | PR #693 round 1 | 2026-07-13
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** The keymap smoke helper created a new session, then asserted
+  global split-view state by reading the first `[data-testid="split-view"]`
+  and counting every `[data-testid="split-view-slot"]` in the document. Once
+  earlier tests left hidden tabs mounted, the helper waited for global state
+  that did not describe the active session and deterministically timed out in
+  Linux CI.
+- **Fix:** Scoped layout, active-pane, and slot-count reads to the visible
+  session reported by the E2E bridge, then reset that visible session through
+  the layout switcher instead of spawning throwaway tabs before each shortcut
+  assertion.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

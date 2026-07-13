@@ -258,10 +258,23 @@ const openCommandPalette = async (): Promise<void> => {
   )
 }
 
-const splitView = (): ReturnType<typeof $> => $('[data-testid="split-view"]')
-
 const currentLayout = async (): Promise<string | null> =>
-  (await splitView()).getAttribute('data-layout')
+  browser.execute(() => {
+    const visibleSessionId = window.__VIMEFLOW_E2E__?.getVisibleSessionId()
+    const session =
+      visibleSessionId === undefined || visibleSessionId === null
+        ? null
+        : document.querySelector<HTMLElement>(
+            `[data-testid="terminal-pane"][data-session-id="${CSS.escape(
+              visibleSessionId
+            )}"]`
+          )
+    const splitView =
+      session?.querySelector<HTMLElement>('[data-testid="split-view"]') ??
+      document.querySelector<HTMLElement>('[data-testid="split-view"]')
+
+    return splitView?.getAttribute('data-layout') ?? null
+  })
 
 const waitForLayout = async (expected: string): Promise<void> => {
   await browser.waitUntil(async () => (await currentLayout()) === expected, {
@@ -333,32 +346,78 @@ const waitForSplitViewDisplayed = async (): Promise<void> => {
   })
 }
 
-const createFreshSinglePaneSession = async (): Promise<void> => {
-  await createNewSessionWithDefaults()
+const clickSingleLayoutAction = async (): Promise<void> => {
+  const clicked = await browser.execute(() => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="layout-switcher"] button'
+      )
+    )
+    const button = buttons.find((candidate) => {
+      const label = candidate.getAttribute('aria-label')
+
+      return label === 'single' || label === 'Focus active pane'
+    })
+    if (button === undefined) {
+      return false
+    }
+
+    button.click()
+
+    return true
+  })
+  if (!clicked) {
+    throw new Error('single layout action was not available')
+  }
+}
+
+const ensureSinglePaneSession = async (): Promise<void> => {
   await waitForSplitViewDisplayed()
+  if ((await currentLayout()) !== 'single' || (await paneSlotCount()) !== 1) {
+    await clickSingleLayoutAction()
+  }
   await browser.waitUntil(
     async () =>
       (await currentLayout()) === 'single' && (await paneSlotCount()) === 1,
     {
       timeout: 20_000,
       interval: 250,
-      timeoutMsg: 'fresh single-pane session did not become active',
+      timeoutMsg: 'visible session did not settle on a single-pane layout',
     }
   )
 }
 
 const activePaneIndex = async (): Promise<number> =>
   browser.execute(() => {
+    const visibleSessionId = window.__VIMEFLOW_E2E__?.getVisibleSessionId()
+    const scope =
+      visibleSessionId === undefined || visibleSessionId === null
+        ? document
+        : (document.querySelector<HTMLElement>(
+            `[data-testid="terminal-pane"][data-session-id="${CSS.escape(
+              visibleSessionId
+            )}"]`
+          ) ?? document)
     const slots = Array.from(
-      document.querySelectorAll('[data-testid="split-view-slot"]')
+      scope.querySelectorAll('[data-testid="split-view-slot"]')
     )
     return slots.findIndex((s) => s.getAttribute('data-pane-active') === 'true')
   })
 
 const paneSlotCount = async (): Promise<number> =>
-  browser.execute(
-    () => document.querySelectorAll('[data-testid="split-view-slot"]').length
-  )
+  browser.execute(() => {
+    const visibleSessionId = window.__VIMEFLOW_E2E__?.getVisibleSessionId()
+    const scope =
+      visibleSessionId === undefined || visibleSessionId === null
+        ? document
+        : (document.querySelector<HTMLElement>(
+            `[data-testid="terminal-pane"][data-session-id="${CSS.escape(
+              visibleSessionId
+            )}"]`
+          ) ?? document)
+
+    return scope.querySelectorAll('[data-testid="split-view-slot"]').length
+  })
 
 const focusTerminalZone = async (): Promise<void> => {
   await browser.execute(() => {
@@ -500,7 +559,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
   it('Cmd+\\ cycles the pane layout', async () => {
     await setPreset('vimeflow')
-    await createFreshSinglePaneSession()
+    await ensureSinglePaneSession()
     await focusTerminalZone()
 
     const before = await currentLayout()
@@ -513,7 +572,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
   it('Vim ex-command :vsplit (via palette) sets the vsplit layout', async () => {
     await setPreset('vim')
-    await createFreshSinglePaneSession()
+    await ensureSinglePaneSession()
 
     await runExCommand(':vsplit')
 
