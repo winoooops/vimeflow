@@ -236,7 +236,7 @@ export const ReviewThreadCard = ({
                     'color-mix(in srgb, var(--color-primary) 12%, transparent)',
                 }}
               >
-                ↳ Reply
+                <span aria-hidden="true">↳ </span>Reply
               </button>
               {group.resolved ? (
                 <button
@@ -248,7 +248,7 @@ export const ReviewThreadCard = ({
                       'color-mix(in srgb, var(--color-on-surface) 6%, transparent)',
                   }}
                 >
-                  ⟲ Reopen
+                  <span aria-hidden="true">⟲ </span>Reopen
                 </button>
               ) : (
                 <button
@@ -260,7 +260,7 @@ export const ReviewThreadCard = ({
                       'color-mix(in srgb, var(--color-on-surface) 6%, transparent)',
                   }}
                 >
-                  ✓ Resolve
+                  <span aria-hidden="true">✓ </span>Resolve
                 </button>
               )}
             </div>
