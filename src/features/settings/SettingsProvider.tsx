@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { AppSettings } from '../../bindings/AppSettings'
 import { DEFAULT_SETTINGS } from './store/settingsDefaults'
+import { applyInterfaceFont } from './interfaceFont'
 
 export interface SettingsContextValue {
   settings: AppSettings
@@ -35,6 +36,10 @@ export const SettingsProvider = ({
   const latestBroadcastBeforeLoadRef = useRef<AppSettings | null>(null)
 
   settingsRef.current = settings
+
+  useEffect(() => {
+    applyInterfaceFont(document.documentElement, settings.uiFont)
+  }, [settings.uiFont])
 
   const syncSnapshotToMain = useCallback(
     async (next: AppSettings): Promise<void> => {

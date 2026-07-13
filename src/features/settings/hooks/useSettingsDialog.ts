@@ -57,7 +57,11 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (isKeymapCaptureTarget(event.target)) {
+      if (
+        isKeymapCaptureTarget(event.target) ||
+        (event.target instanceof Element &&
+          event.target.closest('[data-dialog-layer="true"]') !== null)
+      ) {
         return
       }
 

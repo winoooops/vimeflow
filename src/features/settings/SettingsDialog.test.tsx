@@ -190,13 +190,11 @@ describe('SettingsDialog', () => {
 
     await user.type(screen.getByPlaceholderText('Search settings...'), 'font')
 
-    expect(screen.getByRole('option', { name: 'UI Font' })).toBeInTheDocument()
-
     expect(
-      screen.getByRole('option', { name: 'Mono Font' })
+      screen.getByRole('option', { name: 'Interface Font' })
     ).toBeInTheDocument()
 
-    const result = screen.getByRole('option', { name: 'UI Font' })
+    const result = screen.getByRole('option', { name: 'Interface Font' })
     await user.click(result)
 
     const target = screen.getByTestId(
@@ -461,7 +459,7 @@ describe('SettingsDialog', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('option', { name: 'Interface', current: 'location' })
+        screen.getByRole('option', { name: 'Fonts', current: 'location' })
       ).toHaveAttribute('aria-selected', 'true')
     })
 
@@ -469,7 +467,7 @@ describe('SettingsDialog', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('option', { name: 'Fonts', current: 'location' })
+        screen.getByRole('option', { name: 'Interface', current: 'location' })
       ).toHaveAttribute('aria-selected', 'true')
     })
 
@@ -485,7 +483,7 @@ describe('SettingsDialog', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('option', { name: 'Fonts', current: 'location' })
+        screen.getByRole('option', { name: 'Interface', current: 'location' })
       ).toHaveAttribute('aria-selected', 'true')
     })
 
@@ -534,7 +532,7 @@ describe('SettingsDialog', () => {
 
     vi.spyOn(
       screen.getByTestId(
-        `settings-target-${SETTINGS_TARGET_IDS.appearanceMonoFont}`
+        `settings-target-${SETTINGS_TARGET_IDS.appearanceReservoirSwell}`
       ),
       'getBoundingClientRect'
     ).mockReturnValue(makeRect(170, 210))
@@ -544,7 +542,7 @@ describe('SettingsDialog', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('option', { name: 'Keymap', current: 'page' })
+        screen.getByRole('option', { name: 'Interface', current: 'location' })
       ).toBeInTheDocument()
     })
 

@@ -1,12 +1,57 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { ThemeDefinition } from './types'
+import { themeToScheme } from './derive'
 import { THEME_STORAGE_KEY, themeService } from './service'
 
 beforeEach(() => {
   window.localStorage.clear()
+  themeService._resetCustomThemesForTest()
   document.documentElement.removeAttribute('data-theme')
   document.documentElement.removeAttribute('style')
   themeService.apply('obsidian-lens')
+})
+
+test('installs, applies, and persists imported themes', () => {
+  themeService.install({
+    ...themeToScheme(themeService.current()),
+    id: 'custom-proof',
+    label: 'Custom Proof',
+  })
+
+  expect(themeService.current().id).toBe('custom-proof')
+  expect(themeService.list()[themeService.list().length - 1]?.id).toBe(
+    'custom-proof'
+  )
+
+  expect(window.localStorage.getItem('vimeflow:custom-themes')).toContain(
+    'custom-proof'
+  )
+})
+
+test('does not allow custom themes to replace built-in definitions', () => {
+  expect(() =>
+    themeService.install(themeToScheme(themeService.current()))
+  ).toThrow('Built-in theme ids cannot be replaced')
+
+  expect(themeService.list()[0]).toBe(themeService.current())
+})
+
+test('restores persisted custom themes during init', () => {
+  window.localStorage.setItem(
+    'vimeflow:custom-themes',
+    JSON.stringify([
+      {
+        ...themeService.current(),
+        id: 'restored-theme',
+        label: 'Restored Theme',
+      },
+    ])
+  )
+  window.localStorage.setItem(THEME_STORAGE_KEY, 'restored-theme')
+
+  themeService.init()
+
+  expect(themeService.current().id).toBe('restored-theme')
 })
 
 test('apply writes CSS vars, data-theme, and color-scheme', () => {
@@ -72,6 +117,41 @@ test('init applies a valid stored theme', () => {
   window.localStorage.setItem(THEME_STORAGE_KEY, 'flexoki')
   themeService.init()
   expect(document.documentElement.dataset.theme).toBe('flexoki')
+})
+
+test('syncs active and custom themes changed by another renderer', () => {
+  themeService.init()
+
+  const customScheme = {
+    ...themeToScheme(themeService.current()),
+    id: 'shared-theme',
+    label: 'Shared Theme',
+  }
+
+  window.localStorage.setItem(
+    'vimeflow:custom-themes',
+    JSON.stringify([customScheme])
+  )
+
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: 'vimeflow:custom-themes',
+      newValue: JSON.stringify([customScheme]),
+      storageArea: window.localStorage,
+    })
+  )
+
+  window.localStorage.setItem(THEME_STORAGE_KEY, 'shared-theme')
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: THEME_STORAGE_KEY,
+      newValue: 'shared-theme',
+      storageArea: window.localStorage,
+    })
+  )
+
+  expect(themeService.current().id).toBe('shared-theme')
+  expect(document.documentElement.dataset.theme).toBe('shared-theme')
 })
 
 test('list exposes both themes for pickers', () => {

@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest'
 import {
-  BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
@@ -93,10 +92,7 @@ describe('SETTINGS_SUBSECTIONS', () => {
           section: 'appearance',
           label: 'Fonts',
           targetId: SETTINGS_TARGET_IDS.appearanceUiFont,
-          targetIds: [
-            SETTINGS_TARGET_IDS.appearanceUiFont,
-            SETTINGS_TARGET_IDS.appearanceMonoFont,
-          ],
+          targetIds: [SETTINGS_TARGET_IDS.appearanceUiFont],
         }),
         expect.objectContaining({
           id: 'keymap-global',
@@ -112,27 +108,6 @@ describe('SETTINGS_SUBSECTIONS', () => {
         }),
       ])
     )
-  })
-})
-
-describe('BUILTIN_SCHEMES', () => {
-  test('contains the five expected schemes with literal hex', () => {
-    expect(BUILTIN_SCHEMES).toHaveLength(5)
-    expect(BUILTIN_SCHEMES.map((s) => s.id)).toEqual([
-      'obsidian',
-      'editorial',
-      'dense',
-      'navigator',
-      'flexoki',
-    ])
-  })
-
-  test('each scheme defines literal accent, surface, and text colors', () => {
-    BUILTIN_SCHEMES.forEach((s) => {
-      expect(s.accent).toMatch(/^#/)
-      expect(s.surface).toMatch(/^#/)
-      expect(s.text).toMatch(/^#/)
-    })
   })
 })
 

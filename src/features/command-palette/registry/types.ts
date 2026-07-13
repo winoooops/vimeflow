@@ -12,6 +12,7 @@ export interface Command {
   requiresArgument?: boolean
   argumentPlaceholder?: string
   children?: Command[]
+  isActive?: () => boolean
   execute?: (args: string) => void
   preview?: () => void
   match?: (query: string) => number

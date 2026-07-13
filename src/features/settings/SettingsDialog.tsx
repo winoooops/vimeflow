@@ -77,7 +77,11 @@ export const SettingsDialog = ({
       }
 
       const dialog = dialogRef.current
-      if (!dialog) {
+      if (
+        !dialog ||
+        !(event.target instanceof Node) ||
+        !dialog.contains(event.target)
+      ) {
         return
       }
 

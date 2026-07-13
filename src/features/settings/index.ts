@@ -5,7 +5,6 @@ export { SettingsContent } from './SettingsContent'
 export { useSettingsDialog } from './hooks/useSettingsDialog'
 
 export {
-  BUILTIN_SCHEMES,
   DEFAULT_ALIASES,
   KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
@@ -20,7 +19,6 @@ export {
 
 export type {
   AgentAlias,
-  AppearanceScheme,
   IconProps,
   KbdProps,
   KeymapBinding,

@@ -34,8 +34,8 @@ describe('searchSettings', () => {
     ])
 
     expect(model.targets.slice(0, 2).map((target) => target.label)).toEqual([
-      'UI Font',
-      'Mono Font',
+      'Interface Font',
+      'Terminal Font',
     ])
     expect(targetLabels('font')).toContain('Terminal Font')
 
@@ -46,12 +46,11 @@ describe('searchSettings', () => {
   })
 
   test('matches fuzzy abbreviations against setting labels', () => {
-    expect(targetLabels('ui fnt')).toContain('UI Font')
-    expect(targetLabels('ui fnt')).not.toContain('Mono Font')
+    expect(targetLabels('interface fnt')).toContain('Interface Font')
   })
 
   test('matches category and subsection context for settings', () => {
-    expect(targetLabels('appearance fonts')).toEqual(['UI Font', 'Mono Font'])
+    expect(targetLabels('appearance fonts')).toEqual(['Interface Font'])
     expect(targetLabels('terminal typography')).toEqual(['Terminal Font'])
   })
 })

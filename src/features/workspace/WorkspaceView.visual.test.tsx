@@ -171,11 +171,11 @@ describe('WorkspaceView - Visual Verification (Feature #20)', () => {
       expect(fontFamily.headline).toContain('Manrope')
     })
 
-    test('tailwind config has Inter for body/labels', () => {
+    test('tailwind config uses the interface font system', () => {
       const fontFamily = tailwindConfig.theme.extend.fontFamily
 
-      expect(fontFamily.body).toContain('Inter')
-      expect(fontFamily.label).toContain('Inter')
+      expect(fontFamily.body).toContain('var(--font-body)')
+      expect(fontFamily.label).toContain('var(--font-body)')
     })
 
     test('tailwind config has JetBrains Mono for code', () => {

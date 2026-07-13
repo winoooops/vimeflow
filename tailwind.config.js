@@ -21,11 +21,11 @@ export default {
       },
       fontFamily: {
         headline: ['Manrope', 'sans-serif'],
-        body: ['Inter', 'sans-serif'],
-        label: ['Inter', 'sans-serif'],
+        body: ['var(--font-body)'],
+        label: ['var(--font-body)'],
         mono: ['Ioskeley Mono', 'JetBrains Mono', 'ui-monospace', 'monospace'],
-        sans: ['Inter', 'ui-sans-serif', 'system-ui'],
-        display: ['Instrument Sans', 'Manrope', 'system-ui'],
+        sans: ['var(--font-body)'],
+        display: ['var(--font-display)'],
       },
       fontSize: {
         'vf-2xs': ['10px', { lineHeight: '14px' }],

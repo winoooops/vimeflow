@@ -102,6 +102,7 @@ describe('nativeOverlayThemeSnapshot', () => {
     root.dataset.theme = 'flexoki'
     root.style.colorScheme = 'light'
     root.style.setProperty('--color-surface', 'var(--color-test-surface)')
+    root.style.setProperty('--font-body', 'Inter, sans-serif')
     root.style.setProperty('--shadow-modal', 'var(--shadow-test-modal)')
     root.style.setProperty('--layout-gap', '8px')
 
@@ -110,6 +111,7 @@ describe('nativeOverlayThemeSnapshot', () => {
       colorScheme: 'light',
       variables: {
         '--color-surface': 'var(--color-test-surface)',
+        '--font-body': 'Inter, sans-serif',
         '--shadow-modal': 'var(--shadow-test-modal)',
       },
     })

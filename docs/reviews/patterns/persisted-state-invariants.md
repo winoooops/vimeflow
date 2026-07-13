@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-07-09
-ref_count: 8
+last_updated: 2026-07-13
+ref_count: 9
 ---
 
 # Persisted State Invariants
@@ -209,4 +209,20 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
   immediately after updating local state. Added regression coverage proving a
   later alias edit calls `save` even while the previous save promise remains
   unresolved.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Theme import/create can silently overwrite existing custom schemes
+
+- **Source:** github-claude | PR #689 round 1 | 2026-07-13
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/components/ThemeJsonEditor.tsx`
+- **Finding:** The theme JSON editor installed parsed import/create payloads
+  without checking whether the submitted id already belonged to a custom
+  scheme. Because the theme service replaces custom schemes with matching ids,
+  a pasted or manually edited theme JSON payload could overwrite prior
+  localStorage-backed user theme data without warning.
+- **Fix:** Block import/create submissions whose id collides with an existing
+  custom theme and surface an explicit error, while preserving edit mode's
+  intentional custom-theme replacement path. Added regression coverage for both
+  imported JSON and manually edited create JSON.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

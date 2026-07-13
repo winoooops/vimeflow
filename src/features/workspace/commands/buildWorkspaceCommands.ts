@@ -483,18 +483,23 @@ export const buildWorkspaceCommands = (
       description: 'Color theme',
       hint: 'switch the active scheme',
       icon: 'palette',
-      children: themeService.list().map((theme) => ({
-        id: `theme-${theme.id}`,
-        label: theme.label,
-        description: `Switch to ${theme.label}`,
-        icon: 'palette',
-        preview: (): void => {
-          themeService.preview(theme.id)
-        },
-        execute: (): void => {
-          themeService.apply(theme.id)
-        },
-      })),
+      children: themeService.list().map((theme) => {
+        const isActive = themeService.current().id === theme.id
+
+        return {
+          id: `theme-${theme.id}`,
+          label: theme.label,
+          description: isActive ? 'Active theme' : `Switch to ${theme.label}`,
+          icon: 'palette',
+          isActive: (): boolean => themeService.current().id === theme.id,
+          preview: (): void => {
+            themeService.preview(theme.id)
+          },
+          execute: (): void => {
+            themeService.apply(theme.id)
+          },
+        }
+      }),
     },
     {
       id: 'new',
