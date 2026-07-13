@@ -867,7 +867,10 @@ export const Panel = ({
                 entry.annotations.map((annotation) => annotation.metadata.id)
               )
             ),
-            { clearDraftForWholeBatch: onlyCommentId === undefined, dispatchedTo: pane.ptyId }
+            {
+              clearDraftForWholeBatch: onlyCommentId === undefined,
+              dispatchedTo: pane.ptyId,
+            }
           )
           setFinishOpen(false)
           setSendNowCommentId(null)

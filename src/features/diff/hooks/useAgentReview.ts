@@ -211,7 +211,7 @@ export const useAgentReview = ({
             lineNumber: annotation.lineNumber,
             side: annotation.side,
             target: annotation.metadata.target,
-            threadId: annotation.metadata.id,
+            threadId: annotation.metadata.threadId ?? annotation.metadata.id,
           },
         })
       }
