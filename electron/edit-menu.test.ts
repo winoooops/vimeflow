@@ -1,5 +1,6 @@
+// cspell:ignore togglefullscreen
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { Menu } from 'electron'
+import { Menu, type MenuItemConstructorOptions } from 'electron'
 import {
   createApplicationMenuTemplate,
   installApplicationEditMenu,
@@ -17,6 +18,17 @@ const menuMock = Menu as unknown as {
   setApplicationMenu: ReturnType<typeof vi.fn>
 }
 
+const viewSubmenuRoles = (
+  template: MenuItemConstructorOptions[]
+): (string | undefined)[] => {
+  const view = template.find((item) => item.label === 'View')
+  expect(view).toBeDefined()
+
+  return (view?.submenu as MenuItemConstructorOptions[]).map(
+    (item) => item.role
+  )
+}
+
 describe('application edit menu', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -28,33 +40,42 @@ describe('application edit menu', () => {
     expect(template[0]).toEqual({ role: 'appMenu' })
     expect(template[1]).toEqual({ role: 'fileMenu' })
     expect(template[2]).toEqual({ role: 'editMenu' })
-    expect(template).toContainEqual({ role: 'viewMenu' })
     expect(template).toContainEqual({ role: 'windowMenu' })
     expect(template).toContainEqual({ role: 'help' })
   })
 
-  test('installs the native edit menu roles on macOS', () => {
+  test('View menu drops Reload and page-zoom accelerators (VIM-306 / shortcut hygiene)', () => {
+    const roles = viewSubmenuRoles(createApplicationMenuTemplate('darwin'))
+
+    // Cmd+R / Cmd+Shift+R collide with in-app shortcuts; Cmd+± page zoom is the
+    // VIM-306 re-entry path. None should be exposed as a menu accelerator.
+    expect(roles).not.toContain('reload')
+    expect(roles).not.toContain('forceReload')
+    expect(roles).not.toContain('zoomIn')
+    expect(roles).not.toContain('zoomOut')
+    expect(roles).not.toContain('resetZoom')
+
+    // The harmless, non-colliding actions stay available.
+    expect(roles).toContain('togglefullscreen')
+    expect(roles).toContain('toggleDevTools')
+  })
+
+  test('installs the trimmed application menu on macOS', () => {
     installApplicationEditMenu('darwin')
 
-    expect(menuMock.buildFromTemplate).toHaveBeenCalledWith([
-      { role: 'appMenu' },
-      { role: 'fileMenu' },
-      { role: 'editMenu' },
-      { role: 'viewMenu' },
-      { role: 'windowMenu' },
-      { role: 'help' },
+    const template = menuMock.buildFromTemplate.mock
+      .calls[0][0] as MenuItemConstructorOptions[]
+    expect(template.map((item) => item.role ?? item.label)).toEqual([
+      'appMenu',
+      'fileMenu',
+      'editMenu',
+      'View',
+      'windowMenu',
+      'help',
     ])
+    expect(viewSubmenuRoles(template)).not.toContain('reload')
 
-    expect(menuMock.setApplicationMenu).toHaveBeenCalledWith({
-      template: [
-        { role: 'appMenu' },
-        { role: 'fileMenu' },
-        { role: 'editMenu' },
-        { role: 'viewMenu' },
-        { role: 'windowMenu' },
-        { role: 'help' },
-      ],
-    })
+    expect(menuMock.setApplicationMenu).toHaveBeenCalledWith({ template })
   })
 
   test('leaves non-mac application menus unchanged', () => {
