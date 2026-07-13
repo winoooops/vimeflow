@@ -779,15 +779,13 @@ mod tests {
                 id: "a1".into(),
                 alias: "c".into(),
                 agent: "claude".into(),
-                model: "sonnet".into(),
-                extra: "".into(),
+                extra: "--continue".into(),
                 account: None,
             },
             AgentAlias {
                 id: "a2".into(),
                 alias: "cx".into(),
                 agent: "codex".into(),
-                model: "o3".into(),
                 extra: "--dangerously-skip-permissions".into(),
                 account: None,
             },
@@ -802,12 +800,9 @@ mod tests {
         )
         .expect("generate bridge files");
         let init = fs::read_to_string(&files.shell_init_path).unwrap();
+        assert!(init.contains("alias c='claude --continue'"), "init: {init}");
         assert!(
-            init.contains("alias c='claude --model sonnet'"),
-            "init: {init}"
-        );
-        assert!(
-            init.contains("alias cx='codex --model o3 --dangerously-skip-permissions'"),
+            init.contains("alias cx='codex --dangerously-skip-permissions'"),
             "init: {init}"
         );
     }
@@ -821,8 +816,7 @@ mod tests {
             id: "a1".into(),
             alias: "c".into(),
             agent: "claude".into(),
-            model: "sonnet".into(),
-            extra: "".into(),
+            extra: "--continue".into(),
             account: None,
         }];
 
@@ -836,7 +830,7 @@ mod tests {
         .expect("generate bridge files");
         let init = fs::read_to_string(&files.shell_init_path).unwrap();
         assert!(
-            !init.contains("alias c='claude --model sonnet'"),
+            !init.contains("alias c='claude --continue'"),
             "init: {init}"
         );
     }

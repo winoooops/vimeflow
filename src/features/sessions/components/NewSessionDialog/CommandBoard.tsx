@@ -4,8 +4,7 @@ import {
   gridAreaNameForSlotId,
   type LayoutShape,
 } from '../../../terminal/layout-registry'
-import type { CommandId } from '../../types'
-import { COMMANDS, COMMAND_ORDER, type CommandDef } from './commands'
+import { commandForId, type CommandDef } from './commands'
 
 interface CommandGlyphProps {
   command: CommandDef
@@ -51,8 +50,9 @@ const CommandGlyph = ({
 
 interface CommandBoardProps {
   layout: LayoutShape
-  assign: CommandId[]
-  onAssign: (index: number, command: CommandId) => void
+  assign: string[]
+  commands: readonly CommandDef[]
+  onAssign: (index: number, command: string) => void
   /** Reports each pane menu's open/close so the dialog can defer dismiss to it. */
   onMenuOpenChange?: (open: boolean) => void
 }
@@ -60,6 +60,7 @@ interface CommandBoardProps {
 export const CommandBoard = ({
   layout,
   assign,
+  commands,
   onAssign,
   onMenuOpenChange = undefined,
 }: CommandBoardProps): ReactElement => {
@@ -80,7 +81,7 @@ export const CommandBoard = ({
         }}
       >
         {slotAreaNames.map((areaName, i) => {
-          const command = COMMANDS[assign[i] ?? 'shell']
+          const command = commandForId(commands, assign[i] ?? 'shell')
 
           return (
             <div
@@ -109,19 +110,19 @@ export const CommandBoard = ({
                   </button>
                 }
               >
-                {COMMAND_ORDER.map((id) => (
+                {commands.map((commandOption) => (
                   <Menu.Item
-                    key={id}
+                    key={commandOption.id}
                     leadingIcon={
                       <CommandGlyph
-                        command={COMMANDS[id]}
+                        command={commandOption}
                         className="h-[22px] w-[22px]"
                         iconSize={13}
                       />
                     }
-                    onSelect={() => onAssign(i, id)}
+                    onSelect={() => onAssign(i, commandOption.id)}
                   >
-                    {COMMANDS[id].label}
+                    {commandOption.label}
                   </Menu.Item>
                 ))}
               </Menu>

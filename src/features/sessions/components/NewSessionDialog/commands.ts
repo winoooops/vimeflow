@@ -1,9 +1,15 @@
-import { AGENTS } from '../../../../agents/registry'
-import type { AgentIcon } from '../../../../agents/brandIcons'
-import type { CommandId } from '../../types'
+import type { AgentIcon } from '@/agents/brandIcons'
+import { AGENTS } from '@/agents/registry'
+import type { CommandId } from '@/features/sessions/types'
+import {
+  configuredAgentAliases,
+  type AgentAliasConfig,
+} from '@/features/sessions/utils/agentResumeCommand'
 
 export interface CommandDef {
-  id: CommandId
+  id: string
+  command: CommandId
+  agentLauncher?: string
   label: string
   kind: 'shell' | 'browser'
   accentVar: string
@@ -16,6 +22,8 @@ export interface CommandDef {
 
 const fromAgent = (id: Exclude<CommandId, 'browser'>): CommandDef => ({
   id,
+  command: id,
+  ...(id === 'shell' ? {} : { agentLauncher: id }),
   label: AGENTS[id].name,
   kind: 'shell',
   accentVar: `--color-agent-${id}-accent`,
@@ -31,6 +39,7 @@ export const COMMANDS: Record<CommandId, CommandDef> = {
   shell: fromAgent('shell'),
   browser: {
     id: 'browser',
+    command: 'browser',
     label: 'Browser pane',
     kind: 'browser',
     accentVar: '--color-agent-browser-accent',
@@ -46,3 +55,30 @@ export const COMMAND_ORDER: CommandId[] = [
   'browser',
   'shell',
 ]
+
+export const buildCommandOptions = (
+  aliasConfig: AgentAliasConfig | undefined
+): readonly CommandDef[] =>
+  COMMAND_ORDER.flatMap((command) => {
+    const canonical = COMMANDS[command]
+    if (command === 'browser' || command === 'shell') {
+      return [canonical]
+    }
+
+    return [
+      canonical,
+      ...configuredAgentAliases(command, aliasConfig).map(
+        (candidate): CommandDef => ({
+          ...canonical,
+          id: `alias:${candidate.alias}`,
+          agentLauncher: candidate.alias,
+          label: `${candidate.alias} · ${canonical.label}`,
+        })
+      ),
+    ]
+  })
+
+export const commandForId = (
+  commands: readonly CommandDef[],
+  id: string
+): CommandDef => commands.find((command) => command.id === id) ?? COMMANDS.shell

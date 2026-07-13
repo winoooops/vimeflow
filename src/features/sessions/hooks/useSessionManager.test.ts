@@ -5,6 +5,7 @@ import { useSessionManager } from './useSessionManager'
 import type { ITerminalService } from '../../terminal/services/terminalService'
 import type { PTYSpawnResult } from '../../terminal/types'
 import type {
+  AgentAlias,
   AgentLifecycleEvent,
   AgentSessionTitleEvent,
   SessionList,
@@ -29,6 +30,7 @@ import {
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { createBrowserPane } from '../../browser/browserBridge'
 import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 
 const customGrid2x2 = (): PaneLayoutDefinition => ({
   schemaVersion: 1,
@@ -203,6 +205,35 @@ const persistedWorkspace = (
       panes,
     },
   ],
+})
+
+const installAgentAliases = (...aliases: AgentAlias[]): void => {
+  const bridge = window.vimeflow
+  if (bridge === undefined) {
+    throw new Error('expected the test backend bridge to be installed')
+  }
+
+  window.vimeflow = {
+    ...bridge,
+    aliases: {
+      load: vi.fn(() => Promise.resolve(aliases)),
+      save: vi.fn(() => Promise.resolve()),
+    },
+    settings: {
+      load: vi.fn(() => Promise.resolve(DEFAULT_SETTINGS)),
+      save: vi.fn(() => Promise.resolve()),
+      openFile: vi.fn(() => Promise.resolve()),
+      syncSnapshot: vi.fn(() => Promise.resolve()),
+    },
+  }
+}
+
+const agentAlias = (alias: string, agent: string): AgentAlias => ({
+  id: `alias-${alias}`,
+  alias,
+  agent,
+  extra: '',
+  account: null,
 })
 
 const agentStatusEvent = (
@@ -1869,11 +1900,20 @@ describe('useSessionManager', () => {
     expect(service.spawn).not.toHaveBeenCalled()
   })
 
-  test('restores a graceful-quit shell workspace and resumes its latest conversation', async () => {
+  test('restores a graceful-quit shell workspace with its saved agent alias', async () => {
+    installAgentAliases(agentAlias('CDX', 'codex'))
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
-      persistedWorkspace([persistedShellPane({ cwd: '/home/will/proj' })], {
-        workingDirectory: '/home/will/proj',
-      })
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            cwd: '/home/will/proj',
+            agentLauncher: 'CDX',
+          }),
+        ],
+        {
+          workingDirectory: '/home/will/proj',
+        }
+      )
     )
 
     const service = createMockService()
@@ -1908,10 +1948,11 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].ptyId).toBe('pty-restarted')
     expect(result.current.sessions[0].panes[0].status).toBe('running')
     expect(result.current.sessions[0].panes[0].agentType).toBe('codex')
+    expect(result.current.sessions[0].panes[0].agentLauncher).toBe('CDX')
     expect(result.current.activeSessionId).toBe('ws-shell')
     expect(service.write).toHaveBeenCalledWith({
       sessionId: 'pty-restarted',
-      data: 'codex resume --last\r',
+      data: 'CDX resume --last\r',
     })
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2))
     expect(mockInvoke).toHaveBeenLastCalledWith('start_agent_watcher', {
@@ -4981,7 +5022,11 @@ describe('useSessionManager', () => {
     expect(result.current.sessions).toBe(after1)
   })
 
-  test('restartSession preserves agentType when latest resume is available', async () => {
+  test('restartSession reuses the configured alias submitted in the pane', async () => {
+    installAgentAliases(
+      agentAlias('CC', 'claude'),
+      agentAlias('CC_WORK', 'claude')
+    )
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: 's1',
@@ -5012,8 +5057,17 @@ describe('useSessionManager', () => {
     )
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    // Stamp a resumable agentType so the latest-conversation fallback is used.
+    act(() => result.current.recordPaneAgentLauncher('s1', 'CC --model opus'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].agentLauncher).toBe('CC')
+    )
+
+    // Once the agent owns the pane, prompt text must not replace its launcher.
     act(() => result.current.updateSessionAgentType('s1', 'claude-code'))
+    act(() =>
+      result.current.recordPaneAgentLauncher('s1', 'claude explain this')
+    )
+    expect(result.current.sessions[0].panes[0].agentLauncher).toBe('CC')
     expect(result.current.sessions[0].agentType).toBe('claude-code')
 
     await act(async () => {
@@ -5030,7 +5084,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].agentType).toBe('claude-code')
     expect(service.write).toHaveBeenCalledWith({
       sessionId: 's2',
-      data: 'claude --continue\r',
+      data: 'CC --continue\r',
     })
   })
 
@@ -7015,6 +7069,7 @@ describe('useSessionManager', () => {
   })
 
   test('createSession(opts) builds a multi-pane session honoring layout + cwd', async () => {
+    installAgentAliases(agentAlias('CC', 'claude'))
     const service = createMockService()
     service.listSessions = vi
       .fn()
@@ -7036,7 +7091,10 @@ describe('useSessionManager', () => {
       result.current.createSession({
         cwd: '/Users/x/proj',
         layout: 'vsplit',
-        panes: [{ command: 'claude' }, { command: 'shell' }],
+        panes: [
+          { command: 'claude', agentLauncher: 'CC' },
+          { command: 'shell' },
+        ],
       })
     })
 
@@ -7047,6 +7105,7 @@ describe('useSessionManager', () => {
     expect(session.name).toBe('proj')
     expect(session.panes).toHaveLength(2)
     expect(session.panes[0].userLabel).toBe('Claude Code')
+    expect(session.panes[0].agentLauncher).toBe('CC')
     expect(session.panes[1].userLabel).toBeUndefined()
     expect(session.panes[0].active).toBe(true)
     // every shell pane spawned with the chosen cwd (fixed baseline)
@@ -7055,6 +7114,11 @@ describe('useSessionManager', () => {
       cwd: '/Users/x/proj',
       env: {},
       enableAgentBridge: true,
+    })
+
+    expect(service.write).toHaveBeenCalledWith({
+      sessionId: 'pty',
+      data: 'CC\r',
     })
   })
 

@@ -54,6 +54,7 @@ const paneToShape = (
         cwd: pane.cwd,
         agentType: pane.agentType,
         agentSessionId: pane.agentSessionId,
+        agentLauncher: pane.agentLauncher ?? null,
       }
     : {
         kind: 'browser',
@@ -133,7 +134,8 @@ const isPersistedWorkspacePaneShape = (
     typeof pane.ptyId === 'string' &&
     typeof pane.cwd === 'string' &&
     typeof pane.agentType === 'string' &&
-    isNullableString(pane.agentSessionId)
+    isNullableString(pane.agentSessionId) &&
+    (pane.agentLauncher === undefined || isNullableString(pane.agentLauncher))
   )
 }
 

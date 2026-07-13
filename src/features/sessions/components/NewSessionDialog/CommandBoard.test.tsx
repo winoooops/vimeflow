@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
 import { LAYOUTS } from '../../../terminal/layout-registry'
 import { CommandBoard } from './CommandBoard'
+import { buildCommandOptions } from './commands'
+
+const commands = buildCommandOptions(undefined)
 
 describe('CommandBoard', () => {
   test('renders one pane button per layout slot', () => {
@@ -10,6 +13,7 @@ describe('CommandBoard', () => {
       <CommandBoard
         layout={LAYOUTS.vsplit}
         assign={['claude', 'shell']}
+        commands={commands}
         onAssign={vi.fn()}
       />
     )
@@ -26,6 +30,7 @@ describe('CommandBoard', () => {
       <CommandBoard
         layout={LAYOUTS.vsplit}
         assign={['claude', 'shell']}
+        commands={commands}
         onAssign={onAssign}
       />
     )

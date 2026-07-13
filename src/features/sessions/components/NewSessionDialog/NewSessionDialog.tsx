@@ -15,11 +15,14 @@ import {
 } from '@/components/Dialog'
 import { IconButton } from '@/components/IconButton'
 import type {
-  CommandId,
   CreateSessionOptions,
   PaneLayoutId,
 } from '@/features/sessions/types'
 import { deriveSessionName } from '@/features/sessions/utils/sessionPaths'
+import {
+  loadAgentAliasConfig,
+  type AgentAliasConfig,
+} from '@/features/sessions/utils/agentResumeCommand'
 import { LayoutSwitcher } from '@/features/terminal/components/LayoutSwitcher'
 import {
   gridAreaNameForSlotId,
@@ -27,7 +30,7 @@ import {
 } from '@/features/terminal/layout-registry'
 import { CommandBoard } from './CommandBoard'
 import { WorkingDirectoryField } from './WorkingDirectoryField'
-import { COMMANDS, COMMAND_ORDER } from './commands'
+import { buildCommandOptions, commandForId } from './commands'
 import { getLastLayout, setLastLayout } from './lastLayoutStore'
 import { pickDirectory } from './pickDirectory'
 
@@ -41,7 +44,7 @@ interface NewSessionDialogProps {
   nativeOverlay?: boolean
 }
 
-const DEFAULT_ASSIGN: CommandId[] = ['claude', 'shell', 'shell', 'shell']
+const DEFAULT_ASSIGN: string[] = ['claude', 'shell', 'shell', 'shell']
 
 const LABEL =
   'text-[10.5px] font-semibold uppercase tracking-[0.08em] text-on-surface-muted'
@@ -69,7 +72,8 @@ export const NewSessionDialog = ({
   const [name, setName] = useState(() => deriveSessionName(defaultCwd))
   const [nameEdited, setNameEdited] = useState(false)
   const [layoutId, setLayoutId] = useState<PaneLayoutId>('single')
-  const [assign, setAssign] = useState<CommandId[]>(DEFAULT_ASSIGN)
+  const [assign, setAssign] = useState<string[]>(DEFAULT_ASSIGN)
+  const [agentAliasConfig, setAgentAliasConfig] = useState<AgentAliasConfig>()
   const [nativeOverlayActive, setNativeOverlayActive] = useState(false)
   // Native overlay renders this dialog in a separate BrowserWindow, so it gets
   // serializable state instead of React children. This index tells that layer
@@ -96,6 +100,30 @@ export const NewSessionDialog = ({
     openMenuCountRef.current = next
     setOpenMenuCount(next)
   }, [])
+
+  useEffect(() => {
+    if (!open) {
+      setAgentAliasConfig(undefined)
+
+      return
+    }
+
+    let cancelled = false
+
+    const loadAliases = async (): Promise<void> => {
+      const config = await loadAgentAliasConfig()
+
+      if (!cancelled && config.enabled && config.aliases.length > 0) {
+        setAgentAliasConfig(config)
+      }
+    }
+
+    void loadAliases()
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [open])
 
   // Re-initialize from the latest snapshot each time the dialog opens.
   useEffect(() => {
@@ -131,6 +159,11 @@ export const NewSessionDialog = ({
   }, [open])
 
   const layout = layoutRegistry.getFallbackLayout(layoutId)
+
+  const commandOptions = useMemo(
+    () => buildCommandOptions(agentAliasConfig),
+    [agentAliasConfig]
+  )
 
   useEffect(() => {
     setActiveCommandPaneIndex((current) =>
@@ -173,9 +206,16 @@ export const NewSessionDialog = ({
   )
 
   const handleCreate = useCallback((): void => {
-    const panes = Array.from({ length: layout.capacity }, (_, i) => ({
-      command: assign[i] ?? 'shell',
-    }))
+    const panes = Array.from({ length: layout.capacity }, (_, i) => {
+      const selection = commandForId(commandOptions, assign[i] ?? 'shell')
+
+      return {
+        command: selection.command,
+        ...(selection.agentLauncher === undefined
+          ? {}
+          : { agentLauncher: selection.agentLauncher }),
+      }
+    })
     createdRef.current = true
     onCreate({
       name: name.trim() || deriveSessionName(path),
@@ -185,7 +225,16 @@ export const NewSessionDialog = ({
     })
     setLastLayout(layoutId)
     onOpenChange(false)
-  }, [assign, layout.capacity, layoutId, name, onCreate, onOpenChange, path])
+  }, [
+    assign,
+    commandOptions,
+    layout.capacity,
+    layoutId,
+    name,
+    onCreate,
+    onOpenChange,
+    path,
+  ])
 
   const nativeOverlayPayload = useMemo(
     (): NativeOverlayNewSessionDialogPayload => ({
@@ -210,19 +259,15 @@ export const NewSessionDialog = ({
         areaName: gridAreaNameForSlotId(slotId),
         commandId: assign[index] ?? 'shell',
       })),
-      commands: COMMAND_ORDER.map((commandId) => {
-        const command = COMMANDS[commandId]
-
-        return {
-          id: command.id,
-          label: command.label,
-          accentVar: command.accentVar,
-          ...(command.glyph === undefined ? {} : { glyph: command.glyph }),
-          ...(command.materialIcon === undefined
-            ? {}
-            : { materialIcon: command.materialIcon }),
-        }
-      }),
+      commands: commandOptions.map((command) => ({
+        id: command.id,
+        label: command.label,
+        accentVar: command.accentVar,
+        ...(command.glyph === undefined ? {} : { glyph: command.glyph }),
+        ...(command.materialIcon === undefined
+          ? {}
+          : { materialIcon: command.materialIcon }),
+      })),
       actions: {
         focusName: NATIVE_ACTION_FOCUS_NAME,
         resetName: NATIVE_ACTION_RESET_NAME,
@@ -237,6 +282,7 @@ export const NewSessionDialog = ({
     [
       activeCommandPaneIndex,
       assign,
+      commandOptions,
       layout.definition.addOrder,
       layoutId,
       layoutRegistry.layouts,
@@ -304,17 +350,17 @@ export const NewSessionDialog = ({
         },
       })
 
-      COMMAND_ORDER.forEach((commandId) => {
+      commandOptions.forEach((command) => {
         actions.set(
           `${NATIVE_ACTION_PICK_COMMAND_PREFIX}${String(
             paneIndex
-          )}:${commandId}`,
+          )}:${command.id}`,
           {
             retainSession: true,
             run: (): void => {
               setAssign((prev) => {
                 const next = [...prev]
-                next[paneIndex] = commandId
+                next[paneIndex] = command.id
 
                 return next
               })
@@ -328,6 +374,7 @@ export const NewSessionDialog = ({
   }, [
     handleOpenNativeDirectoryPicker,
     handleCreate,
+    commandOptions,
     layout.definition.addOrder,
     layoutRegistry.layouts,
     onOpenChange,
@@ -447,6 +494,7 @@ export const NewSessionDialog = ({
               <CommandBoard
                 layout={layout}
                 assign={assign}
+                commands={commandOptions}
                 onMenuOpenChange={handleCommandMenuOpenChange}
                 onAssign={(i, command) =>
                   setAssign((prev) => {

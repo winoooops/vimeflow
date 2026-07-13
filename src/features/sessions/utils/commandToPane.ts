@@ -6,8 +6,9 @@ export interface CommandPaneResult {
   userLabel?: string
 }
 
-// v1: agent picks create a labeled shell pane (no CLI launch); browser → browser
-// pane; shell → plain shell. The label makes the intent visible in the header.
+// Agent picks create a labeled shell pane; useSessionManager writes the chosen
+// canonical launcher or configured alias after the PTY is registered. Browser
+// and plain-shell picks need no launcher metadata here.
 export const commandToPane = (command: CommandId): CommandPaneResult => {
   if (command === 'browser') {
     return { kind: 'browser' }

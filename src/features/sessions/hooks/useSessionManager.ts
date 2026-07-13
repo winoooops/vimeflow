@@ -77,7 +77,13 @@ import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
-import { buildAgentResumeCommand } from '../utils/agentResumeCommand'
+import {
+  agentLauncherFromCommand,
+  buildAgentResumeCommand,
+  buildAgentStartCommand,
+  loadAgentAliasConfig,
+  type AgentAliasConfig,
+} from '../utils/agentResumeCommand'
 import { createLogger } from '../../../lib/log'
 
 export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
@@ -147,6 +153,8 @@ export interface SessionManager {
     paneId: string,
     agentType: Session['agentType']
   ) => void
+  /** Record the canonical executable or configured alias submitted in a pane. */
+  recordPaneAgentLauncher: (ptyId: string, command: string) => void
   invalidatePaneAgentSession: (
     sessionId: string,
     paneId: string,
@@ -459,6 +467,29 @@ export const useSessionManager = (
     new Map<string, { agentSessionId: string; tokenTotal: number | null }>()
   )
   const autoStartedAgentWatcherPtyIds = useRef(new Set<string>())
+
+  const agentAliasConfigInFlightRef = useRef<Promise<AgentAliasConfig> | null>(
+    null
+  )
+  const agentAliasConfigSnapshotRef = useRef<AgentAliasConfig | null>(null)
+
+  const readAgentAliasConfig =
+    useCallback(async (): Promise<AgentAliasConfig> => {
+      const pending =
+        agentAliasConfigInFlightRef.current ?? loadAgentAliasConfig()
+      agentAliasConfigInFlightRef.current = pending
+
+      try {
+        const config = await pending
+        agentAliasConfigSnapshotRef.current = config
+
+        return config
+      } finally {
+        if (agentAliasConfigInFlightRef.current === pending) {
+          agentAliasConfigInFlightRef.current = null
+        }
+      }
+    }, [])
 
   const acceptAgentSessionEvent = useCallback(
     (
@@ -1302,6 +1333,12 @@ export const useSessionManager = (
         (_, i) => opts?.panes?.[i] ?? { command: 'shell' }
       )
 
+      const aliasConfigPromise = specs.some(
+        (spec) => spec.command !== 'browser' && spec.command !== 'shell'
+      )
+        ? readAgentAliasConfig()
+        : Promise.resolve<AgentAliasConfig>({ enabled: false, aliases: [] })
+
       setPendingSpawns((c) => c + 1)
       void (async (): Promise<void> => {
         try {
@@ -1318,6 +1355,7 @@ export const useSessionManager = (
                   })
             )
           )
+          const aliasConfig = await aliasConfigPromise
 
           const now = new Date().toISOString()
           const newSessionId = crypto.randomUUID()
@@ -1334,6 +1372,7 @@ export const useSessionManager = (
 
           const panes: Pane[] = []
           const browserPaneIds: string[] = []
+          const agentStarts: { command: string; ptyId: string }[] = []
           let shellSpawnFailure: unknown = null
 
           specs.forEach((spec, i) => {
@@ -1369,7 +1408,13 @@ export const useSessionManager = (
 
               return
             }
+
             const result = settled.value
+
+            const startCommand = buildAgentStartCommand(spec.command, {
+              aliasConfig,
+              launcher: spec.agentLauncher,
+            })
 
             const restoreData: RestoreData = {
               sessionId: result.sessionId,
@@ -1392,8 +1437,15 @@ export const useSessionManager = (
               active: false,
               pid: result.pid,
               restoreData,
+              ...(startCommand === null ? {} : { agentLauncher: startCommand }),
               ...(mapped.userLabel ? { userLabel: mapped.userLabel } : {}),
             })
+            if (startCommand !== null) {
+              agentStarts.push({
+                command: startCommand,
+                ptyId: result.sessionId,
+              })
+            }
           })
 
           if (panes.length === 0) {
@@ -1454,6 +1506,31 @@ export const useSessionManager = (
           })
           opts?.onCreated?.(newSessionId)
 
+          const startResults = await Promise.allSettled(
+            agentStarts.map(({ command, ptyId }) =>
+              service.write({ sessionId: ptyId, data: `${command}\r` })
+            )
+          )
+
+          const failedStart = startResults.find(
+            (result): result is PromiseRejectedResult =>
+              result.status === 'rejected'
+          )
+
+          if (failedStart !== undefined) {
+            log.warn(
+              'createSession: agent start write failed',
+              failedStart.reason
+            )
+
+            onTerminalSpawnError?.(
+              spawnErrorMessage(
+                'Failed to start coding agent',
+                failedStart.reason
+              )
+            )
+          }
+
           // Browser panes: create the WebContents after state is committed
           // (guarded — a startup/shutdown rejection must not surface).
           for (const paneId of browserPaneIds) {
@@ -1483,6 +1560,7 @@ export const useSessionManager = (
     [
       layoutRegistry,
       onTerminalSpawnError,
+      readAgentAliasConfig,
       registerPending,
       service,
       setActiveSessionId,
@@ -2258,6 +2336,14 @@ export const useSessionManager = (
         )
         let resumeCommand = candidateResumeCommand
 
+        const aliasConfigPromise =
+          candidateResumeCommand === null
+            ? Promise.resolve<AgentAliasConfig>({
+                enabled: false,
+                aliases: [],
+              })
+            : readAgentAliasConfig()
+
         if (candidateResumeCommand !== null) {
           const predecessor = resumeClaimQueueTailRef.current
 
@@ -2337,6 +2423,18 @@ export const useSessionManager = (
         }
 
         if (resumeCommand !== null) {
+          const aliasConfig = await aliasConfigPromise
+          resumeCommand = buildAgentResumeCommand(
+            oldPane.agentType,
+            oldPane.agentSessionId,
+            {
+              aliasConfig,
+              launcher: oldPane.agentLauncher,
+            }
+          )
+        }
+
+        if (resumeCommand !== null) {
           try {
             await service.write({
               sessionId: result.sessionId,
@@ -2410,6 +2508,9 @@ export const useSessionManager = (
         const replacementAgentSessionId =
           resumeCommand === null ? undefined : oldPane.agentSessionId
 
+        const replacementAgentLauncher =
+          resumeCommand === null ? undefined : resumeCommand.split(' ', 1)[0]
+
         flushSync(() => {
           setSessions((prev) => {
             const idx = prev.findIndex((session) => session.id === sessionId)
@@ -2435,6 +2536,7 @@ export const useSessionManager = (
               status: 'running',
               agentType: replacementAgentType,
               agentSessionId: replacementAgentSessionId,
+              agentLauncher: replacementAgentLauncher,
               pid: result.pid,
               restoreData,
               agentTitle: undefined,
@@ -2530,6 +2632,7 @@ export const useSessionManager = (
       dropAllForPty,
       hasClaimedLatestAgentResumeKey,
       onTerminalSpawnError,
+      readAgentAliasConfig,
       registerPending,
       releaseLatestAgentResumeClaimsForPty,
       releaseLatestAgentResumeKey,
@@ -2862,6 +2965,62 @@ export const useSessionManager = (
     []
   )
 
+  const recordPaneAgentLauncher = useCallback(
+    (ptyId: string, command: string): void => {
+      const currentPane = sessionsRef.current
+        .flatMap((session) => session.panes)
+        .find((candidate) => candidate.ptyId === ptyId)
+      if (
+        currentPane === undefined ||
+        !isShellPane(currentPane) ||
+        currentPane.agentType !== 'generic' ||
+        isTerminalStatus(currentPane.status)
+      ) {
+        return
+      }
+
+      void (async (): Promise<void> => {
+        const canonicalLauncher = agentLauncherFromCommand(command, undefined)
+
+        const aliasConfig =
+          canonicalLauncher === null
+            ? (agentAliasConfigSnapshotRef.current ??
+              (await readAgentAliasConfig()))
+            : undefined
+
+        const launcher =
+          canonicalLauncher ?? agentLauncherFromCommand(command, aliasConfig)
+        if (launcher === null || !restartMountedRef.current) {
+          return
+        }
+
+        setSessions((prev) => {
+          const paneExists = prev.some((session) =>
+            session.panes.some(
+              (pane) =>
+                isShellPane(pane) &&
+                pane.ptyId === ptyId &&
+                pane.agentLauncher !== launcher
+            )
+          )
+          if (!paneExists) {
+            return prev
+          }
+
+          return prev.map((session) => ({
+            ...session,
+            panes: session.panes.map((pane) =>
+              isShellPane(pane) && pane.ptyId === ptyId
+                ? { ...pane, agentLauncher: launcher }
+                : pane
+            ),
+          }))
+        })
+      })()
+    },
+    [readAgentAliasConfig]
+  )
+
   const updateBrowserPaneUrl = useCallback(
     (sessionId: string, paneId: string, browserUrl: string): void => {
       setSessions((prev) => {
@@ -2978,6 +3137,7 @@ export const useSessionManager = (
     appendPaneCacheReading,
     clearPaneCacheHistory,
     updatePaneAgentType,
+    recordPaneAgentLauncher,
     invalidatePaneAgentSession,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,

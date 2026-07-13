@@ -1,5 +1,6 @@
+import type { AgentAlias } from '@/bindings'
 import { describe, expect, test } from 'vitest'
-import { COMMANDS, COMMAND_ORDER } from './commands'
+import { buildCommandOptions, COMMANDS, COMMAND_ORDER } from './commands'
 
 describe('COMMANDS', () => {
   test('orders claude, codex, kimi, opencode, browser, shell', () => {
@@ -31,5 +32,29 @@ describe('COMMANDS', () => {
   test('claude command has Icon defined (brand SVG component)', () => {
     expect(COMMANDS.claude.Icon).toBeDefined()
     expect(typeof COMMANDS.claude.Icon).toBe('function')
+  })
+
+  test('adds enabled agent aliases next to their canonical command', () => {
+    const aliases: AgentAlias[] = [
+      {
+        id: 'alias-cc',
+        alias: 'CC',
+        agent: 'claude',
+        extra: '',
+        account: null,
+      },
+    ]
+
+    expect(buildCommandOptions({ enabled: true, aliases }).slice(0, 2)).toEqual(
+      [
+        COMMANDS.claude,
+        expect.objectContaining({
+          id: 'alias:CC',
+          command: 'claude',
+          agentLauncher: 'CC',
+          label: 'CC · Claude Code',
+        }),
+      ]
+    )
   })
 })

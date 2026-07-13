@@ -116,6 +116,7 @@ const roundTripShape = (): PersistedWorkspaceShape => ({
           cwd: '/repo/sub',
           agentType: 'codex',
           agentSessionId: 'codex-conversation-1',
+          agentLauncher: 'CDX',
         },
         { kind: 'browser', paneId: 'p1', paneIndex: 1, active: true },
       ],

@@ -155,8 +155,12 @@ describe('VIM_KEYMAP_GROUPS', () => {
 })
 
 describe('DEFAULT_ALIASES', () => {
-  test('contains three default aliases', () => {
-    expect(DEFAULT_ALIASES).toHaveLength(3)
+  test('contains the supported default aliases', () => {
+    expect(DEFAULT_ALIASES).toHaveLength(2)
+    expect(DEFAULT_ALIASES.map((alias) => alias.agent)).toEqual([
+      'claude',
+      'codex',
+    ])
   })
 
   test('each alias has the required fields', () => {
@@ -164,8 +168,11 @@ describe('DEFAULT_ALIASES', () => {
       expect(a.id).toBeDefined()
       expect(a.alias).toBeDefined()
       expect(a.agent).toBeDefined()
-      expect(a.model).toBeDefined()
       expect(a.extra).toBeDefined()
     })
+  })
+
+  test('defaults leave resume commands to session restoration', () => {
+    expect(DEFAULT_ALIASES.every((alias) => alias.extra === '')).toBe(true)
   })
 })

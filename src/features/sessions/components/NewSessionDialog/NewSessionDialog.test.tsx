@@ -1,6 +1,8 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import type { AgentAlias } from '@/bindings'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../../terminal/layout-registry'
 import { NewSessionDialog } from './NewSessionDialog'
 
@@ -111,6 +113,23 @@ const installNativeOverlayBridge = (): {
   }
 }
 
+const installAliasBridge = (aliases: AgentAlias[]): void => {
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    aliases: {
+      load: vi.fn(() => Promise.resolve(aliases)),
+      save: vi.fn(() => Promise.resolve()),
+    },
+    settings: {
+      load: vi.fn(() => Promise.resolve(DEFAULT_SETTINGS)),
+      save: vi.fn(() => Promise.resolve()),
+      openFile: vi.fn(() => Promise.resolve()),
+      syncSnapshot: vi.fn(() => Promise.resolve()),
+    },
+  }
+}
+
 const isCapturedNativeOverlayRequest = (
   value: unknown
 ): value is CapturedNativeOverlayRequest =>
@@ -173,7 +192,7 @@ describe('NewSessionDialog', () => {
       name: 'vimeflow-core',
       cwd: '~/code/vimeflow-core',
       layout: 'single',
-      panes: [{ command: 'claude' }],
+      panes: [{ command: 'claude', agentLauncher: 'claude' }],
     })
   })
 
@@ -215,7 +234,37 @@ describe('NewSessionDialog', () => {
     await user.click(screen.getByRole('button', { name: /create session/i }))
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        panes: [{ command: 'codex' }],
+        panes: [{ command: 'codex', agentLauncher: 'codex' }],
+      })
+    )
+  })
+
+  test('offers configured aliases and preserves the selected launcher', async () => {
+    installAliasBridge([
+      {
+        id: 'alias-cc',
+        alias: 'CC',
+        agent: 'claude',
+        extra: '--dangerously-skip-permissions',
+        account: null,
+      },
+    ])
+    const { onCreate } = setup()
+    const user = userEvent.setup()
+
+    const paneButton = screen.getByRole('button', {
+      name: /choose command for pane 1/i,
+    })
+
+    await user.click(paneButton)
+    await user.click(
+      await screen.findByRole('menuitem', { name: /CC · Claude Code/i })
+    )
+    await user.click(screen.getByRole('button', { name: /create session/i }))
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        panes: [{ command: 'claude', agentLauncher: 'CC' }],
       })
     )
   })
@@ -340,7 +389,10 @@ describe('NewSessionDialog', () => {
         name: 'vimeflow-core',
         cwd: '~/code/vimeflow-core',
         layout: 'vsplit',
-        panes: [{ command: 'claude' }, { command: 'codex' }],
+        panes: [
+          { command: 'claude', agentLauncher: 'claude' },
+          { command: 'codex', agentLauncher: 'codex' },
+        ],
       })
     })
   })

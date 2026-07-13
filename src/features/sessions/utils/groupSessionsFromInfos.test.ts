@@ -415,6 +415,7 @@ describe('reconstructWorkspace', () => {
           shellShape({
             ptyId: 'pty-a',
             agentSessionId: 'agent-session-alive',
+            agentLauncher: 'CC',
             active: true,
           }),
         ],
@@ -442,6 +443,7 @@ describe('reconstructWorkspace', () => {
     const pane = sessions[0].panes[0]
     expect(pane.ptyId).toBe('pty-a')
     expect(pane.agentSessionId).toBe('agent-session-alive')
+    expect(pane.agentLauncher).toBe('CC')
     expect(pane.status).toBe('running')
     expect(pane.restoreData?.replayData).toBe('scrollback')
     expect(pane.restoreData?.replayEndOffset).toBe(9)
@@ -461,6 +463,7 @@ describe('reconstructWorkspace', () => {
             cwd: '/home/will/proj/sub',
             agentType: 'codex',
             agentSessionId: 'agent-session-dead',
+            agentLauncher: 'CDX',
             active: true,
           }),
         ],
@@ -476,6 +479,7 @@ describe('reconstructWorkspace', () => {
     expect(pane.cwd).toBe('/home/will/proj/sub')
     expect(pane.agentType).toBe('codex')
     expect(pane.agentSessionId).toBe('agent-session-dead')
+    expect(pane.agentLauncher).toBe('CDX')
     expect(pane.restoreData).toBeUndefined()
     expect(pane.pid).toBeUndefined()
     expect(sessions[0].status).toBe('completed')

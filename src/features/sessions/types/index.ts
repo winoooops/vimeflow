@@ -63,6 +63,13 @@ export interface Pane {
   agentSessionId?: string
 
   /**
+   * Canonical executable or configured shell alias used to launch this agent.
+   * Persisted so restart can preserve the alias-provided invocation instead of
+   * guessing from `agentType` alone.
+   */
+  agentLauncher?: string
+
+  /**
    * Title emitted by the agent for the agent session bound to this PTY.
    * `undefined` when no agent has emitted a title yet for this pane.
    * Source layer is the `agent-session-title` event.
@@ -229,6 +236,7 @@ export type CommandId =
 
 export interface NewPaneSpec {
   command: CommandId
+  agentLauncher?: string
 }
 
 export interface CreateSessionOptions {

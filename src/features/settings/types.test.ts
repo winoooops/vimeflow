@@ -42,7 +42,6 @@ describe('settings types compile and shape contracts', () => {
       id: 'a1',
       alias: 'cc',
       agent: 'claude',
-      model: 'sonnet-4',
       extra: '',
       account: null,
     }
