@@ -1429,3 +1429,5 @@ git commit -m "docs(changelog): vim-327 whole-changelist delegated review"
 - `formatReviewRequest`/`dispatchReviewRequest` have no remaining 3-arg/5-arg callers (`grep -rn "formatReviewRequest(\|dispatchReviewRequest(" src`).
 - The `TODO(VIM-341)` comment exists at the fetch site.
 - PR: `Closes VIM-327` + `Part of VIM-284`, labels `auto-review` + `auto-approve`, branch `feature/vim-327`.
+
+<!-- codex-reviewed: 2026-07-13T17:33:11Z -->
