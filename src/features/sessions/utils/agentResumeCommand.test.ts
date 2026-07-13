@@ -4,6 +4,7 @@ import {
   agentLauncherFromCommand,
   buildAgentResumeCommand,
   buildAgentStartCommand,
+  submittedLauncherTokenFromCommand,
   type AgentAliasConfig,
 } from './agentResumeCommand'
 
@@ -134,5 +135,13 @@ describe('buildAgentResumeCommand', () => {
     expect(
       agentLauncherFromCommand('CC', { ...aliases, enabled: false })
     ).toBeNull()
+  })
+
+  test('extracts only a submitted command launcher token', () => {
+    expect(submittedLauncherTokenFromCommand('  CC --verbose')).toBe('CC')
+    expect(submittedLauncherTokenFromCommand('git status')).toBe('git')
+    expect(submittedLauncherTokenFromCommand('echo CC')).toBe('echo')
+    expect(submittedLauncherTokenFromCommand('')).toBeNull()
+    expect(submittedLauncherTokenFromCommand('./claude')).toBeNull()
   })
 })

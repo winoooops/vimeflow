@@ -5148,6 +5148,59 @@ describe('useSessionManager', () => {
     expect(aliasLoad).toHaveBeenCalledTimes(2)
   })
 
+  test('recordPaneAgentLauncher caches repeated non-agent alias misses', async () => {
+    const aliasLoad = vi.fn<() => Promise<AgentAlias[]>>().mockResolvedValue([])
+
+    const bridge = window.vimeflow
+    if (bridge === undefined) {
+      throw new Error('expected the test backend bridge to be installed')
+    }
+
+    window.vimeflow = {
+      ...bridge,
+      aliases: {
+        load: aliasLoad,
+        save: vi.fn(() => Promise.resolve()),
+      },
+      settings: {
+        load: vi.fn(() => Promise.resolve(DEFAULT_SETTINGS)),
+        save: vi.fn(() => Promise.resolve()),
+        openFile: vi.fn(() => Promise.resolve()),
+        syncSnapshot: vi.fn(() => Promise.resolve()),
+      },
+    }
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'git status'))
+    await waitFor(() => expect(aliasLoad).toHaveBeenCalledTimes(1))
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'git diff'))
+
+    expect(aliasLoad).toHaveBeenCalledTimes(1)
+    expect(result.current.sessions[0].panes[0].agentLauncher).toBeUndefined()
+  })
+
   test('restartSession releases exact identity resume claim when pane is removed', async () => {
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
       sessions: [

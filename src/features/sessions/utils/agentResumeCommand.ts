@@ -6,6 +6,10 @@ const SAFE_AGENT_SESSION_ID = /^[A-Za-z0-9_-]{1,256}$/
 const SAFE_AGENT_ALIAS = /^[A-Za-z_][A-Za-z0-9_-]*$/
 const SUBMITTED_LAUNCHER = /^\s*([A-Za-z_][A-Za-z0-9_-]*)(?:\s|$)/
 
+const CANONICAL_AGENT_LAUNCHERS = Object.values(AGENTS)
+  .filter((agent) => agent.resumeCommands !== null)
+  .map((agent) => agent.id)
+
 export interface AgentAliasConfig {
   enabled: boolean
   aliases: readonly AgentAlias[]
@@ -41,20 +45,20 @@ export const configuredAgentAliases = (
 ): readonly AgentAlias[] =>
   effectiveAliases(config).filter((candidate) => candidate.agent === agentId)
 
+export const submittedLauncherTokenFromCommand = (
+  command: string
+): string | null => SUBMITTED_LAUNCHER.exec(command)?.[1] ?? null
+
 export const agentLauncherFromCommand = (
   command: string,
   config: AgentAliasConfig | undefined
 ): string | null => {
-  const launcher = SUBMITTED_LAUNCHER.exec(command)?.[1]
-  if (launcher === undefined) {
+  const launcher = submittedLauncherTokenFromCommand(command)
+  if (launcher === null) {
     return null
   }
 
-  const canonicalLaunchers = Object.values(AGENTS)
-    .filter((agent) => agent.resumeCommands !== null)
-    .map((agent) => agent.id)
-
-  if (canonicalLaunchers.some((candidate) => candidate === launcher)) {
+  if (CANONICAL_AGENT_LAUNCHERS.some((candidate) => candidate === launcher)) {
     return launcher
   }
 

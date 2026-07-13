@@ -82,6 +82,7 @@ import {
   buildAgentResumeCommand,
   buildAgentStartCommand,
   loadAgentAliasConfig,
+  submittedLauncherTokenFromCommand,
   type AgentAliasConfig,
 } from '../utils/agentResumeCommand'
 import { createLogger } from '../../../lib/log'
@@ -303,6 +304,7 @@ const bindAgentSessionId = (pane: Pane, agentSessionId: string | null): Pane =>
 const log = createLogger('sessions')
 const RESUMED_AGENT_WATCHER_MAX_RETRY_DELAY_MS = 2000
 const RESUMED_AGENT_WATCHER_MAX_ATTEMPTS = 20
+const AGENT_ALIAS_MISS_TTL_MS = 30_000
 
 const stopAgentWatcher = async (ptyId: string): Promise<void> => {
   try {
@@ -471,6 +473,7 @@ export const useSessionManager = (
   const agentAliasConfigInFlightRef = useRef<Promise<AgentAliasConfig> | null>(
     null
   )
+  const agentAliasMissExpiresByLauncherRef = useRef(new Map<string, number>())
 
   const readAgentAliasConfig =
     useCallback(async (): Promise<AgentAliasConfig> => {
@@ -2976,14 +2979,47 @@ export const useSessionManager = (
       }
 
       void (async (): Promise<void> => {
+        const submittedLauncher = submittedLauncherTokenFromCommand(command)
+        if (submittedLauncher === null) {
+          return
+        }
+
         const canonicalLauncher = agentLauncherFromCommand(command, undefined)
+        if (canonicalLauncher !== null) {
+          agentAliasMissExpiresByLauncherRef.current.delete(submittedLauncher)
+        }
+
+        const now = Date.now()
+
+        const aliasMissExpiresAt =
+          agentAliasMissExpiresByLauncherRef.current.get(submittedLauncher)
+        if (
+          canonicalLauncher === null &&
+          aliasMissExpiresAt !== undefined &&
+          aliasMissExpiresAt > now
+        ) {
+          return
+        }
+        if (aliasMissExpiresAt !== undefined && aliasMissExpiresAt <= now) {
+          agentAliasMissExpiresByLauncherRef.current.delete(submittedLauncher)
+        }
 
         const aliasConfig =
           canonicalLauncher === null ? await readAgentAliasConfig() : undefined
 
         const launcher =
           canonicalLauncher ?? agentLauncherFromCommand(command, aliasConfig)
-        if (launcher === null || !restartMountedRef.current) {
+        if (launcher === null) {
+          agentAliasMissExpiresByLauncherRef.current.set(
+            submittedLauncher,
+            now + AGENT_ALIAS_MISS_TTL_MS
+          )
+
+          return
+        }
+        agentAliasMissExpiresByLauncherRef.current.delete(submittedLauncher)
+
+        if (!restartMountedRef.current) {
           return
         }
 
