@@ -804,6 +804,7 @@ export const Panel = ({
             lineNumber: annotation.lineNumber,
             side: annotation.side,
             target: annotation.metadata.target,
+            threadId: annotation.metadata.threadId ?? annotation.metadata.id,
           })
         }
       }
@@ -866,7 +867,7 @@ export const Panel = ({
                 entry.annotations.map((annotation) => annotation.metadata.id)
               )
             ),
-            { clearDraftForWholeBatch: onlyCommentId === undefined }
+            { clearDraftForWholeBatch: onlyCommentId === undefined, dispatchedTo: pane.ptyId }
           )
           setFinishOpen(false)
           setSendNowCommentId(null)

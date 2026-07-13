@@ -5997,6 +5997,9 @@ describe('Panel', () => {
       expect(pending?.ownerKey).toBe('sess:pane-1')
       expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
       expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
+      // VIM-298: handle carries the threadId so a reply lands in the right thread.
+      const handle1 = pending?.byHandle.get(1)
+      expect(handle1?.threadId).toBeDefined()
 
       clearPendingReview('pty-1', nonce) // module singleton — don't leak into other tests
     })
