@@ -16,27 +16,28 @@
 
 - Worktree: `/Users/winoooops/projects/vimeflow/.claude/worktrees/vim-327-changelist-review`, branch `feature/vim-327`. Never work in the main checkout.
 - NEVER commit with `--no-verify`. If the pre-commit hook is KILLED (OOM), run `npx lint-staged --concurrent false` and commit again.
-- Before every commit run, scoped to your changes: `npx prettier --check <files>`, `npx eslint <files>`, `npm run type-check`. Do not rely on the hook alone.
+- Before every commit run, scoped to your changes: `npx prettier --check <files>` + `npx eslint <files>` for TS/TSX/MD files, `cargo fmt --manifest-path crates/backend/Cargo.toml -- --check` for Rust, and `npm run type-check`. Do not rely on the hook alone. (Prettier has no Rust parser — never point it at `.rs` files.)
 - Run the full test file you touched, not just the new test: `npx vitest run <file>`.
+- Commit trailers: these implementation commits are not codex-assisted — do NOT add the `Co-Authored-By: codex` trailer (`rules/common/git-workflow.md` scopes it to commits codex participated in).
 - `test()` not `it()`; no semicolons; single quotes; explicit return types on exported functions; no hardcoded colors outside `src/theme/**`; cspell is enforced (add genuinely new words to `cspell.config.yaml` only if needed).
 - Known pre-existing local failures (do NOT chase): ~11 Rust tests on macOS (`/bin/true`, `/proc`), `editorFileLifecycleStatus` home-path casing, `src/theme/service.test.ts` StorageEvent jsdom flake.
 - `cargo test` regenerates `src/bindings/*.ts` unformatted — bindings are gitignored, so ignore the noise; never commit `src/bindings`.
 
 ## File map
 
-| File | Change |
-| --- | --- |
-| `crates/backend/src/git/mod.rs` | Task 1: combined-diff guard in `parse_git_diff` + tests |
-| `vite.config.ts` | Task 2: dev middleware parity (untracked status value, zero-hunk empty untracked, staged branch-basis fallback) |
-| `src/features/diff/services/pendingReviewRequests.ts` (+test) | Task 3: `ReviewedFile.staged`, `buildDiffSnapshot(fileDiff, staged): ReviewedFile`, `PendingReviewRequest` drops `staged` |
-| `src/features/diff/hooks/useRequestReview.ts` (+test) | Task 3 (mechanical adaptation), Task 6 (scope, async arm, prefetch) |
-| `src/features/diff/hooks/useAgentReview.ts` (+test) | Task 3 (mechanical adaptation), Task 7 (`resolveFindingEntry`) |
-| `src/features/diff/services/feedbackDispatch.ts` (+test) | Task 4: grouped prompt, signature changes, `ReviewRequestFile.untracked` |
-| `src/features/diff/services/changelistSnapshot.ts` (NEW, +test) | Task 5: concurrency pool + snapshot/request pairing |
-| `src/features/diff/components/RequestReviewPopover.tsx` (+test) | Task 8: SegmentedControl scope + `f`/`a` hotkeys |
-| `src/features/diff/components/Notifier.tsx` (+test) | Task 8: `RequestReviewState.scopeControl` pass-through |
-| `src/features/diff/Panel.tsx` (+`Panel.test.tsx`) | Task 9: wiring (changedFiles, fetchFileDiff, statusRevision, repoRoot fallback, per-scope scopeLabel) |
-| `CHANGELOG.md`, `CHANGELOG.zh-CN.md` | Task 10: entries |
+| File                                                            | Change                                                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `crates/backend/src/git/mod.rs`                                 | Task 1: combined-diff guard in `parse_git_diff` + tests                                                                   |
+| `vite.config.ts`                                                | Task 2: dev middleware parity (untracked status value, zero-hunk empty untracked, uncommitted-only status scope)          |
+| `src/features/diff/services/pendingReviewRequests.ts` (+test)   | Task 3: `ReviewedFile.staged`, `buildDiffSnapshot(fileDiff, staged): ReviewedFile`, `PendingReviewRequest` drops `staged` |
+| `src/features/diff/hooks/useRequestReview.ts` (+test)           | Task 3 (mechanical adaptation), Task 6 (scope, async arm, prefetch)                                                       |
+| `src/features/diff/hooks/useAgentReview.ts` (+test)             | Task 3 (mechanical adaptation), Task 7 (`resolveFindingEntry`)                                                            |
+| `src/features/diff/services/feedbackDispatch.ts` (+test)        | Task 4: grouped prompt, signature changes, `ReviewRequestFile.untracked`                                                  |
+| `src/features/diff/services/changelistSnapshot.ts` (NEW, +test) | Task 5: concurrency pool + snapshot/request pairing                                                                       |
+| `src/features/diff/components/RequestReviewPopover.tsx` (+test) | Task 8: SegmentedControl scope + `f`/`a` hotkeys                                                                          |
+| `src/features/diff/components/Notifier.tsx` (+test)             | Task 8: `RequestReviewState.scopeControl` pass-through                                                                    |
+| `src/features/diff/Panel.tsx` (+`Panel.test.tsx`)               | Task 9: wiring (changedFiles, fetchFileDiff, statusRevision, repoRoot fallback, per-scope scopeLabel)                     |
+| `CHANGELOG.md`, `CHANGELOG.zh-CN.md`                            | Task 10: entries                                                                                                          |
 
 ---
 
@@ -45,6 +46,7 @@
 `git diff` on an unmerged path (`UU` etc.) emits the combined format (`diff --cc`, `@@@` headers). `parse_git_diff` (`crates/backend/src/git/mod.rs:908`) matches `line.starts_with("@@")`, which `@@@` satisfies, so a second-parent range is parsed as the new-file range — garbage anchors. Fix: detect combined diffs and emit **zero hunks** (file-level degrade downstream).
 
 **Files:**
+
 - Modify: `crates/backend/src/git/mod.rs` (`parse_git_diff`, ~line 908; tests near line 2364)
 
 - [ ] **Step 1: Write the failing tests** (in the existing `#[cfg(test)]` module that already calls `parse_git_diff` directly, near `test_parse_git_diff…` tests at ~line 2364):
@@ -113,10 +115,10 @@ if is_combined {
 
 (Keep `file_path`/`old_path`/`new_path` handling untouched.)
 
-- [ ] **Step 4: Run to verify pass, plus the surrounding parser tests**
+- [ ] **Step 4: Run to verify pass, plus the surrounding parser tests and Rust formatting**
 
-Run: `cargo test --manifest-path crates/backend/Cargo.toml parse_git_diff && cargo test --manifest-path crates/backend/Cargo.toml test_parse_combined`
-Expected: PASS (macOS-known-failing tests excepted — they're in other modules).
+Run: `cargo test --manifest-path crates/backend/Cargo.toml parse_git_diff && cargo test --manifest-path crates/backend/Cargo.toml test_parse_combined && cargo fmt --manifest-path crates/backend/Cargo.toml -- --check`
+Expected: PASS + clean fmt (macOS-known-failing tests excepted — they're in other modules).
 
 - [ ] **Step 5: Commit**
 
@@ -129,11 +131,12 @@ git commit -m "fix(git): parse combined conflict diffs as zero-hunk files"
 
 ### Task 2: vite dev middleware parity (spec §3 prerequisite)
 
-Two dev-only gaps abort a changelist review in browser/dev mode: (1) untracked files are reported as status `'A'`, so the frontend passes `untracked: false`, which **disables** the middleware's untracked fallback (`!diff && untracked !== false`, `vite.config.ts:~489`) → 404; (2) the status endpoint reports committed branch-vs-main files as `staged: true` (`vite.config.ts:~353-381`) while the diff endpoint serves staged requests from `git diff --cached` only → 404 on any clean committed feature branch. Invariant (spec §3): **every entry the status endpoint reports must be fetchable from the diff endpoint on the axis it claims.**
+Two dev-only gaps abort a changelist review in browser/dev mode: (1) untracked files are reported as status `'A'`, so the frontend passes `untracked: false`, which **disables** the middleware's untracked fallback (`!diff && untracked !== false`, `vite.config.ts:~489`) → 404; (2) the status endpoint reports committed branch-vs-main files as `staged: true` (`vite.config.ts:~353-381`) — entries no prompt-named basis can serve (`git diff --cached` is empty for them), so per spec §3 the branch-vs-main section **stops being emitted by default** and stays reachable only behind an explicit `?base=<branch>` query param (the frontend never sends one). Invariant (spec §3): **every entry the status endpoint reports must be fetchable from the diff endpoint on the axis it claims.**
 
-No vitest coverage exists for `vite.config.ts` middleware — verification is by curl against the dev server (Step 3). Keep the changes minimal.
+No vitest coverage exists for `vite.config.ts` middleware (and `npm run type-check` does not cover it) — verification is the runnable dev-server script in Step 3. Keep the changes minimal.
 
 **Files:**
+
 - Modify: `vite.config.ts` (status handler ~line 340-430; diff handler ~line 436-523)
 
 - [ ] **Step 1: Status endpoint — emit `'untracked'`.** In the working-tree status loop (~line 400-414), the mapping currently folds `?` into `'A'`. Change the status type unions used in this file from `'M' | 'A' | 'D' | 'U'` to `'M' | 'A' | 'D' | 'U' | 'untracked'` and map index/working-dir `'?'` to `'untracked'` **before** the `'A'` check:
@@ -156,9 +159,27 @@ if (file.index === '?' || file.working_dir === '?') {
 
 (The desktop serde value is lowercase `'untracked'` — `src/features/diff/types/index.ts:9` documents the contract.)
 
-- [ ] **Step 2: Diff endpoint — two fallbacks.** In the diff handler after the initial `git.diff(...)`:
+- [ ] **Step 2: Status endpoint — gate the branch-vs-main section; diff endpoint — zero-hunk empty untracked.**
 
-  a. **Empty untracked file → zero-hunk 200, not 404.** The untracked fallback (`git diff --no-index -- /dev/null <path>`) produces empty stdout for an empty file. After the fallback block, where `if (!diff) { 404 }` currently sits, return an empty-diff success when the untracked fallback path was taken (or requested) but produced no text:
+  a. **Gate the branch section.** Wrap the "files changed on this branch vs base" block (`const branchDiffSummary = await git.diffSummary([baseBranch])` and its loop, ~line 353-381) in an explicit opt-in — committed work is not part of the uncommitted changelist and no prompt-named basis serves it:
+
+```ts
+// Branch-vs-main entries are committed work — not fetchable on any axis the
+// review prompt names (VIM-327 spec §3). Emit them only when explicitly
+// requested; the app frontend never sends `base`.
+const explicitBase = url.searchParams.get('base')
+
+if (explicitBase !== null) {
+  const branchDiffSummary = await git.diffSummary([
+    normalizeBranch(explicitBase),
+  ])
+  // …existing loop unchanged…
+}
+```
+
+(Reuse whatever branch-name sanitizer the file already applies to `base`; if none exists for this handler, validate with the same pattern the diff handler uses. Delete the `?? 'main'` default.)
+
+b. **Empty untracked file → zero-hunk 200, not 404.** The untracked fallback (`git diff --no-index -- /dev/null <path>`) produces empty stdout for an empty file. Where `if (!diff) { 404 }` currently sits, return an empty-diff success when the untracked fallback path was taken (or requested) but produced no text:
 
 ```ts
 if (!diff && (untracked === true || usedUntrackedFallback)) {
@@ -177,35 +198,35 @@ if (!diff && (untracked === true || usedUntrackedFallback)) {
 }
 ```
 
-  b. **Staged entry with empty `--cached` → branch-basis fallback.** Before the final 404, when `staged === true` and `diff` is empty, retry against the same base the status endpoint used (`'main'` default), mirroring how status computed the entry:
+Keep the final `if (!diff) { 404 }` for genuinely unknown files.
 
-```ts
-if (!diff && staged) {
-  // Status reports committed branch-vs-main files as staged entries; serve
-  // them from the same basis so every reported entry is fetchable (VIM-327).
-  diff = await git.diff(['main', '--', safePath]).catch(() => '')
-}
-```
-
-  Keep the final `if (!diff) { 404 }` for genuinely unknown files.
-
-- [ ] **Step 3: Verify against the dev server** (needs a scratch repo state; do this in a throwaway dir or skip if no display):
+- [ ] **Step 3: Verify against the dev server** — runnable script (from the worktree root; plain `npx vite` serves the middleware, no display needed):
 
 ```bash
-# from the worktree, with `npx vite --mode electron` NOT needed — plain `npx vite` serves the middleware
-# 1) untracked: touch scratch.txt → GET /api/git/status must report status 'untracked'
-# 2) GET /api/git/diff?file=scratch.txt&staged=false&untracked=true → 200 with hunks
-# 3) empty untracked: :> empty.txt → same GET → 200 zero-hunk (was 404)
-# 4) on this feature branch (committed spec files): GET /api/git/diff?file=docs/superpowers/specs/2026-07-13-vim-327-changelist-review-design.md&staged=true → 200 (was 404)
+printf 'hello dev parity\n' > scratch-vim327.txt
+: > scratch-vim327-empty.txt
+npx vite --port 5197 > /tmp/vim327-vite.log 2>&1 &
+VITE_PID=$!
+sleep 4
+# 1) untracked status value (expect: "untracked", twice)
+curl -s 'http://localhost:5197/api/git/status' | python3 -c 'import json,sys; fs=json.load(sys.stdin)["files"]; print([f["status"] for f in fs if f["path"].startswith("scratch-vim327")])'
+# 2) untracked diff serves hunks (expect: hunk count >= 1)
+curl -s 'http://localhost:5197/api/git/diff?file=scratch-vim327.txt&staged=false&untracked=true' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["fileDiff"]["hunks"]))'
+# 3) EMPTY untracked file → 200 zero-hunk, not 404 (expect: 0)
+curl -s 'http://localhost:5197/api/git/diff?file=scratch-vim327-empty.txt&staged=false&untracked=true' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["fileDiff"]["hunks"]))'
+# 4) no committed branch-vs-main entries by default (expect: 0 — this branch has committed docs)
+curl -s 'http://localhost:5197/api/git/status' | python3 -c 'import json,sys; fs=json.load(sys.stdin)["files"]; print(sum(1 for f in fs if f["path"].startswith("docs/")))'
+kill $VITE_PID
+rm scratch-vim327.txt scratch-vim327-empty.txt
 ```
 
-If a dev server can't be run in the execution environment, note that in the commit body and rely on `npx tsc -p tsconfig.node.json`-equivalent type-checking via `npm run type-check`.
+If the execution environment cannot run a dev server, say so explicitly in the commit body — there is no compiler safety net for `vite.config.ts`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add vite.config.ts
-git commit -m "fix(dev): git middleware parity for untracked and branch-basis staged entries"
+git commit -m "fix(dev): git middleware untracked parity and uncommitted-only status scope"
 ```
 
 ---
@@ -213,6 +234,7 @@ git commit -m "fix(dev): git middleware parity for untracked and branch-basis st
 ### Task 3: Snapshot model — per-file `staged` (spec §2)
 
 **Files:**
+
 - Modify: `src/features/diff/services/pendingReviewRequests.ts` (+ `pendingReviewRequests.test.ts`)
 - Modify (mechanical): `src/features/diff/hooks/useRequestReview.ts`, `src/features/diff/hooks/useAgentReview.ts` (+ their tests' fixtures)
 
@@ -246,7 +268,7 @@ test('buildDiffSnapshot returns a single ReviewedFile carrying the staged axis',
 })
 ```
 
-Also update every existing fixture in this file (and in `useAgentReview.test.ts` / `useRequestReview.test.ts`) that builds a `ReviewedFile` or `PendingReviewRequest`: `ReviewedFile` objects gain `staged`, `PendingReviewRequest` literals lose their top-level `staged`.
+Also update every existing fixture that builds a `ReviewedFile`, `ReviewRequestFile`, or `PendingReviewRequest` — in this file AND in `useAgentReview.test.ts`, `useRequestReview.test.ts`, and `feedbackDispatch.test.ts` (`ReviewRequestFile extends ReviewedFile`, so its literals need `staged` too, in THIS task, or `npm run type-check` fails at this commit boundary): `ReviewedFile`-shaped objects gain `staged`, `PendingReviewRequest` literals lose their top-level `staged`.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -294,13 +316,13 @@ Remove `staged: boolean` from `PendingReviewRequest` (delete the field and its d
 
 - [ ] **Step 5: Run the touched test files**
 
-Run: `npx vitest run src/features/diff/services/pendingReviewRequests.test.ts src/features/diff/hooks/useRequestReview.test.ts src/features/diff/hooks/useAgentReview.test.ts`
+Run: `npx vitest run src/features/diff/services/pendingReviewRequests.test.ts src/features/diff/services/feedbackDispatch.test.ts src/features/diff/hooks/useRequestReview.test.ts src/features/diff/hooks/useAgentReview.test.ts`
 Expected: PASS. Then `npm run type-check` — clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/features/diff/services/pendingReviewRequests.ts src/features/diff/services/pendingReviewRequests.test.ts src/features/diff/hooks/useRequestReview.ts src/features/diff/hooks/useAgentReview.ts src/features/diff/hooks/useAgentReview.test.ts src/features/diff/hooks/useRequestReview.test.ts
+git add src/features/diff/services/pendingReviewRequests.ts src/features/diff/services/pendingReviewRequests.test.ts src/features/diff/services/feedbackDispatch.test.ts src/features/diff/hooks/useRequestReview.ts src/features/diff/hooks/useAgentReview.ts src/features/diff/hooks/useAgentReview.test.ts src/features/diff/hooks/useRequestReview.test.ts
 git commit -m "refactor(diff): move review-snapshot staged axis onto ReviewedFile"
 ```
 
@@ -309,6 +331,7 @@ git commit -m "refactor(diff): move review-snapshot staged axis onto ReviewedFil
 ### Task 4: Grouped paths-only prompt (spec §4)
 
 **Files:**
+
 - Modify: `src/features/diff/services/feedbackDispatch.ts` (+ `feedbackDispatch.test.ts`)
 - Touch call site: `src/features/diff/hooks/useRequestReview.ts`
 
@@ -317,10 +340,35 @@ git commit -m "refactor(diff): move review-snapshot staged axis onto ReviewedFil
 ```ts
 test('formatReviewRequest groups entries by half and annotates untracked', () => {
   const files: ReviewRequestFile[] = [
-    { path: 'src/a.ts', staged: false, additions: [], deletions: [], promptPath: '/repo/src/a.ts' },
-    { path: 'src/new.ts', staged: false, additions: [], deletions: [], promptPath: '/repo/src/new.ts', untracked: true },
-    { path: 'src/a.ts', staged: true, additions: [], deletions: [], promptPath: '/repo/src/a.ts' },
-    { path: 'src/c.ts', staged: true, additions: [], deletions: [], promptPath: '/repo/src/c.ts' },
+    {
+      path: 'src/a.ts',
+      staged: false,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/a.ts',
+    },
+    {
+      path: 'src/new.ts',
+      staged: false,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/new.ts',
+      untracked: true,
+    },
+    {
+      path: 'src/a.ts',
+      staged: true,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/a.ts',
+    },
+    {
+      path: 'src/c.ts',
+      staged: true,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/c.ts',
+    },
   ]
 
   const prompt = formatReviewRequest(files, 'n0nce1')
@@ -340,7 +388,13 @@ test('formatReviewRequest groups entries by half and annotates untracked', () =>
 
 test('formatReviewRequest with a single half emits only that group', () => {
   const files: ReviewRequestFile[] = [
-    { path: 'src/a.ts', staged: false, additions: [], deletions: [], promptPath: '/repo/src/a.ts' },
+    {
+      path: 'src/a.ts',
+      staged: false,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/a.ts',
+    },
   ]
 
   const prompt = formatReviewRequest(files, 'n0nce2')
@@ -371,7 +425,8 @@ const reviewRequestLine = (file: ReviewRequestFile): string => {
   const path = stripControls(file.path)
   const promptPath =
     file.promptPath === undefined ? '' : stripControls(file.promptPath)
-  const base = promptPath.length > 0 ? `> ─ ${path} (${promptPath})` : `> ─ ${path}`
+  const base =
+    promptPath.length > 0 ? `> ─ ${path} (${promptPath})` : `> ─ ${path}`
 
   return file.untracked === true
     ? `${base} (untracked — not in git diff; read the file, all lines are additions)`
@@ -390,7 +445,10 @@ export const formatReviewRequest = (
       ? ['> unstaged diff (`git diff`):', ...unstaged.map(reviewRequestLine)]
       : []),
     ...(staged.length > 0
-      ? ['> staged diff (`git diff --cached`):', ...staged.map(reviewRequestLine)]
+      ? [
+          '> staged diff (`git diff --cached`):',
+          ...staged.map(reviewRequestLine),
+        ]
       : []),
   ]
 
@@ -441,6 +499,7 @@ git commit -m "feat(diff): group review-request prompt by staged half with untra
 ### Task 5: `changelistSnapshot` service (spec §3)
 
 **Files:**
+
 - Create: `src/features/diff/services/changelistSnapshot.ts`
 - Create: `src/features/diff/services/changelistSnapshot.test.ts`
 
@@ -451,7 +510,11 @@ import { describe, expect, test, vi } from 'vitest'
 import { fetchChangelistSnapshot } from './changelistSnapshot'
 import type { ChangedFile, FileDiff } from '../types'
 
-const entry = (path: string, staged: boolean, status: ChangedFile['status'] = 'M'): ChangedFile => ({
+const entry = (
+  path: string,
+  staged: boolean,
+  status: ChangedFile['status'] = 'modified'
+): ChangedFile => ({
   path,
   status,
   staged,
@@ -479,7 +542,11 @@ describe('fetchChangelistSnapshot', () => {
     )
 
     const result = await fetchChangelistSnapshot(
-      [entry('src/a.ts', false), entry('src/a.ts', true), entry('new.ts', false, 'untracked')],
+      [
+        entry('src/a.ts', false),
+        entry('src/a.ts', true),
+        entry('new.ts', false, 'untracked'),
+      ],
       fetchFileDiff,
       '/repo/'
     )
@@ -496,12 +563,19 @@ describe('fetchChangelistSnapshot', () => {
   })
 
   test('rejects atomically when any fetch fails', async () => {
-    const fetchFileDiff = vi.fn((path: string): Promise<FileDiff> =>
-      path === 'bad.ts' ? Promise.reject(new Error('boom')) : Promise.resolve(diffOf(path))
+    const fetchFileDiff = vi.fn(
+      (path: string): Promise<FileDiff> =>
+        path === 'bad.ts'
+          ? Promise.reject(new Error('boom'))
+          : Promise.resolve(diffOf(path))
     )
 
     await expect(
-      fetchChangelistSnapshot([entry('a.ts', false), entry('bad.ts', false)], fetchFileDiff, '')
+      fetchChangelistSnapshot(
+        [entry('a.ts', false), entry('bad.ts', false)],
+        fetchFileDiff,
+        ''
+      )
     ).rejects.toThrow('boom')
   })
 
@@ -517,7 +591,9 @@ describe('fetchChangelistSnapshot', () => {
       return diffOf(path)
     })
 
-    const entries = Array.from({ length: 20 }, (_, i) => entry(`f${i}.ts`, false))
+    const entries = Array.from({ length: 20 }, (_, i) =>
+      entry(`f${i}.ts`, false)
+    )
     await fetchChangelistSnapshot(entries, fetchFileDiff, '')
 
     expect(maxActive).toBeLessThanOrEqual(8)
@@ -634,20 +710,26 @@ git commit -m "feat(diff): changelist snapshot service with capped parallel diff
 ### Task 6: `useRequestReview` — scope, async arm, keyed prefetch (spec §3, §5)
 
 **Files:**
+
 - Modify: `src/features/diff/hooks/useRequestReview.ts` (+ `useRequestReview.test.ts`)
 
 - [ ] **Step 1: Write failing tests** (add to `useRequestReview.test.ts`; follow the file's existing `renderHook` harness and mock style):
 
 ```ts
+// NOTE: this test file already mocks the feedbackDispatch module — its
+// dispatchReviewRequest mock is a resolved no-op. Assert on the MOCK's
+// arguments, not on writePty (which the mock never calls); prompt CONTENT
+// is Task 4's formatReviewRequest tests' job.
 const changedFiles: ChangedFile[] = [
-  { path: 'src/a.ts', status: 'M', staged: false },
-  { path: 'src/a.ts', status: 'M', staged: true },
+  { path: 'src/a.ts', status: 'modified', staged: false },
+  { path: 'src/a.ts', status: 'modified', staged: true },
   { path: 'new.ts', status: 'untracked', staged: false },
 ]
 
-test('changelist delegate arms all entries under one nonce and dispatches the grouped prompt', async () => {
-  const writePty = vi.fn((): Promise<void> => Promise.resolve())
-  const fetchFileDiff = vi.fn((path: string): Promise<FileDiff> => Promise.resolve(diffOf(path)))
+test('changelist delegate arms all entries under one nonce and dispatches all request files', async () => {
+  const fetchFileDiff = vi.fn(
+    (path: string): Promise<FileDiff> => Promise.resolve(diffOf(path))
+  )
 
   const { result } = renderHook(() =>
     useRequestReview({
@@ -659,32 +741,45 @@ test('changelist delegate arms all entries under one nonce and dispatches the gr
       changedFiles,
       statusRevision: 1,
       fetchFileDiff,
-      writePty,
+      writePty: vi.fn((): Promise<void> => Promise.resolve()),
       notify: vi.fn(),
     })
   )
 
   act(() => result.current.setScope('changelist'))
   await act(async () => {
-    result.current.requestReview({ ptyId: 'pty-1', tabName: 't', agentLabel: 'claude' } as PaneCandidate)
-    await vi.waitFor(() => expect(writePty).toHaveBeenCalled())
+    result.current.requestReview({
+      ptyId: 'pty-1',
+      tabName: 't',
+      agentLabel: 'claude',
+    } as PaneCandidate)
+    await vi.waitFor(() => expect(dispatchReviewRequest).toHaveBeenCalled())
   })
 
-  const payload = writePty.mock.calls[0][1]
-  expect(payload).toContain('these 3 changes')
-  expect(payload).toContain('unstaged diff')
-  expect(payload).toContain('staged diff')
+  const mocked = vi.mocked(dispatchReviewRequest)
+  const [ptyId, requestFiles, nonce] = mocked.mock.calls[0]
+  expect(ptyId).toBe('pty-1')
+  expect(requestFiles).toHaveLength(3)
+  expect(requestFiles[2]).toMatchObject({
+    path: 'new.ts',
+    staged: false,
+    untracked: true,
+    promptPath: '/repo/new.ts',
+  })
 
-  const nonce = /"nonce":"([a-z0-9]+)"/.exec(payload)?.[1]
-  expect(nonce).toBeDefined()
-  const request = getPendingReviewRequest(nonce ?? '')
+  const request = getPendingReviewRequest(nonce)
   expect(request?.diffSnapshot).toHaveLength(3)
-  expect(request?.diffSnapshot[2]).toMatchObject({ path: 'new.ts', staged: false })
+  expect(request?.diffSnapshot[1]).toMatchObject({
+    path: 'src/a.ts',
+    staged: true,
+  })
 })
 
 test('changelist arm failure is atomic: no request stored, notify fired', async () => {
   const notify = vi.fn()
-  const fetchFileDiff = vi.fn((): Promise<FileDiff> => Promise.reject(new Error('boom')))
+  const fetchFileDiff = vi.fn(
+    (): Promise<FileDiff> => Promise.reject(new Error('boom'))
+  )
   // render with changedFiles + notify, scope changelist, then requestReview(...)
   // assert writePty NOT called, notify called with
   // 'Could not snapshot the changelist; review request not sent.'
@@ -692,19 +787,35 @@ test('changelist arm failure is atomic: no request stored, notify fired', async 
 })
 
 test('prefetch is keyed: openPopover starts one fetch, arm reuses it; stale cwd forces a fresh fetch', async () => {
-  const fetchFileDiff = vi.fn((path: string): Promise<FileDiff> => Promise.resolve(diffOf(path)))
-  const { result, rerender } = renderHook((props) => useRequestReview(props), { initialProps: baseProps })
+  const fetchFileDiff = vi.fn(
+    (path: string): Promise<FileDiff> => Promise.resolve(diffOf(path))
+  )
+  const { result, rerender } = renderHook((props) => useRequestReview(props), {
+    initialProps: baseProps,
+  })
 
   act(() => result.current.openPopover())
-  await vi.waitFor(() => expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length))
+  await vi.waitFor(() =>
+    expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length)
+  )
 
   // same key: arm must not refetch
-  await act(async () => { result.current.copyReviewRequest(); await Promise.resolve() })
+  await act(async () => {
+    result.current.copyReviewRequest()
+    await Promise.resolve()
+  })
   expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length)
 
   // key change (cwd swap): arm refetches
   rerender({ ...baseProps, cwd: '/other-repo' })
-  await act(async () => { result.current.requestReview(paneCandidate); await vi.waitFor(() => expect(fetchFileDiff.mock.calls.length).toBeGreaterThan(changedFiles.length)) })
+  await act(async () => {
+    result.current.requestReview(paneCandidate)
+    await vi.waitFor(() =>
+      expect(fetchFileDiff.mock.calls.length).toBeGreaterThan(
+        changedFiles.length
+      )
+    )
+  })
 })
 
 test('canRequest is true with a populated strip and no active fileDiff, and scope is forced to changelist', () => {
@@ -769,19 +880,26 @@ const changeCount = entries.length
 
 const canRequestFile = fileDiff !== undefined
 const canRequestChangelist = changeCount > 0 && fetchFileDiff !== undefined
-const canRequest = ownerKey !== undefined && (canRequestFile || canRequestChangelist)
+const canRequest =
+  ownerKey !== undefined && (canRequestFile || canRequestChangelist)
 
 // Scope state with forcing (spec §5): no active diff → changelist; empty
-// strip → file. User choice wins otherwise; default = changelist when >1 entry.
+// strip → file. User choice wins otherwise; default = changelist when >1
+// entry. openPopover resets the choice to null so a stale selection never
+// survives strip/file transitions between opens (spec §5).
 const [scopeChoice, setScopeChoice] = useState<ReviewScope | null>(null)
-const defaultScope: ReviewScope =
-  !canRequestFile ? 'changelist'
-  : !canRequestChangelist ? 'file'
-  : changeCount > 1 ? 'changelist' : 'file'
-const scope: ReviewScope =
-  !canRequestFile ? 'changelist'
-  : !canRequestChangelist ? 'file'
-  : (scopeChoice ?? defaultScope)
+const defaultScope: ReviewScope = !canRequestFile
+  ? 'changelist'
+  : !canRequestChangelist
+    ? 'file'
+    : changeCount > 1
+      ? 'changelist'
+      : 'file'
+const scope: ReviewScope = !canRequestFile
+  ? 'changelist'
+  : !canRequestChangelist
+    ? 'file'
+    : (scopeChoice ?? defaultScope)
 
 // Keyed prefetch (spec §3): one in-flight promise, .catch attached at creation.
 const prefetchRef = useRef<{
@@ -790,7 +908,7 @@ const prefetchRef = useRef<{
   settled: boolean
 } | null>(null)
 
-const prefetchKey = `${cwd} ${statusRevision ?? 0}`
+const prefetchKey = `${cwd}\u0000${statusRevision ?? 0}`
 
 const startPrefetch = useCallback((): void => {
   if (!canRequestChangelist || fetchFileDiff === undefined) {
@@ -806,8 +924,15 @@ const startPrefetch = useCallback((): void => {
     settled: false,
   }
   // Swallow here so a discarded prefetch never surfaces as unhandled; the
-  // rejection re-surfaces when arm() awaits the same promise.
-  holder.promise.catch(() => undefined).finally(() => { holder.settled = true })
+  // rejection re-surfaces when arm() awaits the same promise. Chain ends in
+  // catch for the promise/catch-or-return lint gate; void for no-floating.
+  void holder.promise
+    .then((): void => {
+      holder.settled = true
+    })
+    .catch((): void => {
+      holder.settled = true
+    })
   prefetchRef.current = holder
 }, [canRequestChangelist, fetchFileDiff, prefetchKey, entries, repoRoot])
 ```
@@ -816,7 +941,9 @@ const startPrefetch = useCallback((): void => {
 
 ```ts
 const arm = useCallback(
-  async (armScope: ReviewScope): Promise<{
+  async (
+    armScope: ReviewScope
+  ): Promise<{
     nonce: string
     requestFiles: ReviewRequestFile[]
   } | null> => {
@@ -865,11 +992,22 @@ const arm = useCallback(
 
     return { nonce, requestFiles: snapshot.requestFiles }
   },
-  [ownerKey, fileDiff, staged, cwd, repoRoot, canRequestChangelist, fetchFileDiff, prefetchKey, startPrefetch, notify]
+  [
+    ownerKey,
+    fileDiff,
+    staged,
+    cwd,
+    repoRoot,
+    canRequestChangelist,
+    fetchFileDiff,
+    prefetchKey,
+    startPrefetch,
+    notify,
+  ]
 )
 ```
 
-`requestReview` / `copyReviewRequest` await `arm(scope)` inside their existing async IIFEs (popover closes first, exactly as today); `openPopover` calls `startPrefetch()` when `canRequest`. Return `{ scope, setScope: setScopeChoice, changeCount }` from the controller.
+`requestReview` / `copyReviewRequest` await `arm(scope)` inside their existing async IIFEs (popover closes first, exactly as today); `openPopover` resets the choice (`setScopeChoice(null)`) and calls `startPrefetch()` when `canRequest`. Return `{ scope, setScope: setScopeChoice, changeCount }` from the controller.
 
 - [ ] **Step 4: Run**
 
@@ -888,6 +1026,7 @@ git commit -m "feat(diff): changelist scope with keyed snapshot prefetch in useR
 ### Task 7: Dual-half finding resolution (spec §2, §6)
 
 **Files:**
+
 - Modify: `src/features/diff/hooks/useAgentReview.ts` (+ `useAgentReview.test.ts`)
 
 - [ ] **Step 1: Write failing tests** (the file's existing harness fires `agent-review` events through the mocked `listen`; add a dual-half snapshot fixture — same path in both halves with disjoint addition ranges):
@@ -900,7 +1039,16 @@ test('line finding matching neither half degrades file-level on unstaged', ...) 
 test('scope:file finding on a dual-half path lands unstaged', ...)       // staged: false
 ```
 
-Each asserts the `staged` argument (4th param) of `addAnnotationForOwner` and, for the degrade case, the annotation's `lineNumber === FILE_COMMENT_LINE_NUMBER`.
+Each asserts the `staged` argument (4th param) of `addAnnotationForOwner` and, for the degrade case, the annotation's `lineNumber === FILE_COMMENT_LINE_NUMBER`. The staged-half test ALSO asserts the thread handle inherited the resolved half — follow-up routing depends on it:
+
+```ts
+const record = getFindingThreadRecord('session-1', nonce)
+const target = record?.byOrdinal.get(1)
+expect(target?.kind).toBe('anchored')
+expect(target?.kind === 'anchored' ? target.handle.staged : undefined).toBe(
+  true
+)
+```
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -949,7 +1097,8 @@ const resolveFindingEntry = (
 
   return {
     entry: preferred,
-    targetInHunk: finding.scope !== 'file' && findingInRanges(finding, preferred),
+    targetInHunk:
+      finding.scope !== 'file' && findingInRanges(finding, preferred),
   }
 }
 ```
@@ -985,6 +1134,7 @@ git commit -m "feat(diff): resolve dual-half finding placement with unstaged tie
 ### Task 8: Popover scope control (spec §5)
 
 **Files:**
+
 - Modify: `src/features/diff/components/RequestReviewPopover.tsx` (+ `RequestReviewPopover.test.tsx`)
 - Modify: `src/features/diff/components/Notifier.tsx` (+ `Notifier.test.tsx`)
 
@@ -995,23 +1145,28 @@ const scopeControl = {
   scope: 'changelist' as const,
   changeCount: 7,
   fileDisabled: false,
+  changelistDisabled: false,
   onScopeChange: vi.fn(),
 }
 
 test('renders the scope control with both options when provided', ...)
-  // getByRole('group', { name: 'Review scope' }); buttons 'This file' and 'All changes (7)';
-  // the active option has aria-pressed=true
+  // getByRole('group', { name: 'Review scope (f/a)' }); buttons 'This file' and
+  // 'All changes (7)'; the active option has aria-pressed=true
 
 test('f and a hotkeys switch scope', ...)
   // fireEvent.keyDown(document, { key: 'f' }) → onScopeChange('file')
   // fireEvent.keyDown(document, { key: 'a' }) → onScopeChange('changelist')
 
 test('scope control absent when scopeControl is undefined', ...)
-  // queryByRole('group', { name: 'Review scope' }) === null (degenerate case)
+  // queryByRole('group', { name: 'Review scope (f/a)' }) === null (degenerate case)
 
 test('This file option is disabled without an active diff', ...)
   // fileDisabled: true → the 'This file' button has aria-disabled='true'
   // and pressing f does NOT call onScopeChange
+
+test('All changes option is disabled on an empty strip', ...)
+  // changelistDisabled: true → 'All changes (0)' has aria-disabled='true'
+  // and pressing a does NOT call onScopeChange (spec §5 transient empty-strip state)
 ```
 
 Add to `Notifier.test.tsx`: the `requestReview.scopeControl` prop reaches `RequestReviewPopover` (extend the existing pass-through test).
@@ -1032,6 +1187,8 @@ export interface RequestReviewScopeControl {
   changeCount: number
   /** True when no active diff exists — the file option is unavailable. */
   fileDisabled: boolean
+  /** True on a transient empty strip — the changelist option is unavailable. */
+  changelistDisabled: boolean
   onScopeChange: (scope: ReviewScope) => void
 }
 
@@ -1050,35 +1207,42 @@ interface RequestReviewPopoverProps {
 Render the control at the top of the `<Popover>`, above both `result.kind` branches:
 
 ```tsx
-{scopeControl !== undefined && (
-  <div className="flex items-center gap-2 px-4 pt-3">
-    <span className="text-xs text-on-surface-variant">Scope</span>
-    <SegmentedControl<ReviewScope>
-      aria-label="Review scope"
-      value={scopeControl.scope}
-      onChange={scopeControl.onScopeChange}
-      options={[
-        {
-          value: 'file',
-          label: 'This file',
-          disabled: scopeControl.fileDisabled,
-          ariaLabel: 'This file',
-        },
-        {
-          value: 'changelist',
-          label: `All changes (${scopeControl.changeCount})`,
-          ariaLabel: 'All changes',
-        },
-      ]}
-    />
-  </div>
-)}
+{
+  scopeControl !== undefined && (
+    <div className="flex items-center gap-2 px-4 pt-3">
+      <span className="text-xs text-on-surface-variant">Scope</span>
+      <SegmentedControl<ReviewScope>
+        aria-label="Review scope (f/a)"
+        value={scopeControl.scope}
+        onChange={scopeControl.onScopeChange}
+        options={[
+          {
+            value: 'file',
+            label: 'This file',
+            disabled: scopeControl.fileDisabled,
+            ariaLabel: 'This file',
+          },
+          {
+            value: 'changelist',
+            label: `All changes (${scopeControl.changeCount})`,
+            disabled: scopeControl.changelistDisabled,
+            ariaLabel: 'All changes',
+          },
+        ]}
+      />
+    </div>
+  )
+}
 ```
 
 Extend the existing capture-phase keydown handler (lines ~58-92) — after the `'c'` branch:
 
 ```ts
-if (event.key === 'f' && scopeControl !== undefined && !scopeControl.fileDisabled) {
+if (
+  event.key === 'f' &&
+  scopeControl !== undefined &&
+  !scopeControl.fileDisabled
+) {
   event.preventDefault()
   event.stopPropagation()
   scopeControl.onScopeChange('file')
@@ -1086,7 +1250,11 @@ if (event.key === 'f' && scopeControl !== undefined && !scopeControl.fileDisable
   return
 }
 
-if (event.key === 'a' && scopeControl !== undefined) {
+if (
+  event.key === 'a' &&
+  scopeControl !== undefined &&
+  !scopeControl.changelistDisabled
+) {
   event.preventDefault()
   event.stopPropagation()
   scopeControl.onScopeChange('changelist')
@@ -1114,6 +1282,7 @@ git commit -m "feat(diff): scope segmented control in the request-review popover
 ### Task 9: Panel wiring (spec §3, §5)
 
 **Files:**
+
 - Modify: `src/features/diff/Panel.tsx` (+ `Panel.test.tsx`)
 
 Panel already destructures `useGitStatus` (search `statusRevision` and `filesCwd`) and derives `selectedFileUntracked` — reuse those locals; do not re-invoke the hook.
@@ -1121,12 +1290,18 @@ Panel already destructures `useGitStatus` (search `statusRevision` and `filesCwd
 - [ ] **Step 1: Write failing tests** (add to `Panel.test.tsx`, reusing its harness — the file already mocks `gitService`, `writePty`, and drives the request-review popover for the single-file flow):
 
 ```ts
-test('changelist review request dispatches all strip entries under one nonce', ...)
+test('changelist review lands findings across files and halves end-to-end', ...)
   // Harness: git status returns [a.ts unstaged, a.ts staged, new.ts untracked];
   // open the request-review popover, press 'a' (scope=changelist), Delegate (Y);
   // assert the written payload contains 'these 3 changes', both group headers,
-  // and the untracked annotation for new.ts; assert getPendingReviewRequest(nonce)
-  // has 3 snapshot entries with per-entry staged flags.
+  // and the untracked annotation for new.ts; capture the nonce from the payload.
+  // THEN complete the loop (spec §6 proof): emit the 'agent-review' event through
+  // the harness's captured listen callback (same pattern as
+  // src/features/diff/agentReplyThread.integration.test.tsx) with three findings —
+  // one in a.ts's staged-half ranges, one in a.ts's unstaged-half ranges, one
+  // scope:"file" on new.ts — and assert three annotations landed with the right
+  // (path, staged) pairs and that getFindingThreadRecord(sessionId, nonce)
+  // maps all three ordinals with handle.staged matching the resolved halves.
 
 test('request review button appears with a populated strip and no selected file', ...)
   // No file selected → toolbar still renders diff-toolbar-request-review-button;
@@ -1162,7 +1337,11 @@ where `statusRepoRoot` is the `repoRoot` returned by the existing `useGitStatus`
 
 ```ts
 const fetchFileDiffForReview = useCallback(
-  async (path: string, staged: boolean, untracked: boolean): Promise<FileDiff> => {
+  async (
+    path: string,
+    staged: boolean,
+    untracked: boolean
+  ): Promise<FileDiff> => {
     const result = await createGitService(cwd).getDiff(path, staged, untracked)
 
     return result.fileDiff
@@ -1181,18 +1360,20 @@ scopeLabel:
     ? `${review.changeCount} change${review.changeCount === 1 ? '' : 's'}`
     : /* existing single-file label expression, unchanged */,
 scopeControl:
-  review.changeCount > 0 &&
-  !(review.changeCount === 1 && files[0]?.path === selectedFilePath && files[0]?.staged === selectedFileStaged)
-    ? {
+  review.changeCount === 1 &&
+  files[0]?.path === selectedFilePath &&
+  files[0]?.staged === selectedFileStaged
+    ? undefined
+    : {
         scope: review.scope,
         changeCount: review.changeCount,
         fileDisabled: activeResponse?.fileDiff === undefined,
+        changelistDisabled: review.changeCount === 0,
         onScopeChange: review.setScope,
-      }
-    : undefined,
+      },
 ```
 
-(The second condition is the degenerate hide — exactly one entry and it is the active row, spec §5.)
+(`undefined` is the degenerate hide — exactly one entry and it is the active row, spec §5. An empty strip with an open diff keeps the control visible with "All changes (0)" disabled — the spec's transient state.)
 
 - [ ] **Step 4: Run**
 
@@ -1211,6 +1392,7 @@ git commit -m "feat(diff): wire whole-changelist review scope through the diff p
 ### Task 10: Changelog + repo-wide gate
 
 **Files:**
+
 - Modify: `CHANGELOG.md`, `CHANGELOG.zh-CN.md` (new entry at top, matching the existing entry format — cite VIM-327 and the PR number placeholder to fill at PR time)
 
 - [ ] **Step 1: Add both changelog entries** (mirror wording; zh-CN in Chinese), e.g.: "feat(diff): request delegated review over the whole changelist — scope toggle in the Request-review popover, grouped paths-only dispatch, findings anchor across all changed files (VIM-327)".
@@ -1243,7 +1425,7 @@ git commit -m "docs(changelog): vim-327 whole-changelist delegated review"
 ## Self-review checklist (run after Task 10)
 
 - Spec §1-§6 each map to a task (1: §2-parser, 2: §3-parity, 3: §2, 4: §4, 5-6: §3+§5, 7: §2+§6, 8-9: §5, 10: rollout).
-- No `PendingReviewRequest.staged` reference survives (`grep -rn "request.staged\|staged: boolean" src/features/diff/services/pendingReviewRequests.ts`).
+- No `PendingReviewRequest.staged` reference survives: `grep -n "staged" src/features/diff/services/pendingReviewRequests.ts` and eyeball — the only `staged` members must be on `ReviewedFile`; the `PendingReviewRequest` interface body has none. Also `grep -rn "request\.staged" src/features/diff` returns nothing.
 - `formatReviewRequest`/`dispatchReviewRequest` have no remaining 3-arg/5-arg callers (`grep -rn "formatReviewRequest(\|dispatchReviewRequest(" src`).
 - The `TODO(VIM-341)` comment exists at the fetch site.
 - PR: `Closes VIM-327` + `Part of VIM-284`, labels `auto-review` + `auto-approve`, branch `feature/vim-327`.
