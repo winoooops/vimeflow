@@ -513,6 +513,7 @@ const DialogRoot = ({
         <div
           ref={dialogRef}
           role="dialog"
+          data-dialog-layer="true"
           aria-modal="true"
           aria-hidden={hideLocalForNative ? 'true' : undefined}
           inert={hideLocalForNative ? true : undefined}

@@ -244,7 +244,7 @@ export interface NativeOverlayOpenResult {
   reason?: string
 }
 
-const THEME_VARIABLE_PREFIXES = ['--color-', '--shadow-'] as const
+const THEME_VARIABLE_PREFIXES = ['--color-', '--font-', '--shadow-'] as const
 
 // Native overlays render in a separate transparent BrowserWindow, so they do
 // not automatically inherit the main renderer's live CSS variables. Capture the

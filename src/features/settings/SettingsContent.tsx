@@ -61,7 +61,7 @@ const settingsNavigationEntryElementId = (
 const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   target instanceof Element &&
   (target.closest(
-    'input, select, textarea, [contenteditable], [role="textbox"]'
+    'input, select, textarea, [contenteditable], [role="textbox"], [data-dialog-layer="true"]'
   ) !== null ||
     isKeymapCaptureTarget(target))
 

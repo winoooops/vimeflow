@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import type { ThemeId } from '../../theme'
 import type { ShortcutInput } from '../../lib/formatShortcut'
 
 export type SettingsSectionId =
@@ -136,15 +135,6 @@ export interface TextInputProps {
   width?: string | number
   mono?: boolean
   'aria-label'?: string
-}
-
-export interface AppearanceScheme {
-  id: string
-  themeId: ThemeId
-  label: string
-  accent: string
-  surface: string
-  text: string
 }
 
 export type KeymapKeys = ShortcutInput[] | ((isMac: boolean) => ShortcutInput[])

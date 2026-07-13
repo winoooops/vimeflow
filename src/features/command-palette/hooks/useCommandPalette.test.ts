@@ -1266,6 +1266,41 @@ describe('useCommandPalette', () => {
       }
     })
 
+    test('keeps namespace order and selects its active child', () => {
+      const commands: Command[] = [
+        {
+          id: 'theme',
+          label: ':theme',
+          icon: 'palette',
+          children: [
+            { id: 'first', label: 'First', icon: 'palette' },
+            {
+              id: 'active',
+              label: 'Active',
+              icon: 'palette',
+              isActive: (): boolean => true,
+            },
+            { id: 'last', label: 'Last', icon: 'palette' },
+          ],
+        },
+      ]
+      const { result } = renderHook(() => useCommandPalette(commands))
+
+      act(() => {
+        result.current.open()
+        result.current.setQuery(':theme')
+      })
+
+      act(() => {
+        result.current.executeAt(0)
+      })
+
+      expect(
+        result.current.filteredResults.map((command) => command.id)
+      ).toEqual(['first', 'active', 'last'])
+      expect(result.current.state.selectedIndex).toBe(1)
+    })
+
     test('Enter does nothing when no results', async () => {
       const { result } = renderHook(() => useCommandPalette())
 

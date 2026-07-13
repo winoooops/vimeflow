@@ -305,11 +305,15 @@ export const useCommandPalette = (
 
       // If it's a namespace, drill into it
       if (selected.children && selected.children.length > 0) {
+        const activeChildIndex = selected.children.findIndex(
+          (command) => command.isActive?.() === true
+        )
+
         setState((prev) => ({
           ...prev,
           currentNamespace: selected,
           query: ':',
-          selectedIndex: 0,
+          selectedIndex: activeChildIndex >= 0 ? activeChildIndex : 0,
         }))
 
         return

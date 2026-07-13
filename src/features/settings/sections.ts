@@ -1,6 +1,5 @@
 import type {
   AgentAlias,
-  AppearanceScheme,
   KeymapGroup,
   SettingsSection,
   SettingsSubsection,
@@ -35,10 +34,7 @@ export const SETTINGS_TARGET_IDS = {
   generalRedactPrivateValues: 'general-redact-private-values',
   generalCliOpenBehavior: 'general-cli-open-behavior',
   appearanceColorScheme: 'appearance-color-scheme',
-  appearanceAccentHue: 'appearance-accent-hue',
-  appearanceDensity: 'appearance-density',
   appearanceUiFont: 'appearance-ui-font',
-  appearanceMonoFont: 'appearance-mono-font',
   appearanceReservoirSwell: 'appearance-reservoir-swell',
   terminalFontFamily: 'terminal-font-family',
   keymapPreset: 'keymap-preset',
@@ -64,54 +60,6 @@ export const settingsSubsectionId = (
   section: SettingsSection['id'],
   label: string
 ): SettingsSubsectionId => `${section}-${slugifySubsection(label)}`
-
-/* eslint-disable vimeflow/no-hardcoded-colors -- literal preview swatches for the
-   appearance scheme picker (AppearancePane): each entry intentionally shows that
-   scheme's own accent/surface/text, which are distinct from the active theme's
-   runtime tokens, so they cannot be expressed as semantic var(--color-*) tokens. */
-export const BUILTIN_SCHEMES: AppearanceScheme[] = [
-  {
-    id: 'obsidian',
-    themeId: 'obsidian-lens',
-    label: 'Obsidian Lens',
-    accent: '#cba6f7',
-    surface: '#121221',
-    text: '#cdc3d1',
-  },
-  {
-    id: 'editorial',
-    themeId: 'tokyo-night',
-    label: 'Editorial',
-    accent: '#a8c8ff',
-    surface: '#141424',
-    text: '#cdc3d1',
-  },
-  {
-    id: 'dense',
-    themeId: 'dracula',
-    label: 'Dense',
-    accent: '#7defa1',
-    surface: '#0d0d1c',
-    text: '#cdc3d1',
-  },
-  {
-    id: 'navigator',
-    themeId: 'gruvbox-dark',
-    label: 'W.W. Navigator',
-    accent: '#c9a55a',
-    surface: '#1a1408',
-    text: '#d8cbb0',
-  },
-  {
-    id: 'flexoki',
-    themeId: 'flexoki',
-    label: 'Flexoki',
-    accent: '#6e4caa',
-    surface: '#fffcf0',
-    text: '#343331',
-  },
-]
-/* eslint-enable vimeflow/no-hardcoded-colors */
 
 export const KEYMAP_GROUPS: KeymapGroup[] = [
   {
@@ -301,31 +249,10 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     subsection: 'Theme',
   },
   {
-    id: SETTINGS_TARGET_IDS.appearanceAccentHue,
-    section: 'appearance',
-    label: 'Accent Hue',
-    hint: 'Shift the primary accent around the wheel.',
-    subsection: 'Theme',
-  },
-  {
-    id: SETTINGS_TARGET_IDS.appearanceDensity,
-    section: 'appearance',
-    label: 'Density',
-    hint: 'Compact for power users; comfortable for readability.',
-    subsection: 'Interface',
-  },
-  {
     id: SETTINGS_TARGET_IDS.appearanceUiFont,
     section: 'appearance',
-    label: 'UI Font',
-    hint: 'Sans-serif used for labels, sidebars, headings.',
-    subsection: 'Fonts',
-  },
-  {
-    id: SETTINGS_TARGET_IDS.appearanceMonoFont,
-    section: 'appearance',
-    label: 'Mono Font',
-    hint: 'Used in the terminal, editor, and all code blocks.',
+    label: 'Interface Font',
+    hint: 'Font used for labels, sidebars, headings, and controls.',
     subsection: 'Fonts',
   },
   {

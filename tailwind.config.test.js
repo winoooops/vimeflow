@@ -69,10 +69,9 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       ])
     })
 
-    test('has body font family (Inter)', () => {
+    test('has hot-swappable body font family', () => {
       expect(tailwindConfig.theme.extend.fontFamily.body).toEqual([
-        'Inter',
-        'sans-serif',
+        'var(--font-body)',
       ])
     })
 
@@ -123,17 +122,13 @@ describe('Tailwind Config - Obsidian Lens Design Tokens', () => {
       })
     })
 
-    test('fontFamily.sans / .display match handoff', () => {
+    test('fontFamily.sans / .display use interface font variables', () => {
       expect(tailwindConfig.theme.extend.fontFamily.sans).toEqual([
-        'Inter',
-        'ui-sans-serif',
-        'system-ui',
+        'var(--font-body)',
       ])
 
       expect(tailwindConfig.theme.extend.fontFamily.display).toEqual([
-        'Instrument Sans',
-        'Manrope',
-        'system-ui',
+        'var(--font-display)',
       ])
     })
 

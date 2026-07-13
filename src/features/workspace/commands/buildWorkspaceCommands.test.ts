@@ -1,4 +1,4 @@
-// cspell:ignore tabnew tabclose tabnext tabn tabprev tabp tabe tabc
+// cspell:ignore Ghostty tabnew tabclose tabnext tabn tabprev tabp tabe tabc
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { AgentRenameError } from '../../../lib/backend'
 import {
@@ -13,7 +13,10 @@ import {
   SINGLE_PANE_FOCUS_LABEL,
   SINGLE_PANE_FOCUS_LAYOUT_ID,
 } from '../../terminal/layout-registry'
-import { themeService } from '../../../theme'
+import { themeService, themeToScheme } from '../../../theme'
+
+// TODO(VIM-339): Cover the command/settings flow once terminal fonts can be
+// persisted and hot-swapped across native Ghostty and the xterm fallback.
 
 vi.mock('../../command-palette/shortcutConfig', async (importActual) => {
   const actual =
@@ -38,6 +41,8 @@ describe('buildWorkspaceCommands - happy paths', () => {
   let notifyInfo: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    themeService._resetCustomThemesForTest()
+    themeService.apply('obsidian-lens')
     createSession = vi.fn()
     removeSession = vi.fn()
     renameSession = vi.fn()
@@ -71,6 +76,17 @@ describe('buildWorkspaceCommands - happy paths', () => {
       'theme-dracula',
     ])
 
+    expect(
+      themeCmd?.children?.find(
+        (command) => command.id === 'theme-obsidian-lens'
+      )?.description
+    ).toBe('Active theme')
+
+    expect(
+      themeCmd?.children?.find((command) => command.id === 'theme-flexoki')
+        ?.description
+    ).toBe('Switch to Flexoki')
+
     themeCmd?.children?.find((c) => c.id === 'theme-flexoki')?.execute?.('')
     expect(themeService.current().id).toBe('flexoki')
 
@@ -102,6 +118,43 @@ describe('buildWorkspaceCommands - happy paths', () => {
       ?.find((c) => c.id === 'theme-obsidian-lens')
       ?.execute?.('')
     expect(themeService.current().id).toBe('obsidian-lens')
+  })
+
+  test(':theme includes an imported theme on the next command-tree build', () => {
+    themeService.install({
+      ...themeToScheme(themeService.current()),
+      id: 'custom-command-theme',
+      label: 'Custom Command Theme',
+    })
+
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const themeChildren = commands.find(
+      (command) => command.id === 'theme'
+    )?.children
+
+    expect(
+      themeChildren?.some(
+        (command) => command.id === 'theme-custom-command-theme'
+      )
+    ).toBe(true)
+
+    expect(
+      themeChildren?.find(
+        (command) => command.id === 'theme-custom-command-theme'
+      )?.description
+    ).toBe('Active theme')
   })
 
   test(':new command calls createSession', () => {

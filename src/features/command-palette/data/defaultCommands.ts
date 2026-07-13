@@ -50,6 +50,7 @@ export const defaultCommands: Command[] = [
           label: theme.label,
           description: `Switch to ${theme.label}`,
           icon: 'palette',
+          isActive: (): boolean => themeService.current().id === theme.id,
           preview: (): void => {
             themeService.preview(theme.id)
           },

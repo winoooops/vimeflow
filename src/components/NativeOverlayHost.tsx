@@ -262,7 +262,11 @@ const overlayMenuActionButtonClass = (pressed: boolean): string =>
 
 const resetThemeSnapshot = (root: HTMLElement): void => {
   for (const name of Array.from(root.style)) {
-    if (name.startsWith('--color-') || name.startsWith('--shadow-')) {
+    if (
+      name.startsWith('--color-') ||
+      name.startsWith('--font-') ||
+      name.startsWith('--shadow-')
+    ) {
       root.style.removeProperty(name)
     }
   }

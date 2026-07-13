@@ -1,12 +1,10 @@
 import { describe, expect, test, vi } from 'vitest'
 import type {
   AgentAlias,
-  AppearanceScheme,
   KeymapBinding,
   SettingsDialogProps,
   SettingsSection,
 } from './types'
-import { BUILTIN_SCHEMES } from './sections'
 
 describe('settings types compile and shape contracts', () => {
   test('SettingsDialogProps shape', () => {
@@ -27,13 +25,6 @@ describe('settings types compile and shape contracts', () => {
     }
 
     expect(section.id).toBe('appearance')
-  })
-
-  test('AppearanceScheme shape', () => {
-    const scheme: AppearanceScheme | undefined = BUILTIN_SCHEMES[0]
-
-    expect(scheme?.accent).toMatch(/^#/)
-    expect(scheme?.surface).toMatch(/^#/)
   })
 
   test('KeymapBinding shape', () => {

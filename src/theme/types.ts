@@ -124,7 +124,7 @@ export type AgentAccentField = (typeof AGENT_ACCENT_FIELDS)[number]
 
 export type AgentAccent = Record<AgentAccentField, string>
 
-export type ThemeId =
+export type BuiltInThemeId =
   | 'obsidian-lens'
   | 'flexoki'
   | 'gruvbox-dark'
@@ -132,7 +132,35 @@ export type ThemeId =
   | 'tokyo-night'
   | 'dracula'
 
+export type ThemeId = string
+
 export type ThemeKind = 'dark' | 'light'
+
+export const THEME_PALETTE_KEYS = [
+  'background',
+  'surface',
+  'foreground',
+  'muted',
+  'primary',
+  'secondary',
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+] as const
+
+export type ThemePaletteKey = (typeof THEME_PALETTE_KEYS)[number]
+
+export type ThemePalette = Record<ThemePaletteKey, string>
+
+export interface ThemeScheme {
+  id: ThemeId
+  label: string
+  kind: ThemeKind
+  palette: ThemePalette
+}
 
 export interface ThemeDefinition {
   id: ThemeId

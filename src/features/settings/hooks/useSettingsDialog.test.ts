@@ -236,4 +236,23 @@ describe('useSettingsDialog', () => {
 
     expect(result.current.isOpen).toBe(true)
   })
+
+  test('Escape inside a nested dialog does not close settings', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+    const nestedDialog = document.createElement('div')
+    const nestedButton = document.createElement('button')
+    nestedDialog.dataset.dialogLayer = 'true'
+    nestedDialog.appendChild(nestedButton)
+    document.body.appendChild(nestedDialog)
+
+    act(() => result.current.open())
+    act(() => {
+      nestedButton.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      )
+    })
+
+    expect(result.current.isOpen).toBe(true)
+    nestedDialog.remove()
+  })
 })

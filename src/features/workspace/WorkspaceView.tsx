@@ -59,6 +59,7 @@ import { CommandPalette } from '../command-palette/CommandPalette'
 import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
 import { SettingsDialog, useSettingsDialog } from '../settings'
 import { useSettings } from '../settings/hooks/useSettings'
+import { useActiveTheme } from '@/theme'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
@@ -437,6 +438,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const { message: infoMessage, notifyInfo, dismiss } = useNotifyInfo()
   const { settings } = useSettings()
+  const activeTheme = useActiveTheme()
   const reservoirSwell = resolveSwellVariant(settings.reservoirSwell)
   const { activeTab, setActiveTab } = useSidebarTab()
 
@@ -2006,6 +2008,7 @@ const WorkspaceViewContent = (): ReactElement => {
       handleToggleSidebar,
       toggleBurnerCommand,
       settings.keymapPreset,
+      activeTheme,
       saveActiveFileCommand,
       openFileInEditorCommand,
       closeActivePaneCommand,

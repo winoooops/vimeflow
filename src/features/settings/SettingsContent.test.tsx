@@ -37,4 +37,23 @@ describe('SettingsContent', () => {
       'text-primary'
     )
   })
+
+  test('does not handle navigation shortcuts from a nested dialog', () => {
+    render(<SettingsContent />)
+    const nestedDialog = document.createElement('div')
+    const nestedButton = document.createElement('button')
+    nestedDialog.dataset.dialogLayer = 'true'
+    nestedDialog.appendChild(nestedButton)
+    document.body.appendChild(nestedDialog)
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'j',
+      bubbles: true,
+      cancelable: true,
+    })
+    nestedButton.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    nestedDialog.remove()
+  })
 })
