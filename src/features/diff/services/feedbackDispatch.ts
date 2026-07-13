@@ -75,13 +75,49 @@ const CATEGORY_INSTRUCTION: Record<ReviewCommentCategory, string> = {
   suggestion: 'Apply this if you agree.',
 }
 
+/**
+ * A typeless thread follow-up (VIM-298): belongs to ANOTHER root's thread and
+ * has no category. `threadId !== id` is load-bearing — a dispatched ROOT
+ * self-stamps `threadId === id` and may legitimately omit category (defaults
+ * to a change request); it must NOT be classified as a follow-up.
+ */
+export const isFollowUpComment = (comment: ReviewComment): boolean =>
+  comment.author === 'self' &&
+  comment.threadId !== undefined &&
+  comment.threadId !== comment.id &&
+  comment.category === undefined
+
+const FOLLOW_UP_LABEL = 'Follow-up'
+const FOLLOW_UP_INSTRUCTION = 'Answer inline in your reply. Do not edit files.'
+const FOLLOW_UP_EXCERPT_MAX = 200
+
+/**
+ * The one-line continuation marker quoting the latest prior turn (VIM-298).
+ * The excerpt is agent-controlled text, so it passes the same control-char
+ * strip as everything else entering the bracketed paste.
+ */
+export const followUpContextLine = (previous: ReviewComment): string => {
+  const phrasing =
+    previous.author === 'agent'
+      ? 'your last reply'
+      : previous.author === 'reviewer'
+        ? 'the finding'
+        : 'my earlier comment'
+  const clean = stripControls(previous.text)
+  const truncated = clean.length > FOLLOW_UP_EXCERPT_MAX
+  const excerpt = truncated ? clean.slice(0, FOLLOW_UP_EXCERPT_MAX) : clean
+
+  return `> ↩ Continuing our thread — ${phrasing}: "${excerpt}"${truncated ? ' (truncated)' : ''}`
+}
+
 // The structured payload the agent receives. Each item is tagged with its
 // category (the VIM-253 intent) and a [#n] handle it can reply against — the
 // seam for structured Q&A (VIM-249 / VIM-283). The category chip in the UI is
 // just the face value of this.
 export const formatFeedbackPayload = (
   entries: DispatchEntry[],
-  nonce: string
+  nonce: string,
+  followUpContext?: string
 ): string => {
   const totalCount = entries.reduce((s, e) => s + e.annotations.length, 0)
   const header = `> Inline review — ${totalCount} item${totalCount === 1 ? '' : 's'}. Reply to each by its [#n].`
@@ -92,6 +128,12 @@ export const formatFeedbackPayload = (
     for (const annotation of entry.annotations) {
       index += 1
       const category = reviewCommentCategory(annotation.metadata)
+      const followUp = isFollowUpComment(annotation.metadata)
+      const label = followUp ? FOLLOW_UP_LABEL : CATEGORY_LABEL[category]
+
+      const instruction = followUp
+        ? FOLLOW_UP_INSTRUCTION
+        : CATEGORY_INSTRUCTION[category]
 
       const textLines = annotation.metadata.text
         .split('\n')
@@ -99,9 +141,12 @@ export const formatFeedbackPayload = (
 
       blocks.push(
         [
-          `> [#${index} · ${CATEGORY_LABEL[category]}] ${formatAnnotationTarget(entry, annotation)}`,
+          `> [#${index} · ${label}] ${formatAnnotationTarget(entry, annotation)}`,
+          ...(followUp && followUpContext !== undefined
+            ? [followUpContext]
+            : []),
           ...textLines,
-          `> → ${CATEGORY_INSTRUCTION[category]}`,
+          `> → ${instruction}`,
           '>',
         ].join('\n')
       )
@@ -131,9 +176,10 @@ export const dispatchFeedbackBatch = async (
   ptyId: string,
   entries: DispatchEntry[],
   nonce: string,
-  writePty: (ptyId: string, data: string) => Promise<void>
+  writePty: (ptyId: string, data: string) => Promise<void>,
+  followUpContext?: string
 ): Promise<void> => {
-  const formatted = formatFeedbackPayload(entries, nonce)
+  const formatted = formatFeedbackPayload(entries, nonce, followUpContext)
   const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
 
   await writePty(ptyId, payload)

@@ -5997,6 +5997,12 @@ describe('Panel', () => {
       expect(pending?.ownerKey).toBe('sess:pane-1')
       expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
       expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
+      // VIM-298: handle carries the threadId so a reply lands in the right
+      // thread. The only dispatched comment is a fresh root, which self-roots —
+      // its threadId must be its own generated comment id (counter value is
+      // order-dependent across tests, hence a shape match, not a literal).
+      const handle1 = pending?.byHandle.get(1)
+      expect(handle1?.threadId).toMatch(/^feedback-comment-\d+$/)
 
       clearPendingReview('pty-1', nonce) // module singleton — don't leak into other tests
     })
@@ -6147,6 +6153,602 @@ describe('Panel', () => {
       ).toBeInTheDocument()
 
       spy.mockRestore()
+    })
+
+    test('thread reply dispatches alone, inserts post-write pre-stamped, and reopens (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockResolvedValue(undefined)
+      const focusTerminal = vi.fn()
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo',
+        status: 'running',
+        isFocused: true,
+      }
+
+      // Seed: dispatched root (resolved) + agent turn + unrelated pending comment
+      const addAnnotation = vi.fn<UseFeedbackBatchReturn['addAnnotation']>(
+        () => 'ok'
+      )
+      const updateAnnotation = vi.fn()
+
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-c1',
+            text: 'Why does this work?',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            dispatchedTo: 'pty-1',
+            threadId: 'root-c1',
+            resolvedAt: 9999,
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-g1',
+            text: 'Because of backpressure.',
+            author: 'agent',
+            outcome: 'clarify',
+            createdAt: 2000,
+            threadId: 'root-c1',
+          },
+        },
+        {
+          lineNumber: 1,
+          side: 'additions',
+          metadata: {
+            id: 'pending-p9',
+            text: 'Unrelated pending comment',
+            author: 'self',
+            createdAt: 3000,
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation,
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 3,
+        // Only pending-p9 is pending (no dispatchedAt, author self)
+        pendingAnnotations: () => 1,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal,
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      // The thread card renders in the annotation slot. The thread is resolved so
+      // it starts collapsed — expand it first via the disclosure button.
+      const annotationSlot = screen.getByTestId('annotation-slot')
+
+      const disclosureButton = within(annotationSlot).getByRole('button', {
+        name: /thread/i,
+      })
+      await user.click(disclosureButton)
+
+      // Now the footer is visible — click Reply.
+      const replyButton = within(annotationSlot).getByRole('button', {
+        name: /reply/i,
+      })
+      await user.click(replyButton)
+
+      // The reply editor should now be visible inside the thread card.
+      const replyTextarea = within(annotationSlot).getByPlaceholderText(
+        'Reply to the agent…'
+      )
+      await user.type(replyTextarea, 'How does that interact with resize?')
+      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+
+      // Confirm popover should open scoped to 1 comment.
+      const popover = await screen.findByRole('dialog', {
+        name: 'Finish feedback',
+      })
+      expect(popover).toHaveTextContent(/Send 1 comment/)
+
+      // No Copy button for a reply (no persisted comment to copy).
+      expect(
+        within(popover).queryByRole('button', { name: /copy/i })
+      ).not.toBeInTheDocument()
+
+      await user.keyboard('Y')
+
+      await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+
+      const [, payload] = writePty.mock.calls[0]
+      expect(typeof payload).toBe('string')
+      // Follow-up label present.
+      expect(payload as string).toContain('[#1 · Follow-up]')
+      // Context line from the agent turn.
+      expect(payload as string).toContain('Continuing our thread')
+
+      // Post-write addAnnotation is called with pre-stamped metadata.
+      expect(addAnnotation).toHaveBeenCalledOnce()
+
+      const addedAnnotation = addAnnotation.mock.calls[0][3]
+      expect(addedAnnotation.metadata.dispatchedAt).toBeDefined()
+      expect(addedAnnotation.metadata.dispatchedTo).toBe('pty-1')
+      expect(addedAnnotation.metadata.threadId).toBe('root-c1')
+
+      // Reply on a resolved thread → resolvedAt cleared.
+      expect(updateAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        'root-c1',
+        { resolvedAt: undefined }
+      )
+
+      // Unrelated pending comment is untouched (addAnnotation called exactly once — the follow-up only).
+      expect(addedAnnotation.metadata.id).not.toBe('pending-p9')
+
+      await waitFor(() => expect(focusTerminal).toHaveBeenCalledOnce())
+    })
+
+    test('clicking Resolve stamps resolvedAt on the thread root (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const updateAnnotation = vi.fn()
+
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-c1',
+            text: 'Why does this work?',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            dispatchedTo: 'pty-1',
+            threadId: 'root-c1',
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-g1',
+            text: 'Because of backpressure.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2000,
+            threadId: 'root-c1',
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation: vi.fn(() => 'ok' as const),
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation,
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 2,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [],
+            writePty: vi.fn(),
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /resolve/i })
+      )
+
+      expect(updateAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        'root-c1',
+        { resolvedAt: expect.any(Number) }
+      )
+    })
+
+    test('thread reply: write failure leaves no inserted comment and keeps the editor open (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockRejectedValue(new Error('pty closed'))
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo',
+        status: 'running',
+        isFocused: true,
+      }
+
+      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-c2',
+            text: 'Root question',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            threadId: 'root-c2',
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-g2',
+            text: 'Agent reply.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2000,
+            threadId: 'root-c2',
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 2,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /reply/i })
+      )
+
+      const replyTextarea = within(annotationSlot).getByPlaceholderText(
+        'Reply to the agent…'
+      )
+      await user.type(replyTextarea, 'Follow-up question')
+      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+
+      await screen.findByRole('dialog', { name: 'Finish feedback' })
+      await user.keyboard('Y')
+
+      // Write rejected — no comment inserted.
+      await waitFor(() => expect(writePty).toHaveBeenCalledOnce())
+      expect(addAnnotation).not.toHaveBeenCalled()
+
+      // Notification is shown.
+      expect(
+        await screen.findByText(/Terminal session ended/)
+      ).toBeInTheDocument()
+    })
+
+    test('popover cancel preserves the reply draft and creates nothing (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockResolvedValue(undefined)
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo',
+        status: 'running',
+        isFocused: true,
+      }
+
+      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-c3',
+            text: 'Root question',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            threadId: 'root-c3',
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-g3',
+            text: 'Agent reply.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2000,
+            threadId: 'root-c3',
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 2,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /reply/i })
+      )
+
+      const replyTextarea = within(annotationSlot).getByPlaceholderText(
+        'Reply to the agent…'
+      )
+      await user.type(replyTextarea, 'Typed draft text')
+      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+
+      const popover = await screen.findByRole('dialog', {
+        name: 'Finish feedback',
+      })
+
+      // Cancel the popover.
+      const cancelButton = within(popover).getByRole('button', {
+        name: /cancel/i,
+      })
+      await user.click(cancelButton)
+
+      // No writePty call, no annotation inserted.
+      expect(writePty).not.toHaveBeenCalled()
+      expect(addAnnotation).not.toHaveBeenCalled()
+
+      // After cancel, re-opening the reply editor should still show the draft.
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /reply/i })
+      )
+
+      expect(
+        within(annotationSlot).getByPlaceholderText('Reply to the agent…')
+      ).toHaveValue('Typed draft text')
+    })
+
+    test('repo-subdirectory cwd: writePty receives absolute path and pending handle carries repo-relative coords (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const writePty = vi.fn().mockResolvedValue(undefined)
+      const focusTerminal = vi.fn()
+
+      // Re-mock with the subdirectory cwd so the Panel does not enter loading state.
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/foo.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo/sub',
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: inlineFileDiff,
+          loading: false,
+          error: null,
+          oldText: 'old',
+          newText: 'new',
+          rawDiff: '',
+          repoRoot: '/repo',
+        })
+      )
+
+      const candidate: PaneCandidate = {
+        paneId: 'pane-1',
+        ptyId: 'pty-1',
+        tabName: 'Tab 1',
+        agentLabel: 'Claude Code',
+        cwd: '/repo/sub',
+        status: 'running',
+        isFocused: true,
+      }
+
+      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      // Annotations keyed under the subdirectory cwd.
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-sub1',
+            text: 'Root question from sub.',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            threadId: 'root-sub1',
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-sub1',
+            text: 'Agent sub reply.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2000,
+            threadId: 'root-sub1',
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo/sub', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation,
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation: vi.fn(),
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 2,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo/sub"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo/sub' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal,
+          }}
+          feedbackRepoRootRef={{
+            current: '',
+            repoRootForCwd: (entryCwd: string): string =>
+              entryCwd === '/repo/sub' ? '/repo' : '',
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /reply/i })
+      )
+
+      const replyTextarea = within(annotationSlot).getByPlaceholderText(
+        'Reply to the agent…'
+      )
+      await user.type(replyTextarea, 'Sub-directory follow-up')
+      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+
+      const popover = await screen.findByRole('dialog', {
+        name: 'Finish feedback',
+      })
+      expect(popover).toHaveTextContent(/Send 1 comment/)
+
+      await user.keyboard('Y')
+
+      await waitFor(() => expect(writePty).toHaveBeenCalledOnce())
+
+      // The prompt sent to the agent must carry the ABSOLUTE path so the agent
+      // can resolve it from any working directory.
+      const [, payload] = writePty.mock.calls[0]
+      expect(payload as string).toContain('/repo/src/foo.ts')
+
+      // The pending handle must carry REPO-RELATIVE coordinates (cwd + relative
+      // filePath) matching the batch key, not the absolute prompt path.
+      const nonce = /"nonce":"(\w+)"/.exec(payload as string)?.[1] ?? ''
+      const pending = getPendingReview('pty-1', nonce)
+      expect(pending?.byHandle.get(1)?.cwd).toBe('/repo/sub')
+      expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
+
+      clearPendingReview('pty-1', nonce)
     })
   })
 

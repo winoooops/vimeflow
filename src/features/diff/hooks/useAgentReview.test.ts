@@ -329,6 +329,7 @@ describe('finding-thread transition (VIM-304 PR-3)', () => {
         lineNumber: 42,
         side: 'additions',
         target: undefined,
+        threadId: placed.metadata.id,
       })
     }
 
@@ -376,5 +377,17 @@ describe('finding-thread transition (VIM-304 PR-3)', () => {
     await emit(event({ findings: [] }))
 
     expect(getFindingThreadRecord('pty-1', 'abc')).toBeUndefined()
+  })
+})
+
+describe('thread identity in placed findings (VIM-298)', () => {
+  test('a placed finding self-roots its thread', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(event({ findings: [finding({ line: 42 })] }))
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+    const annotation = addAnnotationForOwner.mock.calls[0][4]
+    expect(annotation.metadata.threadId).toBe(annotation.metadata.id)
   })
 })

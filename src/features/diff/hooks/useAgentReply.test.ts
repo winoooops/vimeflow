@@ -506,3 +506,29 @@ describe('finding-thread replies (VIM-304 PR-3)', () => {
     expect(addAnnotationForOwner).not.toHaveBeenCalled()
   })
 })
+
+describe('thread identity in agent replies (VIM-298)', () => {
+  test('an agent reply inherits the handle threadId', async () => {
+    setPendingReview(
+      pending(new Map([[1, handle({ lineNumber: 5, threadId: 'root-1' })]]))
+    )
+    mount()
+    await emit(
+      event({
+        replies: [
+          {
+            id: 1,
+            status: 'reply',
+            target: 'comment',
+            text: 'Because latency.',
+          },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.threadId).toBe(
+      'root-1'
+    )
+  })
+})

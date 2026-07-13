@@ -20,6 +20,12 @@ export interface PendingReviewHandle {
    * not as a line-0 annotation); a range comment's reply keeps its span.
    */
   target: ReviewComment['target']
+  /**
+   * The thread the addressed comment roots or belongs to (VIM-298):
+   * `comment.threadId ?? comment.id`, captured at handle registration so the
+   * agent's reply lands in the same thread group.
+   */
+  threadId?: string
 }
 
 export interface PendingReview {

@@ -2,6 +2,10 @@ version: '0.2'
 language: en
 
 words:
+  # Multi-turn thread taxonomy (VIM-298 spec vocabulary)
+  - typeless
+  - metas
+
   # Settings dialog domain terms (UI labels / scheme + font names)
   - keymap
   - Keymap

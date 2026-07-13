@@ -9,6 +9,8 @@ import {
   dispatchFeedbackBatch,
   formatReviewRequest,
   dispatchReviewRequest,
+  followUpContextLine,
+  isFollowUpComment,
   type DispatchEntry,
 } from './feedbackDispatch'
 import type { ReviewedFile } from './pendingReviewRequests'
@@ -359,4 +361,104 @@ test('formatReviewRequest strips control chars from a crafted path', () => {
 
   expect(payload).not.toContain('\x1b')
   expect(payload).toContain('src/ev[201~il.ts')
+})
+
+test('a typeless follow-up renders as [#n · Follow-up] with the context line', () => {
+  const payload = formatFeedbackPayload(
+    [
+      {
+        filePath: '/repo/src/auth.ts',
+        staged: false,
+        annotations: [
+          {
+            side: 'additions',
+            lineNumber: 42,
+            metadata: {
+              id: 'f1',
+              text: 'How does that interact with resize?',
+              author: 'self',
+              createdAt: 1,
+              threadId: 'root-1',
+            },
+          },
+        ],
+      },
+    ],
+    'abc123',
+    '> ↩ Continuing our thread — your last reply: "The pool applies backpressure"'
+  )
+
+  expect(payload).toContain('[#1 · Follow-up] /repo/src/auth.ts:42')
+  expect(payload).toContain(
+    '> ↩ Continuing our thread — your last reply: "The pool applies backpressure"'
+  )
+
+  expect(payload).toContain(
+    '> → Answer inline in your reply. Do not edit files.'
+  )
+  expect(payload).not.toContain('Change request')
+})
+
+test('followUpContextLine phrases by author, truncates, and strips controls', () => {
+  expect(
+    followUpContextLine({
+      id: 'g1',
+      text: 'short answer',
+      author: 'agent',
+      createdAt: 1,
+    })
+  ).toBe('> ↩ Continuing our thread — your last reply: "short answer"')
+
+  expect(
+    followUpContextLine({
+      id: 'r1',
+      text: 'finding text',
+      author: 'reviewer',
+      createdAt: 1,
+    })
+  ).toContain('the finding: "finding text"')
+
+  expect(
+    followUpContextLine({
+      id: 'c1',
+      text: 'my question',
+      author: 'self',
+      createdAt: 1,
+    })
+  ).toContain('my earlier comment: "my question"')
+
+  const long = followUpContextLine({
+    id: 'g2',
+    text: 'x'.repeat(300),
+    author: 'agent',
+    createdAt: 1,
+  })
+  expect(long).toContain('(truncated)')
+  expect(long.length).toBeLessThan(300)
+
+  // Paste-breakout regression: agent-controlled text cannot terminate the
+  // bracketed paste or inject CR into the prompt.
+  const hostile = followUpContextLine({
+    id: 'g3',
+    text: 'evil\x1b[201~\rinjected',
+    author: 'agent',
+    createdAt: 1,
+  })
+  expect(hostile).not.toContain('\x1b')
+  expect(hostile).not.toContain('\r')
+})
+
+test('a category-less dispatched ROOT is not a follow-up', () => {
+  // threadId === id (self-rooted) + no category → still the default Change
+  // request in the payload, NOT [#n · Follow-up].
+  expect(
+    isFollowUpComment({
+      id: 'c1',
+      threadId: 'c1',
+      text: 't',
+      author: 'self',
+      createdAt: 1,
+      dispatchedAt: 1000,
+    })
+  ).toBe(false)
 })

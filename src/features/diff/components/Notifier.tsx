@@ -17,7 +17,7 @@ interface FinishFeedbackState {
   fileCount: number
   onCancel: () => void
   onSend: (pane: PaneCandidate) => void
-  onCopy: () => void
+  onCopy?: () => void
 }
 
 interface RequestReviewState {

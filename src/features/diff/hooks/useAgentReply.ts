@@ -78,6 +78,9 @@ export const useAgentReply = ({
             // Inherit the original comment's scope so a file-level reply stays
             // file-scoped and a range reply keeps its span (VIM-249).
             ...(handle.target === undefined ? {} : { target: handle.target }),
+            ...(handle.threadId === undefined
+              ? {}
+              : { threadId: handle.threadId }),
             ...(outcome === undefined ? {} : { outcome }),
           },
         }
