@@ -55,6 +55,7 @@ const sampleShape = (): PersistedWorkspaceShape => ({
           cwd: '/repo',
           agentType: 'claude-code',
           agentSessionId: null,
+          agentLauncher: 'CC',
         },
         { kind: 'browser', paneId: 'p1', paneIndex: 1, active: false },
       ],
@@ -87,6 +88,7 @@ const sampleStore = (): PersistedWorkspaceLayoutStore => ({
           cwd: '/repo',
           agentType: 'claude-code',
           agentSessionId: null,
+          agentLauncher: 'CC',
         },
         {
           kind: 'browser',
@@ -401,6 +403,31 @@ describe('WorkspaceLayoutController', () => {
                 cwd: '/repo',
                 agentType: 'claude-code',
                 agentSessionId: 42,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        sessions: [
+          {
+            id: 's1',
+            projectId: 'proj-1',
+            layout: 'single',
+            workingDirectory: '/repo',
+            active: true,
+            open: true,
+            panes: [
+              {
+                kind: 'shell',
+                paneId: 'p0',
+                paneIndex: 0,
+                active: true,
+                ptyId: 'pty-1',
+                cwd: '/repo',
+                agentType: 'claude-code',
+                agentSessionId: null,
+                agentLauncher: 42,
               },
             ],
           },

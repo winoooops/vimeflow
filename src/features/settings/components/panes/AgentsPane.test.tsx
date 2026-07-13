@@ -70,7 +70,7 @@ describe('AgentsPane', () => {
 
     expect(screen.getByText('Coding Agents')).toBeInTheDocument()
     expect(
-      screen.getByText('Shell aliases · agent registry')
+      screen.getByText('Command aliases · agent registry')
     ).toBeInTheDocument()
   })
 
@@ -80,7 +80,6 @@ describe('AgentsPane', () => {
         id: 'x1',
         alias: 'xx',
         agent: 'shell',
-        model: '',
         extra: 'echo hello',
         account: null,
       },
@@ -99,6 +98,14 @@ describe('AgentsPane', () => {
     })
 
     expect(screen.getAllByTestId('alias-row').length).toBe(1)
+    expect(
+      screen.getByRole('option', { name: 'Custom command' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('option', { name: 'Gemini CLI' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Model')).not.toBeInTheDocument()
   })
 
   test('falls back to default aliases when the bridge is absent', async () => {
@@ -192,7 +199,6 @@ describe('AgentsPane', () => {
           id: expect.any(String),
           alias: '',
           agent: 'claude',
-          model: 'sonnet-4',
           extra: '',
           account: null,
         },
@@ -251,6 +257,34 @@ describe('AgentsPane', () => {
     await waitFor(() => {
       expect(aliasesSave).toHaveBeenLastCalledWith([
         { ...DEFAULT_ALIASES[0], alias: 'coc' },
+        ...DEFAULT_ALIASES.slice(1),
+      ])
+    })
+  })
+
+  test('persists a custom command through the generic flags field', async () => {
+    const { aliasesSave } = installBridge(DEFAULT_ALIASES)
+    const user = userEvent.setup()
+
+    render(
+      <TestWrapper>
+        <AgentsPane />
+      </TestWrapper>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('cc')).toBeInTheDocument()
+    })
+
+    await user.selectOptions(screen.getByLabelText('Agent for cc'), 'shell')
+    await user.type(
+      screen.getByLabelText('Command or flags for shell'),
+      'lazygit'
+    )
+
+    await waitFor(() => {
+      expect(aliasesSave).toHaveBeenLastCalledWith([
+        { ...DEFAULT_ALIASES[0], agent: 'shell', extra: 'lazygit' },
         ...DEFAULT_ALIASES.slice(1),
       ])
     })

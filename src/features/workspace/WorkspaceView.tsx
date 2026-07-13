@@ -375,6 +375,7 @@ const WorkspaceViewContent = (): ReactElement => {
     appendPaneCacheReading,
     clearPaneCacheHistory,
     updatePaneAgentType,
+    recordPaneAgentLauncher,
     invalidatePaneAgentSession,
     updateBrowserPaneUrl,
     setSessionActivityPanelCollapsed,
@@ -812,6 +813,8 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const handleTerminalCommandSubmit = useCallback(
     (ptyId: string, command: string): void => {
+      recordPaneAgentLauncher(ptyId, command)
+
       // A codex `/clear` opens a fresh conversation and `/resume` switches to a
       // different one — both point codex/opencode at a NEW session, so the live
       // status is now stale. Treat both as a context switch: reset agent-status
@@ -870,6 +873,7 @@ const WorkspaceViewContent = (): ReactElement => {
       agentTokenTotal,
       clearPaneCacheHistory,
       invalidatePaneAgentSession,
+      recordPaneAgentLauncher,
       sessions,
     ]
   )

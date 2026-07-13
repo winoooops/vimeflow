@@ -301,6 +301,7 @@ const assertDurableIdentities = (fallbackCaptured: boolean): void => {
 
       expect(pane).toMatchObject({
         agentType: fixture.agentType,
+        agentLauncher: fixture.executable,
         agentSessionId:
           fixture.initialAgentSessionId === null && !fallbackCaptured
             ? null

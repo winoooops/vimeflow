@@ -327,6 +327,7 @@ const buildReattachedShellPane = (
 ): Pane => ({
   ...buildPane(live, shape.paneId, toAgentType(shape.agentType), shape.active),
   agentSessionId: shape.agentSessionId ?? undefined,
+  agentLauncher: shape.agentLauncher ?? undefined,
 })
 
 // A shell pane whose PTY is gone (graceful quit / crash) returns as a
@@ -338,6 +339,7 @@ const buildPlaceholderShellPane = (shape: PersistedShellPaneShape): Pane => ({
   cwd: shape.cwd,
   agentType: toAgentType(shape.agentType),
   agentSessionId: shape.agentSessionId ?? undefined,
+  agentLauncher: shape.agentLauncher ?? undefined,
   status: 'completed',
   active: shape.active,
 })

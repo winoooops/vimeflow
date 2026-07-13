@@ -2,8 +2,8 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-06-28
-ref_count: 2
+last_updated: 2026-07-13
+ref_count: 3
 ---
 
 # Hot-Path Caching
@@ -93,4 +93,13 @@ feature.
 - **File:** `electron/ghostty-native-parent.ts`
 - **Finding:** `getAddon()` used nullish assignment to cache successful addon loads, but a missing native addon made `loadAddon()` throw before assignment. Every later parent update/data/focus/destroy IPC call retried synchronous artifact checks and exception allocation while the feature flag was enabled.
 - **Fix:** Added an addon-load failure sentinel checked by `getOptionalAddon()` before entering the loader path, so a controller attempts the native artifact load once and later hot-path calls return disabled immediately.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Generic shell commands reloaded alias settings on repeated submissions
+
+- **Source:** github-claude | PR #693 round 1 | 2026-07-13
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `recordPaneAgentLauncher` reloaded aliases and settings for every submitted non-canonical command while a pane was still generic. Ordinary shell usage such as repeated `git` commands therefore paid disk-backed IPC work even though no agent launcher could be recorded.
+- **Fix:** Added a short-lived per-launcher alias-miss cache so repeated ordinary command tokens bypass alias/settings reloads after the first miss. Canonical launcher detection remains synchronous, and unknown non-canonical tokens still reload aliases on first sight so newly configured aliases can be captured.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

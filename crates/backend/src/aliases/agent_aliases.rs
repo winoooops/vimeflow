@@ -1,4 +1,4 @@
-//! Durable coding-agent alias store (`~/.config/vimeflow/aliases.toml`).
+//! Durable command alias store (`~/.config/vimeflow/aliases.toml`).
 //!
 //! User-defined shell aliases are injected into every spawned pane's shell
 //! via the bridge `init.sh` (see `terminal::bridge`). They are never written
@@ -9,22 +9,21 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 pub const CURRENT_AGENT_ALIASES_VERSION: u32 = 1;
 const MAX_AGENT_ALIASES: usize = 128;
 const MAX_ALIAS_FIELD_CHARS: usize = 1024;
 
-/// User-defined alias for launching a coding agent (or arbitrary shell command).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// User-defined alias for launching an agent or arbitrary shell command.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(test, ts(export))]
 pub struct AgentAlias {
     pub id: String,
     pub alias: String,
     pub agent: String,
-    pub model: String,
     pub extra: String,
     pub account: Option<String>,
 }
@@ -35,10 +34,53 @@ impl Default for AgentAlias {
             id: String::new(),
             alias: String::new(),
             agent: String::new(),
-            model: String::new(),
             extra: String::new(),
             account: None,
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentAlias {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Default, Deserialize)]
+        #[serde(rename_all = "camelCase", default)]
+        struct StoredAgentAlias {
+            id: String,
+            alias: String,
+            agent: String,
+            model: String,
+            extra: String,
+            account: Option<String>,
+        }
+
+        let stored = StoredAgentAlias::deserialize(deserializer)?;
+        let model = match stored.agent.as_str() {
+            "claude" | "codex" | "gemini" | "kimi" | "opencode" => {
+                normalize_alias_field(&stored.model)
+            }
+            _ => String::new(),
+        };
+        let extra = if model.is_empty() {
+            stored.extra
+        } else {
+            let extra = normalize_alias_field(&stored.extra);
+            if extra.is_empty() {
+                format!("--model {model}")
+            } else {
+                format!("--model {model} {extra}")
+            }
+        };
+
+        Ok(Self {
+            id: stored.id,
+            alias: stored.alias,
+            agent: stored.agent,
+            extra,
+            account: stored.account,
+        })
     }
 }
 
@@ -48,7 +90,6 @@ impl AgentAlias {
             ("id", self.id.as_str()),
             ("alias", self.alias.as_str()),
             ("agent", self.agent.as_str()),
-            ("model", self.model.as_str()),
             ("extra", self.extra.as_str()),
         ] {
             if value.chars().count() > MAX_ALIAS_FIELD_CHARS {
@@ -196,11 +237,10 @@ impl AliasesCache {
 
 /// Build a block of `alias <name>='<cmd>'` lines for injection into `init.sh`.
 ///
-/// * `claude`/`codex`/`gemini` agents emit `<binary> --model <model> <extra>`.
-/// * `shell` agent emits only `<extra>`.
-/// * Omits `--model <model>` when `model` is empty.
-/// * Appends trimmed `extra` when non-empty.
+/// * Agent entries emit `<agent> <extra>`.
+/// * `shell` entries emit only `<extra>`, allowing arbitrary commands.
 /// * Skips aliases whose name is empty or not a safe shell identifier.
+/// * Skips aliases whose assembled command is empty.
 /// * Single-quotes the command and escapes embedded single quotes as `\'\'\'`.
 pub fn build_alias_lines(aliases: &[AgentAlias]) -> String {
     let mut out = String::new();
@@ -212,6 +252,9 @@ pub fn build_alias_lines(aliases: &[AgentAlias]) -> String {
         }
 
         let cmd = build_alias_command(alias);
+        if cmd.is_empty() {
+            continue;
+        }
         let escaped = cmd.replace('\'', "'\\''");
         out.push_str(&format!("alias {}='{}'\n", alias.alias, escaped));
     }
@@ -230,20 +273,11 @@ fn normalize_alias_field(value: &str) -> String {
 }
 
 fn build_alias_command(alias: &AgentAlias) -> String {
-    let binary = match alias.agent.as_str() {
-        "claude" | "codex" | "gemini" => Some(alias.agent.as_str()),
-        "shell" => None,
-        _ => None,
-    };
-
     let mut parts: Vec<String> = Vec::new();
+    let agent = normalize_alias_field(&alias.agent);
 
-    if let Some(binary) = binary {
-        parts.push(binary.to_string());
-        let model = normalize_alias_field(&alias.model);
-        if !model.is_empty() {
-            parts.push(format!("--model {}", model));
-        }
+    if !agent.is_empty() && agent != "shell" {
+        parts.push(agent);
     }
 
     let extra = normalize_alias_field(&alias.extra);
@@ -258,12 +292,11 @@ fn build_alias_command(alias: &AgentAlias) -> String {
 mod tests {
     use super::*;
 
-    fn make_alias(alias: &str, agent: &str, model: &str, extra: &str) -> AgentAlias {
+    fn make_alias(alias: &str, agent: &str, extra: &str) -> AgentAlias {
         AgentAlias {
             id: format!("id-{alias}"),
             alias: alias.to_string(),
             agent: agent.to_string(),
-            model: model.to_string(),
             extra: extra.to_string(),
             account: None,
         }
@@ -272,7 +305,7 @@ mod tests {
     fn custom_store() -> AgentAliasesStore {
         AgentAliasesStore {
             version: CURRENT_AGENT_ALIASES_VERSION,
-            aliases: vec![make_alias("c", "claude", "sonnet", "--print ok")],
+            aliases: vec![make_alias("c", "claude", "--print ok")],
         }
     }
 
@@ -289,7 +322,6 @@ mod tests {
         assert!(a.id.is_empty());
         assert!(a.alias.is_empty());
         assert!(a.agent.is_empty());
-        assert!(a.model.is_empty());
         assert!(a.extra.is_empty());
         assert_eq!(a.account, None);
     }
@@ -302,7 +334,6 @@ mod tests {
                 id: "a1".into(),
                 alias: "c".into(),
                 agent: "claude".into(),
-                model: "sonnet".into(),
                 extra: "".into(),
                 account: Some("work".into()),
             }],
@@ -316,10 +347,7 @@ mod tests {
             toml_text.contains("agent = \"claude\""),
             "toml: {toml_text}"
         );
-        assert!(
-            toml_text.contains("model = \"sonnet\""),
-            "toml: {toml_text}"
-        );
+        assert!(!toml_text.contains("model ="), "toml: {toml_text}");
         assert!(
             toml_text.contains("account = \"work\""),
             "toml: {toml_text}"
@@ -363,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_file_defaults_missing_fields() {
+    fn legacy_model_field_migrates_into_extra() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("aliases.toml");
         fs::write(
@@ -373,18 +401,41 @@ mod tests {
 [[aliases]]
 id = "a1"
 alias = "c"
+agent = "claude"
+model = "sonnet-4"
+extra = "--continue"
+
+[[aliases]]
+id = "s1"
+alias = "lint"
+agent = "shell"
+model = "ignored"
+extra = "npm run lint"
 "#,
         )
         .unwrap();
 
-        let loaded = AliasesCache::new(path).load();
-        assert_eq!(loaded.aliases.len(), 1);
+        let cache = AliasesCache::new(path.clone());
+        let loaded = cache.load();
+        assert_eq!(loaded.aliases.len(), 2);
         assert_eq!(loaded.aliases[0].id, "a1");
         assert_eq!(loaded.aliases[0].alias, "c");
-        assert_eq!(loaded.aliases[0].agent, "");
-        assert_eq!(loaded.aliases[0].model, "");
-        assert_eq!(loaded.aliases[0].extra, "");
+        assert_eq!(loaded.aliases[0].agent, "claude");
+        assert_eq!(loaded.aliases[0].extra, "--model sonnet-4 --continue");
         assert_eq!(loaded.aliases[0].account, None);
+        assert_eq!(loaded.aliases[1].extra, "npm run lint");
+        assert_eq!(
+            build_alias_lines(&loaded.aliases),
+            "alias c='claude --model sonnet-4 --continue'\nalias lint='npm run lint'\n"
+        );
+
+        cache.save(&loaded).unwrap();
+        let saved = fs::read_to_string(path).unwrap();
+        assert!(!saved.contains("model ="), "toml: {saved}");
+        assert!(
+            saved.contains("extra = \"--model sonnet-4 --continue\""),
+            "toml: {saved}"
+        );
     }
 
     #[test]
@@ -410,7 +461,7 @@ alias = "c"
         let store = AgentAliasesStore {
             version: CURRENT_AGENT_ALIASES_VERSION,
             aliases: (0..=MAX_AGENT_ALIASES)
-                .map(|i| make_alias(&format!("a{i}"), "claude", "sonnet", ""))
+                .map(|i| make_alias(&format!("a{i}"), "claude", ""))
                 .collect(),
         };
 
@@ -423,7 +474,7 @@ alias = "c"
             version: CURRENT_AGENT_ALIASES_VERSION,
             aliases: vec![AgentAlias {
                 extra: "x".repeat(MAX_ALIAS_FIELD_CHARS + 1),
-                ..make_alias("c", "claude", "sonnet", "")
+                ..make_alias("c", "claude", "")
             }],
         };
 
@@ -457,39 +508,25 @@ alias = "c"
     }
 
     #[test]
-    fn build_alias_lines_claude_includes_model_and_extra() {
-        let aliases = vec![make_alias("c", "claude", "sonnet", "--print ok")];
+    fn build_alias_lines_appends_extra_to_agent() {
+        let aliases = vec![make_alias("c", "claude", "--print ok")];
         let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias c='claude --model sonnet --print ok'\n");
+        assert_eq!(lines, "alias c='claude --print ok'\n");
     }
 
     #[test]
-    fn build_alias_lines_codex_includes_model_and_extra() {
-        let aliases = vec![make_alias(
-            "cx",
-            "codex",
-            "o3",
-            "--dangerously-skip-permissions",
-        )];
+    fn build_alias_lines_supports_configured_agent_executables() {
+        let aliases = vec![
+            make_alias("cx", "codex", "--dangerously-skip-permissions"),
+            make_alias("km", "kimi", "--yolo"),
+            make_alias("oc", "opencode", "--continue"),
+            make_alias("lg", "lazygit", ""),
+        ];
         let lines = build_alias_lines(&aliases);
         assert_eq!(
             lines,
-            "alias cx='codex --model o3 --dangerously-skip-permissions'\n"
+            "alias cx='codex --dangerously-skip-permissions'\nalias km='kimi --yolo'\nalias oc='opencode --continue'\nalias lg='lazygit'\n"
         );
-    }
-
-    #[test]
-    fn build_alias_lines_gemini_includes_model_and_extra() {
-        let aliases = vec![make_alias("g", "gemini", "pro", "--some-flag")];
-        let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias g='gemini --model pro --some-flag'\n");
-    }
-
-    #[test]
-    fn build_alias_lines_omits_model_when_empty() {
-        let aliases = vec![make_alias("c", "claude", "", "--print ok")];
-        let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias c='claude --print ok'\n");
     }
 
     #[test]
@@ -498,7 +535,6 @@ alias = "c"
             id: "s1".into(),
             alias: "lint".into(),
             agent: "shell".into(),
-            model: "ignored".into(),
             extra: "npm run lint".into(),
             account: None,
         }];
@@ -507,18 +543,16 @@ alias = "c"
     }
 
     #[test]
+    fn build_alias_lines_skips_empty_commands() {
+        let aliases = vec![make_alias("empty", "shell", "")];
+        assert!(build_alias_lines(&aliases).is_empty());
+    }
+
+    #[test]
     fn build_alias_lines_escapes_single_quotes() {
-        let aliases = vec![make_alias(
-            "c",
-            "claude",
-            "sonnet",
-            "--prompt 'hello world'",
-        )];
+        let aliases = vec![make_alias("c", "claude", "--prompt 'hello world'")];
         let lines = build_alias_lines(&aliases);
-        assert_eq!(
-            lines,
-            "alias c='claude --model sonnet --prompt '\\\''hello world'\\\'''\n"
-        );
+        assert_eq!(lines, "alias c='claude --prompt '\\\''hello world'\\\'''\n");
     }
 
     #[test]
@@ -528,44 +562,35 @@ alias = "c"
                 id: "bad".into(),
                 alias: "".into(),
                 agent: "claude".into(),
-                model: "sonnet".into(),
                 extra: "".into(),
                 account: None,
             },
-            make_alias("good", "claude", "sonnet", ""),
+            make_alias("good", "claude", ""),
         ];
         let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias good='claude --model sonnet'\n");
+        assert_eq!(lines, "alias good='claude'\n");
     }
 
     #[test]
     fn build_alias_lines_skips_invalid_names() {
         let aliases = vec![
-            make_alias("123bad", "claude", "sonnet", ""),
-            make_alias("has space", "claude", "sonnet", ""),
-            make_alias("semi;bad", "claude", "sonnet", ""),
-            make_alias("good_name-1", "claude", "sonnet", ""),
+            make_alias("123bad", "claude", ""),
+            make_alias("has space", "claude", ""),
+            make_alias("semi;bad", "claude", ""),
+            make_alias("good_name-1", "claude", ""),
         ];
         let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias good_name-1='claude --model sonnet'\n");
-    }
-
-    #[test]
-    fn build_alias_lines_ignores_unknown_agent() {
-        let aliases = vec![make_alias("u", "unknown", "sonnet", "--extra")];
-        let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias u='--extra'\n");
+        assert_eq!(lines, "alias good_name-1='claude'\n");
     }
 
     #[test]
     fn build_alias_lines_replaces_newlines_with_space() {
         let aliases = vec![
-            make_alias("c", "claude", "son\nnet", "--print\rok"),
+            make_alias("c", "custom\ncli", "--print\rok"),
             AgentAlias {
                 id: "s1".into(),
                 alias: "lint".into(),
                 agent: "shell".into(),
-                model: "ignored\nmodel".into(),
                 extra: "npm run lint\r\n--fix".into(),
                 account: None,
             },
@@ -573,7 +598,7 @@ alias = "c"
         let lines = build_alias_lines(&aliases);
         assert_eq!(
             lines,
-            "alias c='claude --model son net --print ok'\nalias lint='npm run lint --fix'\n"
+            "alias c='custom cli --print ok'\nalias lint='npm run lint --fix'\n"
         );
     }
 
@@ -583,7 +608,6 @@ alias = "c"
             id: "a1".into(),
             alias: "evil".into(),
             agent: "shell".into(),
-            model: "".into(),
             extra: "echo first\necho second".into(),
             account: None,
         }];
@@ -605,11 +629,10 @@ alias = "c"
             id: "a1".into(),
             alias: "c".into(),
             agent: "claude".into(),
-            model: "sonnet".into(),
             extra: "".into(),
             account: Some("work".into()),
         }];
         let lines = build_alias_lines(&aliases);
-        assert_eq!(lines, "alias c='claude --model sonnet'\n");
+        assert_eq!(lines, "alias c='claude'\n");
     }
 }

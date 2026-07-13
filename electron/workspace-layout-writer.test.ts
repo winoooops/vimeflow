@@ -32,6 +32,7 @@ const shape = (): PersistedWorkspaceShape => ({
           cwd: '/repo',
           agentType: 'claude-code',
           agentSessionId: null,
+          agentLauncher: 'CC',
         },
         { kind: 'browser', paneId: 'p1', paneIndex: 1, active: false },
       ],
@@ -102,6 +103,7 @@ describe('WorkspaceLayoutWriter', () => {
               cwd: '/repo',
               agentType: 'claude-code',
               agentSessionId: null,
+              agentLauncher: 'CC',
             },
             {
               kind: 'browser',

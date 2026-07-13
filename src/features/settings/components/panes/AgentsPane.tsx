@@ -118,7 +118,6 @@ export const AgentsPane = ({
         id: `a${crypto.randomUUID()}`,
         alias: '',
         agent: 'claude',
-        model: 'sonnet-4',
         extra: '',
         account: null,
       },
@@ -145,7 +144,7 @@ export const AgentsPane = ({
 
   return (
     <>
-      <PaneTitle title="Coding Agents" sub="Shell aliases · agent registry" />
+      <PaneTitle title="Coding Agents" sub="Command aliases · agent registry" />
 
       <Row
         label="Manage agent shell aliases"
@@ -177,8 +176,8 @@ export const AgentsPane = ({
               Shell aliases
             </div>
             <div className="mt-1 font-body text-xs text-on-surface-muted">
-              Type the alias in any pane and Vimeflow swaps it for the full
-              agent invocation.
+              New and restarted panes load these aliases. Choose an agent alias
+              when starting a session and Vimeflow remembers it when resuming.
             </div>
           </div>
 
@@ -190,11 +189,10 @@ export const AgentsPane = ({
           </GhostButton>
         </div>
 
-        <div className="grid grid-cols-[80px_120px_140px_1fr_30px] gap-2 px-3 pb-2 font-mono text-[10px] uppercase tracking-widest text-on-surface-muted">
+        <div className="grid grid-cols-[80px_120px_1fr_30px] gap-2 px-3 pb-2 font-mono text-[10px] uppercase tracking-widest text-on-surface-muted">
           <span>Alias</span>
           <span>Agent</span>
-          <span>Model</span>
-          <span>Extra flags</span>
+          <span>Command / flags</span>
           <span />
         </div>
 
@@ -203,7 +201,7 @@ export const AgentsPane = ({
           aria-busy={isInitializing}
         >
           {isInitializing && (
-            <div className="col-span-5 px-3 py-4 font-body text-xs text-on-surface-muted">
+            <div className="col-span-4 px-3 py-4 font-body text-xs text-on-surface-muted">
               Loading aliases…
             </div>
           )}
@@ -212,7 +210,7 @@ export const AgentsPane = ({
             <div
               key={a.id}
               data-testid="alias-row"
-              className={`grid grid-cols-[80px_120px_140px_1fr_30px] items-center gap-2 px-3 py-2.5 ${
+              className={`grid grid-cols-[80px_120px_1fr_30px] items-center gap-2 px-3 py-2.5 ${
                 i === aliases.length - 1
                   ? ''
                   : 'border-b border-outline-variant/15'
@@ -238,29 +236,22 @@ export const AgentsPane = ({
                   options={[
                     { id: 'claude', label: 'Claude Code' },
                     { id: 'codex', label: 'Codex CLI' },
-                    { id: 'gemini', label: 'Gemini CLI' },
-                    { id: 'shell', label: 'Shell only' },
-                  ]}
-                />
-                <Select
-                  width="100%"
-                  value={a.model}
-                  onChange={(v) => updateAlias(a.id, 'model', v)}
-                  aria-label={`Model for ${a.alias || 'new alias'}`}
-                  options={[
-                    { id: 'sonnet-4', label: 'sonnet-4' },
-                    { id: 'opus-4', label: 'opus-4' },
-                    { id: 'gpt-5-codex', label: 'gpt-5-codex' },
-                    { id: 'gemini-2.5', label: 'gemini-2.5' },
+                    { id: 'kimi', label: 'Kimi' },
+                    { id: 'opencode', label: 'OpenCode' },
+                    { id: 'shell', label: 'Custom command' },
                   ]}
                 />
                 <TextInput
                   width="100%"
                   mono
-                  placeholder="--continue"
+                  placeholder={
+                    a.agent === 'shell'
+                      ? 'lazygit'
+                      : '--dangerously-skip-permissions'
+                  }
                   value={a.extra}
                   onChange={(v) => updateAlias(a.id, 'extra', v)}
-                  aria-label={`Extra flags for ${a.agent}`}
+                  aria-label={`Command or flags for ${a.agent}`}
                 />
                 <IconButton
                   icon="delete"
@@ -289,12 +280,13 @@ export const AgentsPane = ({
         )}
 
         <div className="mt-2.5 font-mono text-[10.5px] text-on-surface-muted">
-          Try it: in any pane, type{' '}
+          Try it: after editing an alias, open a new pane or restart an existing
+          pane. Then type{' '}
           <span className="text-primary-container">
             cc &quot;fix the auth bug&quot;
           </span>{' '}
-          — Vimeflow expands it to the full agent invocation before sending to
-          the PTY.
+          — agent entries prepend their executable; Custom command runs the
+          command entered above.
         </div>
       </div>
 
@@ -309,8 +301,8 @@ export const AgentsPane = ({
             ~/.config/vimeflow/aliases.toml
           </code>{' '}
           and are injected into each pane&apos;s process environment via a tiny
-          shim. Your real shell rc files stay untouched, so the aliases
-          don&apos;t leak into other terminals.
+          shim when that pane starts. Your real shell rc files stay untouched,
+          so the aliases don&apos;t leak into other terminals.
         </div>
       </div>
     </>

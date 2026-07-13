@@ -142,6 +142,7 @@ export class WorkspaceLayoutWriter
             cwd: pane.cwd,
             agentType: pane.agentType,
             agentSessionId: pane.agentSessionId,
+            agentLauncher: pane.agentLauncher ?? null,
           })
 
           continue

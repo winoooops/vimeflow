@@ -173,6 +173,7 @@ export const installAgentResumeFixture = (
             cwd: workingDirectory,
             agentType: fixture.agentType,
             agentSessionId: fixture.initialAgentSessionId,
+            agentLauncher: fixture.executable,
           })),
         })),
       },

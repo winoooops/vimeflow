@@ -51,8 +51,8 @@ export const AGENTS = {
     Icon: ClaudeCode,
     model: 'sonnet-4',
     resumeCommands: {
-      latest: 'claude --continue',
-      byIdPrefix: 'claude --resume',
+      latest: '--continue',
+      byIdPrefix: '--resume',
     },
     accent: 'var(--color-agent-claude-accent)',
     accentDim: 'var(--color-agent-claude-accent-dim)',
@@ -67,8 +67,8 @@ export const AGENTS = {
     Icon: Codex,
     model: 'gpt-5-codex',
     resumeCommands: {
-      latest: 'codex resume --last',
-      byIdPrefix: 'codex resume',
+      latest: 'resume --last',
+      byIdPrefix: 'resume',
     },
     accent: 'var(--color-agent-codex-accent)',
     accentDim: 'var(--color-agent-codex-accent-dim)',
@@ -83,8 +83,8 @@ export const AGENTS = {
     Icon: Kimi,
     model: 'k2.7',
     resumeCommands: {
-      latest: 'kimi --continue',
-      byIdPrefix: 'kimi --session',
+      latest: '--continue',
+      byIdPrefix: '--session',
     },
     accent: 'var(--color-agent-kimi-accent)',
     accentDim: 'var(--color-agent-kimi-accent-dim)',
@@ -112,8 +112,8 @@ export const AGENTS = {
     Icon: OpenCode,
     model: null,
     resumeCommands: {
-      latest: 'opencode --continue',
-      byIdPrefix: 'opencode --session',
+      latest: '--continue',
+      byIdPrefix: '--session',
     },
     accent: 'var(--color-agent-opencode-accent)',
     accentDim: 'var(--color-agent-opencode-accent-dim)',

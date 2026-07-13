@@ -126,6 +126,8 @@ pub struct ShellPane {
     pub cwd: String,
     pub agent_type: String,
     pub agent_session_id: Option<String>,
+    #[serde(default)]
+    pub agent_launcher: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -684,6 +686,7 @@ fn repair_panes(
                     cwd,
                     agent_type,
                     agent_session_id: str_field(rp, "agentSessionId"),
+                    agent_launcher: str_field(rp, "agentLauncher"),
                 })
             }
             Some("browser") => {
@@ -958,6 +961,7 @@ mod tests {
                         cwd: "/w".into(),
                         agent_type: "claude-code".into(),
                         agent_session_id: None,
+                        agent_launcher: Some("CC".into()),
                     }),
                     WorkspacePane::Browser(BrowserPane {
                         pane_id: "p1".into(),
@@ -983,6 +987,7 @@ mod tests {
         assert!(json.contains("\"kind\":\"shell\""), "json: {json}");
         assert!(json.contains("\"kind\":\"browser\""), "json: {json}");
         assert!(json.contains("\"slotId\":\"slot:p1\""), "json: {json}");
+        assert!(json.contains("\"agentLauncher\":\"CC\""), "json: {json}");
         assert!(json.contains("\"open\":true"), "json: {json}");
         let back: WorkspaceLayoutStore = serde_json::from_str(&json).unwrap();
         assert_eq!(back, store);
@@ -1361,12 +1366,14 @@ mod tests {
                 "id": "s", "layout": "single", "active": true,
                 "panes": [
                     { "kind": "shell", "paneId": "p0", "paneIndex": 0, "active": true,
-                      "ptyId": "x", "cwd": "/", "agentType": "kimi", "agentSessionId": null } ] }] }),
+                      "ptyId": "x", "cwd": "/", "agentType": "kimi", "agentSessionId": null,
+                      "agentLauncher": "KIMI_WORK" } ] }] }),
             "proj",
             "/",
         );
         let s = shell(&store.sessions[0].panes[0]);
         assert_eq!(s.agent_type, "kimi"); // kimi is a known agent, not coerced to generic
+        assert_eq!(s.agent_launcher.as_deref(), Some("KIMI_WORK"));
     }
 
     #[test]
@@ -1531,6 +1538,7 @@ mod tests {
                     cwd: "/".into(),
                     agent_type: "generic".into(),
                     agent_session_id: None,
+                    agent_launcher: None,
                 })],
             }],
         };
@@ -1681,6 +1689,7 @@ mod tests {
                     cwd: "/".into(),
                     agent_type: "generic".into(),
                     agent_session_id: None,
+                    agent_launcher: None,
                 })],
             }],
         })

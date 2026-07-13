@@ -17,6 +17,7 @@ export interface PersistedShellPaneShape {
   cwd: string
   agentType: string
   agentSessionId: string | null
+  agentLauncher?: string | null
 }
 
 export interface PersistedBrowserPaneShape {

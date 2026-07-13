@@ -90,6 +90,7 @@ export const buildWorkspaceShape = (
                   cwd: pane.cwd,
                   agentType: pane.agentType,
                   agentSessionId: pane.agentSessionId ?? null,
+                  agentLauncher: pane.agentLauncher ?? null,
                 }
               : {
                   kind: 'browser',
@@ -123,6 +124,7 @@ const structuralSignature = (shape: PersistedWorkspaceShape): string =>
         active: pane.active,
         ptyId: pane.kind === 'shell' ? pane.ptyId : null,
         agentSessionId: pane.kind === 'shell' ? pane.agentSessionId : null,
+        agentLauncher: pane.kind === 'shell' ? pane.agentLauncher : null,
       })),
     })),
   })

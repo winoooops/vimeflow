@@ -47,6 +47,7 @@ const shellPane = (over: Partial<Pane> = {}): Pane => ({
   cwd: '/repo',
   agentType: 'claude-code',
   agentSessionId: 'claude-session-id',
+  agentLauncher: 'CC',
   status: 'running',
   active: true,
   ...over,
@@ -123,6 +124,7 @@ describe('buildWorkspaceShape', () => {
               cwd: '/repo',
               agentType: 'claude-code',
               agentSessionId: 'claude-session-id',
+              agentLauncher: 'CC',
             },
             { kind: 'browser', paneId: 'p1', paneIndex: 1, active: false },
           ],
@@ -260,6 +262,32 @@ describe('usePushWorkspaceGrouping', () => {
             shellPane({ agentSessionId: 'next-conversation' }),
             browserPane(),
           ],
+        }),
+      ],
+      activeSessionId: 's1',
+      loading: false,
+    })
+
+    expect(pushWorkspaceShape).toHaveBeenCalledTimes(2)
+  })
+
+  test('pushes eagerly when the agent launcher changes', () => {
+    const { rerender } = renderHook(
+      (props: UsePushWorkspaceGroupingOptions) =>
+        usePushWorkspaceGrouping(props),
+      {
+        initialProps: {
+          sessions: [makeSession()],
+          activeSessionId: 's1',
+          loading: false,
+        },
+      }
+    )
+
+    rerender({
+      sessions: [
+        makeSession({
+          panes: [shellPane({ agentLauncher: 'CC_WORK' }), browserPane()],
         }),
       ],
       activeSessionId: 's1',
