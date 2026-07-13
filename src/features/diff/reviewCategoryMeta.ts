@@ -31,3 +31,15 @@ export const AGENT_OUTCOME_META: Record<
   deferred: { label: 'Deferred', chip: 'text-secondary' },
   rejected: { label: 'Rejected', chip: 'text-error' },
 }
+
+/**
+ * Chip metas for thread rollup states that no single agent turn carries
+ * (VIM-298): Sent = latest turn is a dispatched user turn (awaiting the
+ * agent); Open = a reviewer finding with no agent turn yet; Resolved =
+ * the user resolved the thread locally (reuses the outcome meta).
+ */
+export const THREAD_ROLLUP_META = {
+  sent: { label: 'Sent', chip: 'text-primary' },
+  open: { label: 'Open', chip: 'text-on-surface-variant' },
+  resolved: AGENT_OUTCOME_META.resolved,
+} as const
