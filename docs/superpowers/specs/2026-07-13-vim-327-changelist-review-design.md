@@ -49,7 +49,7 @@ Changelist scope covers **every `ChangedFile` entry** `useGitStatus` returns at 
 // pendingReviewRequests.ts
 export interface ReviewedFile {
   path: string
-  staged: boolean        // NEW — which half this entry snapshots
+  staged: boolean // NEW — which half this entry snapshots
   additions: HunkRange[] // new-file line spans (unchanged)
   deletions: HunkRange[] // old-file line spans (unchanged)
 }
@@ -89,7 +89,7 @@ For each `ChangedFile` entry: `getDiff(entry.path, entry.staged, entry.status ==
 - **Parallel with a small concurrency cap** (8) via a ~10-line local pool helper — no dependency.
 - The fetch site carries `// TODO(VIM-341): replace N get_git_diff round-trips with the batch hunk-range command` — the pre-agreed upgrade path.
 - `useRequestReview` gains `changedFiles: ChangedFile[]` and a `fetchFileDiff(path, staged, untracked): Promise<FileDiff>` callback (Panel passes a thin wrapper over the existing `gitService.getDiff`), keeping the hook unit-testable with a mock callback.
-- **Dev git-service parity is a prerequisite**, in two parts. (1) *Untracked*: the vite dev middleware maps untracked (`?`) entries to status `'A'` (`vite.config.ts:404-408`) — `entry.status === 'untracked'` never holds there, `getDiff(..., untracked: false)` 404s, and the atomic abort kills the whole changelist review in dev-browser mode. The middleware is updated to emit `'untracked'` (the serde-lowercase value the `GitStatus` type documents) and to serve a zero-hunk `FileDiff` for empty untracked files instead of 404. (2) *Status/diff axis coherence*: the middleware's status endpoint reports committed branch-vs-main files as `staged: true` entries (`vite.config.ts:352-381`) while its diff endpoint serves staged requests from `git diff --cached` only (`vite.config.ts:436-523`) — on a clean committed feature branch every such entry 404s and aborts the changelist. **Invariant: every entry the status endpoint reports must be fetchable from the diff endpoint on the axis it claims** — the diff endpoint serves the branch-diff basis for those entries (or the status endpoint stops emitting them; the plan pins the mechanics). Regression test: clean committed feature branch. Desktop (Rust) already conforms on both counts.
+- **Dev git-service parity is a prerequisite**, in two parts. (1) _Untracked_: the vite dev middleware maps untracked (`?`) entries to status `'A'` (`vite.config.ts:404-408`) — `entry.status === 'untracked'` never holds there, `getDiff(..., untracked: false)` 404s, and the atomic abort kills the whole changelist review in dev-browser mode. The middleware is updated to emit `'untracked'` (the serde-lowercase value the `GitStatus` type documents) and to serve a zero-hunk `FileDiff` for empty untracked files instead of 404. (2) _Status/diff axis coherence_: the middleware's status endpoint reports committed branch-vs-main files as `staged: true` entries (`vite.config.ts:352-381`) while its diff endpoint serves staged requests from `git diff --cached` only (`vite.config.ts:436-523`) — on a clean committed feature branch every such entry 404s and aborts the changelist. **Invariant: every entry the status endpoint reports must be fetchable from the diff endpoint on the axis it claims.** Serving those entries a branch-diff basis would make the prompt lie (it names `git diff --cached`, which is empty for them) — so the resolution is to **stop emitting the branch-vs-main section by default**: those entries are committed work, not part of the uncommitted changelist. The section stays reachable behind an explicit `?base=<branch>` query param (the frontend never sends one), aligning dev status with desktop semantics: uncommitted changes only. Regression test: on a clean committed feature branch dev status reports no entries, and after touching files every reported entry is fetchable. Desktop (Rust) already conforms on both counts.
 
 ### Prefetch on popover open (clipboard gesture)
 
@@ -101,7 +101,7 @@ For each `ChangedFile` entry: `getDiff(entry.path, entry.staged, entry.status ==
 
 - **Any fetch rejection aborts the whole arm**: no nonce minted, nothing stored, `notify('Could not snapshot the changelist; review request not sent.')`. Same atomicity contract as the VIM-298 follow-up dispatch — a half-armed request is worse than a retry.
 - **Zero-hunk responses are included, not errors** (binary files, mode-only changes): the entry snapshots with empty ranges, so any line finding on it degrades to file-level — graceful, visible.
-- **Drift semantics are best-effort, unchanged from the single-file flow.** Two clocks exist and only one is frozen: *placement* is deterministic against the armed hunk ranges (`PendingReviewRequest.diffSnapshot`), but the *reviewer* reads the live diff whenever it gets around to it — the prompt is paths-only, so edits (or a delayed copy/paste) between dispatch and read mean the reviewer can describe content the armed ranges predate. That is exactly how VIM-304 single-file requests ship today; the line → range → file fallback keeps drifted findings visible rather than lost, and an immutable review input (temp index, inlined diffs) is an explicit non-goal (Section 1). No re-validation at ingest.
+- **Drift semantics are best-effort, unchanged from the single-file flow.** Two clocks exist and only one is frozen: _placement_ is deterministic against the armed hunk ranges (`PendingReviewRequest.diffSnapshot`), but the _reviewer_ reads the live diff whenever it gets around to it — the prompt is paths-only, so edits (or a delayed copy/paste) between dispatch and read mean the reviewer can describe content the armed ranges predate. That is exactly how VIM-304 single-file requests ship today; the line → range → file fallback keeps drifted findings visible rather than lost, and an immutable review input (temp index, inlined diffs) is an explicit non-goal (Section 1). No re-validation at ingest.
 
 ## 4. Dispatch Prompt (grouped, still paths-only)
 
@@ -149,12 +149,13 @@ For each `ChangedFile` entry: `getDiff(entry.path, entry.staged, entry.status ==
 └─────────────────────────────────────┘
 ```
 
-- **Hotkeys**: `f` → This file, `a` → All changes, handled in the popover's existing capture-phase keydown alongside `Y`/`c`/`n` (`RequestReviewPopover.tsx:58-92`); the chips carry matching `aria-keyshortcuts`.
+- **Hotkeys**: `f` → This file, `a` → All changes, handled in the popover's existing capture-phase keydown alongside `Y`/`c`/`n` (`RequestReviewPopover.tsx:58-92`). The shared `SegmentedControl` API has no per-option `aria-keyshortcuts` passthrough — the group's `aria-label` names the keys (`Review scope (f/a)`) instead of extending the primitive.
 - **`scopeLabel` becomes per-scope**: file → `src/auth.ts (unstaged)` (today's string, `Panel.tsx:418`); changelist → `7 changes` (entry count — a dual-half file counts twice, so "changes", not "files").
 
 ### Defaults & gating
 
 - **Default scope = `changelist` when the strip has >1 entry**, else `file` — the issue's whole motivation is that real review requests are about the changelist; single-entry strips behave exactly as today.
+- **The choice resets each open**: `openPopover()` clears any prior selection back to the computed default, so a stale changelist choice cannot survive strip/file state transitions between opens.
 - **Selector hidden when the choice is degenerate**: exactly one strip entry and it is the active file (both scopes identical) — today's popover, unchanged.
 - **No active file** (`fileDiff === undefined`): scope forced `changelist`, "This file" chip disabled with the existing disabled treatment.
 - **Empty strip while a diff is still open** (transient — e.g. everything just committed): scope forced `file`, "All changes" chip disabled — the UI mirror of Section 2's "empty strip → changelist scope unavailable".
@@ -193,4 +194,4 @@ Delegate-target resolution (`ResolveResult` one-agent fast path vs copy-fallback
 
 In-memory stores only — no persistence or migration. Single PR on `feature/vim-327` (auto-review/auto-approve), body `Closes VIM-327` + `Part of VIM-284`. v2 escape hatch pre-filed as VIM-341.
 
-<!-- codex-reviewed: 2026-07-13T17:05:58Z -->
+<!-- codex-reviewed: 2026-07-13T17:32:58Z -->
