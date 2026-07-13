@@ -53,6 +53,39 @@ test('imports and applies valid theme JSON', async () => {
   expect(onClose).toHaveBeenCalled()
 })
 
+test('blocks import when theme JSON collides with a custom theme id', async () => {
+  const user = userEvent.setup()
+  const onClose = vi.fn()
+  themeService.install({
+    ...themeToScheme(obsidianLens),
+    id: 'existing-theme',
+    label: 'Existing Theme',
+  })
+
+  render(<ThemeJsonEditor mode="import" onClose={onClose} />)
+
+  fireEvent.change(screen.getByLabelText('Theme JSON'), {
+    target: {
+      value: JSON.stringify({
+        ...themeToScheme(obsidianLens),
+        id: 'existing-theme',
+        label: 'Imported Replacement',
+      }),
+    },
+  })
+  await user.click(screen.getByRole('button', { name: 'Import theme' }))
+
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    'A custom theme with this id already exists'
+  )
+
+  expect(
+    themeService.list().find((candidate) => candidate.id === 'existing-theme')
+      ?.label
+  ).toBe('Existing Theme')
+  expect(onClose).not.toHaveBeenCalled()
+})
+
 test('keeps the editor open and reports invalid JSON', async () => {
   const user = userEvent.setup()
   const onClose = vi.fn()
@@ -128,4 +161,40 @@ test('creates a new scheme from a palette-only starter', async () => {
   await user.click(screen.getByRole('button', { name: 'Create color scheme' }))
 
   expect(themeService.current().id).toBe('new-color-scheme')
+})
+
+test('blocks create when edited JSON collides with a custom theme id', async () => {
+  const user = userEvent.setup()
+  const onClose = vi.fn()
+  themeService.install({
+    ...themeToScheme(obsidianLens),
+    id: 'existing-theme',
+    label: 'Existing Theme',
+  })
+
+  render(
+    <ThemeJsonEditor mode="create" theme={obsidianLens} onClose={onClose} />
+  )
+
+  const editor = screen.getByLabelText<HTMLTextAreaElement>('Theme JSON')
+  fireEvent.change(editor, {
+    target: {
+      value: JSON.stringify({
+        ...JSON.parse(editor.value),
+        id: 'existing-theme',
+        label: 'Created Replacement',
+      }),
+    },
+  })
+  await user.click(screen.getByRole('button', { name: 'Create color scheme' }))
+
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    'A custom theme with this id already exists'
+  )
+
+  expect(
+    themeService.list().find((candidate) => candidate.id === 'existing-theme')
+      ?.label
+  ).toBe('Existing Theme')
+  expect(onClose).not.toHaveBeenCalled()
 })

@@ -86,6 +86,11 @@ const schemeForMode = (
   return themeToScheme(theme)
 }
 
+const hasCustomThemeIdCollision = (id: string): boolean =>
+  themeService
+    .list()
+    .some((candidate) => candidate.id === id && !themeService.isBuiltIn(id))
+
 const initialText = (
   mode: ThemeJsonEditorMode,
   theme: ThemeDefinition | undefined
@@ -137,6 +142,10 @@ export const ThemeJsonEditor = ({
 
       if (expectedEditId !== undefined && parsed.id !== expectedEditId) {
         throw new Error('Theme id cannot change while editing')
+      }
+
+      if (mode !== 'edit' && hasCustomThemeIdCollision(parsed.id)) {
+        throw new Error('A custom theme with this id already exists')
       }
 
       themeService.install(parsed)
