@@ -333,6 +333,20 @@ const waitForSplitViewDisplayed = async (): Promise<void> => {
   })
 }
 
+const createFreshSinglePaneSession = async (): Promise<void> => {
+  await createNewSessionWithDefaults()
+  await waitForSplitViewDisplayed()
+  await browser.waitUntil(
+    async () =>
+      (await currentLayout()) === 'single' && (await paneSlotCount()) === 1,
+    {
+      timeout: 20_000,
+      interval: 250,
+      timeoutMsg: 'fresh single-pane session did not become active',
+    }
+  )
+}
+
 const activePaneIndex = async (): Promise<number> =>
   browser.execute(() => {
     const slots = Array.from(
@@ -486,6 +500,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
   it('Cmd+\\ cycles the pane layout', async () => {
     await setPreset('vimeflow')
+    await createFreshSinglePaneSession()
     await focusTerminalZone()
 
     const before = await currentLayout()
@@ -498,6 +513,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
   it('Vim ex-command :vsplit (via palette) sets the vsplit layout', async () => {
     await setPreset('vim')
+    await createFreshSinglePaneSession()
 
     await runExCommand(':vsplit')
 

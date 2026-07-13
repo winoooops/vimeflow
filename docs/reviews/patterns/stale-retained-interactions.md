@@ -2,8 +2,8 @@
 id: stale-retained-interactions
 category: react-patterns
 created: 2026-06-15
-last_updated: 2026-07-11
-ref_count: 9
+last_updated: 2026-07-13
+ref_count: 10
 ---
 
 # Stale Retained Interactions
@@ -116,4 +116,13 @@ When a React component renders retained or stale content while fresh data for a 
 - **File:** `src/features/diff/Panel.tsx`
 - **Finding:** The single-comment send-now flow dispatched only the addressed pending row, but still called the whole-batch `markDispatched` path that cleared the owner draft. Sending one existing pending comment could silently discard an unsaved draft for another comment in the same review owner.
 - **Fix:** Added a dispatch option that reserves whole-draft clearing for full-batch sends. Single-comment sends now clear only an editor draft whose `editId` matches the dispatched comment, and preserve unrelated drafts. Added hook regression coverage for both cases.
+- **Commit:** same commit as this entry
+
+### 12. Manual launcher recording reused stale alias snapshots
+
+- **Source:** github-codex-connector | PR #693 round 1 | 2026-07-13
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Manual generic-pane launcher recording reused a retained alias configuration snapshot for non-canonical commands. After aliases changed in Settings, a newly submitted alias could be rejected as unknown and the pane would later resume with the canonical agent launcher instead of the alias the user actually typed.
+- **Fix:** Reload alias configuration before matching non-canonical launcher commands while keeping canonical launchers on the fast path. Added hook coverage that records an old alias, changes the alias loader result, and verifies the next non-canonical command records the fresh alias.
 - **Commit:** same commit as this entry

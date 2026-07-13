@@ -5088,6 +5088,66 @@ describe('useSessionManager', () => {
     })
   })
 
+  test('recordPaneAgentLauncher reloads aliases before matching non-canonical commands', async () => {
+    const aliasLoad = vi
+      .fn<() => Promise<AgentAlias[]>>()
+      .mockResolvedValueOnce([agentAlias('OLD_CC', 'claude')])
+      .mockResolvedValueOnce([agentAlias('NEW_CC', 'claude')])
+
+    const bridge = window.vimeflow
+    if (bridge === undefined) {
+      throw new Error('expected the test backend bridge to be installed')
+    }
+
+    window.vimeflow = {
+      ...bridge,
+      aliases: {
+        load: aliasLoad,
+        save: vi.fn(() => Promise.resolve()),
+      },
+      settings: {
+        load: vi.fn(() => Promise.resolve(DEFAULT_SETTINGS)),
+        save: vi.fn(() => Promise.resolve()),
+        openFile: vi.fn(() => Promise.resolve()),
+        syncSnapshot: vi.fn(() => Promise.resolve()),
+      },
+    }
+
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'OLD_CC --fast'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].agentLauncher).toBe('OLD_CC')
+    )
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'NEW_CC --fast'))
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].agentLauncher).toBe('NEW_CC')
+    )
+
+    expect(aliasLoad).toHaveBeenCalledTimes(2)
+  })
+
   test('restartSession releases exact identity resume claim when pane is removed', async () => {
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
       sessions: [

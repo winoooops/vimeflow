@@ -80,14 +80,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 49   | 2026-07-12   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 39       | 18   | 2026-07-12   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 39       | 19   | 2026-07-12   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 19       | 8    | 2026-07-11   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 37       | 11   | 2026-07-09   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 20       | 9    | 2026-07-13   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 20       | 10   | 2026-07-13   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 22       | 9    | 2026-07-09   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
@@ -101,7 +101,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 10   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
-| [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 11       | 9    | 2026-07-11   |
+| [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 7        | 4    | 2026-07-05   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |

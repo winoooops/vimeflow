@@ -2983,10 +2983,7 @@ export const useSessionManager = (
         const canonicalLauncher = agentLauncherFromCommand(command, undefined)
 
         const aliasConfig =
-          canonicalLauncher === null
-            ? (agentAliasConfigSnapshotRef.current ??
-              (await readAgentAliasConfig()))
-            : undefined
+          canonicalLauncher === null ? await readAgentAliasConfig() : undefined
 
         const launcher =
           canonicalLauncher ?? agentLauncherFromCommand(command, aliasConfig)

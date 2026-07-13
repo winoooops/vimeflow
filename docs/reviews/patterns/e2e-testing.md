@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-12
-ref_count: 18
+ref_count: 19
 ---
 
 # E2E Testing
