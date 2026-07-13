@@ -17,6 +17,37 @@ npm run test:e2e:all  # WebdriverIO + @wdio/electron-service E2E suites
 cargo test --manifest-path crates/backend/Cargo.toml
 ```
 
+## Runtime Env Flags
+
+Set on `npm run electron:dev` (all opt-in; unset = default behavior).
+
+| Env var                                 | Effect                                                                                                                                                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VIMEFLOW_USER_DATA_DIR=<dir>`          | Redirect Electron's userData to `<dir>` for a **clean dev env**. Dev otherwise shares the prod `~/Library/Application Support/vibm` dir — same sessions, settings, and agent state as the installed app. Only userData is redirected; `HOME` is left alone (faking it breaks Claude auth). |
+| `VIMEFLOW_NO_SANDBOX=1`                 | Disable the Chromium renderer sandbox — Linux dev hosts without a working SUID sandbox.                                                                                                                                                                                                    |
+| `VIMEFLOW_REMOTE_DEBUGGING_PORT=<port>` | Expose a renderer DevTools endpoint at `http://127.0.0.1:<port>/json/list` (unpackaged only).                                                                                                                                                                                              |
+
+### Ghostty native runtime (macOS)
+
+The native Ghostty terminal path is opt-in in dev. Use the wrapper script or set the flags yourself:
+
+```bash
+npm run electron:dev:ghostty   # = VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 VITE_NATIVE_OVERLAY=1 on port 5174
+```
+
+| Env var                              | Effect                                                                                         |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `VITE_GHOSTTY_NATIVE_MACOS_PARENT=1` | Enable the native Ghostty parent-window surface (the macOS backbone; always on when packaged). |
+| `VITE_NATIVE_OVERLAY=1`              | Enable native overlay layering used with the parent surface.                                   |
+| `VITE_GHOSTTY_NATIVE_MACOS=1`        | Enable the older native helper path (superseded by the parent path).                           |
+| `GHOSTTY_RESIZE_THROTTLE_MS=<ms>`    | Override the resize throttle for the native parent surface.                                    |
+
+Run dev alongside the installed prod app with the native terminal and a clean profile:
+
+```bash
+VIMEFLOW_USER_DATA_DIR=/tmp/vimeflow-dev npm run electron:dev:ghostty
+```
+
 ## Tech Stack
 
 - **Desktop**: Electron shell + Rust `vimeflow-backend` sidecar
