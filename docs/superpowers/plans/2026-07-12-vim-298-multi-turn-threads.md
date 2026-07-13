@@ -2009,3 +2009,5 @@ EOF
 - Spec coverage: Section 2 → Tasks 1–3, Section 3 → Task 6, Section 4 → Tasks 4, 5, 7, Section 5 → Tasks 6, 7, Section 6 → every task's tests + Task 8/9.
 - Type consistency: `ThreadGroup`/`threadGroupKey`/`threadAnchorLabel`/`followUpContextLine`/`isFollowUpComment` names match across Tasks 3, 5, 6, 7, 8; `markDispatched` options shape matches Tasks 1 and 2; `PendingReviewHandle.threadId` matches Tasks 2, 7, 8.
 - The two known judgment points for the executor: (1) existing Panel tests that asserted dispatched-comment rows will need updating to the card rendering — that is the feature, not a regression; (2) match each test file's existing harness idioms rather than inventing new ones.
+
+<!-- codex-reviewed: 2026-07-13T07:17:31Z -->
