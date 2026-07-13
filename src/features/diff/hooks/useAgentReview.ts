@@ -85,6 +85,7 @@ export const useAgentReview = ({
       downgradeToFile: boolean
     ): DiffLineAnnotation<ReviewComment> => {
       const id = nextCommentId()
+
       const metadata: ReviewComment = {
         id,
         threadId: id,

@@ -130,6 +130,7 @@ export const formatFeedbackPayload = (
       const category = reviewCommentCategory(annotation.metadata)
       const followUp = isFollowUpComment(annotation.metadata)
       const label = followUp ? FOLLOW_UP_LABEL : CATEGORY_LABEL[category]
+
       const instruction = followUp
         ? FOLLOW_UP_INSTRUCTION
         : CATEGORY_INSTRUCTION[category]

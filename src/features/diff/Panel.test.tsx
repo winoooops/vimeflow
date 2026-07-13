@@ -6317,6 +6317,87 @@ describe('Panel', () => {
       await waitFor(() => expect(focusTerminal).toHaveBeenCalledOnce())
     })
 
+    test('clicking Resolve stamps resolvedAt on the thread root (VIM-298)', async (): Promise<void> => {
+      const user = userEvent.setup()
+      const updateAnnotation = vi.fn()
+
+      const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'root-c1',
+            text: 'Why does this work?',
+            author: 'self',
+            category: 'question',
+            createdAt: 1000,
+            dispatchedAt: 1000,
+            dispatchedTo: 'pty-1',
+            threadId: 'root-c1',
+          },
+        },
+        {
+          lineNumber: 5,
+          side: 'additions',
+          metadata: {
+            id: 'agent-g1',
+            text: 'Because of backpressure.',
+            author: 'agent',
+            outcome: 'reply',
+            createdAt: 2000,
+            threadId: 'root-c1',
+          },
+        },
+      ]
+
+      const feedbackBatch: UseFeedbackBatchReturn = {
+        batch: new Map([
+          [makeBatchKey('/repo', 'src/foo.ts', false), batchAnnotations],
+        ]),
+        annotationsForFile: () => batchAnnotations,
+        addAnnotation: vi.fn(() => 'ok' as const),
+        addAnnotationForOwner: vi.fn(() => 'ok' as const),
+        updateAnnotation,
+        removeAnnotation: vi.fn(),
+        clearBatch: vi.fn(),
+        clearPending: vi.fn(),
+        markDispatched: vi.fn(),
+        totalAnnotations: () => 2,
+        pendingAnnotations: () => 0,
+      }
+
+      render(
+        <Panel
+          cwd="/repo"
+          selectedFile={{ path: 'src/foo.ts', staged: false, cwd: '/repo' }}
+          onSelectedFileChange={vi.fn()}
+          feedbackOwnerKey="sess:pane-1"
+          feedbackBatch={feedbackBatch}
+          feedbackDispatch={{
+            candidates: [],
+            writePty: vi.fn(),
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
+
+      const annotationSlot = screen.getByTestId('annotation-slot')
+
+      await user.click(
+        within(annotationSlot).getByRole('button', { name: /resolve/i })
+      )
+
+      expect(updateAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        'root-c1',
+        { resolvedAt: expect.any(Number) }
+      )
+    })
+
     test('thread reply: write failure leaves no inserted comment and keeps the editor open (VIM-298)', async (): Promise<void> => {
       const user = userEvent.setup()
       const writePty = vi.fn().mockRejectedValue(new Error('pty closed'))

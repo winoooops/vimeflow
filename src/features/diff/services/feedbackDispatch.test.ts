@@ -392,6 +392,7 @@ test('a typeless follow-up renders as [#n · Follow-up] with the context line', 
   expect(payload).toContain(
     '> ↩ Continuing our thread — your last reply: "The pool applies backpressure"'
   )
+
   expect(payload).toContain(
     '> → Answer inline in your reply. Do not edit files.'
   )

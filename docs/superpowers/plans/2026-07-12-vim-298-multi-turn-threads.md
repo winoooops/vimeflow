@@ -19,26 +19,27 @@
 
 ## File Structure
 
-| File | Change |
-| --- | --- |
-| `src/features/diff/hooks/useFeedbackBatch.ts` | `ReviewComment` gains `threadId`/`resolvedAt`/`dispatchedTo`; `markDispatched` stamps thread fields; cap check keys on pending-ness |
-| `src/features/diff/services/pendingReviews.ts` | `PendingReviewHandle` gains `threadId` |
-| `src/features/diff/hooks/useAgentReply.ts` | `attachAgentNote` copies `handle.threadId` |
-| `src/features/diff/hooks/useAgentReview.ts` | findings self-root (`threadId = id`); anchored handles carry it |
-| `src/features/diff/reviewCategoryMeta.ts` | `THREAD_ROLLUP_META` |
-| `src/features/diff/services/threadGroups.ts` (new) | `threadGroupKey`, `threadRollup`, `buildThreadGroups`, `threadAnchorLabel`, `ThreadGroup` |
-| `src/features/diff/components/ReviewCommentEditor.tsx` | `mode: 'comment' \| 'reply'` |
-| `src/features/diff/services/feedbackDispatch.ts` | Follow-up label/instruction, `followUpContextLine`, payload context param |
-| `src/features/diff/components/ReviewThreadCard.tsx` (new) | The thread card (settled demo recipe) |
-| `src/features/diff/components/PanelBody.tsx` | Thread-group branch in `renderAnnotation` |
-| `src/features/diff/Panel.tsx` | Grouping memos, reply draft state, `handleSendThreadReply`, popover scoping, resolve/reopen, file strip |
-| `src/features/diff/agentReplyThread.integration.test.tsx` | Full multi-turn loop |
+| File                                                      | Change                                                                                                                              |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `src/features/diff/hooks/useFeedbackBatch.ts`             | `ReviewComment` gains `threadId`/`resolvedAt`/`dispatchedTo`; `markDispatched` stamps thread fields; cap check keys on pending-ness |
+| `src/features/diff/services/pendingReviews.ts`            | `PendingReviewHandle` gains `threadId`                                                                                              |
+| `src/features/diff/hooks/useAgentReply.ts`                | `attachAgentNote` copies `handle.threadId`                                                                                          |
+| `src/features/diff/hooks/useAgentReview.ts`               | findings self-root (`threadId = id`); anchored handles carry it                                                                     |
+| `src/features/diff/reviewCategoryMeta.ts`                 | `THREAD_ROLLUP_META`                                                                                                                |
+| `src/features/diff/services/threadGroups.ts` (new)        | `threadGroupKey`, `threadRollup`, `buildThreadGroups`, `threadAnchorLabel`, `ThreadGroup`                                           |
+| `src/features/diff/components/ReviewCommentEditor.tsx`    | `mode: 'comment' \| 'reply'`                                                                                                        |
+| `src/features/diff/services/feedbackDispatch.ts`          | Follow-up label/instruction, `followUpContextLine`, payload context param                                                           |
+| `src/features/diff/components/ReviewThreadCard.tsx` (new) | The thread card (settled demo recipe)                                                                                               |
+| `src/features/diff/components/PanelBody.tsx`              | Thread-group branch in `renderAnnotation`                                                                                           |
+| `src/features/diff/Panel.tsx`                             | Grouping memos, reply draft state, `handleSendThreadReply`, popover scoping, resolve/reopen, file strip                             |
+| `src/features/diff/agentReplyThread.integration.test.tsx` | Full multi-turn loop                                                                                                                |
 
 ---
 
 ### Task 1: Thread fields on `ReviewComment` + stamping + cap fix
 
 **Files:**
+
 - Modify: `src/features/diff/hooks/useFeedbackBatch.ts`
 - Test: `src/features/diff/hooks/useFeedbackBatch.test.ts`
 
@@ -132,7 +133,7 @@ Expected: the new tests FAIL (`threadId` undefined; cap insert returns 'cap-reac
       ) {
 ```
 
-(The cap guards the *pending* review the user is assembling; a pre-stamped dispatched follow-up is thread history, like agent output. `isPendingReviewAnnotation` = `author === 'self' && dispatchedAt === undefined`, so pending behavior is unchanged.)
+(The cap guards the _pending_ review the user is assembling; a pre-stamped dispatched follow-up is thread history, like agent output. `isPendingReviewAnnotation` = `author === 'self' && dispatchedAt === undefined`, so pending behavior is unchanged.)
 
 - [ ] **Step 4: Run to verify they pass**
 
@@ -151,6 +152,7 @@ git commit -m "feat(diff): thread fields on ReviewComment + dispatch stamping (V
 ### Task 2: `threadId` through handles, agent replies, and finding placement
 
 **Files:**
+
 - Modify: `src/features/diff/services/pendingReviews.ts`
 - Modify: `src/features/diff/Panel.tsx` (`buildFeedbackEntries`, `handleSendFeedback`)
 - Modify: `src/features/diff/hooks/useAgentReply.ts`
@@ -224,16 +226,16 @@ Expected: new tests FAIL (no `threadId` anywhere).
 (e) `useAgentReview.ts` — in `reviewerAnnotation`, self-root the finding:
 
 ```ts
-      const id = nextCommentId()
-      const metadata: ReviewComment = {
-        id,
-        threadId: id,
-        text: finding.text,
-        author: 'reviewer',
-        reviewer,
-        category: finding.category as ReviewCommentCategory,
-        createdAt: Date.now(),
-      }
+const id = nextCommentId()
+const metadata: ReviewComment = {
+  id,
+  threadId: id,
+  text: finding.text,
+  author: 'reviewer',
+  reviewer,
+  category: finding.category as ReviewCommentCategory,
+  createdAt: Date.now(),
+}
 ```
 
 (remove the old `id: nextCommentId(),` line). Then in the `byOrdinal.set(ordinal, { kind: 'anchored', ... })` handle object add `threadId: annotation.metadata.id,`.
@@ -255,6 +257,7 @@ git commit -m "feat(diff): thread identity through dispatch handles and replies 
 ### Task 3: Grouping selector + rollup metas
 
 **Files:**
+
 - Modify: `src/features/diff/reviewCategoryMeta.ts`
 - Create: `src/features/diff/services/threadGroups.ts`
 - Test: `src/features/diff/services/threadGroups.test.ts`
@@ -296,12 +299,12 @@ describe('threadGroupKey', () => {
   })
 
   test('threadId wins; dispatched and non-self fall back to own id', () => {
-    expect(
-      threadGroupKey(annotation({ id: 'a1', threadId: 'root-1' }))
-    ).toBe('root-1')
-    expect(
-      threadGroupKey(annotation({ id: 'c1', dispatchedAt: 1000 }))
-    ).toBe('c1')
+    expect(threadGroupKey(annotation({ id: 'a1', threadId: 'root-1' }))).toBe(
+      'root-1'
+    )
+    expect(threadGroupKey(annotation({ id: 'c1', dispatchedAt: 1000 }))).toBe(
+      'c1'
+    )
     expect(threadGroupKey(annotation({ id: 'g1', author: 'agent' }))).toBe('g1')
   })
 })
@@ -579,6 +582,7 @@ git commit -m "feat(diff): thread grouping selector + rollup metas (VIM-298)"
 ### Task 4: `reply` mode on `ReviewCommentEditor`
 
 **Files:**
+
 - Modify: `src/features/diff/components/ReviewCommentEditor.tsx`
 - Test: `src/features/diff/components/ReviewCommentEditor.test.tsx`
 
@@ -641,9 +645,9 @@ destructure `mode = 'comment'` in the component.
 (b) Guard the cycle at the top of `cycleCategory`:
 
 ```ts
-    if (mode === 'reply') {
-      return
-    }
+if (mode === 'reply') {
+  return
+}
 ```
 
 (c) Header label: replace the literal `Local comment` text node with `{mode === 'reply' ? 'Reply to thread' : 'Local comment'}`.
@@ -671,6 +675,7 @@ git commit -m "feat(diff): typeless reply mode on the comment editor (VIM-298)"
 ### Task 5: Follow-up payload formatting
 
 **Files:**
+
 - Modify: `src/features/diff/services/feedbackDispatch.ts`
 - Test: `src/features/diff/services/feedbackDispatch.test.ts`
 
@@ -706,7 +711,9 @@ test('a typeless follow-up renders as [#n · Follow-up] with the context line', 
   expect(payload).toContain(
     '> ↩ Continuing our thread — your last reply: "The pool applies backpressure"'
   )
-  expect(payload).toContain('> → Answer inline in your reply. Do not edit files.')
+  expect(payload).toContain(
+    '> → Answer inline in your reply. Do not edit files.'
+  )
   expect(payload).not.toContain('Change request')
 })
 
@@ -824,23 +831,21 @@ export const followUpContextLine = (previous: ReviewComment): string => {
 (b) `formatFeedbackPayload` gains a third parameter `followUpContext?: string`. In the per-annotation loop, compute follow-up-aware label/instruction and insert the context line:
 
 ```ts
-      const followUp = isFollowUpComment(annotation.metadata)
-      const label = followUp ? FOLLOW_UP_LABEL : CATEGORY_LABEL[category]
-      const instruction = followUp
-        ? FOLLOW_UP_INSTRUCTION
-        : CATEGORY_INSTRUCTION[category]
+const followUp = isFollowUpComment(annotation.metadata)
+const label = followUp ? FOLLOW_UP_LABEL : CATEGORY_LABEL[category]
+const instruction = followUp
+  ? FOLLOW_UP_INSTRUCTION
+  : CATEGORY_INSTRUCTION[category]
 
-      blocks.push(
-        [
-          `> [#${index} · ${label}] ${formatAnnotationTarget(entry, annotation)}`,
-          ...(followUp && followUpContext !== undefined
-            ? [followUpContext]
-            : []),
-          ...textLines,
-          `> → ${instruction}`,
-          '>',
-        ].join('\n')
-      )
+blocks.push(
+  [
+    `> [#${index} · ${label}] ${formatAnnotationTarget(entry, annotation)}`,
+    ...(followUp && followUpContext !== undefined ? [followUpContext] : []),
+    ...textLines,
+    `> → ${instruction}`,
+    '>',
+  ].join('\n')
+)
 ```
 
 (c) `dispatchFeedbackBatch` gains a trailing optional `followUpContext?: string` parameter, passed through to `formatFeedbackPayload(entries, nonce, followUpContext)`.
@@ -862,6 +867,7 @@ git commit -m "feat(diff): follow-up payload format + thread context line (VIM-2
 ### Task 6: `ReviewThreadCard`
 
 **Files:**
+
 - Create: `src/features/diff/components/ReviewThreadCard.tsx`
 - Test: `src/features/diff/components/ReviewThreadCard.test.tsx`
 
@@ -927,7 +933,11 @@ const actions = (
 describe('ReviewThreadCard', () => {
   test('renders header, ordered turns, chips, and the footer pair', () => {
     render(
-      <ReviewThreadCard group={group()} anchorLabel="line R40" actions={actions()} />
+      <ReviewThreadCard
+        group={group()}
+        anchorLabel="line R40"
+        actions={actions()}
+      />
     )
 
     expect(screen.getByText('line R40')).toBeInTheDocument()
@@ -955,7 +965,9 @@ describe('ReviewThreadCard', () => {
         threadId: 'c1',
       },
     })
-    render(<ReviewThreadCard group={g} anchorLabel="line R40" actions={actions()} />)
+    render(
+      <ReviewThreadCard group={g} anchorLabel="line R40" actions={actions()} />
+    )
 
     // Exactly one category chip (the root's Question) despite two self turns.
     expect(screen.getAllByText('Question')).toHaveLength(1)
@@ -963,7 +975,9 @@ describe('ReviewThreadCard', () => {
 
   test('reply expands the editor; confirm submits the draft', () => {
     const a = actions({ replying: true, replyDraft: 'follow-up text' })
-    render(<ReviewThreadCard group={group()} anchorLabel="line R40" actions={a} />)
+    render(
+      <ReviewThreadCard group={group()} anchorLabel="line R40" actions={a} />
+    )
 
     fireEvent.keyDown(screen.getByPlaceholderText('Reply to the agent…'), {
       key: 'Enter',
@@ -1008,14 +1022,26 @@ describe('ReviewThreadCard', () => {
       rollup: { label: 'Resolved', chip: 'text-success' },
     })
     const { rerender } = render(
-      <ReviewThreadCard group={resolved} anchorLabel="line R40" actions={actions()} />
+      <ReviewThreadCard
+        group={resolved}
+        anchorLabel="line R40"
+        actions={actions()}
+      />
     )
     fireEvent.click(screen.getByRole('button', { name: /thread/i }))
     rerender(
-      <ReviewThreadCard group={group()} anchorLabel="line R40" actions={actions()} />
+      <ReviewThreadCard
+        group={group()}
+        anchorLabel="line R40"
+        actions={actions()}
+      />
     )
     rerender(
-      <ReviewThreadCard group={resolved} anchorLabel="line R40" actions={actions()} />
+      <ReviewThreadCard
+        group={resolved}
+        anchorLabel="line R40"
+        actions={actions()}
+      />
     )
 
     expect(screen.queryByText('Why does the cap live here?')).toBeNull()
@@ -1323,6 +1349,7 @@ git commit -m "feat(diff): GitHub-style thread card component (VIM-298)"
 ### Task 7: Panel + PanelBody wiring (grouping, reply dispatch, resolve)
 
 **Files:**
+
 - Modify: `src/features/diff/components/PanelBody.tsx`
 - Modify: `src/features/diff/components/Notifier.tsx` (`FinishFeedbackState.onCopy` becomes optional — `onCopy?: () => void`; `FinishFeedbackPopover` already treats it as optional)
 - Modify: `src/features/diff/Panel.tsx`
@@ -1473,212 +1500,212 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
 (b) State, next to `sendNowCommentId`:
 
 ```ts
-  // Thread reply drafts (VIM-298), keyed by threadId so starting a reply on
-  // one thread never discards another thread's typed text. Panel-owned so a
-  // MultiFileDiff remount cannot erase them; an entry is cleared ONLY by that
-  // thread's explicit cancel or its successful dispatch.
-  const [replyDrafts, setReplyDrafts] = useState<ReadonlyMap<string, string>>(
-    new Map()
-  )
-  // Thread whose reply editor is currently open; null = none.
-  const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null)
-  // Thread whose follow-up is awaiting the scoped confirm popover (VIM-298);
-  // mutually exclusive with finishOpen / sendNowCommentId.
-  const [replyDispatchThreadId, setReplyDispatchThreadId] = useState<
-    string | null
-  >(null)
+// Thread reply drafts (VIM-298), keyed by threadId so starting a reply on
+// one thread never discards another thread's typed text. Panel-owned so a
+// MultiFileDiff remount cannot erase them; an entry is cleared ONLY by that
+// thread's explicit cancel or its successful dispatch.
+const [replyDrafts, setReplyDrafts] = useState<ReadonlyMap<string, string>>(
+  new Map()
+)
+// Thread whose reply editor is currently open; null = none.
+const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null)
+// Thread whose follow-up is awaiting the scoped confirm popover (VIM-298);
+// mutually exclusive with finishOpen / sendNowCommentId.
+const [replyDispatchThreadId, setReplyDispatchThreadId] = useState<
+  string | null
+>(null)
 ```
 
 (c) Grouping memos, after `lineAnnotations` is available (below the `useReviewCommentDraft` destructure):
 
 ```ts
-  const lineThreads = useMemo(
-    () =>
-      buildThreadGroups(lineAnnotations, {
-        cwd,
-        filePath: selectedFilePath ?? '',
-        staged: selectedFileStaged,
-      }),
-    [lineAnnotations, cwd, selectedFilePath, selectedFileStaged]
-  )
+const lineThreads = useMemo(
+  () =>
+    buildThreadGroups(lineAnnotations, {
+      cwd,
+      filePath: selectedFilePath ?? '',
+      staged: selectedFileStaged,
+    }),
+  [lineAnnotations, cwd, selectedFilePath, selectedFileStaged]
+)
 
-  const fileThreads = useMemo(
-    () =>
-      buildThreadGroups(fileCommentsForSelectedFile, {
-        cwd,
-        filePath: selectedFileEntry?.path ?? '',
-        staged: selectedFileEntry?.staged ?? false,
-      }),
-    [fileCommentsForSelectedFile, cwd, selectedFileEntry]
-  )
+const fileThreads = useMemo(
+  () =>
+    buildThreadGroups(fileCommentsForSelectedFile, {
+      cwd,
+      filePath: selectedFileEntry?.path ?? '',
+      staged: selectedFileEntry?.staged ?? false,
+    }),
+  [fileCommentsForSelectedFile, cwd, selectedFileEntry]
+)
 
-  const threadGroupById = useMemo((): Map<string, ThreadGroup> => {
-    const merged = new Map(lineThreads.groups)
-    for (const [key, group] of fileThreads.groups) {
-      merged.set(key, group)
-    }
+const threadGroupById = useMemo((): Map<string, ThreadGroup> => {
+  const merged = new Map(lineThreads.groups)
+  for (const [key, group] of fileThreads.groups) {
+    merged.set(key, group)
+  }
 
-    return merged
-  }, [lineThreads, fileThreads])
+  return merged
+}, [lineThreads, fileThreads])
 ```
 
 (d) The reply-dispatch handler, after `handleSendFeedback` (mirrors its shape; the follow-up is created ONLY after the write succeeds — spec Section 4):
 
 ```ts
-  // VIM-298: dispatch a thread follow-up. The comment is never stored pending —
-  // it is built ephemerally for the payload and inserted post-write already
-  // stamped (dispatchedAt/dispatchedTo/threadId), so whole-batch Finish can
-  // never sweep it and a write failure leaves no local record.
-  const handleSendThreadReply = useCallback(
-    (pane: PaneCandidate): void => {
-      if (sendingFeedbackRef.current || replyDispatchThreadId === null) {
-        return
-      }
-      const draftText = replyDrafts.get(replyDispatchThreadId) ?? ''
-      const group = threadGroupById.get(replyDispatchThreadId)
-      if (
-        group === undefined ||
-        feedbackDispatch === undefined ||
-        draftText.trim().length === 0
-      ) {
-        setReplyDispatchThreadId(null)
+// VIM-298: dispatch a thread follow-up. The comment is never stored pending —
+// it is built ephemerally for the payload and inserted post-write already
+// stamped (dispatchedAt/dispatchedTo/threadId), so whole-batch Finish can
+// never sweep it and a write failure leaves no local record.
+const handleSendThreadReply = useCallback(
+  (pane: PaneCandidate): void => {
+    if (sendingFeedbackRef.current || replyDispatchThreadId === null) {
+      return
+    }
+    const draftText = replyDrafts.get(replyDispatchThreadId) ?? ''
+    const group = threadGroupById.get(replyDispatchThreadId)
+    if (
+      group === undefined ||
+      feedbackDispatch === undefined ||
+      draftText.trim().length === 0
+    ) {
+      setReplyDispatchThreadId(null)
 
-        return
-      }
-      sendingFeedbackRef.current = true
-      void (async (): Promise<void> => {
-        try {
-          const anchor = group.turns[0]
-          const previous = group.turns[group.turns.length - 1]
-          if (anchor === undefined || previous === undefined) {
-            return
-          }
-
-          const comment: ReviewComment = {
-            id: nextFeedbackCommentId(),
-            text: draftText,
-            author: 'self',
-            createdAt: Date.now(),
-            threadId: group.threadId,
-            ...(anchor.metadata.target === undefined
-              ? {}
-              : { target: anchor.metadata.target }),
-          }
-
-          // Same repo-root resolution as buildFeedbackEntries: absolute prompt
-          // path for the agent, repo-relative coordinates for the handle.
-          const entryRepoRoot = repoRootRef.repoRootForCwd?.(group.cwd)
-          const resolvedRepoRoot =
-            entryRepoRoot && entryRepoRoot.length > 0
-              ? entryRepoRoot
-              : (response?.repoRoot ?? repoRootRef.current)
-          const promptPath = resolvedRepoRoot
-            ? `${resolvedRepoRoot}/${group.filePath}`
-            : group.filePath
-
-          const nonce = makeDispatchNonce()
-          await dispatchFeedbackBatch(
-            pane.paneId,
-            pane.ptyId,
-            [
-              {
-                filePath: promptPath,
-                staged: group.staged,
-                annotations: [
-                  {
-                    side: anchor.side,
-                    lineNumber: anchor.lineNumber,
-                    metadata: comment,
-                  },
-                ],
-              },
-            ],
-            nonce,
-            feedbackDispatch.writePty,
-            followUpContextLine(previous.metadata)
-          )
-
-          if (feedbackOwnerKey !== undefined) {
-            setPendingReview({
-              ptyId: pane.ptyId,
-              ownerKey: feedbackOwnerKey,
-              nonce,
-              dispatchedAt: Date.now(),
-              byHandle: new Map([
-                [
-                  1,
-                  {
-                    cwd: group.cwd,
-                    filePath: group.filePath,
-                    staged: group.staged,
-                    lineNumber: anchor.lineNumber,
-                    side: anchor.side,
-                    target: anchor.metadata.target,
-                    threadId: group.threadId,
-                  },
-                ],
-              ]),
-            })
-          }
-
-          // Post-write insert, pre-stamped: never observable as pending.
-          feedback.addAnnotation(group.cwd, group.filePath, group.staged, {
-            side: anchor.side,
-            lineNumber: anchor.lineNumber,
-            metadata: {
-              ...comment,
-              dispatchedAt: Date.now(),
-              dispatchedTo: pane.ptyId,
-            },
-          })
-
-          // Reply implies reopen — only after a successful dispatch.
-          if (group.resolved) {
-            feedback.updateAnnotation(
-              group.cwd,
-              group.filePath,
-              group.staged,
-              group.threadId,
-              { resolvedAt: undefined }
-            )
-          }
-
-          // Clear ONLY this thread's draft (successful dispatch).
-          setReplyDrafts((prev) => {
-            const next = new Map(prev)
-            next.delete(group.threadId)
-
-            return next
-          })
-          setReplyingThreadId((current) =>
-            current === group.threadId ? null : current
-          )
-          setReplyDispatchThreadId(null)
-          const focusTerminal = feedbackDispatch.focusTerminal
-          if (focusTerminal !== undefined) {
-            setTimeout(focusTerminal, 0)
-          }
-        } catch {
-          // Write failed: keep the editor open with its text; nothing was inserted.
-          setReplyDispatchThreadId(null)
-          notifyInfo('Terminal session ended; reply not sent.')
-        } finally {
-          sendingFeedbackRef.current = false
+      return
+    }
+    sendingFeedbackRef.current = true
+    void (async (): Promise<void> => {
+      try {
+        const anchor = group.turns[0]
+        const previous = group.turns[group.turns.length - 1]
+        if (anchor === undefined || previous === undefined) {
+          return
         }
-      })()
-    },
-    [
-      replyDispatchThreadId,
-      replyDrafts,
-      threadGroupById,
-      feedback,
-      feedbackDispatch,
-      feedbackOwnerKey,
-      notifyInfo,
-      repoRootRef,
-      response,
-    ]
-  )
+
+        const comment: ReviewComment = {
+          id: nextFeedbackCommentId(),
+          text: draftText,
+          author: 'self',
+          createdAt: Date.now(),
+          threadId: group.threadId,
+          ...(anchor.metadata.target === undefined
+            ? {}
+            : { target: anchor.metadata.target }),
+        }
+
+        // Same repo-root resolution as buildFeedbackEntries: absolute prompt
+        // path for the agent, repo-relative coordinates for the handle.
+        const entryRepoRoot = repoRootRef.repoRootForCwd?.(group.cwd)
+        const resolvedRepoRoot =
+          entryRepoRoot && entryRepoRoot.length > 0
+            ? entryRepoRoot
+            : (response?.repoRoot ?? repoRootRef.current)
+        const promptPath = resolvedRepoRoot
+          ? `${resolvedRepoRoot}/${group.filePath}`
+          : group.filePath
+
+        const nonce = makeDispatchNonce()
+        await dispatchFeedbackBatch(
+          pane.paneId,
+          pane.ptyId,
+          [
+            {
+              filePath: promptPath,
+              staged: group.staged,
+              annotations: [
+                {
+                  side: anchor.side,
+                  lineNumber: anchor.lineNumber,
+                  metadata: comment,
+                },
+              ],
+            },
+          ],
+          nonce,
+          feedbackDispatch.writePty,
+          followUpContextLine(previous.metadata)
+        )
+
+        if (feedbackOwnerKey !== undefined) {
+          setPendingReview({
+            ptyId: pane.ptyId,
+            ownerKey: feedbackOwnerKey,
+            nonce,
+            dispatchedAt: Date.now(),
+            byHandle: new Map([
+              [
+                1,
+                {
+                  cwd: group.cwd,
+                  filePath: group.filePath,
+                  staged: group.staged,
+                  lineNumber: anchor.lineNumber,
+                  side: anchor.side,
+                  target: anchor.metadata.target,
+                  threadId: group.threadId,
+                },
+              ],
+            ]),
+          })
+        }
+
+        // Post-write insert, pre-stamped: never observable as pending.
+        feedback.addAnnotation(group.cwd, group.filePath, group.staged, {
+          side: anchor.side,
+          lineNumber: anchor.lineNumber,
+          metadata: {
+            ...comment,
+            dispatchedAt: Date.now(),
+            dispatchedTo: pane.ptyId,
+          },
+        })
+
+        // Reply implies reopen — only after a successful dispatch.
+        if (group.resolved) {
+          feedback.updateAnnotation(
+            group.cwd,
+            group.filePath,
+            group.staged,
+            group.threadId,
+            { resolvedAt: undefined }
+          )
+        }
+
+        // Clear ONLY this thread's draft (successful dispatch).
+        setReplyDrafts((prev) => {
+          const next = new Map(prev)
+          next.delete(group.threadId)
+
+          return next
+        })
+        setReplyingThreadId((current) =>
+          current === group.threadId ? null : current
+        )
+        setReplyDispatchThreadId(null)
+        const focusTerminal = feedbackDispatch.focusTerminal
+        if (focusTerminal !== undefined) {
+          setTimeout(focusTerminal, 0)
+        }
+      } catch {
+        // Write failed: keep the editor open with its text; nothing was inserted.
+        setReplyDispatchThreadId(null)
+        notifyInfo('Terminal session ended; reply not sent.')
+      } finally {
+        sendingFeedbackRef.current = false
+      }
+    })()
+  },
+  [
+    replyDispatchThreadId,
+    replyDrafts,
+    threadGroupById,
+    feedback,
+    feedbackDispatch,
+    feedbackOwnerKey,
+    notifyInfo,
+    repoRootRef,
+    response,
+  ]
+)
 ```
 
 (If `nextFeedbackCommentId` is declared below this point in the file, reference it the way sibling callbacks do — it is a stable module-level/hook helper already used by `confirmCommentEditor`.)
@@ -1686,71 +1713,81 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
 (e) The shared thread action handlers:
 
 ```ts
-  const resolveThread = useCallback(
-    (threadId: string): void => {
-      const group = threadGroupById.get(threadId)
-      if (group !== undefined) {
-        feedback.updateAnnotation(group.cwd, group.filePath, group.staged, threadId, {
+const resolveThread = useCallback(
+  (threadId: string): void => {
+    const group = threadGroupById.get(threadId)
+    if (group !== undefined) {
+      feedback.updateAnnotation(
+        group.cwd,
+        group.filePath,
+        group.staged,
+        threadId,
+        {
           resolvedAt: Date.now(),
-        })
-      }
-    },
-    [feedback, threadGroupById]
-  )
-
-  const reopenThread = useCallback(
-    (threadId: string): void => {
-      const group = threadGroupById.get(threadId)
-      if (group !== undefined) {
-        feedback.updateAnnotation(group.cwd, group.filePath, group.staged, threadId, {
-          resolvedAt: undefined,
-        })
-      }
-    },
-    [feedback, threadGroupById]
-  )
-
-  const threadProps = {
-    replyingThreadId,
-    replyDraft:
-      replyingThreadId === null
-        ? ''
-        : (replyDrafts.get(replyingThreadId) ?? ''),
-    // Switching to another thread's Reply closes the first editor but its
-    // draft stays in the map — reopening restores it.
-    onStartReply: (threadId: string): void => setReplyingThreadId(threadId),
-    onReplyDraftChange: (text: string): void => {
-      setReplyDrafts((prev) => {
-        if (replyingThreadId === null) {
-          return prev
         }
+      )
+    }
+  },
+  [feedback, threadGroupById]
+)
+
+const reopenThread = useCallback(
+  (threadId: string): void => {
+    const group = threadGroupById.get(threadId)
+    if (group !== undefined) {
+      feedback.updateAnnotation(
+        group.cwd,
+        group.filePath,
+        group.staged,
+        threadId,
+        {
+          resolvedAt: undefined,
+        }
+      )
+    }
+  },
+  [feedback, threadGroupById]
+)
+
+const threadProps = {
+  replyingThreadId,
+  replyDraft:
+    replyingThreadId === null ? '' : (replyDrafts.get(replyingThreadId) ?? ''),
+  // Switching to another thread's Reply closes the first editor but its
+  // draft stays in the map — reopening restores it.
+  onStartReply: (threadId: string): void => setReplyingThreadId(threadId),
+  onReplyDraftChange: (text: string): void => {
+    setReplyDrafts((prev) => {
+      if (replyingThreadId === null) {
+        return prev
+      }
+      const next = new Map(prev)
+      next.set(replyingThreadId, text)
+
+      return next
+    })
+  },
+  onSubmitReply: (threadId: string, text: string): void => {
+    setReplyDrafts((prev) => new Map(prev).set(threadId, text))
+    setFinishOpen(false)
+    setSendNowCommentId(null)
+    setReplyDispatchThreadId(threadId)
+  },
+  // Explicit cancel clears ONLY the active thread's draft.
+  onCancelReply: (): void => {
+    if (replyingThreadId !== null) {
+      setReplyDrafts((prev) => {
         const next = new Map(prev)
-        next.set(replyingThreadId, text)
+        next.delete(replyingThreadId)
 
         return next
       })
-    },
-    onSubmitReply: (threadId: string, text: string): void => {
-      setReplyDrafts((prev) => new Map(prev).set(threadId, text))
-      setFinishOpen(false)
-      setSendNowCommentId(null)
-      setReplyDispatchThreadId(threadId)
-    },
-    // Explicit cancel clears ONLY the active thread's draft.
-    onCancelReply: (): void => {
-      if (replyingThreadId !== null) {
-        setReplyDrafts((prev) => {
-          const next = new Map(prev)
-          next.delete(replyingThreadId)
-
-          return next
-        })
-      }
-      setReplyingThreadId(null)
-    },
-    onResolve: resolveThread,
-    onReopen: reopenThread,
-  }
+    }
+    setReplyingThreadId(null)
+  },
+  onResolve: resolveThread,
+  onReopen: reopenThread,
+}
 ```
 
 (`updateAnnotation` spreads `{ resolvedAt: undefined }` into the metadata — consumers only ever check `!== undefined`, so an explicit-undefined property is equivalent to absent.)
@@ -1758,8 +1795,8 @@ add `thread?: PanelThreadProps` to `PanelBodyProps` and destructure `thread = un
 (f) Popover scoping — update the existing pieces:
 
 ```ts
-  const isFinishPopoverOpen =
-    finishOpen || sendNowCommentId !== null || replyDispatchThreadId !== null
+const isFinishPopoverOpen =
+  finishOpen || sendNowCommentId !== null || replyDispatchThreadId !== null
 ```
 
 and in the `finishFeedback` object:
@@ -1813,30 +1850,26 @@ Also update `onFinishFeedback` to clear the reply scope: add `setReplyDispatchTh
 (h) File strip — replace the `fileCommentsForSelectedFile.map(...)` body: map over `fileThreads.collapsed` instead; for each annotation, look up `threadGroupKey(annotation)` in `fileThreads.groups`; when a group exists render:
 
 ```tsx
-                  <ReviewThreadCard
-                    key={`thread:${group.threadId}`}
-                    group={group}
-                    anchorLabel={threadAnchorLabel(group.turns[0] ?? annotation)}
-                    actions={
-                      feedbackDispatch === undefined
-                        ? undefined
-                        : {
-                            replying:
-                              threadProps.replyingThreadId === group.threadId,
-                            replyDraft: threadProps.replyDraft,
-                            onStartReply: (): void =>
-                              threadProps.onStartReply(group.threadId),
-                            onReplyDraftChange: threadProps.onReplyDraftChange,
-                            onSubmitReply: (text): void =>
-                              threadProps.onSubmitReply(group.threadId, text),
-                            onCancelReply: threadProps.onCancelReply,
-                            onResolve: (): void =>
-                              threadProps.onResolve(group.threadId),
-                            onReopen: (): void =>
-                              threadProps.onReopen(group.threadId),
-                          }
-                    }
-                  />
+<ReviewThreadCard
+  key={`thread:${group.threadId}`}
+  group={group}
+  anchorLabel={threadAnchorLabel(group.turns[0] ?? annotation)}
+  actions={
+    feedbackDispatch === undefined
+      ? undefined
+      : {
+          replying: threadProps.replyingThreadId === group.threadId,
+          replyDraft: threadProps.replyDraft,
+          onStartReply: (): void => threadProps.onStartReply(group.threadId),
+          onReplyDraftChange: threadProps.onReplyDraftChange,
+          onSubmitReply: (text): void =>
+            threadProps.onSubmitReply(group.threadId, text),
+          onCancelReply: threadProps.onCancelReply,
+          onResolve: (): void => threadProps.onResolve(group.threadId),
+          onReopen: (): void => threadProps.onReopen(group.threadId),
+        }
+  }
+/>
 ```
 
 otherwise keep the existing `ReviewCommentRow` branch unchanged (pending file comments keep send-now/edit/delete).
@@ -1860,6 +1893,7 @@ git commit -m "feat(diff): thread cards + follow-up dispatch wiring (VIM-298)"
 ### Task 8: Integration test — the full multi-turn loop
 
 **Files:**
+
 - Modify: `src/features/diff/agentReplyThread.integration.test.tsx`
 
 - [ ] **Step 1: Extend the harness.** The file already mounts a real `useFeedbackBatchStore` + `useAgentReply` with a mocked `agent-reply` listener. Add a second Harness that renders thread cards through the real selector:
@@ -1971,9 +2005,11 @@ git commit -m "test(diff): multi-turn thread integration loop (VIM-298)"
 - [ ] **Step 1: Repo-wide gate** (CI's Code Quality check is repo-wide, not diff-scoped):
 
 Run:
+
 ```bash
 npm run lint && npm run format:check && npm run type-check:generated && npx vitest run
 ```
+
 Expected: all green. Known environment flakes (not caused by this PR, do not chase): `editorFileLifecycleStatus` home-path casing on macOS.
 
 - [ ] **Step 2: Push and open the PR**

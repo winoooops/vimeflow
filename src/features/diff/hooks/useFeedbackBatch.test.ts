@@ -1043,7 +1043,11 @@ describe('thread fields on ReviewComment (VIM-298)', () => {
       result.current.markDispatched(1000, new Set(['c1']))
     })
 
-    const annotation = result.current.annotationsForFile('/repo', 'a.ts', false)[0]
+    const annotation = result.current.annotationsForFile(
+      '/repo',
+      'a.ts',
+      false
+    )[0]
     expect(annotation.metadata.dispatchedAt).toBe(1000)
     expect(annotation.metadata.threadId).toBe('c1')
   })
@@ -1069,7 +1073,11 @@ describe('thread fields on ReviewComment (VIM-298)', () => {
       result.current.markDispatched(1000, new Set(['c2']))
     })
 
-    const annotation = result.current.annotationsForFile('/repo', 'a.ts', false)[0]
+    const annotation = result.current.annotationsForFile(
+      '/repo',
+      'a.ts',
+      false
+    )[0]
     expect(annotation.metadata.threadId).toBe('root-1')
   })
 
@@ -1086,7 +1094,11 @@ describe('thread fields on ReviewComment (VIM-298)', () => {
       })
     })
 
-    const annotation = result.current.annotationsForFile('/repo', 'a.ts', false)[0]
+    const annotation = result.current.annotationsForFile(
+      '/repo',
+      'a.ts',
+      false
+    )[0]
     expect(annotation.metadata.dispatchedTo).toBe('pty-9')
   })
 

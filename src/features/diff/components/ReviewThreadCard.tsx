@@ -176,7 +176,7 @@ export const ReviewThreadCard = ({
         <button
           type="button"
           aria-expanded={expanded}
-          aria-label={`Resolved thread on ${anchorLabel}, ${group.turns.length} turns`}
+          aria-label={`Resolved thread on ${anchorLabel}, ${group.turns.length} turn${group.turns.length === 1 ? '' : 's'}`}
           onClick={(): void => setExpandedWhileResolved(!expandedWhileResolved)}
           className="flex w-full items-center gap-2 px-4 py-2 text-left text-[10px] text-on-surface-variant"
           style={{

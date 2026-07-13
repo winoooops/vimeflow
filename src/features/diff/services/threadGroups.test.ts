@@ -35,6 +35,7 @@ describe('threadGroupKey', () => {
     expect(threadGroupKey(annotation({ id: 'a1', threadId: 'root-1' }))).toBe(
       'root-1'
     )
+
     expect(threadGroupKey(annotation({ id: 'c1', dispatchedAt: 1000 }))).toBe(
       'c1'
     )
@@ -50,6 +51,7 @@ describe('buildThreadGroups', () => {
     const root = annotation({ id: 'c1', dispatchedAt: 1000, threadId: 'c1' })
     const reply = annotation({ id: 'g1', author: 'agent', threadId: 'c1' })
     const pending = annotation({ id: 'p1' })
+
     const { collapsed, groups } = buildThreadGroups(
       [root, reply, pending],
       LOCATION
@@ -93,7 +95,9 @@ describe('buildThreadGroups', () => {
 
 describe('threadRollup', () => {
   test('is total over the latest turn (full outcome matrix)', () => {
-    const agent = (outcome?: ReviewComment['outcome']) =>
+    const agent = (
+      outcome?: ReviewComment['outcome']
+    ): DiffLineAnnotation<ReviewComment> =>
       annotation({ id: 'g', author: 'agent', ...(outcome ? { outcome } : {}) })
 
     expect(threadRollup([agent('reply')], false).label).toBe('Replied')
@@ -108,6 +112,7 @@ describe('threadRollup', () => {
         false
       ).label
     ).toBe('Sent')
+
     expect(
       threadRollup([annotation({ id: 'r', author: 'reviewer' })], false).label
     ).toBe('Open')
@@ -119,9 +124,11 @@ describe('threadRollup', () => {
     expect(
       threadRollup([annotation({ id: 'f', dispatchedAt: 3 })], false).chip
     ).toBe('text-primary')
+
     expect(
       threadRollup([annotation({ id: 'r', author: 'reviewer' })], false).chip
     ).toBe('text-on-surface-variant')
+
     expect(threadRollup([annotation({ id: 'c' })], true).chip).toBe(
       'text-success'
     )
@@ -144,6 +151,7 @@ describe('threadAnchorLabel', () => {
         })
       )
     ).toBe('lines R88-R94')
+
     expect(
       threadAnchorLabel(
         annotation({
@@ -157,6 +165,7 @@ describe('threadAnchorLabel', () => {
         })
       )
     ).toBe('line R88')
+
     expect(
       threadAnchorLabel(annotation({ id: 'c', target: { scope: 'file' } }, 0))
     ).toBe('file')

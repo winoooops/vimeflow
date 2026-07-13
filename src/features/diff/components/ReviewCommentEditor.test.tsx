@@ -423,7 +423,7 @@ describe('ReviewCommentEditor', () => {
     expect(screen.getByRole('button', { name: 'Reply' })).toBeInTheDocument()
   })
 
-  test('reply mode ignores the ctrl+h/l category cycle', async () => {
+  test('reply mode ignores the ctrl+h/l category cycle', () => {
     const onConfirm = vi.fn()
     render(
       <ReviewCommentEditor
