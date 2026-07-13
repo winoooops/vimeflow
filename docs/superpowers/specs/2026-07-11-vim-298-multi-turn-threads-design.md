@@ -206,3 +206,5 @@ Expanded/collapsed is ephemeral component state; `resolvedAt` is the durable-ish
 - Full local gate before push: repo-wide `lint`, `format:check`, `type-check:generated`, `vitest run` (the Code Quality CI check is repo-wide).
 - Delete the demo artifacts (`preview.html`, `preview-thread-demo.tsx`, `vite.preview.config.ts`) from the main checkout once this spec merges — the recipe now lives in Section 3.
 - No backend/Rust changes; no bindings churn expected.
+
+<!-- codex-reviewed: 2026-07-13T06:09:05Z -->
