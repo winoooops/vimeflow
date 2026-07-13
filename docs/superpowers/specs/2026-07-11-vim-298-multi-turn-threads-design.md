@@ -71,6 +71,15 @@ interface ThreadGroup {
   turns: DiffLineAnnotation<ReviewComment>[]
   rollup: { label: string; chip: string }
   resolved: boolean
+  /** Immutable batch-location snapshot, captured from the batch key at
+   *  group construction. The follow-up dispatch needs both forms: the
+   *  repo-relative coordinates for PendingReviewHandle and the repo-root
+   *  resolver (same one buildFeedbackEntries uses) for the agent-facing
+   *  path — carrying them here avoids re-deriving from render-time props
+   *  (docs/reviews/patterns/derived-state-consistency.md §22). */
+  cwd: string
+  filePath: string
+  staged: boolean
 }
 ```
 
@@ -109,7 +118,7 @@ New component `src/features/diff/components/ReviewThreadCard.tsx`, rendered by `
 - **↳ Reply** — `rounded-md px-3 py-1.5 text-[11px] font-medium text-primary`, background `color-mix(in srgb, var(--color-primary) 12%, transparent)`, hover `bg-surface-container-highest/60`.
 - **✓ Resolve** — same shape, `text-on-surface-variant`, background `color-mix(in srgb, var(--color-on-surface) 6%, transparent)`, hover lifts to `text-on-surface`. Resolved threads swap it for **⟲ Reopen** (Section 5).
 
-Clicking Reply swaps the footer for the real `ReviewCommentEditor` (`chrome="plain"`, `surfaceRole="none"`, new reply mode — Section 4) in a `px-2 py-1.5` wrapper; Cancel/confirm restores the button pair.
+Clicking Reply swaps the footer for the real `ReviewCommentEditor` (`chrome="plain"`, `surfaceRole="none"`, new reply mode — Section 4) in a `px-2 py-1.5` wrapper. Cancel restores the button pair immediately; confirm restores it only once the dispatch write succeeds (Section 4's commit-after-write rule).
 
 **Capability gating** — the footer renders iff `Panel` passes an `onReplyToThread` handler, mirroring how the send-now action is gated on `onSendComment !== undefined` today (there is no panel-level read-only flag; capability is expressed by handler presence). Contexts without dispatch capability omit the handler and get a footer-less card.
 
@@ -126,7 +135,7 @@ New prop `mode?: 'comment' | 'reply'` (default `'comment'`, existing behavior un
 - confirm button reads **"Reply"**; placeholder "Reply to the agent…".
 - `onConfirm(text, category)` keeps its signature; the category argument is ignored by the reply-mode caller (no signature churn).
 
-`ReviewThreadCard` mounts it with `chrome="plain"`, `surfaceRole="none"`, `mode="reply"`. Cancel discards the draft text (uncontrolled, same as other editor cancels).
+`ReviewThreadCard` mounts it with `chrome="plain"`, `surfaceRole="none"`, `mode="reply"`, and **controlled**: the reply draft (text + which thread is replying) lives in `Panel` state keyed by `threadId`, mirroring the Panel-owned `commentDraftText` of the main draft flow. This is load-bearing, not style — `MultiFileDiff` is remounted whenever its render key changes (highlight-cache revision, diff refresh, theme), and an uncontrolled textarea inside it would silently erase typed text. The draft is cleared by exactly two events: explicit editor Cancel, or successful dispatch.
 
 ### Creating + dispatching the follow-up — atomic with dispatch
 
@@ -135,14 +144,15 @@ A follow-up is **never stored as a pending comment**: it enters the batch store 
 On confirm, `Panel`'s `onReplyToThread(threadId, text)`:
 
 1. Opens the **same scoped confirm flow as send-now** (`FinishFeedbackPopover` scoped to one item) against the panel's agent candidate. **Cancelled → nothing is created**; the reply editor stays open with the text intact, so nothing is lost.
-2. On confirm: creates the follow-up `ReviewComment` — `author: 'self'`, **no `category`**, `threadId` = the thread's id, same `(lineNumber, side)` and `target` as the anchor — and dispatches it in the same handler. **Not via the render-closure `buildFeedbackEntries`** (which scans the render-time batch for _pending_ annotations and would not see a same-callback insert): a dedicated `dispatchFollowUp` builds the single `DispatchEntry` directly from the just-created comment and shares the lower-level primitives — nonce minting, payload formatting, `[#n]` handle registration (the handle carrying `threadId` per Section 2), `pendingReviews` registration, and a scoped `markDispatched`. Other pending comments are untouched by construction.
-3. **UI state commits only after the dispatch write succeeds**: the editor closes and (Section 5) `resolvedAt` clears at that point; a write failure keeps the editor open with the text and creates no comment.
+2. On confirm: a dedicated `dispatchFollowUp` builds the single `DispatchEntry` from an **ephemeral** follow-up comment — `author: 'self'`, **no `category`**, `threadId` = the thread's id, same `(lineNumber, side)` and `target` as the anchor, batch location from the `ThreadGroup` snapshot — **not** via the render-closure `buildFeedbackEntries` (which scans the render-time batch for _pending_ annotations and would not see a same-callback insert). It shares the lower-level primitives: nonce minting, payload formatting, `[#n]` handle registration (the handle carrying `threadId` per Section 2), and `pendingReviews` registration, in the same order relative to the terminal write as the batch path. Other pending comments are untouched by construction.
+3. **The store insert happens after the write succeeds, already stamped** (`dispatchedAt`, `threadId`, `dispatchedTo` set on insertion — no `markDispatched` involved for follow-ups). The insertion path is exempt from the 50-pending soft cap: the cap guards _pending_ comments, and a dispatched follow-up is thread history like agent output — inserting _before_ the write would bounce off the cap at the boundary, letting a terminal write succeed with no local record. The exact-cap case gets a test.
+4. **UI state commits only after the dispatch write succeeds**: the editor closes, the thread-keyed draft clears, and (Section 5) `resolvedAt` clears at that point; a write failure keeps the editor open with the text and inserts no comment.
 
 ### Agent affinity (routing to the originating session)
 
 Thread lifetime already bounds this problem: batches are owned by the agent pane (`prunePendingReviewOwners`), so a thread whose originating pane closes is pruned with it — a live thread's panel candidate _is_ in practice the originating session, and `WorkspaceView` supplies exactly that one candidate today (there is no live-pane inventory to search).
 
-v1 therefore ships the send-now flow verbatim (step 1 above) — no new pane machinery. Additionally, `markDispatched` stamps **`dispatchedTo`** (the target ptyId) on the comments it dispatches, which (a) lets the payload/context layer know the conversation continuity is real, and (b) enables the fast-follow of skipping the confirm popover when `dispatchedTo` matches the current candidate. Delegated finding roots never pass through `markDispatched` and carry no `dispatchedTo` — their first follow-up simply goes through the confirm flow like any other.
+v1 therefore ships the send-now flow verbatim (step 1 above) — no new pane machinery. Additionally, dispatched comments carry **`dispatchedTo`** (the target ptyId): `markDispatched` stamps it on the batch/send-now paths, and the follow-up insertion (step 3) sets it directly. This (a) records that the conversation continuity is real, and (b) enables the fast-follow of skipping the confirm popover when `dispatchedTo` matches the current candidate. Delegated finding roots never pass through either path and carry no `dispatchedTo` — their first follow-up simply goes through the confirm flow like any other.
 
 ### Payload: marking the continuation
 
@@ -168,7 +178,7 @@ The excerpt is truncated to ~200 chars **and passes through the same terminal-co
 ### Behavior
 
 - **✓ Resolve** (footer) → stamps `resolvedAt`. The card collapses to its **header only** — anchor label, **Resolved** rollup chip, turn count — plus an expand chevron. Turn rows and footer are hidden.
-- Clicking the collapsed header **expands** the card for reading (an expanded-while-resolved state); the footer then shows **↳ Reply** and **⟲ Reopen** (in Resolve's slot). Collapsing again is a header click.
+- The collapsed/expanded toggle is an accessible disclosure: the header (or its chevron region) is a semantic `<button>` with `aria-expanded`, activatable by click and Enter/Space. Expanding shows the card for reading (an expanded-while-resolved state); the footer then shows **↳ Reply** and **⟲ Reopen** (in Resolve's slot). Collapsing again is the same toggle.
 - **⟲ Reopen** → clears `resolvedAt`; the thread returns to its normal expanded state and derived rollup.
 - **Reply implies reopen**: a follow-up that _successfully dispatches_ on a resolved thread clears `resolvedAt` — you don't converse on a closed thread. (Cancelling the picker or a failed write reopens nothing; Section 4's commit-after-write rule governs.)
 
@@ -185,9 +195,9 @@ Expanded/collapsed is ephemeral component state; `resolvedAt` is the durable-ish
 - **Grouping selector** — `groupKey` partition: pending/draft pass through; dispatched root self-roots; follow-up + agent turns join the root's group; two roots on one line stay two groups; orphan agent annotation becomes a 1-turn group; file-level and line-level lists both grouped; collapse hands Pierre exactly one anchor per group.
 - **threadId stamping** — `markDispatched` preserves an existing `threadId` (the follow-up-fork regression codex caught in review); handle registration normalizes `threadId ?? id`; `attachAgentNote` copies the handle's threadId; finding placement stamps `threadId = commentId`.
 - **Rollup** — total-function table: latest-agent per outcome + missing-outcome fallback, latest-self (always Sent), reviewer-only (Open), resolved override; `THREAD_ROLLUP_META` chip classes.
-- **`ReviewThreadCard`** — turn order, chips (category / outcome / none for typeless), header content, footer pair, reply-editor swap, collapse/expand/reopen, read-only hides footer.
+- **`ReviewThreadCard`** — turn order, chips (category / outcome / none for typeless), header content, footer pair, reply-editor swap, collapse/expand/reopen via the role-queried disclosure button (`aria-expanded`, Enter/Space), reply draft survives a `MultiFileDiff` remount (Panel-owned state), missing `onReplyToThread` hides the footer.
 - **Editor reply mode** — tabs hidden, ⌃H/⌃L inert, labels, confirm passes text.
-- **Reply dispatch** — follow-up created typeless with root's threadId/anchor; only that comment dispatched (others untouched — pin the VIM-297 invariant); confirm flow scoped to the follow-up, popover cancel → no comment created and editor text preserved, dispatch write failure → editor stays open and no comment persists; payload renders `[#1 · Follow-up]` + context line with author-appropriate phrasing for agent/reviewer/self-only threads (respecting the dispatch-vocab pins); context excerpt passes control-character sanitization (paste-breakout regression); reply-implies-reopen only after successful dispatch.
+- **Reply dispatch** — follow-up created typeless with root's threadId/anchor; only that comment dispatched (others untouched — pin the VIM-297 invariant); confirm flow scoped to the follow-up, popover cancel → no comment created and editor text preserved, dispatch write failure → editor stays open and no comment persists; post-write insertion lands already-stamped (`dispatchedAt`/`threadId`/`dispatchedTo`) and succeeds at exactly 50 pending comments (cap-exemption boundary case); batch-location snapshot flows from `ThreadGroup` (repo-relative handle coordinates + repo-root-resolved payload path, including a repo-subdirectory cwd case); payload renders `[#1 · Follow-up]` + context line with author-appropriate phrasing for agent/reviewer/self-only threads (respecting the dispatch-vocab pins); context excerpt passes control-character sanitization (paste-breakout regression); reply-implies-reopen only after successful dispatch.
 - **Integration** — full loop: comment → dispatch → agent reply → follow-up → second agent reply, asserting one card with 4 ordered turns and rollup transitions; late reply after resolve appends without unresolving.
 
 ### Rollout & cleanup
