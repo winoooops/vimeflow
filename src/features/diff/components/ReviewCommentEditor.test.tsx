@@ -435,6 +435,7 @@ describe('ReviewCommentEditor', () => {
 
     const textarea = screen.getByPlaceholderText('Reply to the agent…')
     fireEvent.keyDown(textarea, { key: 'l', ctrlKey: true })
+    fireEvent.keyDown(textarea, { key: 'h', ctrlKey: true })
     fireEvent.change(textarea, { target: { value: 'follow-up' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 

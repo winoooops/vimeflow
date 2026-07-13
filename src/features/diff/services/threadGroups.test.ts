@@ -39,6 +39,9 @@ describe('threadGroupKey', () => {
       'c1'
     )
     expect(threadGroupKey(annotation({ id: 'g1', author: 'agent' }))).toBe('g1')
+    expect(threadGroupKey(annotation({ id: 'r1', author: 'reviewer' }))).toBe(
+      'r1'
+    )
   })
 })
 
@@ -111,6 +114,18 @@ describe('threadRollup', () => {
     // Local resolve overrides every derived state.
     expect(threadRollup([agent('rejected')], true).label).toBe('Resolved')
   })
+
+  test('non-agent states carry their THREAD_ROLLUP_META chip classes', () => {
+    expect(
+      threadRollup([annotation({ id: 'f', dispatchedAt: 3 })], false).chip
+    ).toBe('text-primary')
+    expect(
+      threadRollup([annotation({ id: 'r', author: 'reviewer' })], false).chip
+    ).toBe('text-on-surface-variant')
+    expect(threadRollup([annotation({ id: 'c' })], true).chip).toBe(
+      'text-success'
+    )
+  })
 })
 
 describe('threadAnchorLabel', () => {
@@ -129,6 +144,19 @@ describe('threadAnchorLabel', () => {
         })
       )
     ).toBe('lines R88-R94')
+    expect(
+      threadAnchorLabel(
+        annotation({
+          id: 'b2',
+          target: {
+            scope: 'range',
+            side: 'additions',
+            startLine: 88,
+            endLine: 88,
+          },
+        })
+      )
+    ).toBe('line R88')
     expect(
       threadAnchorLabel(annotation({ id: 'c', target: { scope: 'file' } }, 0))
     ).toBe('file')
