@@ -19,29 +19,32 @@ import type {
   PaneLayoutId,
   PanePlacement,
   Session,
-} from '../../../sessions/types'
-import { isShellPane } from '../../../sessions/utils/paneKind'
+} from '@/features/sessions/types'
+import { isShellPane } from '@/features/sessions/utils/paneKind'
 import {
   movePaneToSlot,
   resolvePanePlacement,
   swapPanePlacements,
   type PaneSlotAssignment,
-} from '../../../sessions/utils/panePlacements'
-import { BrowserPane, focusBrowserPane } from '../../../browser'
-import type { NotifyPaneReady } from '../../hooks/useTerminal'
-import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
-import type { NativeGhosttyShortcutContext } from '../../nativeGhosttyClient'
-import type { ITerminalService } from '../../services/terminalService'
+} from '@/features/sessions/utils/panePlacements'
+import { BrowserPane, focusBrowserPane } from '@/features/browser'
+import type { NotifyPaneReady } from '@/features/terminal/hooks/useTerminal'
+import type {
+  BurnerPlacement,
+  BurnerTarget,
+} from '@/features/terminal/hooks/useBurnerTerminals'
+import type { NativeGhosttyShortcutContext } from '@/features/terminal/nativeGhosttyClient'
+import type { ITerminalService } from '@/features/terminal/services/terminalService'
 import {
   TerminalPane,
   type TerminalPaneHandle,
   type TerminalPaneMode,
-} from '../TerminalPane'
-import { EmptySlot } from './EmptySlot'
+} from '@/features/terminal/components/TerminalPane'
+import { EmptySlot } from '@/features/terminal/components/SplitView/EmptySlot'
 import { Tooltip } from '@/components/Tooltip'
 import { formatShortcut } from '@/lib/formatShortcut'
-import { SplitDividers } from './SplitDividers'
-import { resolveGrid } from './resolveGrid'
+import { SplitDividers } from '@/features/terminal/components/SplitView/SplitDividers'
+import { resolveGrid } from '@/features/terminal/components/SplitView/resolveGrid'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   equalTrackRatios,
@@ -51,7 +54,7 @@ import {
   type PaneLayoutRegistry,
   type LayoutRatios,
   type RatioAxis,
-} from '../../layout-registry'
+} from '@/features/terminal/layout-registry'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
 
@@ -91,6 +94,10 @@ export interface SplitViewProps {
   onBurner?: (target: BurnerTarget) => void
   /** Sync a pane's burner terminal back to its host pane cwd. */
   onSyncBurner?: (target: BurnerTarget) => void
+  /** Cycle a pane's burner terminal placement. */
+  onCycleBurnerPlacement?: (target: BurnerTarget) => void
+  /** Burner terminal placement keyed by pane. */
+  burnerPlacementByPane?: ReadonlyMap<string, BurnerPlacement>
   layoutRegistry?: PaneLayoutRegistry
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
@@ -192,6 +199,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       onPanePlacementsChange = undefined,
       onBurner = undefined,
       onSyncBurner = undefined,
+      onCycleBurnerPlacement = undefined,
+      burnerPlacementByPane = undefined,
       layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
       activeBurnerPaneKeys = undefined,
       openBurnerPaneKeys = undefined,
@@ -680,6 +689,8 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         onClose={closeHandler}
                         onBurner={onBurner}
                         onSyncBurner={onSyncBurner}
+                        onCycleBurnerPlacement={onCycleBurnerPlacement}
+                        burnerPlacementByPane={burnerPlacementByPane}
                         onRequestActive={onSetActivePane}
                         onRequestFocus={onRequestFocus}
                         activeBurnerPaneKeys={activeBurnerPaneKeys}

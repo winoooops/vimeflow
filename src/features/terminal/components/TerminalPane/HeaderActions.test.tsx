@@ -1,3 +1,4 @@
+// cspell:ignore splitscreen
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
@@ -329,6 +330,73 @@ describe('HeaderActions', () => {
     expect(onSyncBurner).toHaveBeenCalledTimes(1)
     expect(onParentClick).not.toHaveBeenCalled()
     expect(sync.className).toContain('vf-burner-sync-spin')
+  })
+
+  test('burner placement joins the open pill and cycles without bubbling', () => {
+    const onCycleBurnerPlacement = vi.fn()
+    const onParentClick = vi.fn()
+
+    render(
+      <div onClick={onParentClick}>
+        <HeaderActions
+          isCollapsed={expanded}
+          onToggleCollapse={vi.fn()}
+          onBurner={vi.fn()}
+          onCycleBurnerPlacement={onCycleBurnerPlacement}
+          burnerOpen
+          burnerPlacement="bottom"
+        />
+      </div>
+    )
+
+    const placement = screen.getByRole('button', {
+      name: 'move burner terminal to left (currently bottom)',
+    })
+    const burner = screen.getByRole('button', { name: /hide burner terminal/i })
+
+    expect(placement).toHaveTextContent('splitscreen_left')
+    expect(placement).toHaveClass('!h-5', '!w-5', 'rounded-md')
+    expect(
+      placement.compareDocumentPosition(burner) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    expect(screen.getByTestId('burner-control-pill')).toHaveAttribute(
+      'data-state',
+      'open'
+    )
+
+    fireEvent.click(placement)
+
+    expect(onCycleBurnerPlacement).toHaveBeenCalledOnce()
+    expect(onParentClick).not.toHaveBeenCalled()
+  })
+
+  test('hiding the burner collapses placement and restores focus to its toggle', () => {
+    const props = {
+      isCollapsed: expanded,
+      onToggleCollapse: vi.fn(),
+      onBurner: vi.fn(),
+      onCycleBurnerPlacement: vi.fn(),
+      burnerPlacement: 'bottom' as const,
+    }
+    const { rerender } = render(<HeaderActions {...props} burnerOpen />)
+
+    const placement = screen.getByRole('button', {
+      name: 'move burner terminal to left (currently bottom)',
+    })
+
+    act(() => {
+      placement.focus()
+    })
+    rerender(<HeaderActions {...props} />)
+
+    expect(placement).toBeDisabled()
+    expect(placement).toHaveAttribute('aria-hidden', 'true')
+    expect(placement).toHaveAttribute('tabindex', '-1')
+    expect(
+      screen.getByRole('button', { name: /open burner terminal/i })
+    ).toHaveFocus()
   })
 
   test('burner sync resolves with the prototype spin before collapsing', () => {

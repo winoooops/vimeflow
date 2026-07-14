@@ -24,10 +24,13 @@ import {
   isNonEmptyString,
   isOptionalFiniteNumber,
   isRecord,
+  isSecondaryPlacement,
   isString,
   type GhosttyNativeDataRequest,
   type GhosttyNativePaneRequest,
+  type GhosttyNativeSecondaryAttachRequest,
   type GhosttyNativeSecondaryDataRequest,
+  type GhosttyNativeSecondaryPlacement,
   type GhosttyNativeSecondaryRequest,
   type GhosttyNativeSecondaryVisibleRequest,
   type GhosttyNativeShortcutContext,
@@ -39,7 +42,7 @@ interface GhosttyNativePayloadByKind {
   data: GhosttyNativeDataRequest
   focus: GhosttyNativePaneRequest
   destroy: GhosttyNativePaneRequest
-  secondaryAttach: GhosttyNativeSecondaryRequest
+  secondaryAttach: GhosttyNativeSecondaryAttachRequest
   secondaryData: GhosttyNativeSecondaryDataRequest
   secondaryFocus: GhosttyNativeSecondaryRequest
   secondaryRemove: GhosttyNativeSecondaryRequest
@@ -86,11 +89,13 @@ interface GhosttyNativeParentAddon {
     surface: GhosttyNativeSurface,
     onInput: (data: string) => void,
     onResize: (cols: number, rows: number) => void,
-    onFocus: () => void
+    onFocus: () => void,
+    placement: GhosttyNativeSecondaryPlacement
   ) => void
   setSecondaryVisible?: (
     surface: GhosttyNativeSurface,
-    visible: boolean
+    visible: boolean,
+    placement: GhosttyNativeSecondaryPlacement
   ) => void
   writeSecondary?: (surface: GhosttyNativeSurface, data: string) => void
   focusSecondary?: (surface: GhosttyNativeSurface) => void
@@ -135,6 +140,7 @@ interface GhosttyNativeSecondaryState {
   sessionId: string
   attached: boolean
   visible: boolean
+  placement: GhosttyNativeSecondaryPlacement
   callbacks: GhosttyNativeSecondaryCallbacks | null
   pendingData: string[]
   lastResize: { cols: number; rows: number } | null
@@ -317,10 +323,14 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
     case 'focus':
     case 'destroy':
       return true
-    case 'secondaryAttach':
     case 'secondaryFocus':
     case 'secondaryRemove':
       return isNonEmptyString(value.secondarySessionId)
+    case 'secondaryAttach':
+      return (
+        isNonEmptyString(value.secondarySessionId) &&
+        isSecondaryPlacement(value.placement)
+      )
     case 'secondaryData':
       return (
         isNonEmptyString(value.secondarySessionId) &&
@@ -329,7 +339,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
     case 'secondaryVisible':
       return (
         isNonEmptyString(value.secondarySessionId) &&
-        typeof value.visible === 'boolean'
+        typeof value.visible === 'boolean' &&
+        isSecondaryPlacement(value.placement)
       )
     default:
       return false
@@ -595,7 +606,7 @@ export class GhosttyNativeParentController {
 
   private attachSecondary(
     sender: WebContents,
-    payload: GhosttyNativeSecondaryRequest
+    payload: GhosttyNativeSecondaryAttachRequest
   ): { enabled: boolean } {
     if (!this.enabled()) {
       return { enabled: false }
@@ -613,12 +624,14 @@ export class GhosttyNativeParentController {
 
     const state = this.getOrCreatePaneState(payload)
     this.replaceSecondaryIfNeeded(addon, state, payload.secondarySessionId)
-    this.getOrCreateSurface(addon, win, state)
 
     const secondary = this.ensureSecondaryState(
       state,
       payload.secondarySessionId
     )
+    secondary.placement = payload.placement
+    this.getOrCreateSurface(addon, win, state)
+
     secondary.callbacks = this.createSecondaryCallbacks(
       state,
       payload.secondarySessionId
@@ -739,6 +752,7 @@ export class GhosttyNativeParentController {
     const state = this.getExistingPaneState(payload)
     if (state?.secondary?.sessionId === payload.secondarySessionId) {
       state.secondary.visible = payload.visible
+      state.secondary.placement = payload.placement
     }
     if (
       state?.surface &&
@@ -747,7 +761,11 @@ export class GhosttyNativeParentController {
       if (!state.secondary.attached) {
         this.attachSecondaryToSurface(addon, state, state.secondary)
       }
-      addon.setSecondaryVisible(state.surface, payload.visible)
+      addon.setSecondaryVisible(
+        state.surface,
+        payload.visible,
+        payload.placement
+      )
     }
 
     return { enabled: true }
@@ -1196,6 +1214,7 @@ export class GhosttyNativeParentController {
       sessionId: secondarySessionId,
       attached: false,
       visible: true,
+      placement: 'bottom',
       callbacks: null,
       pendingData: [],
       lastResize: null,
@@ -1305,10 +1324,15 @@ export class GhosttyNativeParentController {
       state.surface,
       secondary.callbacks.onInput,
       secondary.callbacks.onResize,
-      secondary.callbacks.onFocus
+      secondary.callbacks.onFocus,
+      secondary.placement
     )
     secondary.attached = true
-    addon.setSecondaryVisible?.(state.surface, secondary.visible)
+    addon.setSecondaryVisible?.(
+      state.surface,
+      secondary.visible,
+      secondary.placement
+    )
     this.flushPendingSecondaryData(addon, state)
   }
 

@@ -2,10 +2,10 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
-import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
-import type { UseGitWorktreeReturn } from '../../../diff/hooks/useGitWorktree'
-import type { Session } from '../../../sessions/types'
+import type { UseGitBranchReturn } from '@/features/diff/hooks/useGitBranch'
+import type { UseGitStatusReturn } from '@/features/diff/hooks/useGitStatus'
+import type { UseGitWorktreeReturn } from '@/features/diff/hooks/useGitWorktree'
+import type { Session } from '@/features/sessions/types'
 import type { BodyHandle, BodyProps } from './Body'
 import { TerminalPane, type TerminalPaneHandle } from './index'
 import { usePaneWidth } from './usePaneWidth'
@@ -83,15 +83,15 @@ vi.mock('./Body', async () => {
   }
 })
 
-vi.mock('../../../diff/hooks/useGitBranch', () => ({
+vi.mock('@/features/diff/hooks/useGitBranch', () => ({
   useGitBranch: useGitBranchSpy,
 }))
 
-vi.mock('../../../diff/hooks/useGitStatus', () => ({
+vi.mock('@/features/diff/hooks/useGitStatus', () => ({
   useGitStatus: useGitStatusSpy,
 }))
 
-vi.mock('../../../diff/hooks/useGitWorktree', () => ({
+vi.mock('@/features/diff/hooks/useGitWorktree', () => ({
   useGitWorktree: useGitWorktreeSpy,
 }))
 
@@ -236,6 +236,37 @@ describe('TerminalPane index', () => {
       cwd: '/home/user/repo',
     })
     expect(onBurner).not.toHaveBeenCalled()
+  })
+
+  test('the burner placement button cycles the active pane burner position', async () => {
+    const onCycleBurnerPlacement = vi.fn()
+    const onRequestActive = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <TerminalPane
+        {...baseProps}
+        onBurner={vi.fn()}
+        onCycleBurnerPlacement={onCycleBurnerPlacement}
+        onRequestActive={onRequestActive}
+        burnerPlacementByPane={new Map([['s1:p0', 'bottom']])}
+        openBurnerPaneKeys={new Set(['s1:p0'])}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'move burner terminal to left (currently bottom)',
+      })
+    )
+
+    expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
+    expect(onCycleBurnerPlacement).toHaveBeenCalledWith({
+      sessionId: 's1',
+      paneId: 'p0',
+      hostPtyId: 'pty-s1',
+      cwd: '/home/user/repo',
+    })
   })
 
   test('clicking an inactive terminal body requests pane activation', async () => {

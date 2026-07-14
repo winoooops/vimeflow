@@ -6,6 +6,7 @@ import {
   attachNativeGhosttyOutput,
   canUseNativeGhosttySecondary,
   sendNativeGhosttySecondaryData,
+  setNativeGhosttySecondaryVisible,
   shouldUseNativeGhostty,
   type NativeGhosttyApi,
 } from './nativeGhosttyClient'
@@ -102,6 +103,7 @@ describe('nativeGhosttyClient', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
+        placement: 'bottom',
       })
     ).resolves.toBe(false)
   })
@@ -162,6 +164,35 @@ describe('nativeGhosttyClient', () => {
       paneId: 'pane-1',
       secondarySessionId: 'burner-pty',
       data: 'hello',
+    })
+  })
+
+  test('secondary visibility forwards its four-way placement', async () => {
+    const api: NativeGhosttyApi = {
+      update: vi.fn(() => Promise.resolve({})),
+      data: vi.fn(() => Promise.resolve({})),
+      focus: vi.fn(() => Promise.resolve({})),
+      destroy: vi.fn(() => Promise.resolve({})),
+      setSecondaryVisible: vi.fn(() => Promise.resolve({})),
+    }
+    vi.stubGlobal('window', { vimeflow: { ghosttyNative: api } })
+
+    await expect(
+      setNativeGhosttySecondaryVisible({
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+        visible: true,
+        placement: 'top',
+      })
+    ).resolves.toBe(true)
+
+    expect(api.setSecondaryVisible).toHaveBeenCalledWith({
+      sessionId: 'host-pty',
+      paneId: 'pane-1',
+      secondarySessionId: 'burner-pty',
+      visible: true,
+      placement: 'top',
     })
   })
 })

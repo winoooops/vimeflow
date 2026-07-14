@@ -33,8 +33,8 @@ using SetFontFamilyFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
 using AddSecondaryFn = void (*)(void *, InputCallback, ResizeCallback,
-                                FocusCallback, void *);
-using SetSecondaryVisibleFn = void (*)(void *, bool);
+                                FocusCallback, void *, const char *);
+using SetSecondaryVisibleFn = void (*)(void *, bool, const char *);
 using RemoveSecondaryFn = void (*)(void *);
 using WriteSecondaryFn = void (*)(void *, const unsigned char *, int);
 using FocusSecondaryFn = void (*)(void *);
@@ -886,13 +886,13 @@ napi_value Write(napi_env env, napi_callback_info info) {
 }
 
 napi_value AddSecondary(napi_env env, napi_callback_info info) {
-  size_t argc = 4;
-  napi_value args[4];
+  size_t argc = 5;
+  napi_value args[5];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (argc < 4) {
+  if (argc < 5) {
     return Throw(
         env,
-        "addSecondary(surface, onInput, onResize, onFocus) expected");
+        "addSecondary(surface, onInput, onResize, onFocus, placement) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -900,8 +900,14 @@ napi_value AddSecondary(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
+  std::string placement;
+  if (!GetString(env, args[4], &placement)) {
+    return nullptr;
+  }
+
   if (HasSecondaryCallbacks(surface)) {
-    bridge.set_secondary_visible(surface->swift_surface, true);
+    bridge.set_secondary_visible(surface->swift_surface, true,
+                                 placement.c_str());
     return nullptr;
   }
 
@@ -936,17 +942,19 @@ napi_value AddSecondary(napi_env env, napi_callback_info info) {
   }
 
   bridge.add_secondary(surface->swift_surface, OnSecondaryInput,
-                       OnSecondaryResize, OnSecondaryFocus, surface);
+                       OnSecondaryResize, OnSecondaryFocus, surface,
+                       placement.c_str());
 
   return nullptr;
 }
 
 napi_value SetSecondaryVisible(napi_env env, napi_callback_info info) {
-  size_t argc = 2;
-  napi_value args[2];
+  size_t argc = 3;
+  napi_value args[3];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (argc < 2) {
-    return Throw(env, "setSecondaryVisible(surface, visible) expected");
+  if (argc < 3) {
+    return Throw(env,
+                 "setSecondaryVisible(surface, visible, placement) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -956,7 +964,12 @@ napi_value SetSecondaryVisible(napi_env env, napi_callback_info info) {
 
   bool visible = false;
   napi_get_value_bool(env, args[1], &visible);
-  bridge.set_secondary_visible(surface->swift_surface, visible);
+  std::string placement;
+  if (!GetString(env, args[2], &placement)) {
+    return nullptr;
+  }
+  bridge.set_secondary_visible(surface->swift_surface, visible,
+                               placement.c_str());
 
   return nullptr;
 }

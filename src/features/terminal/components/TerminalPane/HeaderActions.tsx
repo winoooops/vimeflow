@@ -1,11 +1,23 @@
+// cspell:ignore splitscreen
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import type { BurnerPlacement } from '@/features/terminal/hooks/useBurnerTerminals'
 
 const SYNC_RESOLVE_SPIN_MS = 480
 
 type BurnerSyncStatus = 'idle' | 'syncing' | 'blocked'
+
+const BURNER_PLACEMENT_ACTION: Record<
+  BurnerPlacement,
+  { icon: string; next: BurnerPlacement }
+> = {
+  bottom: { icon: 'splitscreen_left', next: 'left' },
+  left: { icon: 'splitscreen_top', next: 'top' },
+  top: { icon: 'splitscreen_right', next: 'right' },
+  right: { icon: 'splitscreen_bottom', next: 'bottom' },
+}
 
 const burnerButtonLabel = (
   active: boolean,
@@ -55,6 +67,10 @@ export interface HeaderActionsProps {
   burnerOutOfSync?: boolean
   /** Align this pane's burner terminal back to this pane's cwd. */
   onSyncBurner?: () => void
+  /** Current edge for this pane's nested native burner. */
+  burnerPlacement?: BurnerPlacement
+  /** Move this pane's burner to the next edge. */
+  onCycleBurnerPlacement?: () => void
 }
 
 export const HeaderActions = ({
@@ -69,12 +85,15 @@ export const HeaderActions = ({
   burnerShellExists = false,
   burnerOutOfSync = false,
   onSyncBurner = undefined,
+  burnerPlacement = undefined,
+  onCycleBurnerPlacement = undefined,
 }: HeaderActionsProps): ReactElement => {
   const [burnerSyncStatus, setBurnerSyncStatus] =
     useState<BurnerSyncStatus>('idle')
   const burnerButtonRef = useRef<HTMLButtonElement | null>(null)
   const syncButtonRef = useRef<HTMLButtonElement | null>(null)
   const syncButtonHadFocusRef = useRef(false)
+  const placementButtonHadFocusRef = useRef(false)
 
   const burnerLabel = burnerButtonLabel(
     burnerActive,
@@ -88,11 +107,34 @@ export const HeaderActions = ({
     canShowBurnerSync && (burnerOutOfSync || burnerSyncStatus === 'syncing')
   )
 
+  const placementAction = burnerPlacement
+    ? BURNER_PLACEMENT_ACTION[burnerPlacement]
+    : undefined
+
+  const showBurnerPlacement = Boolean(
+    burnerOpen && placementAction && onCycleBurnerPlacement
+  )
+  const showBurnerControls = showBurnerSync || showBurnerPlacement
+
   useEffect(() => {
     if (!showBurnerSync) {
       setBurnerSyncStatus('idle')
     }
   }, [showBurnerSync])
+
+  useEffect(() => {
+    if (showBurnerPlacement) {
+      return
+    }
+
+    const shouldRestoreFocus = placementButtonHadFocusRef.current
+    placementButtonHadFocusRef.current = false
+    if (!shouldRestoreFocus || burnerButtonRef.current === null) {
+      return
+    }
+
+    burnerButtonRef.current.focus()
+  }, [showBurnerPlacement])
 
   useEffect(() => {
     if (showBurnerSync) {
@@ -138,7 +180,7 @@ export const HeaderActions = ({
 
   const collapseLabel = isCollapsed ? 'expand status' : 'collapse status'
 
-  const burnerButtonClassName = showBurnerSync
+  const burnerButtonClassName = showBurnerControls
     ? `!h-5 !w-5 rounded-md ${
         burnerActive
           ? 'bg-agent-shell-accent/15 text-agent-shell-accent'
@@ -181,9 +223,9 @@ export const HeaderActions = ({
       {burnerButton ? (
         <div
           data-testid="burner-control-pill"
-          data-state={showBurnerSync ? 'open' : 'closed'}
+          data-state={showBurnerControls ? 'open' : 'closed'}
           className={`inline-flex h-[22px] shrink-0 items-center rounded-lg border transition-[background-color,border-color,gap,padding] duration-200 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none ${
-            showBurnerSync
+            showBurnerControls
               ? 'gap-px border-primary/20 bg-primary/10 p-px'
               : 'gap-0 border-transparent bg-transparent p-0'
           }`}
@@ -231,6 +273,42 @@ export const HeaderActions = ({
               }}
             />
           </Tooltip>
+          {placementAction && onCycleBurnerPlacement ? (
+            <Tooltip
+              content={`move burner terminal to ${placementAction.next} (currently ${burnerPlacement})`}
+              placement="bottom"
+              nativeOverlay
+            >
+              <IconButton
+                icon={placementAction.icon}
+                label={`move burner terminal to ${placementAction.next} (currently ${burnerPlacement})`}
+                showTooltip={TOOLTIP_SUPPRESSED}
+                size="sm"
+                aria-hidden={showBurnerPlacement ? undefined : true}
+                tabIndex={showBurnerPlacement ? undefined : -1}
+                disabled={!showBurnerPlacement}
+                className={`!h-5 overflow-hidden rounded-md transition-[background-color,color,width] duration-200 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none ${
+                  showBurnerPlacement
+                    ? '!w-5 text-on-surface-muted opacity-100 hover:bg-primary/15 hover:text-primary'
+                    : 'pointer-events-none !w-0 opacity-0'
+                }`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCycleBurnerPlacement()
+                }}
+                onFocus={() => {
+                  placementButtonHadFocusRef.current = true
+                }}
+                onBlur={(event) => {
+                  if (event.currentTarget.disabled) {
+                    return
+                  }
+
+                  placementButtonHadFocusRef.current = false
+                }}
+              />
+            </Tooltip>
+          ) : null}
           {burnerButton}
         </div>
       ) : null}

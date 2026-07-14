@@ -531,6 +531,7 @@ describe('ghostty native parent', () => {
         sessionId: 'pty-1',
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
+        placement: 'top',
       }
     )
 
@@ -575,6 +576,15 @@ describe('ghostty native parent', () => {
       2,
       secondSurface,
       '23'
+    )
+
+    expect(addon.addSecondary).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+      'top'
     )
 
     controller.dispose()
@@ -1544,6 +1554,7 @@ describe('ghostty native parent', () => {
           sessionId: 'host-pty',
           paneId: 'pane-1',
           secondarySessionId: 'burner-pty',
+          placement: 'bottom',
         }
       )
     ).toEqual({ enabled: true })
@@ -1553,7 +1564,8 @@ describe('ghostty native parent', () => {
       surface,
       expect.any(Function),
       expect.any(Function),
-      expect.any(Function)
+      expect.any(Function),
+      'bottom'
     )
 
     callbacks.onInput?.('a')
@@ -1574,6 +1586,18 @@ describe('ghostty native parent', () => {
       payload: { sessionId: 'host-pty', paneId: 'pane-1' },
     })
     expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+
+    expect(() =>
+      handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+        { sender: {} },
+        {
+          sessionId: 'host-pty',
+          paneId: 'pane-1',
+          secondarySessionId: 'burner-pty',
+          placement: 'diagonal',
+        }
+      )
+    ).toThrow('invalid ghostty native parent secondaryAttach payload')
 
     controller.dispose()
   })
@@ -1621,6 +1645,7 @@ describe('ghostty native parent', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
+        placement: 'bottom',
       }
     )
 
@@ -1685,6 +1710,7 @@ describe('ghostty native parent', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
+        placement: 'bottom',
       }
     )
 
@@ -1730,6 +1756,7 @@ describe('ghostty native parent', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
+        placement: 'bottom',
       }
     )
 
@@ -1741,11 +1768,30 @@ describe('ghostty native parent', () => {
           paneId: 'pane-1',
           secondarySessionId: 'burner-pty',
           visible: false,
+          placement: 'left',
         }
       )
     ).toEqual({ enabled: true })
 
-    expect(addon.setSecondaryVisible).toHaveBeenCalledWith(surface, false)
+    expect(addon.setSecondaryVisible).toHaveBeenCalledWith(
+      surface,
+      false,
+      'left'
+    )
+    expect(addon.removeSecondary).not.toHaveBeenCalled()
+
+    expect(() =>
+      handlers.get(GHOSTTY_NATIVE_SECONDARY_VISIBLE)?.(
+        {},
+        {
+          sessionId: 'host-pty',
+          paneId: 'pane-1',
+          secondarySessionId: 'burner-pty',
+          visible: true,
+          placement: 'diagonal',
+        }
+      )
+    ).toThrow('invalid ghostty native parent secondaryVisible payload')
 
     expect(
       handlers.get(GHOSTTY_NATIVE_SECONDARY_REMOVE)?.(
@@ -1813,6 +1859,7 @@ describe('ghostty native parent', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
+        placement: 'right',
       }
     )
 
@@ -1823,6 +1870,7 @@ describe('ghostty native parent', () => {
         paneId: 'pane-1',
         secondarySessionId: 'burner-pty',
         visible: false,
+        placement: 'top',
       }
     )
 
@@ -1860,12 +1908,14 @@ describe('ghostty native parent', () => {
       secondSurface,
       expect.any(Function),
       expect.any(Function),
-      expect.any(Function)
+      expect.any(Function),
+      'top'
     )
 
     expect(addon.setSecondaryVisible).toHaveBeenLastCalledWith(
       secondSurface,
-      false
+      false,
+      'top'
     )
 
     expect(addon.writeSecondary).toHaveBeenCalledWith(
@@ -1921,6 +1971,7 @@ describe('ghostty native parent', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'old-burner-pty',
+        placement: 'top',
       }
     )
 
@@ -1935,6 +1986,7 @@ describe('ghostty native parent', () => {
         sessionId: 'host-pty',
         paneId: 'pane-1',
         secondarySessionId: 'new-burner-pty',
+        placement: 'left',
       }
     )
 
@@ -1944,7 +1996,8 @@ describe('ghostty native parent', () => {
       firstSurface,
       expect.any(Function),
       expect.any(Function),
-      expect.any(Function)
+      expect.any(Function),
+      'top'
     )
 
     expect(addon.addSecondary).toHaveBeenNthCalledWith(
@@ -1952,7 +2005,8 @@ describe('ghostty native parent', () => {
       secondSurface,
       expect.any(Function),
       expect.any(Function),
-      expect.any(Function)
+      expect.any(Function),
+      'left'
     )
     expect(addon.removeSecondary).not.toHaveBeenCalled()
 

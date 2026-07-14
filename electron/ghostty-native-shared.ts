@@ -1,4 +1,6 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
+import type { BurnerPlacement } from '@/bindings/BurnerPlacement'
+
 export interface GhosttyNativeBounds {
   x: number
   y: number
@@ -36,12 +38,19 @@ export interface GhosttyNativeSecondaryRequest extends GhosttyNativePaneRequest 
   secondarySessionId: string
 }
 
+export type GhosttyNativeSecondaryPlacement = BurnerPlacement
+
+export interface GhosttyNativeSecondaryAttachRequest extends GhosttyNativeSecondaryRequest {
+  placement: GhosttyNativeSecondaryPlacement
+}
+
 export interface GhosttyNativeSecondaryDataRequest extends GhosttyNativeSecondaryRequest {
   data: string
 }
 
 export interface GhosttyNativeSecondaryVisibleRequest extends GhosttyNativeSecondaryRequest {
   visible: boolean
+  placement: GhosttyNativeSecondaryPlacement
 }
 
 export function isBounds(value: unknown): value is GhosttyNativeBounds {
@@ -68,6 +77,17 @@ export function isString(value: unknown): value is string {
 
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+export function isSecondaryPlacement(
+  value: unknown
+): value is GhosttyNativeSecondaryPlacement {
+  return (
+    value === 'top' ||
+    value === 'bottom' ||
+    value === 'left' ||
+    value === 'right'
+  )
 }
 
 export function isHexColor(value: unknown): value is string {

@@ -33,6 +33,57 @@ public typealias VimeflowGhosttyRenamePaneCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
 
+struct EmbeddedGhosttySplitLengths {
+    let primary: CGFloat
+    let secondary: CGFloat
+    let divider: CGFloat
+}
+
+/// Divides one pane dimension between the main terminal, burner terminal, and
+/// divider. In tight spaces, it reduces both preferred terminal sizes while
+/// preserving enough room for the divider to remain adjustable.
+func embeddedGhosttySplitLengths(
+    dimension rawDimension: CGFloat,
+    divider rawDivider: CGFloat,
+    splitRatio: CGFloat,
+    preferredSecondaryMinimum: CGFloat,
+    preferredPrimaryMinimum: CGFloat
+) -> EmbeddedGhosttySplitLengths {
+    let dimension = max(0, rawDimension)
+    let divider = min(max(0, rawDivider), max(0, dimension - 2))
+    let available = max(0, dimension - divider)
+    let secondaryMinimum = max(0, preferredSecondaryMinimum)
+    let primaryMinimum = max(0, preferredPrimaryMinimum)
+    let preferredMinimumTotal = secondaryMinimum + primaryMinimum
+
+    let constrainedSecondaryMinimum: CGFloat
+    let constrainedPrimaryMinimum: CGFloat
+    if preferredMinimumTotal > available, preferredMinimumTotal > 0 {
+        // Introduce adjustment room gradually so crossing the preferred-size
+        // boundary by one point does not make either terminal visibly snap.
+        let adjustmentRoom = min(
+            available * 0.2,
+            preferredMinimumTotal - available
+        )
+        let constrainedMinimumBudget = available - adjustmentRoom
+        constrainedSecondaryMinimum = constrainedMinimumBudget * secondaryMinimum / preferredMinimumTotal
+        constrainedPrimaryMinimum = constrainedMinimumBudget - constrainedSecondaryMinimum
+    } else {
+        constrainedSecondaryMinimum = secondaryMinimum
+        constrainedPrimaryMinimum = primaryMinimum
+    }
+
+    let secondary = min(
+        max(floor(dimension * splitRatio), constrainedSecondaryMinimum),
+        available - constrainedPrimaryMinimum
+    )
+    return EmbeddedGhosttySplitLengths(
+        primary: available - secondary,
+        secondary: secondary,
+        divider: divider
+    )
+}
+
 private func mainActorSync<T: Sendable>(_ body: @MainActor () -> T) -> T {
     if Thread.isMainThread {
         return MainActor.assumeIsolated(body)
@@ -135,6 +186,13 @@ private final class EmbeddedGhosttyDividerView: NSView {
     override func mouseDragged(with event: NSEvent) {
         onDrag?(vertical ? event.deltaX : event.deltaY)
     }
+}
+
+private enum EmbeddedGhosttySecondaryPlacement: String {
+    case top
+    case bottom
+    case left
+    case right
 }
 
 private extension NSColor {
@@ -394,6 +452,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var secondaryChild: EmbeddedGhosttyChild?
     private var dividerView: EmbeddedGhosttyDividerView?
     private var secondarySplitRatio: CGFloat = 0.34
+    private var secondaryPlacement: EmbeddedGhosttySecondaryPlacement = .bottom
 
     private lazy var contextMenu: NSMenu = {
         let menu = NSMenu()
@@ -580,8 +639,10 @@ private final class EmbeddedGhosttySurface: NSObject {
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
         focusCallback: VimeflowGhosttyFocusCallback?,
-        callbackContext: UnsafeMutableRawPointer?
+        callbackContext: UnsafeMutableRawPointer?,
+        placement: EmbeddedGhosttySecondaryPlacement
     ) {
+        secondaryPlacement = placement
         if let secondaryChild {
             secondaryChild.terminalView.isHidden = false
             dividerView?.isHidden = false
@@ -612,7 +673,11 @@ private final class EmbeddedGhosttySurface: NSObject {
         parentView.window?.makeFirstResponder(child.terminalView)
     }
 
-    func setSecondaryVisible(_ visible: Bool) {
+    func setSecondaryVisible(
+        _ visible: Bool,
+        placement: EmbeddedGhosttySecondaryPlacement
+    ) {
+        secondaryPlacement = placement
         guard let secondaryChild else {
             return
         }
@@ -771,19 +836,14 @@ private final class EmbeddedGhosttySurface: NSObject {
 
     private func resizeSecondarySplit(delta: CGFloat) {
         let bounds = container.bounds
-        if bounds.width < 720 {
-            secondarySplitRatio = clamped(
-                secondarySplitRatio - delta / max(1, bounds.height),
-                min: 0.2,
-                max: 0.65
-            )
-        } else {
-            secondarySplitRatio = clamped(
-                secondarySplitRatio - delta / max(1, bounds.width),
-                min: 0.2,
-                max: 0.65
-            )
-        }
+        let verticalSplit = secondaryPlacement == .top || secondaryPlacement == .bottom
+        let dimension = verticalSplit ? bounds.height : bounds.width
+        let direction: CGFloat = secondaryPlacement == .top || secondaryPlacement == .left ? 1 : -1
+        secondarySplitRatio = clamped(
+            secondarySplitRatio + direction * delta / max(1, dimension),
+            min: 0.2,
+            max: 0.65
+        )
         layoutChildren()
     }
 
@@ -801,56 +861,66 @@ private final class EmbeddedGhosttySurface: NSObject {
             return
         }
 
-        let divider: CGFloat = 6
         dividerView?.isHidden = false
-        if bounds.width < 720 {
-            let secondaryHeight = clamped(
-                floor(bounds.height * secondarySplitRatio),
-                min: 140,
-                max: max(140, bounds.height - 180)
+        switch secondaryPlacement {
+        case .top, .bottom:
+            let split = embeddedGhosttySplitLengths(
+                dimension: bounds.height,
+                divider: 6,
+                splitRatio: secondarySplitRatio,
+                preferredSecondaryMinimum: 140,
+                preferredPrimaryMinimum: 180
             )
+            let secondaryHeight = split.secondary
+            let primaryHeight = split.primary
+            let isBottom = secondaryPlacement == .bottom
             terminalView.frame = NSRect(
                 x: 0,
-                y: secondaryHeight + divider,
+                y: isBottom ? secondaryHeight + split.divider : 0,
                 width: bounds.width,
-                height: max(0, bounds.height - secondaryHeight - divider)
+                height: primaryHeight
             )
             secondaryTerminalView.frame = NSRect(
                 x: 0,
-                y: 0,
+                y: isBottom ? 0 : primaryHeight + split.divider,
                 width: bounds.width,
                 height: secondaryHeight
             )
             dividerView?.vertical = false
             dividerView?.frame = NSRect(
                 x: 0,
-                y: secondaryHeight,
+                y: isBottom ? secondaryHeight : primaryHeight,
                 width: bounds.width,
-                height: divider
+                height: split.divider
             )
-        } else {
-            let secondaryWidth = clamped(
-                floor(bounds.width * secondarySplitRatio),
-                min: 260,
-                max: max(260, bounds.width - 320)
+        case .left, .right:
+            let split = embeddedGhosttySplitLengths(
+                dimension: bounds.width,
+                divider: 6,
+                splitRatio: secondarySplitRatio,
+                preferredSecondaryMinimum: 260,
+                preferredPrimaryMinimum: 320
             )
+            let secondaryWidth = split.secondary
+            let primaryWidth = split.primary
+            let isLeft = secondaryPlacement == .left
             terminalView.frame = NSRect(
-                x: 0,
+                x: isLeft ? secondaryWidth + split.divider : 0,
                 y: 0,
-                width: max(0, bounds.width - secondaryWidth - divider),
+                width: primaryWidth,
                 height: bounds.height
             )
             secondaryTerminalView.frame = NSRect(
-                x: bounds.width - secondaryWidth,
+                x: isLeft ? 0 : primaryWidth + split.divider,
                 y: 0,
                 width: secondaryWidth,
                 height: bounds.height
             )
             dividerView?.vertical = true
             dividerView?.frame = NSRect(
-                x: bounds.width - secondaryWidth - divider,
+                x: isLeft ? secondaryWidth : primaryWidth,
                 y: 0,
-                width: divider,
+                width: split.divider,
                 height: bounds.height
             )
         }
@@ -1141,7 +1211,8 @@ public func vimeflowGhosttyAddSecondary(
     _ inputCallback: VimeflowGhosttyInputCallback?,
     _ resizeCallback: VimeflowGhosttyResizeCallback?,
     _ focusCallback: VimeflowGhosttyFocusCallback?,
-    _ callbackContext: UnsafeMutableRawPointer?
+    _ callbackContext: UnsafeMutableRawPointer?,
+    _ placementPointer: UnsafePointer<CChar>?
 ) {
     guard let surfacePointer else {
         return
@@ -1149,13 +1220,17 @@ public func vimeflowGhosttyAddSecondary(
 
     let pointer = SendablePointer(value: surfacePointer)
     let contextPointer = SendablePointer(value: callbackContext)
+    let placement = placementPointer.flatMap {
+        EmbeddedGhosttySecondaryPlacement(rawValue: String(cString: $0))
+    } ?? .bottom
     mainActorSync {
         guard let surface = liveSurface(from: pointer) else { return }
         surface.addSecondary(
             inputCallback: inputCallback,
             resizeCallback: resizeCallback,
             focusCallback: focusCallback,
-            callbackContext: contextPointer.value
+            callbackContext: contextPointer.value,
+            placement: placement
         )
     }
 }
@@ -1163,16 +1238,20 @@ public func vimeflowGhosttyAddSecondary(
 @_cdecl("vimeflow_ghostty_set_secondary_visible")
 public func vimeflowGhosttySetSecondaryVisible(
     _ surfacePointer: UnsafeMutableRawPointer?,
-    _ visible: Bool
+    _ visible: Bool,
+    _ placementPointer: UnsafePointer<CChar>?
 ) {
     guard let surfacePointer else {
         return
     }
 
     let pointer = SendablePointer(value: surfacePointer)
+    let placement = placementPointer.flatMap {
+        EmbeddedGhosttySecondaryPlacement(rawValue: String(cString: $0))
+    } ?? .bottom
     mainActorSync {
         guard let surface = liveSurface(from: pointer) else { return }
-        surface.setSecondaryVisible(visible)
+        surface.setSecondaryVisible(visible, placement: placement)
     }
 }
 

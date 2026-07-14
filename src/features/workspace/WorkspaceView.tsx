@@ -12,17 +12,17 @@ import { SidebarToggle } from './components/SidebarToggle'
 import {
   LayoutDisplayMenu,
   LayoutSwitcher,
-} from '../terminal/components/LayoutSwitcher'
+} from '@/features/terminal/components/LayoutSwitcher'
 import {
   HIDDEN_CUSTOM_LAYOUTS_STORAGE_KEY,
   SHOWN_LAYOUTS_STORAGE_KEY,
   readLayoutDisplayPreference,
   writeLayoutDisplayPreference,
-} from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
+} from '@/features/terminal/components/LayoutSwitcher/layoutDisplayPreferences'
 import {
   LayoutCreatorModal,
   createCustomPaneLayoutId,
-} from '../terminal/components/LayoutCreator'
+} from '@/features/terminal/components/LayoutCreator'
 import { SidebarTopBar } from './components/SidebarTopBar'
 import { SidebarSettingsFooter } from './components/SidebarSettingsFooter'
 import { Sidebar } from '@/components/sidebar/Sidebar'
@@ -44,51 +44,51 @@ import type { DockPosition } from './components/DockSwitcher'
 import {
   AgentStatusPanel,
   PANEL_WIDTH_PX,
-} from '../agent-status/components/AgentStatusPanel'
+} from '@/features/agent-status/components/AgentStatusPanel'
 import {
   AgentStatusRail,
   RAIL_WIDTH_PX,
-} from '../agent-status/components/AgentStatusRail'
-import { resolveSwellVariant } from '../agent-status/hooks/useReservoirFlow'
-import { cacheHitPercentage } from '../agent-status/utils/cacheRate'
-import { useCacheHistoryCollector } from '../agent-status/hooks/useCacheHistoryCollector'
-import type { RateLimitsState } from '../agent-status/types'
-import { UnsavedChangesDialog } from '../editor/components/UnsavedChangesDialog'
+} from '@/features/agent-status/components/AgentStatusRail'
+import { resolveSwellVariant } from '@/features/agent-status/hooks/useReservoirFlow'
+import { cacheHitPercentage } from '@/features/agent-status/utils/cacheRate'
+import { useCacheHistoryCollector } from '@/features/agent-status/hooks/useCacheHistoryCollector'
+import type { RateLimitsState } from '@/features/agent-status/types'
+import { UnsavedChangesDialog } from '@/features/editor/components/UnsavedChangesDialog'
 import { InfoBanner } from './components/InfoBanner'
-import { CommandPalette } from '../command-palette/CommandPalette'
-import { useCommandPalette } from '../command-palette/hooks/useCommandPalette'
-import { SettingsDialog, useSettingsDialog } from '../settings'
-import { useSettings } from '../settings/hooks/useSettings'
+import { CommandPalette } from '@/features/command-palette/CommandPalette'
+import { useCommandPalette } from '@/features/command-palette/hooks/useCommandPalette'
+import { SettingsDialog, useSettingsDialog } from '@/features/settings'
+import { useSettings } from '@/features/settings/hooks/useSettings'
 import { useActiveTheme } from '@/theme'
 import {
   usePaneRenameChord,
   type FocusedPaneRef,
-} from '../command-palette/hooks/usePaneRenameChord'
-import { listen, renameAgentSession } from '../../lib/backend'
-import { registerCommandPaletteShortcutOpenerForE2e } from '../../lib/e2e-bridge'
-import { useSessionManager } from '../sessions/hooks/useSessionManager'
-import { cycleSession } from '../sessions/utils/cycleSession'
-import { NewSessionDialog } from '../sessions/components/NewSessionDialog'
+} from '@/features/command-palette/hooks/usePaneRenameChord'
+import { listen, renameAgentSession } from '@/lib/backend'
+import { registerCommandPaletteShortcutOpenerForE2e } from '@/lib/e2e-bridge'
+import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
+import { cycleSession } from '@/features/sessions/utils/cycleSession'
+import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
 import {
   clampSize,
   useResizable,
   type ResizeDragEndEvent,
-} from '../../hooks/useResizable'
-import { useElasticContainer } from '../../hooks/useElasticContainer'
-import { useSidebarTab, type SidebarTab } from '../../hooks/useSidebarTab'
+} from '@/hooks/useResizable'
+import { useElasticContainer } from '@/hooks/useElasticContainer'
+import { useSidebarTab, type SidebarTab } from '@/hooks/useSidebarTab'
 import { useNotifyInfo } from './hooks/useNotifyInfo'
-import { createFileSystemService } from '../files/services/fileSystemService'
-import { createTerminalService } from '../terminal/services/terminalService'
-import { useBurnerTerminals } from '../terminal/hooks/useBurnerTerminals'
+import { createFileSystemService } from '@/features/files/services/fileSystemService'
+import { createTerminalService } from '@/features/terminal/services/terminalService'
+import { useBurnerTerminals } from '@/features/terminal/hooks/useBurnerTerminals'
 import {
   usePaneShortcuts,
   type PaneShortcutModifier,
-} from '../terminal/hooks/usePaneShortcuts'
+} from '@/features/terminal/hooks/usePaneShortcuts'
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
-import { useKeybindings } from '../keymap/useKeybindings'
-import { formatChord } from '../keymap/chord'
-import { chordToShortcutInput } from '../keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
+import { formatChord } from '@/features/keymap/chord'
+import { chordToShortcutInput } from '@/features/keymap/displayKey'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
@@ -96,47 +96,50 @@ import { useSessionNavShortcut } from './hooks/useSessionNavShortcut'
 import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
-import { useEditorBuffer } from '../editor/hooks/useEditorBuffer'
-import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
-import { useAgentReattach } from '../agent-status/hooks/useAgentReattach'
-import { useAgentStatusHotLoading } from '../agent-status/hooks/useAgentStatusHotLoading'
-import { useGitStatus } from '../diff/hooks/useGitStatus'
-import { useFeedbackBatchStore } from '../diff/hooks/useFeedbackBatch'
-import { useAgentReply } from '../diff/hooks/useAgentReply'
-import { useAgentReview } from '../diff/hooks/useAgentReview'
-import { prunePendingReviewRequestOwners } from '../diff/services/pendingReviewRequests'
-import { prunePendingReviewOwners } from '../diff/services/pendingReviews'
-import type { PaneCandidate } from '../diff/services/activePanePicker'
-import { sumLines } from '../diff/utils/sumLines'
-import { findActivePane } from '../sessions/utils/activeSessionPane'
-import { isShellPane } from '../sessions/utils/paneKind'
+import { useEditorBuffer } from '@/features/editor/hooks/useEditorBuffer'
+import { useAgentStatus } from '@/features/agent-status/hooks/useAgentStatus'
+import { useAgentReattach } from '@/features/agent-status/hooks/useAgentReattach'
+import { useAgentStatusHotLoading } from '@/features/agent-status/hooks/useAgentStatusHotLoading'
+import { useGitStatus } from '@/features/diff/hooks/useGitStatus'
+import { useFeedbackBatchStore } from '@/features/diff/hooks/useFeedbackBatch'
+import { useAgentReply } from '@/features/diff/hooks/useAgentReply'
+import { useAgentReview } from '@/features/diff/hooks/useAgentReview'
+import { prunePendingReviewRequestOwners } from '@/features/diff/services/pendingReviewRequests'
+import { prunePendingReviewOwners } from '@/features/diff/services/pendingReviews'
+import type { PaneCandidate } from '@/features/diff/services/activePanePicker'
+import { sumLines } from '@/features/diff/utils/sumLines'
+import { findActivePane } from '@/features/sessions/utils/activeSessionPane'
+import { isShellPane } from '@/features/sessions/utils/paneKind'
 import {
   canClosePane,
   selectVisiblePanes,
-} from '../terminal/components/SplitView'
+} from '@/features/terminal/components/SplitView'
 import {
   canSelectLayoutOverCapacity,
   getPaneLayoutCapacity,
   type PaneLayoutDefinition,
-} from '../terminal/layout-registry'
-import { lineDelta } from '../sessions/utils/lineDelta'
-import { isLiveStatus, isOpenSession } from '../sessions/utils/sessionStatus'
-import { pickNextVisibleSessionId } from '../sessions/utils/pickNextVisibleSessionId'
+} from '@/features/terminal/layout-registry'
+import { lineDelta } from '@/features/sessions/utils/lineDelta'
+import {
+  isLiveStatus,
+  isOpenSession,
+} from '@/features/sessions/utils/sessionStatus'
+import { pickNextVisibleSessionId } from '@/features/sessions/utils/pickNextVisibleSessionId'
 import {
   AGENTS,
   agentTypeToRegistryKey,
   type AgentDef,
-} from '../../agents/registry'
+} from '@/agents/registry'
 import type {
   LayoutId,
   PaneLayoutId,
   SessionCloseResult,
-} from '../sessions/types'
+} from '@/features/sessions/types'
 import {
   buildWorkspaceCommands,
   WORKSPACE_TAB_KEYS,
 } from './commands/buildWorkspaceCommands'
-import type { ChangedFile, SelectedDiffFile } from '../diff/types'
+import type { ChangedFile, SelectedDiffFile } from '@/features/diff/types'
 import {
   DOCK_CONTAINER_ID,
   TERMINAL_CONTAINER_ID,
@@ -1411,6 +1414,8 @@ const WorkspaceViewContent = (): ReactElement => {
     renderNode: burnerTerminalNode,
     toggle: toggleBurner,
     syncToPaneCwd: syncBurnerToPaneCwd,
+    cyclePlacement: cycleBurnerPlacement,
+    placementByPane: burnerPlacementByPane,
     runningByPane: runningBurnerByPane,
     activeByPane: activeBurnerByPane,
     outOfSyncByPane: outOfSyncBurnerByPane,
@@ -3369,6 +3374,8 @@ const WorkspaceViewContent = (): ReactElement => {
               }}
               onBurner={(target): void => void toggleBurner(target)}
               onSyncBurner={syncBurnerToPaneCwd}
+              onCycleBurnerPlacement={cycleBurnerPlacement}
+              burnerPlacementByPane={burnerPlacementByPane}
               activeBurnerPaneKeys={activeBurnerPaneKeys}
               openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}

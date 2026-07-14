@@ -87,7 +87,7 @@ Separation is **tonal-first** with two planes:
 
 **`TerminalPane`** — a self-contained card (`bg-surface`, `radius 10`), `flex-col`:
 
-- **Header** (`font-mono` 10.5px, `border-b outline-variant/[0.18]`): agent chip (glyph + short name, `accentDim` bg / `accentSoft` border / `accent` text) · truncating title (`userLabel ?? agentTitle ?? session.name`) · metadata (`GitRefChip` · `+added/−removed` · relative time) · `HeaderActions` (burner · collapse · close, 22×22). Focused header gets an `accentDim` gradient wash.
+- **Header** (`font-mono` 10.5px, `border-b outline-variant/[0.18]`): agent chip (glyph + short name, `accentDim` bg / `accentSoft` border / `accent` text) · truncating title (`userLabel ?? agentTitle ?? session.name`) · metadata (`GitRefChip` · `+added/−removed` · relative time) · `HeaderActions` (burner sync/placement/toggle · collapse · close, 22×22). Focused header gets an `accentDim` gradient wash.
 - **Body:** native Ghostty (`libghostty-spm` parented `NSView`) on packaged macOS arm64; xterm.js for Linux/dev fallback and native-load failure; or `RestartAffordance` ("Session exited." + Restart) when the PTY exited.
 - **Footer** (`font-mono` 11px, `border-t outline-variant/20`): click-to-focus prompt line (`>` in `accent` + state-aware placeholder).
 - **Focus ring:** absolute `inset-0` span — resting `1px outline-variant/22`; focused `2px agent.accent` border + `6px accentDim` glow.
@@ -124,9 +124,11 @@ The **live** diff surface is **`DiffPanelContent`** (git status + `useFileDiff` 
 
 A pane can host a **`BrowserPane`** (native web view) instead of a terminal: an Arc-style horizontal tab strip (`WEB` chip + capsule tabs + new-tab/close) over a toolbar (back/fwd/reload + address command bar + open-external). Identity accent = **cyan `agent-browser` (`#4fc8d6`)**, distinct from the agent accents. `Ctrl/Cmd+L` focuses the address bar (Enter submits a normalized URL, Esc cancels). Native views are occluded when any overlay is up (drag, palette, burner, rename, dialog).
 
-### 3.6 Burner terminal popup
+### 3.6 Burner terminal
 
-A throwaway terminal opens in a centered **`BurnerTerminalPopup`** (`role=dialog`, `z-100`, `760×600`): a full-screen scrim (`surface-container-lowest/55` + `blur(14px)`) behind a glass panel (`surface-container/90` + `blur(24px) saturate(160%)`, **shell-amber** (`agent-shell-accent`) tinted border + glow). Header: dashed `BURNER` pill + optional align/sync button (amber when out-of-sync) + hide; footer: `↵ run` / `⌃C cancel` chips + amber "esc hides — shell keeps running". **Hide ≠ kill** — the popup is toggled by `open`, never unmounted; the shell survives.
+On packaged macOS native Ghostty, each terminal pane can own one nested secondary burner terminal. It defaults to the **bottom** edge and retains its own per-pane placement; the compact header pill cycles it clockwise through **bottom → left → top → right** with one icon button. The native AppKit divider follows the selected axis and remains resizable. **Hide ≠ kill** — hiding the secondary view keeps its ephemeral shell alive.
+
+The xterm fallback remains the centered **`BurnerTerminalPopup`** (`role=dialog`, `z-100`, `760×600`): a full-screen scrim (`surface-container-lowest/55` + `blur(14px)`) behind a glass panel (`surface-container/90` + `blur(24px) saturate(160%)`, **shell-amber** (`agent-shell-accent`) tinted border + glow). Header: dashed `BURNER` pill + optional align/sync button (amber when out-of-sync) + hide; footer: `↵ run` / `⌃C cancel` chips + amber "esc hides — shell keeps running".
 
 ---
 
