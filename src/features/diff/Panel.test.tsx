@@ -7082,9 +7082,17 @@ describe('Panel', () => {
       clearPendingReviewRequest(nonce)
     })
 
-    test('request review button appears with a populated strip and no selected file', (): void => {
+    test('request review button appears with a populated strip and no selected file', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      // Two-file strip: auto-selection picks src/a.ts but changeCount=2 so the
+      // scope control is not suppressed by the "degenerate single-entry" rule.
+      // useFileDiff returns no diff → fileDisabled=true, forced-changelist scope.
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
-        files: [{ path: 'src/a.ts', status: 'modified', staged: false }],
+        files: [
+          { path: 'src/a.ts', status: 'modified', staged: false },
+          { path: 'src/b.ts', status: 'modified', staged: false },
+        ],
         filesCwd: '/repo',
         repoRoot: '/repo',
         revision: 1,
@@ -7110,10 +7118,31 @@ describe('Panel', () => {
         />
       )
 
-      // Button must appear in the empty-file state when the strip has at least one entry
+      // Button must appear when the strip has at least one entry (even without an active diff)
+      const btn = screen.getByRole('button', { name: /request review/i })
+      expect(btn).toBeInTheDocument()
+
+      // Open the popover
+      await user.click(btn)
+
+      // Wait for the popover dialog to mount
+      await screen.findByRole('dialog', { name: 'Request review' })
+
+      // Scope group must be present
       expect(
-        screen.getByRole('button', { name: /request review/i })
+        screen.getByRole('group', { name: 'Review scope (f/a)' })
       ).toBeInTheDocument()
+
+      // No active diff → 'This file' must be disabled
+      expect(screen.getByRole('button', { name: 'This file' })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+
+      // 'All changes' must NOT be disabled
+      expect(
+        screen.getByRole('button', { name: 'All changes' })
+      ).not.toHaveAttribute('aria-disabled', 'true')
     })
   })
 })
