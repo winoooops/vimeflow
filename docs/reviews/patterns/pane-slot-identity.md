@@ -2,8 +2,8 @@
 id: pane-slot-identity
 category: correctness
 created: 2026-06-19
-last_updated: 2026-07-08
-ref_count: 1
+last_updated: 2026-07-14
+ref_count: 2
 ---
 
 # Pane Slot Identity
@@ -78,4 +78,20 @@ pass the `slotId` through every layer that needs to act on a specific cell.
 - **Fix:** Resolve active and occupied slot ids from `resolvePanePlacement`, then
   choose directional neighbors from the layout slot geometry and map the chosen
   slot back to its assigned pane. Added slot-placement regression coverage.
+- **Commit:** same commit as this entry
+
+### 6. Numbered pane focus used hidden panes after layout shrink
+
+- **Source:** github-codex-connector | PR #695 round 1 | 2026-07-14
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/hooks/usePaneShortcuts.ts`
+- **Finding:** `SplitView` used `selectVisiblePanes(...)` when a smaller layout
+  rescued an active pane beyond the prefix slice, so a single visible rescued pane
+  advertised `Mod+1`. The numbered shortcut resolver still placed every
+  `session.panes` entry, making `Mod+1` from the dock target hidden `p0` instead
+  of the visible active pane.
+- **Fix:** Resolve numbered focus targets from the same visible pane set used by
+  `SplitView`, then preserve the dock reclaim path as a focus-only no-op when the
+  visible target is already active. Added a dock regression for a rescued active
+  pane in single-pane focus.
 - **Commit:** same commit as this entry

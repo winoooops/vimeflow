@@ -83,7 +83,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 40       | 19   | 2026-07-13   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 19       | 8    | 2026-07-11   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 37       | 11   | 2026-07-09   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 37       | 12   | 2026-07-09   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
@@ -110,7 +110,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
 | [Custom Pane Layout Preservation](patterns/custom-pane-layout-preservation.md)                       | correctness        | 13       | 5    | 2026-06-22   |
-| [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 5        | 1    | 2026-07-08   |
+| [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 6        | 2    | 2026-07-14   |
 | [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 18       | 9    | 2026-07-07   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 2        | 1    | 2026-06-22   |

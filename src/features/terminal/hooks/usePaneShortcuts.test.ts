@@ -862,6 +862,32 @@ describe('usePaneShortcuts container reclaim extensions', () => {
 
       removeFakeDock(dockElement)
     })
+
+    test(`${label}: Mod+1 from dock keeps rescued active pane focused`, () => {
+      const onTerminalZoneFocus = vi.fn()
+      const setSessionActivePane = vi.fn()
+      const dockElement = attachFakeDock()
+
+      renderPane({
+        sessions: [
+          makeSession('s1', SINGLE_PANE_FOCUS_LAYOUT_ID, ['p0', 'p1', 'p2'], 2),
+        ],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus,
+        matches,
+      })
+
+      const event = fire('1', shortcutModifiers)
+
+      expect(onTerminalZoneFocus).toHaveBeenCalledOnce()
+      expect(event.preventDefaultSpy).toHaveBeenCalled()
+      expect(setSessionActivePane).not.toHaveBeenCalled()
+
+      removeFakeDock(dockElement)
+    })
   })
 
   test('omitted reclaim params preserve already-active pass-through behavior', () => {

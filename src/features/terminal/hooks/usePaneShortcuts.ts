@@ -142,9 +142,10 @@ const handleNumberedPaneFocusShortcut = ({
 
   const layout = layoutRegistry.getFallbackLayout(session.layout)
   const slotId = layout.definition.addOrder[paneNumber - 1]
+  const visiblePanes = selectVisiblePanes(session.panes, layout.capacity)
 
   const target = resolvePanePlacement(
-    session.panes,
+    visiblePanes,
     layout,
     session.placements
   ).assignments.find((assignment) => assignment.slotId === slotId)?.pane
