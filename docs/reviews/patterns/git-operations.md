@@ -276,3 +276,18 @@ between display and mutation operations.
   `git diff --cached --numstat`, while unstaged rows keep using the working-tree
   diff summary.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Dev git status must emit backend contract statuses
+
+- **Source:** github-codex-connector | PR #694 round 2 | 2026-07-14
+- **Severity:** P1 / HIGH
+- **File:** `vite.config.ts`
+- **Finding:** The Vite dev git-status middleware still returned porcelain
+  status letters such as `M`, `A`, `D`, and `U` for tracked and conflicted
+  rows. The frontend `ChangedFile.status` contract only accepts lowercase
+  domain statuses, so those rows could break the diff sidebar and changelist
+  review flow in dev/browser mode.
+- **Fix:** Mapped branch-diff and porcelain status codes to the same lowercase
+  values emitted by the Rust backend, including `renamed` for rename/copy
+  codes and `modified` for conflicted/unmerged paths.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

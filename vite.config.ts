@@ -360,22 +360,22 @@ function gitApiPlugin(): Plugin {
 
                 for (const file of branchDiffSummary.files) {
                   // Determine status from diff
-                  let gitStatus: 'M' | 'A' | 'D' | 'U'
+                  let gitStatus: ChangedFile['status']
 
                   if (
                     file.insertions > 0 &&
                     file.deletions === 0 &&
                     file.changes === file.insertions
                   ) {
-                    gitStatus = 'A'
+                    gitStatus = 'added'
                   } else if (
                     file.deletions > 0 &&
                     file.insertions === 0 &&
                     file.changes === file.deletions
                   ) {
-                    gitStatus = 'D'
+                    gitStatus = 'deleted'
                   } else {
-                    gitStatus = 'M'
+                    gitStatus = 'modified'
                   }
 
                   changedFiles.push({
@@ -394,21 +394,21 @@ function gitApiPlugin(): Plugin {
 
             const statusFromCode = (
               code: string
-            ): 'M' | 'A' | 'D' | 'U' | 'untracked' | null => {
+            ): ChangedFile['status'] | null => {
               if (code === 'M') {
-                return 'M'
+                return 'modified'
               }
               if (code === 'A') {
-                return 'A'
+                return 'added'
               }
               if (code === 'D') {
-                return 'D'
+                return 'deleted'
               }
               if (code === 'R' || code === 'C') {
-                return 'M'
+                return 'renamed'
               }
               if (code === 'U') {
-                return 'U'
+                return 'modified'
               }
 
               return null
@@ -458,7 +458,7 @@ function gitApiPlugin(): Plugin {
                 const gitStatus =
                   statusFromCode(file.working_dir) ??
                   statusFromCode(file.index) ??
-                  'U'
+                  'modified'
 
                 changedFiles.push({
                   path: file.path,
