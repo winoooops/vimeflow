@@ -49,10 +49,51 @@ const rangeInSameHunk = (
       endLine <= range.end
   )
 
-const findFile = (
+const findingInRanges = (
+  finding: AgentReviewFinding,
+  file: ReviewedFile
+): boolean => {
+  const ranges = finding.side === 'deletions' ? file.deletions : file.additions
+
+  return finding.scope === 'range'
+    ? finding.startLine !== null &&
+        finding.endLine !== null &&
+        rangeInSameHunk(finding.startLine, finding.endLine, ranges)
+    : finding.line !== null && lineInRanges(finding.line, ranges)
+}
+
+/**
+ * Picks which snapshot entry a finding belongs to (VIM-327 spec §2): with the
+ * path in both halves, the half whose ranges contain the target wins; both,
+ * neither, or scope:"file" prefer unstaged (the working tree is where the
+ * user acts). Selection and in-hunk determination are one question.
+ */
+const resolveFindingEntry = (
   snapshot: ReviewedFile[],
-  path: string
-): ReviewedFile | undefined => snapshot.find((file) => file.path === path)
+  finding: AgentReviewFinding
+): { entry: ReviewedFile; targetInHunk: boolean } | undefined => {
+  const candidates = snapshot.filter((file) => file.path === finding.path)
+
+  if (candidates.length === 0) {
+    return undefined
+  }
+
+  if (finding.scope !== 'file') {
+    const matches = candidates.filter((file) => findingInRanges(finding, file))
+
+    if (matches.length === 1) {
+      return { entry: matches[0], targetInHunk: true }
+    }
+  }
+
+  const preferred = candidates.find((file) => !file.staged) ?? candidates[0]
+
+  return {
+    entry: preferred,
+    targetInHunk:
+      finding.scope !== 'file' && findingInRanges(finding, preferred),
+  }
+}
 
 /**
  * Captures the backend `agent-review` event (VIM-304) and places a delegated
@@ -170,10 +211,10 @@ export const useAgentReview = ({
 
       for (const [index, finding] of findingsToPlace.entries()) {
         const ordinal = index + 1
-        const file = findFile(diffSnapshot, finding.path)
+        const resolved = resolveFindingEntry(diffSnapshot, finding)
 
         // path not in the reviewed diff → no (path, staged) row to anchor under.
-        if (file === undefined) {
+        if (resolved === undefined) {
           const commentId = nextCommentId()
           addReviewLevelNote(ownerKey, {
             commentId,
@@ -185,16 +226,8 @@ export const useAgentReview = ({
           continue
         }
 
-        const ranges =
-          finding.side === 'deletions' ? file.deletions : file.additions
-
-        const targetInHunk =
-          finding.scope === 'range'
-            ? finding.startLine !== null &&
-              finding.endLine !== null &&
-              rangeInSameHunk(finding.startLine, finding.endLine, ranges)
-            : finding.line !== null && lineInRanges(finding.line, ranges)
-        const downgradeToFile = finding.scope !== 'file' && !targetInHunk
+        const downgradeToFile =
+          finding.scope !== 'file' && !resolved.targetInHunk
 
         const annotation = reviewerAnnotation(
           finding,
@@ -205,7 +238,7 @@ export const useAgentReview = ({
           ownerKey,
           cwd,
           finding.path,
-          file.staged,
+          resolved.entry.staged,
           annotation
         )
 
@@ -215,7 +248,7 @@ export const useAgentReview = ({
           handle: {
             cwd,
             filePath: finding.path,
-            staged: file.staged,
+            staged: resolved.entry.staged,
             lineNumber: annotation.lineNumber,
             side: annotation.side,
             target: annotation.metadata.target,
