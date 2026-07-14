@@ -180,6 +180,23 @@ test('requestReview dispatches resolvable prompt paths without changing the stor
   )
 })
 
+test('single-file scope carries the untracked annotation for an untracked row', async () => {
+  const { result } = setup({ activeFileUntracked: true })
+
+  await act(async () => {
+    result.current.requestReview(pane('pty-9'))
+    await Promise.resolve()
+  })
+
+  const mocked = vi.mocked(dispatchReviewRequest)
+  const [, requestFiles] = mocked.mock.calls[0]
+  expect(requestFiles[0]).toMatchObject({ path: 'src/a.ts', untracked: true })
+  // Placement snapshot is untouched — untracked is prompt-side only.
+  expect(
+    getPendingReviewRequest('nonce-1')?.diffSnapshot[0]
+  ).not.toHaveProperty('untracked')
+})
+
 test('copyReviewRequest records a request and copies the prompt', async () => {
   const { result } = setup()
 

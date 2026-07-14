@@ -28,6 +28,11 @@ export interface UseRequestReviewOptions {
   cwd: string
   /** The active row's staged axis — the single-file scope inherits it. */
   staged: boolean
+  /**
+   * True when the active row is untracked — the single-file prompt then
+   * carries the same "read the file directly" annotation the changelist adds.
+   */
+  activeFileUntracked?: boolean
   /** All file-strip entries; the changelist scope reviews exactly this list. */
   changedFiles?: readonly ChangedFile[]
   /** useGitStatus revision — part of the prefetch key (spec §3). */
@@ -76,6 +81,7 @@ export const useRequestReview = ({
   ownerKey,
   cwd,
   staged,
+  activeFileUntracked = false,
   changedFiles,
   statusRevision,
   fetchFileDiff,
@@ -189,13 +195,13 @@ export const useRequestReview = ({
         const files = [buildDiffSnapshot(fileDiff, staged)]
         const normalizedRepoRoot = repoRoot?.replace(/[\\/]+$/, '') ?? ''
 
-        const requestFiles: ReviewRequestFile[] =
-          normalizedRepoRoot.length > 0
-            ? files.map((file) => ({
-                ...file,
-                promptPath: `${normalizedRepoRoot}/${file.path}`,
-              }))
-            : files
+        const requestFiles: ReviewRequestFile[] = files.map((file) => ({
+          ...file,
+          ...(normalizedRepoRoot.length > 0
+            ? { promptPath: `${normalizedRepoRoot}/${file.path}` }
+            : {}),
+          ...(activeFileUntracked ? { untracked: true } : {}),
+        }))
         const nonce = makeDispatchNonce()
         setPendingReviewRequest({
           nonce,
@@ -251,6 +257,7 @@ export const useRequestReview = ({
       ownerKey,
       fileDiff,
       staged,
+      activeFileUntracked,
       cwd,
       repoRoot,
       canRequestChangelist,

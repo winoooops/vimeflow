@@ -1244,6 +1244,7 @@ export const Panel = ({
     ownerKey: feedbackOwnerKey,
     cwd,
     staged: selectedFileStaged,
+    activeFileUntracked: selectedFileUntracked ?? false,
     // Status repoRoot is populated whenever the strip is (spec §3); the diff
     // response only exists once a file has been opened.
     repoRoot: statusRepoRoot ?? response?.repoRoot ?? repoRootRef.current,
