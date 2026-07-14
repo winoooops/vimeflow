@@ -2587,6 +2587,18 @@ index 1111111,2222222..0000000\n\
         assert!(file_diff.hunks.is_empty());
     }
 
+    #[test]
+    fn test_parse_combined_marker_clears_two_way_hunks_parsed_after_it() {
+        // A `diff --cc` marker followed by plain `@@` hunk lines: the two-way
+        // branch still accumulates them during the pass, so the final clear
+        // must drop everything.
+        let diff = "diff --cc y.txt\n@@ -1,1 +1,2 @@\n+added\n context\n";
+
+        let file_diff = parse_git_diff(diff, "y.txt");
+
+        assert!(file_diff.hunks.is_empty());
+    }
+
     // Integration tests for git_status command (Feature 4)
 
     #[tokio::test]
