@@ -57,10 +57,10 @@ const request = (
   nonce: 'abc',
   ownerKey: 'owner',
   cwd: '/repo',
-  staged: false,
   diffSnapshot: [
     {
       path: 'a.ts',
+      staged: false,
       additions: [{ start: 40, end: 50 }],
       deletions: [{ start: 5, end: 8 }],
     },
@@ -389,5 +389,130 @@ describe('thread identity in placed findings (VIM-298)', () => {
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
     const annotation = addAnnotationForOwner.mock.calls[0][4]
     expect(annotation.metadata.threadId).toBe(annotation.metadata.id)
+  })
+})
+
+// ─── Task 7: dual-half finding resolution (VIM-327 spec §2) ────────────────
+// Snapshot: a.ts appears in BOTH halves — unstaged additions 10-19, staged 30-39.
+// All tests use nonce 'dual' + sessionId 'session-1' to isolate cleanup.
+
+const dualHalfRequest = (): PendingReviewRequest => ({
+  nonce: 'dual',
+  ownerKey: 'owner',
+  cwd: '/repo',
+  diffSnapshot: [
+    {
+      path: 'a.ts',
+      staged: false,
+      additions: [{ start: 10, end: 19 }],
+      deletions: [{ start: 1, end: 5 }],
+    },
+    {
+      path: 'a.ts',
+      staged: true,
+      additions: [{ start: 30, end: 39 }],
+      deletions: [{ start: 20, end: 25 }],
+    },
+  ],
+  dispatchedAt: 1,
+})
+
+const dualEvent = (o: Partial<AgentReviewEvent> = {}): AgentReviewEvent => ({
+  sessionId: 'session-1',
+  nonce: 'dual',
+  reviewer: 'codex',
+  rawText: 'raw',
+  findings: [],
+  ...o,
+})
+
+describe('dual-half finding resolution (VIM-327 spec §2)', () => {
+  afterEach(() => {
+    clearPendingReviewRequest('dual')
+    clearFindingThreadRecord('session-1', 'dual')
+  })
+
+  test('line finding matching only the staged half anchors staged', async () => {
+    setPendingReviewRequest(dualHalfRequest())
+    mount()
+    await emit(
+      dualEvent({
+        findings: [finding({ path: 'a.ts', side: 'additions', line: 35 })],
+      })
+    )
+
+    const [, , , stagedArg] = addAnnotationForOwner.mock.calls[0]
+    expect(stagedArg).toBe(true)
+    expect(addAnnotationForOwner.mock.calls[0][4].lineNumber).toBe(35)
+
+    // thread handle inherits staged: true from the resolved half
+    const record = getFindingThreadRecord('session-1', 'dual')
+    const target = record?.byOrdinal.get(1)
+    expect(target?.kind).toBe('anchored')
+    expect(target?.kind === 'anchored' ? target.handle.staged : undefined).toBe(
+      true
+    )
+  })
+
+  test('line finding matching both halves prefers unstaged', async () => {
+    // Line 15 is in unstaged additions (10-19); use same range for staged too
+    // by giving staged the same range — both contain line 15.
+    const bothMatchRequest: PendingReviewRequest = {
+      ...dualHalfRequest(),
+      diffSnapshot: [
+        {
+          path: 'a.ts',
+          staged: false,
+          additions: [{ start: 10, end: 20 }],
+          deletions: [{ start: 1, end: 5 }],
+        },
+        {
+          path: 'a.ts',
+          staged: true,
+          additions: [{ start: 10, end: 20 }],
+          deletions: [{ start: 1, end: 5 }],
+        },
+      ],
+    }
+    setPendingReviewRequest(bothMatchRequest)
+    mount()
+    await emit(
+      dualEvent({
+        findings: [finding({ path: 'a.ts', side: 'additions', line: 15 })],
+      })
+    )
+
+    const [, , , stagedArg] = addAnnotationForOwner.mock.calls[0]
+    expect(stagedArg).toBe(false)
+  })
+
+  test('line finding matching neither half degrades to file-level on unstaged', async () => {
+    setPendingReviewRequest(dualHalfRequest())
+    mount()
+    await emit(
+      dualEvent({
+        findings: [finding({ path: 'a.ts', side: 'additions', line: 99 })],
+      })
+    )
+
+    const [, , , stagedArg, annotation] = addAnnotationForOwner.mock.calls[0]
+    expect(stagedArg).toBe(false)
+    expect(annotation.lineNumber).toBe(0) // FILE_COMMENT_LINE_NUMBER
+    expect(annotation.metadata.target).toEqual({ scope: 'file' })
+  })
+
+  test('scope:file finding on a dual-half path lands unstaged', async () => {
+    setPendingReviewRequest(dualHalfRequest())
+    mount()
+    await emit(
+      dualEvent({
+        findings: [
+          finding({ path: 'a.ts', scope: 'file', side: null, line: null }),
+        ],
+      })
+    )
+
+    const [, , , stagedArg] = addAnnotationForOwner.mock.calls[0]
+    expect(stagedArg).toBe(false)
   })
 })

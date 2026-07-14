@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-07-03
-ref_count: 12
+last_updated: 2026-07-14
+ref_count: 13
 ---
 
 # Git Operations
@@ -259,4 +259,50 @@ between display and mutation operations.
   a push-intercepting git shim there.
 - **Fix:** Added a focused comment explaining that fixture repositories need
   the real git binary so local push tests bypass the QA runner shim.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Dev git status must preserve staged and unstaged halves
+
+- **Source:** github-codex-connector | PR #694 round 1 | 2026-07-14
+- **Severity:** P2 / MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** The Vite dev git-status middleware collapsed partially staged
+  files into one `ChangedFile` row keyed only by path. Changelist review treats
+  `(path, staged)` rows as the complete review scope, so a file with both index
+  and working-tree edits only requested the staged diff and omitted the
+  unstaged half.
+- **Fix:** Mirrored the Rust status parser by emitting separate staged and
+  unstaged rows for index-plus-working-tree states. Staged rows now read
+  `git diff --cached --numstat`, while unstaged rows keep using the working-tree
+  diff summary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Dev git status must emit backend contract statuses
+
+- **Source:** github-codex-connector | PR #694 round 2 | 2026-07-14
+- **Severity:** P1 / HIGH
+- **File:** `vite.config.ts`
+- **Finding:** The Vite dev git-status middleware still returned porcelain
+  status letters such as `M`, `A`, `D`, and `U` for tracked and conflicted
+  rows. The frontend `ChangedFile.status` contract only accepts lowercase
+  domain statuses, so those rows could break the diff sidebar and changelist
+  review flow in dev/browser mode.
+- **Fix:** Mapped branch-diff and porcelain status codes to the same lowercase
+  values emitted by the Rust backend, including `renamed` for rename/copy
+  codes and `modified` for conflicted/unmerged paths.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Unmerged porcelain pairs need semantic status buckets
+
+- **Source:** github-claude | PR #694 round 3 | 2026-07-14
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** The Vite dev git-status middleware detected unmerged paths but
+  derived their status by feeding the raw `X`/`Y` letters through the generic
+  single-letter mapper. Conflict pairs are semantic states, so `AA` and `UA`
+  incorrectly became `added`, while `DU` became `modified`, diverging from the
+  Rust backend contract.
+- **Fix:** Added an explicit unmerged-code mapper that mirrors Rust exactly:
+  `DD`/`DU`/`UD` report `deleted`, while `UU`/`AA`/`AU`/`UA` report
+  `modified`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

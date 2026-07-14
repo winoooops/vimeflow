@@ -912,6 +912,7 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
     let mut new_line_num = 0u32;
     let mut old_path: Option<String> = None;
     let mut new_path: Option<String> = None;
+    let mut is_combined = false;
 
     for line in output.lines() {
         if let Some(path) = line
@@ -924,6 +925,15 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
             .or_else(|| line.strip_prefix("copy to "))
         {
             new_path = Some(decode_git_patch_path(path));
+        } else if line.starts_with("@@@")
+            || line.starts_with("diff --cc")
+            || line.starts_with("diff --combined")
+        {
+            // Combined diff (merge conflict): parent ranges don't fit the two-way
+            // FileDiff model — emit zero hunks so findings degrade to file-level
+            // instead of anchoring against garbage ranges (VIM-327 spec §2).
+            is_combined = true;
+            current_hunk = None;
         } else if line.starts_with("@@") {
             // Save previous hunk if exists
             if let Some(hunk) = current_hunk.take() {
@@ -1003,6 +1013,10 @@ fn parse_git_diff(output: &str, file_path: &str) -> FileDiff {
     // Save last hunk
     if let Some(hunk) = current_hunk {
         hunks.push(hunk);
+    }
+
+    if is_combined {
+        hunks.clear();
     }
 
     FileDiff {
@@ -2536,6 +2550,53 @@ copy to copy.txt
         assert_eq!(parse_hunk_range("+102,6"), (102, 6));
         assert_eq!(parse_hunk_range("-1,1"), (1, 1));
         assert_eq!(parse_hunk_range("+1"), (1, 1));
+    }
+
+    #[test]
+    fn test_parse_combined_diff_emits_zero_hunks() {
+        // `git diff` output for an unmerged (UU) path — combined format.
+        let diff = "diff --cc src/conflicted.rs\n\
+index 1111111,2222222..0000000\n\
+--- a/src/conflicted.rs\n\
++++ b/src/conflicted.rs\n\
+@@@ -1,4 -1,4 +1,8 @@@\n\
+++<<<<<<< HEAD\n\
+ +fn ours() {}\n\
+++=======\n\
++ fn theirs() {}\n\
+++>>>>>>> feature\n\
+  fn shared() {}\n";
+
+        let file_diff = parse_git_diff(diff, "src/conflicted.rs");
+
+        assert_eq!(file_diff.file_path, "src/conflicted.rs");
+        assert!(
+            file_diff.hunks.is_empty(),
+            "combined diffs must not be parsed as two-way hunks, got {:?}",
+            file_diff.hunks
+        );
+    }
+
+    #[test]
+    fn test_parse_combined_header_without_cc_line_emits_zero_hunks() {
+        // Defensive: an `@@@` hunk header alone (no `diff --cc` line) must also bail.
+        let diff = "--- a/x.txt\n+++ b/x.txt\n@@@ -1,2 -1,2 +1,3 @@@\n  line\n";
+
+        let file_diff = parse_git_diff(diff, "x.txt");
+
+        assert!(file_diff.hunks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_combined_marker_clears_two_way_hunks_parsed_after_it() {
+        // A `diff --cc` marker followed by plain `@@` hunk lines: the two-way
+        // branch still accumulates them during the pass, so the final clear
+        // must drop everything.
+        let diff = "diff --cc y.txt\n@@ -1,1 +1,2 @@\n+added\n context\n";
+
+        let file_diff = parse_git_diff(diff, "y.txt");
+
+        assert!(file_diff.hunks.is_empty());
     }
 
     // Integration tests for git_status command (Feature 4)

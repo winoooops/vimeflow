@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RequestReviewPopover } from './RequestReviewPopover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
+import type { RequestReviewScopeControl } from './RequestReviewPopover'
 
 const createAnchor = (): HTMLDivElement => {
   const el = document.createElement('div')
@@ -163,6 +164,165 @@ test('the c key copies the review request', async () => {
 
   await user.keyboard('c')
   expect(onCopy).toHaveBeenCalledTimes(1)
+
+  anchor.remove()
+})
+
+test('renders the scope control with both options when provided', () => {
+  const onScopeChange = vi.fn()
+
+  const scopeControl: RequestReviewScopeControl = {
+    scope: 'changelist',
+    changeCount: 7,
+    fileDisabled: false,
+    changelistDisabled: false,
+    onScopeChange,
+  }
+  const anchor = createAnchor()
+
+  render(
+    <RequestReviewPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      scopeLabel="7 changes"
+      scopeControl={scopeControl}
+      onSubmit={vi.fn()}
+      onCopy={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  const group = screen.getByRole('group', { name: 'Review scope (f/a)' })
+  expect(group).toBeInTheDocument()
+
+  const fileBtn = screen.getByRole('button', { name: 'This file' })
+  const changelistBtn = screen.getByRole('button', { name: 'All changes' })
+  expect(fileBtn).toBeInTheDocument()
+  expect(changelistBtn).toBeInTheDocument()
+  // 'changelist' is the active scope — it should have aria-pressed=true
+  expect(changelistBtn).toHaveAttribute('aria-pressed', 'true')
+  expect(fileBtn).toHaveAttribute('aria-pressed', 'false')
+
+  anchor.remove()
+})
+
+test('f and a hotkeys switch scope', () => {
+  const onScopeChange = vi.fn()
+
+  const scopeControl: RequestReviewScopeControl = {
+    scope: 'changelist',
+    changeCount: 3,
+    fileDisabled: false,
+    changelistDisabled: false,
+    onScopeChange,
+  }
+  const anchor = createAnchor()
+
+  render(
+    <RequestReviewPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      scopeLabel="3 changes"
+      scopeControl={scopeControl}
+      onSubmit={vi.fn()}
+      onCopy={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  fireEvent.keyDown(document, { key: 'f' })
+  expect(onScopeChange).toHaveBeenCalledWith('file')
+  onScopeChange.mockClear()
+
+  fireEvent.keyDown(document, { key: 'a' })
+  expect(onScopeChange).toHaveBeenCalledWith('changelist')
+
+  anchor.remove()
+})
+
+test('scope control absent when scopeControl is undefined', () => {
+  const anchor = createAnchor()
+
+  render(
+    <RequestReviewPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      scopeLabel="this file"
+      onSubmit={vi.fn()}
+      onCopy={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  expect(screen.queryByRole('group', { name: 'Review scope (f/a)' })).toBeNull()
+
+  anchor.remove()
+})
+
+test('This file option is disabled without an active diff', () => {
+  const onScopeChange = vi.fn()
+
+  const scopeControl: RequestReviewScopeControl = {
+    scope: 'changelist',
+    changeCount: 5,
+    fileDisabled: true,
+    changelistDisabled: false,
+    onScopeChange,
+  }
+  const anchor = createAnchor()
+
+  render(
+    <RequestReviewPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      scopeLabel="5 changes"
+      scopeControl={scopeControl}
+      onSubmit={vi.fn()}
+      onCopy={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  const fileBtn = screen.getByRole('button', { name: 'This file' })
+  expect(fileBtn).toHaveAttribute('aria-disabled', 'true')
+
+  // pressing f must NOT call onScopeChange when fileDisabled is true
+  fireEvent.keyDown(document, { key: 'f' })
+  expect(onScopeChange).not.toHaveBeenCalled()
+
+  anchor.remove()
+})
+
+test('All changes option is disabled on an empty strip', () => {
+  const onScopeChange = vi.fn()
+
+  const scopeControl: RequestReviewScopeControl = {
+    scope: 'file',
+    changeCount: 0,
+    fileDisabled: false,
+    changelistDisabled: true,
+    onScopeChange,
+  }
+  const anchor = createAnchor()
+
+  render(
+    <RequestReviewPopover
+      anchor={anchor}
+      result={{ kind: 'none' } as ResolveResult}
+      scopeLabel="this file"
+      scopeControl={scopeControl}
+      onSubmit={vi.fn()}
+      onCopy={vi.fn()}
+      onCancel={vi.fn()}
+    />
+  )
+
+  const changelistBtn = screen.getByRole('button', { name: 'All changes' })
+  expect(changelistBtn).toHaveAttribute('aria-disabled', 'true')
+
+  // pressing a must NOT call onScopeChange when changelistDisabled is true
+  fireEvent.keyDown(document, { key: 'a' })
+  expect(onScopeChange).not.toHaveBeenCalled()
 
   anchor.remove()
 })

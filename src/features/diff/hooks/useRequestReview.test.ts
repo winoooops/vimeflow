@@ -1,11 +1,12 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import type { FileDiff } from '../types'
+import type { ChangedFile, FileDiff } from '../types'
 import type { PaneCandidate } from '../services/activePanePicker'
 import { useRequestReview } from './useRequestReview'
 import {
   clearPendingReviewRequest,
   getPendingReviewRequest,
+  prunePendingReviewRequestOwners,
 } from '../services/pendingReviewRequests'
 import {
   dispatchReviewRequest,
@@ -23,8 +24,8 @@ vi.mock('@/lib/clipboard', () => ({
   writeClipboardText: vi.fn(() => Promise.resolve(true)),
 }))
 
-const fileDiff: FileDiff = {
-  filePath: 'src/a.ts',
+const diffOf = (filePath: string): FileDiff => ({
+  filePath,
   hunks: [
     {
       id: 'h1',
@@ -36,20 +37,48 @@ const fileDiff: FileDiff = {
       lines: [],
     },
   ],
-}
+})
 
-const pane = (ptyId = 'pty-1'): PaneCandidate => ({
+const fileDiff: FileDiff = diffOf('src/a.ts')
+
+const paneCandidate: PaneCandidate = {
   paneId: 'p',
-  ptyId,
+  ptyId: 'pty-1',
   tabName: 't',
   agentLabel: 'Codex',
   cwd: '/repo',
   status: 'running',
   isFocused: false,
+}
+
+const pane = (ptyId = 'pty-1'): PaneCandidate => ({
+  ...paneCandidate,
+  ptyId,
 })
 
 const writePty = vi.fn(() => Promise.resolve())
 const notify = vi.fn()
+
+const changedFiles: ChangedFile[] = [
+  { path: 'src/a.ts', status: 'modified', staged: false },
+  { path: 'src/a.ts', status: 'modified', staged: true },
+  { path: 'new.ts', status: 'untracked', staged: false },
+]
+
+const baseProps = {
+  fileDiff,
+  ownerKey: 'session:pane',
+  cwd: '/repo',
+  staged: false,
+  repoRoot: '/repo',
+  changedFiles,
+  statusRevision: 1,
+  fetchFileDiff: vi.fn(
+    (path: string): Promise<FileDiff> => Promise.resolve(diffOf(path))
+  ),
+  writePty,
+  notify,
+}
 
 const setup = (
   over: Partial<Parameters<typeof useRequestReview>[0]> = {}
@@ -70,6 +99,8 @@ const setup = (
 
 afterEach(() => {
   clearPendingReviewRequest('nonce-1')
+  // Clean up any nonces that changelist tests may have minted
+  prunePendingReviewRequestOwners(new Set())
   vi.clearAllMocks()
 })
 
@@ -105,10 +136,18 @@ test('requestReview records the pending request and dispatches to the pane', asy
   expect(request?.diffSnapshot[0].path).toBe('src/a.ts')
 
   // The pane is used for dispatch directly, not stored on the request.
+  // dispatchReviewRequest receives requestFiles (ReviewRequestFile[]) built
+  // from diffSnapshot — same shape when no promptPath enrichment.
   expect(dispatchReviewRequest).toHaveBeenCalledWith(
     'pty-9',
-    request?.diffSnapshot,
-    false,
+    [
+      {
+        path: 'src/a.ts',
+        staged: false,
+        additions: [{ start: 40, end: 50 }],
+        deletions: [{ start: 5, end: 7 }],
+      },
+    ],
     'nonce-1',
     writePty
   )
@@ -130,15 +169,32 @@ test('requestReview dispatches resolvable prompt paths without changing the stor
     [
       {
         path: 'src/a.ts',
+        staged: false,
         promptPath: '/repo/src/a.ts',
         additions: [{ start: 40, end: 50 }],
         deletions: [{ start: 5, end: 7 }],
       },
     ],
-    false,
     'nonce-1',
     writePty
   )
+})
+
+test('single-file scope carries the untracked annotation for an untracked row', async () => {
+  const { result } = setup({ activeFileUntracked: true })
+
+  await act(async () => {
+    result.current.requestReview(pane('pty-9'))
+    await Promise.resolve()
+  })
+
+  const mocked = vi.mocked(dispatchReviewRequest)
+  const [, requestFiles] = mocked.mock.calls[0]
+  expect(requestFiles[0]).toMatchObject({ path: 'src/a.ts', untracked: true })
+  // Placement snapshot is untouched — untracked is prompt-side only.
+  expect(
+    getPendingReviewRequest('nonce-1')?.diffSnapshot[0]
+  ).not.toHaveProperty('untracked')
 })
 
 test('copyReviewRequest records a request and copies the prompt', async () => {
@@ -152,8 +208,14 @@ test('copyReviewRequest records a request and copies the prompt', async () => {
   const request = getPendingReviewRequest('nonce-1')
   expect(request?.ownerKey).toBe('owner')
   expect(formatReviewRequest).toHaveBeenCalledWith(
-    request?.diffSnapshot,
-    false,
+    [
+      {
+        path: 'src/a.ts',
+        staged: false,
+        additions: [{ start: 40, end: 50 }],
+        deletions: [{ start: 5, end: 7 }],
+      },
+    ],
     'nonce-1'
   )
   expect(writeClipboardText).toHaveBeenCalledWith('REVIEW_PROMPT')
@@ -187,4 +249,147 @@ test('notifies when the pane dispatch throws', async () => {
   expect(notify).toHaveBeenCalledWith(
     'Terminal session ended; review request not sent.'
   )
+})
+
+// ─── Task 6: scope, async arm, keyed prefetch ──────────────────────────────
+
+test('changelist delegate arms all entries under one nonce and dispatches all request files', async () => {
+  const fetchFileDiff = vi.fn(
+    (path: string): Promise<FileDiff> => Promise.resolve(diffOf(path))
+  )
+
+  const { result } = renderHook(() =>
+    useRequestReview({
+      fileDiff: diffOf('src/a.ts'),
+      ownerKey: 'session:pane',
+      cwd: '/repo',
+      staged: false,
+      repoRoot: '/repo',
+      changedFiles,
+      statusRevision: 1,
+      fetchFileDiff,
+      writePty: vi.fn((): Promise<void> => Promise.resolve()),
+      notify,
+    })
+  )
+
+  act(() => result.current.setScope('changelist'))
+  await act(async () => {
+    result.current.requestReview({
+      ptyId: 'pty-1',
+      paneId: 'p',
+      tabName: 't',
+      agentLabel: 'claude',
+      cwd: '/repo',
+      status: 'running',
+      isFocused: false,
+    })
+    await vi.waitFor(() => expect(dispatchReviewRequest).toHaveBeenCalled())
+  })
+
+  const mocked = vi.mocked(dispatchReviewRequest)
+  const [ptyId, requestFiles, nonce] = mocked.mock.calls[0]
+  expect(ptyId).toBe('pty-1')
+  expect(requestFiles).toHaveLength(3)
+  expect(requestFiles[2]).toMatchObject({
+    path: 'new.ts',
+    staged: false,
+    untracked: true,
+    promptPath: '/repo/new.ts',
+  })
+
+  const request = getPendingReviewRequest(nonce)
+  expect(request?.diffSnapshot).toHaveLength(3)
+  expect(request?.diffSnapshot[1]).toMatchObject({
+    path: 'src/a.ts',
+    staged: true,
+  })
+})
+
+test('changelist arm failure is atomic: no request stored, notify fired', async () => {
+  const fetchFileDiff = vi.fn(
+    (): Promise<FileDiff> => Promise.reject(new Error('boom'))
+  )
+
+  const { result } = renderHook(() =>
+    useRequestReview({
+      fileDiff: diffOf('src/a.ts'),
+      ownerKey: 'session:pane',
+      cwd: '/repo',
+      staged: false,
+      repoRoot: '/repo',
+      changedFiles,
+      statusRevision: 1,
+      fetchFileDiff,
+      writePty,
+      notify,
+    })
+  )
+
+  act(() => result.current.setScope('changelist'))
+  await act(async () => {
+    result.current.requestReview(paneCandidate)
+    await vi.waitFor(() =>
+      expect(notify).toHaveBeenCalledWith(
+        'Could not snapshot the changelist; review request not sent.'
+      )
+    )
+  })
+
+  // The module mock never touches writePty, so assert on the dispatch mock —
+  // a dispatch-despite-failure regression must fail here.
+  expect(dispatchReviewRequest).not.toHaveBeenCalled()
+  // No pending request for any nonce the hook might have minted
+  expect(getPendingReviewRequest('nonce-1')).toBeUndefined()
+})
+
+test('prefetch is keyed: openPopover starts one fetch, arm reuses it; stale cwd forces a fresh fetch', async () => {
+  const fetchFileDiff = vi.fn(
+    (path: string): Promise<FileDiff> => Promise.resolve(diffOf(path))
+  )
+
+  const { result, rerender } = renderHook(
+    (props: Parameters<typeof useRequestReview>[0]) => useRequestReview(props),
+    {
+      initialProps: {
+        ...baseProps,
+        fetchFileDiff,
+      },
+    }
+  )
+
+  act(() => result.current.setScope('changelist'))
+  act(() => result.current.openPopover())
+  await vi.waitFor(() =>
+    expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length)
+  )
+
+  // Same key: arm must not refetch — and must actually CONSUME the reused
+  // snapshot (a broken key comparison returning null would also skip fetches).
+  await act(async () => {
+    result.current.copyReviewRequest()
+    await vi.waitFor(() => expect(formatReviewRequest).toHaveBeenCalledTimes(1))
+  })
+  expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length)
+
+  // Key change (cwd swap): arm re-fetches
+  rerender({ ...baseProps, fetchFileDiff, cwd: '/other-repo' })
+  act(() => result.current.setScope('changelist'))
+  await act(async () => {
+    result.current.requestReview(paneCandidate)
+    await vi.waitFor(() =>
+      expect(fetchFileDiff.mock.calls.length).toBeGreaterThan(
+        changedFiles.length
+      )
+    )
+  })
+})
+
+test('canRequest is true with a populated strip and no active fileDiff, and scope is forced to changelist', () => {
+  const { result } = renderHook(() =>
+    useRequestReview({ ...baseProps, fileDiff: undefined })
+  )
+
+  expect(result.current.canRequest).toBe(true)
+  expect(result.current.scope).toBe('changelist')
 })

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import type { DiffChipToolbarProps } from './toolbar'
 import { Notifier } from './Notifier'
+import type { RequestReviewScopeControl } from './RequestReviewPopover'
 
 vi.mock('@/components/Popover', () => ({
   Popover: ({
@@ -126,5 +127,59 @@ describe('Notifier', () => {
 
     expect(screen.getByTestId('popover')).toHaveTextContent('Discard hunk?')
     expect(screen.getByRole('button', { name: 'Yes (y)' })).toBeInTheDocument()
+  })
+
+  test('scopeControl on requestReview reaches RequestReviewPopover', () => {
+    const onScopeChange = vi.fn()
+
+    const scopeControl: RequestReviewScopeControl = {
+      scope: 'changelist',
+      changeCount: 4,
+      fileDisabled: false,
+      changelistDisabled: false,
+      onScopeChange,
+    }
+
+    const requestReviewProps = {
+      open: true,
+      result: { kind: 'none' as const },
+      scopeLabel: '4 changes',
+      scopeControl,
+      onSubmit: vi.fn(),
+      onCopy: vi.fn(),
+      onCancel: vi.fn(),
+    }
+
+    const { rerender } = renderNotifier()
+
+    // Rerender with the open request-review to give the ref time to mount
+    rerender(
+      <Notifier
+        toolbarProps={toolbarProps}
+        finishFeedback={{
+          open: false,
+          result: { kind: 'none' },
+          commentCount: 0,
+          fileCount: 0,
+          onCancel: vi.fn(),
+          onSend: vi.fn(),
+          onCopy: vi.fn(),
+        }}
+        requestReview={requestReviewProps}
+        keyboardConfirm={null}
+        onCancelKeyboardConfirm={vi.fn()}
+        onConfirmKeyboardAction={vi.fn()}
+      />
+    )
+
+    // The SegmentedControl group from RequestReviewPopover must be in the DOM
+    expect(
+      screen.getByRole('group', { name: 'Review scope (f/a)' })
+    ).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: 'All changes' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
   })
 })

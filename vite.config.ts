@@ -338,8 +338,6 @@ function gitApiPlugin(): Plugin {
 
           // GET /api/git/status
           if (pathname === '/api/git/status' && req.method === 'GET') {
-            // Determine base branch to diff against
-            const baseBranch = url.searchParams.get('base') ?? 'main'
             const changedFiles: ChangedFile[] = []
 
             let statusRepoRoot = ''
@@ -349,40 +347,82 @@ function gitApiPlugin(): Plugin {
               // Not a git repo — leave repoRoot empty and continue with empty files.
             }
 
-            // Get all files changed on this branch vs base (committed changes)
-            const branchDiffSummary = await git.diffSummary([baseBranch])
+            // Branch-vs-main entries are committed work — not fetchable on any axis the
+            // review prompt names (VIM-327 spec §3). Emit them only when explicitly
+            // requested; the app frontend never sends `base`.
+            const explicitBase = url.searchParams.get('base')
 
-            for (const file of branchDiffSummary.files) {
-              // Determine status from diff
-              let gitStatus: 'M' | 'A' | 'D' | 'U'
+            if (explicitBase !== null) {
+              const safeBase = normalizeBaseBranch(explicitBase)
 
-              if (
-                file.insertions > 0 &&
-                file.deletions === 0 &&
-                file.changes === file.insertions
-              ) {
-                gitStatus = 'A'
-              } else if (
-                file.deletions > 0 &&
-                file.insertions === 0 &&
-                file.changes === file.deletions
-              ) {
-                gitStatus = 'D'
-              } else {
-                gitStatus = 'M'
+              if (safeBase !== null) {
+                const branchDiffSummary = await git.diffSummary([safeBase])
+
+                for (const file of branchDiffSummary.files) {
+                  // Determine status from diff
+                  let gitStatus: ChangedFile['status']
+
+                  if (
+                    file.insertions > 0 &&
+                    file.deletions === 0 &&
+                    file.changes === file.insertions
+                  ) {
+                    gitStatus = 'added'
+                  } else if (
+                    file.deletions > 0 &&
+                    file.insertions === 0 &&
+                    file.changes === file.deletions
+                  ) {
+                    gitStatus = 'deleted'
+                  } else {
+                    gitStatus = 'modified'
+                  }
+
+                  changedFiles.push({
+                    path: file.file,
+                    status: gitStatus,
+                    insertions: file.insertions,
+                    deletions: file.deletions,
+                    staged: true,
+                  })
+                }
               }
-
-              changedFiles.push({
-                path: file.file,
-                status: gitStatus,
-                insertions: file.insertions,
-                deletions: file.deletions,
-                staged: true,
-              })
             }
 
-            // Also include uncommitted working tree changes
+            // Include uncommitted working tree changes
             const status = await git.status()
+
+            const statusFromCode = (
+              code: string
+            ): ChangedFile['status'] | null => {
+              if (code === 'M') {
+                return 'modified'
+              }
+              if (code === 'A') {
+                return 'added'
+              }
+              if (code === 'D') {
+                return 'deleted'
+              }
+              if (code === 'R' || code === 'C') {
+                return 'renamed'
+              }
+              if (code === 'U') {
+                return 'modified'
+              }
+
+              return null
+            }
+
+            const statusFromUnmergedCode = (
+              code: string
+            ): ChangedFile['status'] => {
+              if (code === 'DD' || code === 'DU' || code === 'UD') {
+                return 'deleted'
+              }
+
+              return 'modified'
+            }
 
             for (const file of status.files) {
               // Skip if already in branch diff (avoid duplicates)
@@ -397,32 +437,84 @@ function gitApiPlugin(): Plugin {
                 continue
               }
 
-              let gitStatus: 'M' | 'A' | 'D' | 'U'
+              if (file.index === '?' || file.working_dir === '?') {
+                const wdSummary = await git.diffSummary(['--', file.path])
+                const wdFile = wdSummary.files.find((f) => f.file === file.path)
 
-              if (file.index === 'D' || file.working_dir === 'D') {
-                gitStatus = 'D'
-              } else if (
-                file.index === '?' ||
-                file.index === 'A' ||
-                file.working_dir === 'A'
-              ) {
-                gitStatus = 'A'
-              } else if (file.index === 'M' || file.working_dir === 'M') {
-                gitStatus = 'M'
-              } else {
-                gitStatus = 'U'
+                changedFiles.push({
+                  path: file.path,
+                  status: 'untracked',
+                  insertions: wdFile?.insertions ?? 0,
+                  deletions: wdFile?.deletions ?? 0,
+                  staged: false,
+                })
+
+                continue
               }
 
-              const wdSummary = await git.diffSummary(['--', file.path])
-              const wdFile = wdSummary.files.find((f) => f.file === file.path)
+              // Unmerged paths (UU/AA/AU/UA/DD/DU/UD) have no servable
+              // --cached diff ("* Unmerged path"); report them unstaged so
+              // the diff endpoint reads the working tree (VIM-327 parity).
+              const conflicted =
+                file.index === 'U' ||
+                file.working_dir === 'U' ||
+                (file.index === 'A' && file.working_dir === 'A') ||
+                (file.index === 'D' && file.working_dir === 'D')
 
-              changedFiles.push({
-                path: file.path,
-                status: gitStatus,
-                insertions: wdFile?.insertions ?? 0,
-                deletions: wdFile?.deletions ?? 0,
-                staged: file.index !== ' ' && file.index !== '?',
-              })
+              if (conflicted) {
+                const wdSummary = await git.diffSummary(['--', file.path])
+                const wdFile = wdSummary.files.find((f) => f.file === file.path)
+
+                const gitStatus = statusFromUnmergedCode(
+                  `${file.index}${file.working_dir}`
+                )
+
+                changedFiles.push({
+                  path: file.path,
+                  status: gitStatus,
+                  insertions: wdFile?.insertions ?? 0,
+                  deletions: wdFile?.deletions ?? 0,
+                  staged: false,
+                })
+
+                continue
+              }
+
+              const indexStatus = statusFromCode(file.index)
+              const workingTreeStatus = statusFromCode(file.working_dir)
+
+              if (indexStatus !== null) {
+                const cachedSummary = await git.diffSummary([
+                  '--cached',
+                  '--',
+                  file.path,
+                ])
+
+                const cachedFile = cachedSummary.files.find(
+                  (f) => f.file === file.path
+                )
+
+                changedFiles.push({
+                  path: file.path,
+                  status: indexStatus,
+                  insertions: cachedFile?.insertions ?? 0,
+                  deletions: cachedFile?.deletions ?? 0,
+                  staged: true,
+                })
+              }
+
+              if (workingTreeStatus !== null) {
+                const wdSummary = await git.diffSummary(['--', file.path])
+                const wdFile = wdSummary.files.find((f) => f.file === file.path)
+
+                changedFiles.push({
+                  path: file.path,
+                  status: workingTreeStatus,
+                  insertions: wdFile?.insertions ?? 0,
+                  deletions: wdFile?.deletions ?? 0,
+                  staged: false,
+                })
+              }
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -515,9 +607,50 @@ function gitApiPlugin(): Plugin {
               }
             }
 
+            // usedUntrackedFallback implies non-empty diff, so only the
+            // explicit untracked flag can reach here with empty output.
+            if (!diff && untracked === true) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  fileDiff: { filePath: safePath, hunks: [] },
+                  oldText: '',
+                  newText: '',
+                  rawDiff: '',
+                  repoRoot,
+                })
+              )
+
+              return
+            }
+
             if (!diff) {
               res.writeHead(404, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ error: `No diff found for ${file}` }))
+
+              return
+            }
+
+            // Combined diffs (merge conflicts: `diff --cc`, `@@@` headers) and
+            // git's "* Unmerged path" notice don't fit the two-way FileDiff
+            // model — mirror the Rust parser and serve zero hunks so findings
+            // degrade to file-level instead of anchoring garbage (VIM-327).
+            if (
+              diff.startsWith('diff --cc') ||
+              diff.startsWith('diff --combined') ||
+              diff.includes('\n@@@') ||
+              /^\* Unmerged path/m.test(diff)
+            ) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  fileDiff: { filePath: safePath, hunks: [] },
+                  oldText: '',
+                  newText: '',
+                  rawDiff: diff,
+                  repoRoot,
+                })
+              )
 
               return
             }

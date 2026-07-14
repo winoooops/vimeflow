@@ -3,7 +3,10 @@ import { Button } from '@/components/Button'
 import { Popover } from '@/components/Popover'
 import { DiffChipToolbar, type DiffChipToolbarProps } from './toolbar'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
-import { RequestReviewPopover } from './RequestReviewPopover'
+import {
+  RequestReviewPopover,
+  type RequestReviewScopeControl,
+} from './RequestReviewPopover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
 import {
   isFileAnnotationTarget,
@@ -24,6 +27,7 @@ interface RequestReviewState {
   open: boolean
   result: ResolveResult
   scopeLabel: string
+  scopeControl?: RequestReviewScopeControl
   onSubmit: (pane: PaneCandidate) => void
   onCopy: () => void
   onCancel: () => void
@@ -125,6 +129,7 @@ export const Notifier = ({
           anchor={toolbarShellRef.current}
           result={requestReview.result}
           scopeLabel={requestReview.scopeLabel}
+          scopeControl={requestReview.scopeControl}
           onSubmit={requestReview.onSubmit}
           onCopy={requestReview.onCopy}
           onCancel={requestReview.onCancel}

@@ -1,6 +1,8 @@
 import { useEffect, type ReactElement } from 'react'
 import { Popover } from '@/components/Popover'
+import { SegmentedControl } from '@/components/SegmentedControl'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
+import type { ReviewScope } from '../hooks/useRequestReview'
 
 const popoverGhostActionFocusClass =
   'ring-0 focus:outline-none focus-visible:bg-surface-container-high focus-visible:text-on-surface focus-visible:outline-none focus-visible:ring-0'
@@ -8,11 +10,23 @@ const popoverGhostActionFocusClass =
 const popoverPrimaryActionFocusClass =
   'ring-0 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-container'
 
+export interface RequestReviewScopeControl {
+  scope: ReviewScope
+  changeCount: number
+  /** True when no active diff exists — the file option is unavailable. */
+  fileDisabled: boolean
+  /** True on a transient empty strip — the changelist option is unavailable. */
+  changelistDisabled: boolean
+  onScopeChange: (scope: ReviewScope) => void
+}
+
 interface RequestReviewPopoverProps {
   anchor: HTMLElement
   result: ResolveResult
   /** What's being reviewed, e.g. "src/auth.ts (unstaged)". */
   scopeLabel: string
+  /** Scope choice (spec §5); undefined hides the control (degenerate case). */
+  scopeControl?: RequestReviewScopeControl
   /** Delegate the review to a specific agent pane (arms with session gating). */
   onSubmit: (pane: PaneCandidate) => void
   /** Copy the review-request prompt to the clipboard (you paste it; nonce-only). */
@@ -40,6 +54,7 @@ export const RequestReviewPopover = ({
   anchor,
   result,
   scopeLabel,
+  scopeControl = undefined,
   onSubmit,
   onCopy,
   onCancel,
@@ -77,6 +92,30 @@ export const RequestReviewPopover = ({
         return
       }
 
+      if (
+        event.key === 'f' &&
+        scopeControl !== undefined &&
+        !scopeControl.fileDisabled
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        scopeControl.onScopeChange('file')
+
+        return
+      }
+
+      if (
+        event.key === 'a' &&
+        scopeControl !== undefined &&
+        !scopeControl.changelistDisabled
+      ) {
+        event.preventDefault()
+        event.stopPropagation()
+        scopeControl.onScopeChange('changelist')
+
+        return
+      }
+
       if (isCapitalY(event) && result.kind === 'one') {
         event.preventDefault()
         event.stopPropagation()
@@ -89,7 +128,7 @@ export const RequestReviewPopover = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [onCancel, onCopy, onSubmit, result])
+  }, [onCancel, onCopy, onSubmit, result, scopeControl])
 
   return (
     <Popover
@@ -103,6 +142,36 @@ export const RequestReviewPopover = ({
       aria-label="Request review"
       width={340}
     >
+      {scopeControl !== undefined && (
+        <div className="flex items-center gap-2 px-4 pt-3">
+          <span className="text-xs text-on-surface-variant">Scope</span>
+          <SegmentedControl<ReviewScope>
+            aria-label="Review scope (f/a)"
+            value={scopeControl.scope}
+            onChange={scopeControl.onScopeChange}
+            options={[
+              {
+                value: 'file',
+                label: 'This file',
+                disabled: scopeControl.fileDisabled,
+                ariaLabel: 'This file',
+                ...(scopeControl.fileDisabled
+                  ? { tooltip: 'No diff loaded' }
+                  : undefined),
+              },
+              {
+                value: 'changelist',
+                label: `All changes (${scopeControl.changeCount})`,
+                disabled: scopeControl.changelistDisabled,
+                ariaLabel: 'All changes',
+                ...(scopeControl.changelistDisabled
+                  ? { tooltip: 'No changed files' }
+                  : undefined),
+              },
+            ]}
+          />
+        </div>
+      )}
       {result.kind !== 'one' && (
         <div className="flex flex-col gap-3 p-4">
           <p className="text-sm text-on-surface">
