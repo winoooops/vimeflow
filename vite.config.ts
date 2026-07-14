@@ -422,12 +422,21 @@ function gitApiPlugin(): Plugin {
               const wdSummary = await git.diffSummary(['--', file.path])
               const wdFile = wdSummary.files.find((f) => f.file === file.path)
 
+              // Unmerged paths (UU/AA/AU/UA/DD/DU/UD) have no servable
+              // --cached diff ("* Unmerged path"); report them unstaged so
+              // the diff endpoint reads the working tree (VIM-327 parity).
+              const conflicted =
+                file.index === 'U' ||
+                file.working_dir === 'U' ||
+                (file.index === 'A' && file.working_dir === 'A') ||
+                (file.index === 'D' && file.working_dir === 'D')
+
               changedFiles.push({
                 path: file.path,
                 status: gitStatus,
                 insertions: wdFile?.insertions ?? 0,
                 deletions: wdFile?.deletions ?? 0,
-                staged: file.index !== ' ' && file.index !== '?',
+                staged: !conflicted && file.index !== ' ' && file.index !== '?',
               })
             }
 
@@ -541,6 +550,30 @@ function gitApiPlugin(): Plugin {
             if (!diff) {
               res.writeHead(404, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ error: `No diff found for ${file}` }))
+
+              return
+            }
+
+            // Combined diffs (merge conflicts: `diff --cc`, `@@@` headers) and
+            // git's "* Unmerged path" notice don't fit the two-way FileDiff
+            // model — mirror the Rust parser and serve zero hunks so findings
+            // degrade to file-level instead of anchoring garbage (VIM-327).
+            if (
+              diff.startsWith('diff --cc') ||
+              diff.startsWith('diff --combined') ||
+              diff.includes('\n@@@') ||
+              /^\* Unmerged path/m.test(diff)
+            ) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  fileDiff: { filePath: safePath, hunks: [] },
+                  oldText: '',
+                  newText: '',
+                  rawDiff: diff,
+                  repoRoot,
+                })
+              )
 
               return
             }
