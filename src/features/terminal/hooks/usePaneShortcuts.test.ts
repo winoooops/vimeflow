@@ -100,7 +100,7 @@ const renderPane = (
 ): ReturnType<typeof renderHook> =>
   renderHook(() => usePaneShortcuts({ matches: ctrlMatches, ...options }))
 
-const modZPlatforms: readonly {
+const shortcutPlatforms: readonly {
   readonly label: string
   readonly matches: UsePaneShortcutsOptions['matches']
   readonly shortcutModifiers: Partial<KeyboardEventInit>
@@ -188,7 +188,7 @@ describe('usePaneShortcuts', () => {
     expect(setSessionLayout).toHaveBeenCalledWith('s1', 'grid3x2')
   })
 
-  modZPlatforms.forEach(
+  shortcutPlatforms.forEach(
     ({ label, matches, shortcutModifiers, oppositeModifiers }) => {
       test(`${label}: Mod+Z toggles a multi-pane layout to single and back`, () => {
         const setSessionLayout = vi.fn()
@@ -749,12 +749,13 @@ describe('usePaneShortcuts container reclaim extensions', () => {
 
   test('Ctrl+1 from stale dock state outside dock passes through', () => {
     const onTerminalZoneFocus = vi.fn()
+    const setSessionActivePane = vi.fn()
     blurActiveElement()
 
     renderPane({
-      sessions: [makeSession('s1', 'single', ['p0'])],
+      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)],
       activeSessionId: 's1',
-      setSessionActivePane: vi.fn(),
+      setSessionActivePane,
       setSessionLayout: vi.fn(),
       isTerminalContainerActive: false,
       onTerminalZoneFocus,
@@ -763,6 +764,7 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     const event = fire('1', { ctrlKey: true })
 
     expect(onTerminalZoneFocus).not.toHaveBeenCalled()
+    expect(setSessionActivePane).not.toHaveBeenCalled()
     expect(event.preventDefaultSpy).not.toHaveBeenCalled()
   })
 
@@ -835,31 +837,31 @@ describe('usePaneShortcuts container reclaim extensions', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('Ctrl+1 from dock with vsplit (pane 1 active): calls onTerminalZoneFocus but does NOT switch pane', () => {
-    const onTerminalZoneFocus = vi.fn()
-    const setSessionActivePane = vi.fn()
-    const dockEl = attachFakeDock()
-    dockEl.focus()
+  shortcutPlatforms.forEach(({ label, matches, shortcutModifiers }) => {
+    test(`${label}: Mod+1 from dock reclaims terminal focus and switches panes`, () => {
+      const onTerminalZoneFocus = vi.fn()
+      const setSessionActivePane = vi.fn()
+      const dockElement = attachFakeDock()
 
-    renderPane({
-      sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)], // p1 is active
-      activeSessionId: 's1',
-      setSessionActivePane,
-      setSessionLayout: vi.fn(),
-      isTerminalContainerActive: false,
-      onTerminalZoneFocus,
+      renderPane({
+        sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'], 1)],
+        activeSessionId: 's1',
+        setSessionActivePane,
+        setSessionLayout: vi.fn(),
+        isTerminalContainerActive: false,
+        onTerminalZoneFocus,
+        matches,
+      })
+
+      const event = fire('1', shortcutModifiers)
+
+      expect(onTerminalZoneFocus).toHaveBeenCalledOnce()
+      expect(event.preventDefaultSpy).toHaveBeenCalled()
+      expect(setSessionActivePane).toHaveBeenCalledOnce()
+      expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
+
+      removeFakeDock(dockElement)
     })
-
-    const event = fire('1', { ctrlKey: true })
-
-    // Focus is reclaimed — container callback fired
-    expect(onTerminalZoneFocus).toHaveBeenCalledOnce()
-    expect(event.preventDefaultSpy).toHaveBeenCalled()
-
-    // But pane should NOT be switched — the return prevents fallthrough
-    expect(setSessionActivePane).not.toHaveBeenCalled()
-
-    removeFakeDock(dockEl)
   })
 
   test('omitted reclaim params preserve already-active pass-through behavior', () => {
