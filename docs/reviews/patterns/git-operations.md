@@ -2,8 +2,8 @@
 id: git-operations
 category: correctness
 created: 2026-04-09
-last_updated: 2026-07-03
-ref_count: 12
+last_updated: 2026-07-14
+ref_count: 13
 ---
 
 # Git Operations
@@ -259,4 +259,20 @@ between display and mutation operations.
   a push-intercepting git shim there.
 - **Fix:** Added a focused comment explaining that fixture repositories need
   the real git binary so local push tests bypass the QA runner shim.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Dev git status must preserve staged and unstaged halves
+
+- **Source:** github-codex-connector | PR #694 round 1 | 2026-07-14
+- **Severity:** P2 / MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** The Vite dev git-status middleware collapsed partially staged
+  files into one `ChangedFile` row keyed only by path. Changelist review treats
+  `(path, staged)` rows as the complete review scope, so a file with both index
+  and working-tree edits only requested the staged diff and omitted the
+  unstaged half.
+- **Fix:** Mirrored the Rust status parser by emitting separate staged and
+  unstaged rows for index-plus-working-tree states. Staged rows now read
+  `git diff --cached --numstat`, while unstaged rows keep using the working-tree
+  diff summary.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -392,6 +392,28 @@ function gitApiPlugin(): Plugin {
             // Include uncommitted working tree changes
             const status = await git.status()
 
+            const statusFromCode = (
+              code: string
+            ): 'M' | 'A' | 'D' | 'U' | 'untracked' | null => {
+              if (code === 'M') {
+                return 'M'
+              }
+              if (code === 'A') {
+                return 'A'
+              }
+              if (code === 'D') {
+                return 'D'
+              }
+              if (code === 'R' || code === 'C') {
+                return 'M'
+              }
+              if (code === 'U') {
+                return 'U'
+              }
+
+              return null
+            }
+
             for (const file of status.files) {
               // Skip if already in branch diff (avoid duplicates)
               const existing = changedFiles.find((f) => f.path === file.path)
@@ -405,22 +427,20 @@ function gitApiPlugin(): Plugin {
                 continue
               }
 
-              let gitStatus: 'M' | 'A' | 'D' | 'U' | 'untracked'
-
               if (file.index === '?' || file.working_dir === '?') {
-                gitStatus = 'untracked'
-              } else if (file.index === 'D' || file.working_dir === 'D') {
-                gitStatus = 'D'
-              } else if (file.index === 'A' || file.working_dir === 'A') {
-                gitStatus = 'A'
-              } else if (file.index === 'M' || file.working_dir === 'M') {
-                gitStatus = 'M'
-              } else {
-                gitStatus = 'U'
-              }
+                const wdSummary = await git.diffSummary(['--', file.path])
+                const wdFile = wdSummary.files.find((f) => f.file === file.path)
 
-              const wdSummary = await git.diffSummary(['--', file.path])
-              const wdFile = wdSummary.files.find((f) => f.file === file.path)
+                changedFiles.push({
+                  path: file.path,
+                  status: 'untracked',
+                  insertions: wdFile?.insertions ?? 0,
+                  deletions: wdFile?.deletions ?? 0,
+                  staged: false,
+                })
+
+                continue
+              }
 
               // Unmerged paths (UU/AA/AU/UA/DD/DU/UD) have no servable
               // --cached diff ("* Unmerged path"); report them unstaged so
@@ -431,13 +451,61 @@ function gitApiPlugin(): Plugin {
                 (file.index === 'A' && file.working_dir === 'A') ||
                 (file.index === 'D' && file.working_dir === 'D')
 
-              changedFiles.push({
-                path: file.path,
-                status: gitStatus,
-                insertions: wdFile?.insertions ?? 0,
-                deletions: wdFile?.deletions ?? 0,
-                staged: !conflicted && file.index !== ' ' && file.index !== '?',
-              })
+              if (conflicted) {
+                const wdSummary = await git.diffSummary(['--', file.path])
+                const wdFile = wdSummary.files.find((f) => f.file === file.path)
+
+                const gitStatus =
+                  statusFromCode(file.working_dir) ??
+                  statusFromCode(file.index) ??
+                  'U'
+
+                changedFiles.push({
+                  path: file.path,
+                  status: gitStatus,
+                  insertions: wdFile?.insertions ?? 0,
+                  deletions: wdFile?.deletions ?? 0,
+                  staged: false,
+                })
+
+                continue
+              }
+
+              const indexStatus = statusFromCode(file.index)
+              const workingTreeStatus = statusFromCode(file.working_dir)
+
+              if (indexStatus !== null) {
+                const cachedSummary = await git.diffSummary([
+                  '--cached',
+                  '--',
+                  file.path,
+                ])
+
+                const cachedFile = cachedSummary.files.find(
+                  (f) => f.file === file.path
+                )
+
+                changedFiles.push({
+                  path: file.path,
+                  status: indexStatus,
+                  insertions: cachedFile?.insertions ?? 0,
+                  deletions: cachedFile?.deletions ?? 0,
+                  staged: true,
+                })
+              }
+
+              if (workingTreeStatus !== null) {
+                const wdSummary = await git.diffSummary(['--', file.path])
+                const wdFile = wdSummary.files.find((f) => f.file === file.path)
+
+                changedFiles.push({
+                  path: file.path,
+                  status: workingTreeStatus,
+                  insertions: wdFile?.insertions ?? 0,
+                  deletions: wdFile?.deletions ?? 0,
+                  staged: false,
+                })
+              }
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
