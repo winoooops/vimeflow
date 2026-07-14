@@ -123,6 +123,11 @@ vi.mock('../../terminal/components/TerminalPane', () => ({
   ),
 }))
 
+vi.mock('../../browser', () => ({
+  BrowserPane: (): ReactElement => <div data-testid="browser-pane-mock" />,
+  focusBrowserPane: vi.fn().mockResolvedValue(undefined),
+}))
+
 describe('TerminalZone', () => {
   const defaultProps = {
     sessions: mockSessions.slice(0, 2), // First two sessions
@@ -217,6 +222,63 @@ describe('TerminalZone', () => {
 
     expect(ref.current).not.toBeNull()
     expect(ref.current!.focusActivePane()).toBe(false)
+  })
+
+  test('focuses the terminal zone before delegating native pane focus', () => {
+    const ref = createRef<TerminalZoneHandle>()
+    const activeSession = defaultProps.sessions[0]
+    if (activeSession === undefined) {
+      throw new Error('Expected an active session fixture')
+    }
+
+    const browserSession: Session = {
+      ...activeSession,
+      panes: activeSession.panes.map((pane) => ({
+        ...pane,
+        kind: 'browser',
+        browserUrl: 'https://example.com',
+      })),
+    }
+
+    render(
+      <>
+        <button type="button">Outside</button>
+        <TerminalZone
+          ref={ref}
+          {...defaultProps}
+          sessions={[browserSession]}
+          activeSessionId={browserSession.id}
+        />
+      </>
+    )
+
+    const outside = screen.getByRole('button', { name: 'Outside' })
+    outside.focus()
+    expect(outside).toHaveFocus()
+
+    expect(ref.current!.focusActivePane()).toBe(true)
+    expect(screen.getByTestId('terminal-zone')).toHaveFocus()
+  })
+
+  test('reports container focus once while focus moves into a pane', () => {
+    const ref = createRef<TerminalZoneHandle>()
+    const onContainerFocus = vi.fn()
+
+    render(
+      <>
+        <button type="button">Outside</button>
+        <TerminalZone
+          ref={ref}
+          {...defaultProps}
+          onContainerFocus={onContainerFocus}
+        />
+      </>
+    )
+
+    screen.getByRole('button', { name: 'Outside' }).focus()
+
+    expect(ref.current!.focusActivePane()).toBe(false)
+    expect(onContainerFocus).toHaveBeenCalledOnce()
   })
 
   test('pointer down marks terminal container active', async () => {

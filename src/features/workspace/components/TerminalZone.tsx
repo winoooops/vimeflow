@@ -1,4 +1,5 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
+// cspell:ignore Ghostty
 import {
   forwardRef,
   useImperativeHandle,
@@ -133,9 +134,11 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
 
     useImperativeHandle(ref, () => ({
       focusActivePane(): boolean {
-        if (!activeSplitViewRef.current) {
-          outerDivRef.current?.focus()
+        // Establish a renderer focus handoff before native Ghostty takes first
+        // responder. Otherwise the dock can retain and restore stale DOM focus.
+        outerDivRef.current?.focus()
 
+        if (!activeSplitViewRef.current) {
           return false
         }
 
@@ -173,7 +176,13 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
           isZoneFocused ? 'opacity-100' : 'opacity-[0.65]'
         } transition-opacity duration-[220ms]`}
         onPointerDown={handlePointerDown}
-        onFocus={(): void => {
+        onFocus={(event): void => {
+          if (
+            event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
+            return
+          }
+
           onContainerFocus?.()
         }}
       >
