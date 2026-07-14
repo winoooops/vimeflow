@@ -338,8 +338,6 @@ function gitApiPlugin(): Plugin {
 
           // GET /api/git/status
           if (pathname === '/api/git/status' && req.method === 'GET') {
-            // Determine base branch to diff against
-            const baseBranch = url.searchParams.get('base') ?? 'main'
             const changedFiles: ChangedFile[] = []
 
             let statusRepoRoot = ''
@@ -349,39 +347,49 @@ function gitApiPlugin(): Plugin {
               // Not a git repo — leave repoRoot empty and continue with empty files.
             }
 
-            // Get all files changed on this branch vs base (committed changes)
-            const branchDiffSummary = await git.diffSummary([baseBranch])
+            // Branch-vs-main entries are committed work — not fetchable on any axis the
+            // review prompt names (VIM-327 spec §3). Emit them only when explicitly
+            // requested; the app frontend never sends `base`.
+            const explicitBase = url.searchParams.get('base')
 
-            for (const file of branchDiffSummary.files) {
-              // Determine status from diff
-              let gitStatus: 'M' | 'A' | 'D' | 'U'
+            if (explicitBase !== null) {
+              const safeBase = normalizeBaseBranch(explicitBase)
 
-              if (
-                file.insertions > 0 &&
-                file.deletions === 0 &&
-                file.changes === file.insertions
-              ) {
-                gitStatus = 'A'
-              } else if (
-                file.deletions > 0 &&
-                file.insertions === 0 &&
-                file.changes === file.deletions
-              ) {
-                gitStatus = 'D'
-              } else {
-                gitStatus = 'M'
+              if (safeBase !== null) {
+                const branchDiffSummary = await git.diffSummary([safeBase])
+
+                for (const file of branchDiffSummary.files) {
+                  // Determine status from diff
+                  let gitStatus: 'M' | 'A' | 'D' | 'U'
+
+                  if (
+                    file.insertions > 0 &&
+                    file.deletions === 0 &&
+                    file.changes === file.insertions
+                  ) {
+                    gitStatus = 'A'
+                  } else if (
+                    file.deletions > 0 &&
+                    file.insertions === 0 &&
+                    file.changes === file.deletions
+                  ) {
+                    gitStatus = 'D'
+                  } else {
+                    gitStatus = 'M'
+                  }
+
+                  changedFiles.push({
+                    path: file.file,
+                    status: gitStatus,
+                    insertions: file.insertions,
+                    deletions: file.deletions,
+                    staged: true,
+                  })
+                }
               }
-
-              changedFiles.push({
-                path: file.file,
-                status: gitStatus,
-                insertions: file.insertions,
-                deletions: file.deletions,
-                staged: true,
-              })
             }
 
-            // Also include uncommitted working tree changes
+            // Include uncommitted working tree changes
             const status = await git.status()
 
             for (const file of status.files) {
@@ -397,15 +405,13 @@ function gitApiPlugin(): Plugin {
                 continue
               }
 
-              let gitStatus: 'M' | 'A' | 'D' | 'U'
+              let gitStatus: 'M' | 'A' | 'D' | 'U' | 'untracked'
 
-              if (file.index === 'D' || file.working_dir === 'D') {
+              if (file.index === '?' || file.working_dir === '?') {
+                gitStatus = 'untracked'
+              } else if (file.index === 'D' || file.working_dir === 'D') {
                 gitStatus = 'D'
-              } else if (
-                file.index === '?' ||
-                file.index === 'A' ||
-                file.working_dir === 'A'
-              ) {
+              } else if (file.index === 'A' || file.working_dir === 'A') {
                 gitStatus = 'A'
               } else if (file.index === 'M' || file.working_dir === 'M') {
                 gitStatus = 'M'
@@ -513,6 +519,21 @@ function gitApiPlugin(): Plugin {
                   usedUntrackedFallback = true
                 }
               }
+            }
+
+            if (!diff && (untracked === true || usedUntrackedFallback)) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(
+                JSON.stringify({
+                  fileDiff: { filePath: safePath, hunks: [] },
+                  oldText: '',
+                  newText: '',
+                  rawDiff: '',
+                  repoRoot,
+                })
+              )
+
+              return
             }
 
             if (!diff) {
