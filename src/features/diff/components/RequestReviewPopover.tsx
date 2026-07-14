@@ -155,12 +155,18 @@ export const RequestReviewPopover = ({
                 label: 'This file',
                 disabled: scopeControl.fileDisabled,
                 ariaLabel: 'This file',
+                ...(scopeControl.fileDisabled
+                  ? { tooltip: 'No diff loaded' }
+                  : undefined),
               },
               {
                 value: 'changelist',
                 label: `All changes (${scopeControl.changeCount})`,
                 disabled: scopeControl.changelistDisabled,
                 ariaLabel: 'All changes',
+                ...(scopeControl.changelistDisabled
+                  ? { tooltip: 'No changed files' }
+                  : undefined),
               },
             ]}
           />

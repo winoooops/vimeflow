@@ -7060,34 +7060,51 @@ describe('Panel', () => {
 
       // Verify the pending request was stored with 3 snapshot entries
       const nonce = /"nonce":"(\w+)"/.exec(payload)?.[1] ?? ''
-      expect(nonce).not.toBe('')
 
-      const pending = getPendingReviewRequest(nonce)
-      expect(pending?.diffSnapshot).toHaveLength(3)
-      expect(pending?.diffSnapshot[0]).toMatchObject({
-        path: 'src/a.ts',
-        staged: false,
-      })
+      try {
+        expect(nonce).not.toBe('')
 
-      expect(pending?.diffSnapshot[1]).toMatchObject({
-        path: 'src/a.ts',
-        staged: true,
-      })
+        const pending = getPendingReviewRequest(nonce)
+        expect(pending?.diffSnapshot).toHaveLength(3)
+        expect(pending?.diffSnapshot[0]).toMatchObject({
+          path: 'src/a.ts',
+          staged: false,
+        })
 
-      expect(pending?.diffSnapshot[2]).toMatchObject({
-        path: 'new.ts',
-        staged: false,
-      })
+        expect(pending?.diffSnapshot[1]).toMatchObject({
+          path: 'src/a.ts',
+          staged: true,
+        })
 
-      clearPendingReviewRequest(nonce)
+        expect(pending?.diffSnapshot[2]).toMatchObject({
+          path: 'new.ts',
+          staged: false,
+        })
+      } finally {
+        clearPendingReviewRequest(nonce)
+      }
     })
 
-    test('request review button appears with a populated strip and no selected file', async (): Promise<void> => {
+    test('request review button appears with a populated strip and no loaded diff', async (): Promise<void> => {
       const user = userEvent.setup()
 
       // Two-file strip: auto-selection picks src/a.ts but changeCount=2 so the
       // scope control is not suppressed by the "degenerate single-entry" rule.
       // useFileDiff returns no diff → fileDisabled=true, forced-changelist scope.
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue({
+        getStatus: vi.fn().mockResolvedValue([]),
+        getDiff: vi.fn().mockResolvedValue({
+          fileDiff: makeHunkDiff('src/a.ts') as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: '',
+          repoRoot: '/repo',
+        }),
+        stageFile: vi.fn().mockResolvedValue(undefined),
+        unstageFile: vi.fn().mockResolvedValue(undefined),
+        discardChanges: vi.fn().mockResolvedValue(undefined),
+      })
+
       vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
         files: [
           { path: 'src/a.ts', status: 'modified', staged: false },
@@ -7139,10 +7156,163 @@ describe('Panel', () => {
         'true'
       )
 
-      // 'All changes' must NOT be disabled
+      // 'All changes' must NOT be disabled and must be the ACTIVE option
+      // (forced-changelist proof: no loaded diff arms changelist scope)
+      const allChangesBtn = screen.getByRole('button', { name: 'All changes' })
+      expect(allChangesBtn).not.toHaveAttribute('aria-disabled', 'true')
+      expect(allChangesBtn).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    test('scope control is hidden when the only change is the selected file', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      // Single entry strip — the degenerate case: exactly one entry that
+      // auto-selection will pick as the active file. Both scopes are identical,
+      // so the scope control should be hidden.
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue({
+        getStatus: vi.fn().mockResolvedValue([]),
+        getDiff: vi.fn().mockResolvedValue({
+          fileDiff: makeHunkDiff('src/a.ts') as GetGitDiffResponse['fileDiff'],
+          oldText: '',
+          newText: '',
+          rawDiff: '',
+          repoRoot: '/repo',
+        }),
+        stageFile: vi.fn().mockResolvedValue(undefined),
+        unstageFile: vi.fn().mockResolvedValue(undefined),
+        discardChanges: vi.fn().mockResolvedValue(undefined),
+      })
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/a.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo',
+        repoRoot: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: makeHunkDiff('src/a.ts'),
+          loading: false,
+          error: null,
+        })
+      )
+
+      render(
+        <Panel
+          cwd="/repo"
+          feedbackOwnerKey="sess:pane-1"
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty: vi.fn(),
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      const btn = screen.getByRole('button', { name: /request review/i })
+      await user.click(btn)
+
+      // Popover itself must be present (e.g. Copy button visible)
+      await screen.findByRole('dialog', { name: 'Request review' })
+
+      // Scope control must be absent in the degenerate case
+      expect(
+        screen.queryByRole('group', { name: 'Review scope (f/a)' })
+      ).not.toBeInTheDocument()
+    })
+
+    test('pressing f switches the armed scope back to the active file', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      const writePty = vi
+        .fn<(ptyId: string, data: string) => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      // 2+ entries so scope control is visible; default scope = changelist
+      // because the first entry auto-selected has a loaded diff.
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue({
+        getStatus: vi.fn().mockResolvedValue([]),
+        getDiff: vi.fn().mockImplementation((file: string) =>
+          Promise.resolve({
+            fileDiff: makeHunkDiff(file) as GetGitDiffResponse['fileDiff'],
+            oldText: '',
+            newText: '',
+            rawDiff: '',
+            repoRoot: '/repo',
+          })
+        ),
+        stageFile: vi.fn().mockResolvedValue(undefined),
+        unstageFile: vi.fn().mockResolvedValue(undefined),
+        discardChanges: vi.fn().mockResolvedValue(undefined),
+      })
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [
+          { path: 'src/a.ts', status: 'modified', staged: false },
+          { path: 'src/b.ts', status: 'modified', staged: false },
+        ],
+        filesCwd: '/repo',
+        repoRoot: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({
+          diff: makeHunkDiff('src/a.ts'),
+          loading: false,
+          error: null,
+        })
+      )
+
+      render(
+        <Panel
+          cwd="/repo"
+          feedbackOwnerKey="sess:pane-1"
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      const btn = screen.getByRole('button', { name: /request review/i })
+      await user.click(btn)
+
+      await screen.findByRole('dialog', { name: 'Request review' })
+
+      // Default scope should be changelist (diff is loaded, 2 entries)
       expect(
         screen.getByRole('button', { name: 'All changes' })
-      ).not.toHaveAttribute('aria-disabled', 'true')
+      ).toHaveAttribute('aria-pressed', 'true')
+
+      // Press 'f' to switch to file scope
+      fireEvent.keyDown(document, { key: 'f' })
+
+      // 'This file' becomes the active scope
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: 'This file' })
+        ).toHaveAttribute('aria-pressed', 'true')
+      })
+
+      // Delegate via Y and assert single-file payload
+      await user.keyboard('Y')
+
+      await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+
+      const [ptyId, payload] = writePty.mock.calls[0]
+      expect(ptyId).toBe('pty-1')
+      expect(payload).toContain('this 1 change')
     })
   })
 })

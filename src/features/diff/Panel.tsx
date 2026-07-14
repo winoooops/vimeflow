@@ -1247,7 +1247,7 @@ export const Panel = ({
     // Status repoRoot is populated whenever the strip is (spec §3); the diff
     // response only exists once a file has been opened.
     repoRoot: statusRepoRoot ?? response?.repoRoot ?? repoRootRef.current,
-    changedFiles: files,
+    changedFiles: effectiveFiles,
     statusRevision,
     fetchFileDiff: fetchFileDiffForReview,
     writePty: feedbackDispatch?.writePty,
@@ -2481,8 +2481,8 @@ export const Panel = ({
     // an open diff keeps the control visible with "All changes (0)" disabled.
     scopeControl:
       review.changeCount === 1 &&
-      files[0]?.path === selectedFilePath &&
-      files[0]?.staged === selectedFileStaged
+      effectiveFiles[0]?.path === selectedFilePath &&
+      effectiveFiles[0]?.staged === selectedFileStaged
         ? undefined
         : {
             scope: review.scope,
