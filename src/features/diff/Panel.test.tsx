@@ -34,6 +34,10 @@ import {
 import type { MockInstance } from 'vitest'
 import type { PaneCandidate } from './services/activePanePicker'
 import { clearPendingReview, getPendingReview } from './services/pendingReviews'
+import {
+  clearPendingReviewRequest,
+  getPendingReviewRequest,
+} from './services/pendingReviewRequests'
 import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 import { themeService } from '../../theme'
 
@@ -6913,6 +6917,203 @@ describe('Panel', () => {
       })
 
       expect(screen.queryByRole('search')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('whole-changelist request review (VIM-327)', () => {
+    // Three-entry changelist: a.ts unstaged, a.ts staged, new.ts untracked.
+    const changelistFiles: ChangedFile[] = [
+      { path: 'src/a.ts', status: 'modified', staged: false },
+      { path: 'src/a.ts', status: 'modified', staged: true },
+      { path: 'new.ts', status: 'untracked', staged: false },
+    ]
+
+    const makeHunkDiff = (filePath: string): FileDiff => ({
+      filePath,
+      hunks: [
+        {
+          id: 'hunk-1-1',
+          header: '@@ -1,2 +1,3 @@',
+          oldStart: 1,
+          oldLines: 2,
+          newStart: 1,
+          newLines: 3,
+          lines: [],
+        },
+      ],
+    })
+
+    const candidate: PaneCandidate = {
+      paneId: 'pane-1',
+      ptyId: 'pty-1',
+      tabName: 'claude',
+      agentLabel: 'Claude Code',
+      cwd: '/repo',
+      status: 'running',
+      isFocused: true,
+    }
+
+    test('changelist review dispatches all 3 entries with correct payload and stores snapshot', async (): Promise<void> => {
+      const user = userEvent.setup()
+
+      const writePty = vi
+        .fn<(ptyId: string, data: string) => Promise<void>>()
+        .mockResolvedValue(undefined)
+
+      // getDiff returns a hunk diff for each file (untracked returns same shape)
+      const getDiff = vi
+        .fn<
+          (
+            file: string,
+            staged?: boolean,
+            untracked?: boolean
+          ) => Promise<GetGitDiffResponse>
+        >()
+        .mockImplementation((file) =>
+          Promise.resolve({
+            fileDiff: makeHunkDiff(file) as GetGitDiffResponse['fileDiff'],
+            oldText: '',
+            newText: '',
+            rawDiff: '',
+            repoRoot: '/repo',
+          })
+        )
+
+      vi.spyOn(gitServiceModule, 'createGitService').mockReturnValue({
+        getStatus: vi.fn().mockResolvedValue([]),
+        getDiff,
+        stageFile: vi.fn().mockResolvedValue(undefined),
+        unstageFile: vi.fn().mockResolvedValue(undefined),
+        discardChanges: vi.fn().mockResolvedValue(undefined),
+      })
+
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: changelistFiles,
+        filesCwd: '/repo',
+        repoRoot: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      // No selected file — test that the button still appears
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({ diff: null, loading: false, error: null })
+      )
+
+      render(
+        <Panel
+          cwd="/repo"
+          feedbackOwnerKey="sess:pane-1"
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty,
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      // Button must appear even without a selected file when the strip is populated
+      const btn = screen.getByRole('button', { name: /request review/i })
+      expect(btn).toBeInTheDocument()
+
+      await user.click(btn)
+
+      // Popover opens — scope control should be visible (3 entries, no active file → changelist forced)
+      const dialog = await screen.findByRole('dialog', {
+        name: 'Request review',
+      })
+      expect(dialog).toBeInTheDocument()
+
+      // Switch to changelist scope (already forced; this verifies the SegmentedControl rendered)
+      expect(
+        screen.getByRole('group', { name: 'Review scope (f/a)' })
+      ).toBeInTheDocument()
+
+      // 'All changes (3)' should have aria-pressed=true (forced changelist — no active diff)
+      expect(
+        screen.getByRole('button', { name: 'All changes' })
+      ).toHaveAttribute('aria-pressed', 'true')
+
+      // Delegate via Y
+      await user.keyboard('Y')
+
+      // Wait for writePty to be called (async arm)
+      await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+
+      const [ptyId, payload] = writePty.mock.calls[0]
+      expect(ptyId).toBe('pty-1')
+
+      // Payload must name 3 changes in the header
+      expect(payload).toContain('these 3 changes')
+      // Both group headers
+      expect(payload).toContain('unstaged diff (`git diff`)')
+      expect(payload).toContain('staged diff (`git diff --cached`)')
+      // Untracked annotation for new.ts
+      expect(payload).toContain(
+        'not in git diff; read the file, all lines are additions'
+      )
+      // nonce block
+      expect(payload).toContain('<<<VIMEFLOW_REVIEW')
+
+      // Verify the pending request was stored with 3 snapshot entries
+      const nonce = /"nonce":"(\w+)"/.exec(payload)?.[1] ?? ''
+      expect(nonce).not.toBe('')
+
+      const pending = getPendingReviewRequest(nonce)
+      expect(pending?.diffSnapshot).toHaveLength(3)
+      expect(pending?.diffSnapshot[0]).toMatchObject({
+        path: 'src/a.ts',
+        staged: false,
+      })
+
+      expect(pending?.diffSnapshot[1]).toMatchObject({
+        path: 'src/a.ts',
+        staged: true,
+      })
+
+      expect(pending?.diffSnapshot[2]).toMatchObject({
+        path: 'new.ts',
+        staged: false,
+      })
+
+      clearPendingReviewRequest(nonce)
+    })
+
+    test('request review button appears with a populated strip and no selected file', (): void => {
+      vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
+        files: [{ path: 'src/a.ts', status: 'modified', staged: false }],
+        filesCwd: '/repo',
+        repoRoot: '/repo',
+        revision: 1,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        idle: false,
+      })
+
+      vi.spyOn(useFileDiffModule, 'useFileDiff').mockReturnValue(
+        fileDiffMock({ diff: null, loading: false, error: null })
+      )
+
+      render(
+        <Panel
+          cwd="/repo"
+          feedbackOwnerKey="sess:pane-1"
+          feedbackDispatch={{
+            candidates: [candidate],
+            writePty: vi.fn(),
+            focusTerminal: vi.fn(),
+          }}
+        />
+      )
+
+      // Button must appear in the empty-file state when the strip has at least one entry
+      expect(
+        screen.getByRole('button', { name: /request review/i })
+      ).toBeInTheDocument()
     })
   })
 })

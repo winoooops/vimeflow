@@ -23,7 +23,7 @@ import { toPierreInputs, findRawDiffHunkIndex } from './services/pierreAdapter'
 import { extractHunkPatch } from './services/gitPatch'
 import { createGitService } from './services/gitService'
 import { useNotifyInfo } from '../workspace/hooks/useNotifyInfo'
-import type { ChangedFile, SelectedDiffFile } from './types'
+import type { ChangedFile, FileDiff, SelectedDiffFile } from './types'
 import {
   FILE_COMMENT_LINE_NUMBER,
   DEFAULT_REVIEW_COMMENT_CATEGORY,
@@ -286,6 +286,7 @@ export const Panel = ({
   const {
     files,
     filesCwd,
+    repoRoot: statusRepoRoot,
     revision: statusRevision = 0,
     loading: statusLoading,
     error: statusError,
@@ -1217,6 +1218,25 @@ export const Panel = ({
     onReopen: reopenThread,
   }
 
+  // Thin wrapper over the existing createGitService(cwd).getDiff so
+  // useRequestReview can fetch per-file diffs for changelist snapshots (VIM-327).
+  const fetchFileDiffForReview = useCallback(
+    async (
+      path: string,
+      staged: boolean,
+      untracked: boolean
+    ): Promise<FileDiff> => {
+      const result = await createGitService(cwd).getDiff(
+        path,
+        staged,
+        untracked
+      )
+
+      return result.fileDiff
+    },
+    [cwd]
+  )
+
   // Request review (VIM-304): the whole "arm a pending request, then dispatch or
   // copy it" flow lives in useRequestReview so this component stays a renderer.
   const review = useRequestReview({
@@ -1224,7 +1244,12 @@ export const Panel = ({
     ownerKey: feedbackOwnerKey,
     cwd,
     staged: selectedFileStaged,
-    repoRoot: response?.repoRoot ?? repoRootRef.current,
+    // Status repoRoot is populated whenever the strip is (spec §3); the diff
+    // response only exists once a file has been opened.
+    repoRoot: statusRepoRoot ?? response?.repoRoot ?? repoRootRef.current,
+    changedFiles: files,
+    statusRevision,
+    fetchFileDiff: fetchFileDiffForReview,
     writePty: feedbackDispatch?.writePty,
     focusTerminal: feedbackDispatch?.focusTerminal,
     notify: notifyInfo,
@@ -2446,9 +2471,26 @@ export const Panel = ({
       diffCwd: cwd,
     }),
     scopeLabel:
-      selectedFilePath !== null
-        ? `${selectedFilePath} (${selectedFileStaged ? 'staged' : 'unstaged'})`
-        : 'this file',
+      review.scope === 'changelist'
+        ? `${review.changeCount} change${review.changeCount === 1 ? '' : 's'}`
+        : selectedFilePath !== null
+          ? `${selectedFilePath} (${selectedFileStaged ? 'staged' : 'unstaged'})`
+          : 'this file',
+    // Scope control is hidden in the degenerate case: exactly one strip entry
+    // that matches the active file (both scopes identical). An empty strip with
+    // an open diff keeps the control visible with "All changes (0)" disabled.
+    scopeControl:
+      review.changeCount === 1 &&
+      files[0]?.path === selectedFilePath &&
+      files[0]?.staged === selectedFileStaged
+        ? undefined
+        : {
+            scope: review.scope,
+            changeCount: review.changeCount,
+            fileDisabled: activeResponse?.fileDiff === undefined,
+            changelistDisabled: review.changeCount === 0,
+            onScopeChange: review.setScope,
+          },
     onSubmit: review.requestReview,
     onCopy: review.copyReviewRequest,
     onCancel: review.closePopover,
