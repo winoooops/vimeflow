@@ -521,7 +521,9 @@ function gitApiPlugin(): Plugin {
               }
             }
 
-            if (!diff && (untracked === true || usedUntrackedFallback)) {
+            // usedUntrackedFallback implies non-empty diff, so only the
+            // explicit untracked flag can reach here with empty output.
+            if (!diff && untracked === true) {
               res.writeHead(200, { 'Content-Type': 'application/json' })
               res.end(
                 JSON.stringify({
