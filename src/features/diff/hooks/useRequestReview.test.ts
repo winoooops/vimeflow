@@ -319,7 +319,9 @@ test('changelist arm failure is atomic: no request stored, notify fired', async 
     )
   })
 
-  expect(writePty).not.toHaveBeenCalled()
+  // The module mock never touches writePty, so assert on the dispatch mock —
+  // a dispatch-despite-failure regression must fail here.
+  expect(dispatchReviewRequest).not.toHaveBeenCalled()
   // No pending request for any nonce the hook might have minted
   expect(getPendingReviewRequest('nonce-1')).toBeUndefined()
 })
@@ -345,10 +347,11 @@ test('prefetch is keyed: openPopover starts one fetch, arm reuses it; stale cwd 
     expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length)
   )
 
-  // Same key: arm must not refetch
+  // Same key: arm must not refetch — and must actually CONSUME the reused
+  // snapshot (a broken key comparison returning null would also skip fetches).
   await act(async () => {
     result.current.copyReviewRequest()
-    await Promise.resolve()
+    await vi.waitFor(() => expect(formatReviewRequest).toHaveBeenCalledTimes(1))
   })
   expect(fetchFileDiff).toHaveBeenCalledTimes(changedFiles.length)
 

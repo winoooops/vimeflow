@@ -117,11 +117,12 @@ export const useRequestReview = ({
       ? 'file'
       : (scopeChoice ?? defaultScope)
 
-  // Keyed prefetch (spec §3): one in-flight promise, settled flag attached at
-  // creation so a discarded prefetch never surfaces as unhandled rejection.
+  // Keyed prefetch (spec §3): one in-flight promise. It never rejects —
+  // failure resolves to null — so a discarded or never-consumed prefetch
+  // cannot surface as an unhandled rejection.
   const prefetchRef = useRef<{
     key: string
-    promise: Promise<ChangelistSnapshot>
+    promise: Promise<ChangelistSnapshot | null>
     settled: boolean
   } | null>(null)
 
@@ -145,27 +146,21 @@ export const useRequestReview = ({
 
     // fetchFileDiff is defined: canRequestChangelist guarantees it, and we
     // returned early above when !canRequestChangelist.
-    //
-    // Use a deferred wrapper so arm() awaits a promise that only rejects when
-    // we explicitly call reject — this avoids the transient unhandled-rejection
-    // window that occurs when the inner fetchChangelistSnapshot call rejects
-    // before the IIFE's try/await can register a handler on the raw promise.
-    let settleFn!: (value: ChangelistSnapshot) => void
-    let failFn!: (reason: unknown) => void
+    const holder = {
+      key: prefetchKey,
+      promise: Promise.resolve<ChangelistSnapshot | null>(null),
+      settled: false,
+    }
 
-    const promise = new Promise<ChangelistSnapshot>((resolve, reject) => {
-      settleFn = resolve
-      failFn = reject
-    })
-    const holder = { key: prefetchKey, promise, settled: false }
-
-    void (async (): Promise<void> => {
+    holder.promise = (async (): Promise<ChangelistSnapshot | null> => {
       try {
-        settleFn(
-          await fetchChangelistSnapshot(entries, fetchFileDiff, repoRoot ?? '')
+        return await fetchChangelistSnapshot(
+          entries,
+          fetchFileDiff,
+          repoRoot ?? ''
         )
-      } catch (err) {
-        failFn(err)
+      } catch {
+        return null
       } finally {
         holder.settled = true
       }
@@ -222,7 +217,7 @@ export const useRequestReview = ({
       const snapshotPromise =
         existing !== null && existing.key === prefetchKey
           ? existing.promise
-          : ((): Promise<ChangelistSnapshot> | undefined => {
+          : ((): Promise<ChangelistSnapshot | null> | undefined => {
               startPrefetch()
 
               return prefetchRef.current?.promise
@@ -232,11 +227,9 @@ export const useRequestReview = ({
         return null
       }
 
-      let snapshot: ChangelistSnapshot
+      const snapshot = await snapshotPromise
 
-      try {
-        snapshot = await snapshotPromise
-      } catch {
+      if (snapshot === null) {
         notify('Could not snapshot the changelist; review request not sent.')
 
         return null
