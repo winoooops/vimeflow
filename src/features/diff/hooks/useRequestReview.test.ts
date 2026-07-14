@@ -290,11 +290,8 @@ test('changelist delegate arms all entries under one nonce and dispatches all re
 })
 
 test('changelist arm failure is atomic: no request stored, notify fired', async () => {
-  // async fn that throws avoids the synchronous-rejection unhandled-promise
-  // issue: the await in mapWithConcurrency registers a handler before the
-  // rejection propagates.
   const fetchFileDiff = vi.fn(
-    async (): Promise<FileDiff> => { throw new Error('boom') }
+    (): Promise<FileDiff> => Promise.reject(new Error('boom'))
   )
 
   const { result } = renderHook(() =>
