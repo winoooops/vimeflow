@@ -187,28 +187,49 @@ export const dispatchFeedbackBatch = async (
 
 export interface ReviewRequestFile extends ReviewedFile {
   promptPath?: string
+  untracked?: boolean
+}
+
+const reviewRequestLine = (file: ReviewRequestFile): string => {
+  const path = stripControls(file.path)
+
+  const promptPath =
+    file.promptPath === undefined ? '' : stripControls(file.promptPath)
+
+  const base =
+    promptPath.length > 0 ? `> ─ ${path} (${promptPath})` : `> ─ ${path}`
+
+  return file.untracked === true
+    ? `${base} (untracked — not in git diff; read the file, all lines are additions)`
+    : base
 }
 
 // The "Request review" payload (VIM-304): instruct the primary agent to delegate
 // a code review of a specific diff scope and emit the self-anchoring
 // VIMEFLOW_REVIEW block, echoing the nonce. The findings self-anchor, so there
-// is no [#n] item list — only the scope (paths + staged mode) + the contract.
+// is no [#n] item list — only the scope (paths + grouped half) + the contract.
 export const formatReviewRequest = (
   files: ReviewRequestFile[],
   nonce: string
 ): string => {
-  const fileLines = files.map((file) => {
-    const path = stripControls(file.path)
+  const unstaged = files.filter((file) => !file.staged)
+  const staged = files.filter((file) => file.staged)
 
-    const promptPath =
-      file.promptPath === undefined ? '' : stripControls(file.promptPath)
-
-    return promptPath.length > 0 ? `> ─ ${path} (${promptPath})` : `> ─ ${path}`
-  })
+  const groups = [
+    ...(unstaged.length > 0
+      ? ['> unstaged diff (`git diff`):', ...unstaged.map(reviewRequestLine)]
+      : []),
+    ...(staged.length > 0
+      ? [
+          '> staged diff (`git diff --cached`):',
+          ...staged.map(reviewRequestLine),
+        ]
+      : []),
+  ]
 
   return [
     `> Delegate a code review of these ${files.length} change${files.length === 1 ? '' : 's'}:`,
-    ...fileLines,
+    ...groups,
     '>',
     '> Anchor each finding with diff-side line numbers: "additions" uses new-file lines, "deletions" uses old-file lines.',
     '> In the JSON block, use the repo-relative path before the parentheses as each finding path.',

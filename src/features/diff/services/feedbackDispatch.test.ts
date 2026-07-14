@@ -12,6 +12,7 @@ import {
   followUpContextLine,
   isFollowUpComment,
   type DispatchEntry,
+  type ReviewRequestFile,
 } from './feedbackDispatch'
 import type { ReviewedFile } from './pendingReviewRequests'
 
@@ -377,6 +378,72 @@ test('formatReviewRequest strips control chars from a crafted path', () => {
 
   expect(payload).not.toContain('\x1b')
   expect(payload).toContain('src/ev[201~il.ts')
+})
+
+test('formatReviewRequest groups entries by half and annotates untracked', () => {
+  const files: ReviewRequestFile[] = [
+    {
+      path: 'src/a.ts',
+      staged: false,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/a.ts',
+    },
+    {
+      path: 'src/new.ts',
+      staged: false,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/new.ts',
+      untracked: true,
+    },
+    {
+      path: 'src/a.ts',
+      staged: true,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/a.ts',
+    },
+    {
+      path: 'src/c.ts',
+      staged: true,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/c.ts',
+    },
+  ]
+
+  const prompt = formatReviewRequest(files, 'n0nce1')
+
+  expect(prompt).toContain('> Delegate a code review of these 4 changes:')
+  const unstagedIndex = prompt.indexOf('> unstaged diff (`git diff`):')
+  const stagedIndex = prompt.indexOf('> staged diff (`git diff --cached`):')
+  expect(unstagedIndex).toBeGreaterThan(-1)
+  expect(stagedIndex).toBeGreaterThan(unstagedIndex)
+  expect(prompt).toContain(
+    '> ─ src/new.ts (/repo/src/new.ts) (untracked — not in git diff; read the file, all lines are additions)'
+  )
+  // contract block untouched
+  expect(prompt).toContain('<<<VIMEFLOW_REVIEW')
+  expect(prompt).toContain('"nonce":"n0nce1"')
+})
+
+test('formatReviewRequest with a single half emits only that group', () => {
+  const files: ReviewRequestFile[] = [
+    {
+      path: 'src/a.ts',
+      staged: false,
+      additions: [],
+      deletions: [],
+      promptPath: '/repo/src/a.ts',
+    },
+  ]
+
+  const prompt = formatReviewRequest(files, 'n0nce2')
+
+  expect(prompt).toContain('> Delegate a code review of these 1 change:')
+  expect(prompt).toContain('> unstaged diff (`git diff`):')
+  expect(prompt).not.toContain('staged diff (`git diff --cached`)')
 })
 
 test('a typeless follow-up renders as [#n · Follow-up] with the context line', () => {
