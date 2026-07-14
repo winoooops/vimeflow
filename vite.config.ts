@@ -414,6 +414,16 @@ function gitApiPlugin(): Plugin {
               return null
             }
 
+            const statusFromUnmergedCode = (
+              code: string
+            ): ChangedFile['status'] => {
+              if (code === 'DD' || code === 'DU' || code === 'UD') {
+                return 'deleted'
+              }
+
+              return 'modified'
+            }
+
             for (const file of status.files) {
               // Skip if already in branch diff (avoid duplicates)
               const existing = changedFiles.find((f) => f.path === file.path)
@@ -455,10 +465,9 @@ function gitApiPlugin(): Plugin {
                 const wdSummary = await git.diffSummary(['--', file.path])
                 const wdFile = wdSummary.files.find((f) => f.file === file.path)
 
-                const gitStatus =
-                  statusFromCode(file.working_dir) ??
-                  statusFromCode(file.index) ??
-                  'modified'
+                const gitStatus = statusFromUnmergedCode(
+                  `${file.index}${file.working_dir}`
+                )
 
                 changedFiles.push({
                   path: file.path,

@@ -291,3 +291,18 @@ between display and mutation operations.
   values emitted by the Rust backend, including `renamed` for rename/copy
   codes and `modified` for conflicted/unmerged paths.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Unmerged porcelain pairs need semantic status buckets
+
+- **Source:** github-claude | PR #694 round 3 | 2026-07-14
+- **Severity:** MEDIUM
+- **File:** `vite.config.ts`
+- **Finding:** The Vite dev git-status middleware detected unmerged paths but
+  derived their status by feeding the raw `X`/`Y` letters through the generic
+  single-letter mapper. Conflict pairs are semantic states, so `AA` and `UA`
+  incorrectly became `added`, while `DU` became `modified`, diverging from the
+  Rust backend contract.
+- **Fix:** Added an explicit unmerged-code mapper that mirrors Rust exactly:
+  `DD`/`DU`/`UD` report `deleted`, while `UU`/`AA`/`AU`/`UA` report
+  `modified`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
