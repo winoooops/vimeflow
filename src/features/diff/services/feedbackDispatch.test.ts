@@ -349,7 +349,7 @@ test('formatReviewRequest can include absolute prompt paths while preserving JSO
 test('formatReviewRequest singular wording', () => {
   const payload = formatReviewRequest([reviewedFiles[0]], 'n')
 
-  expect(payload).toContain('> Delegate a code review of these 1 change:')
+  expect(payload).toContain('> Delegate a code review of this 1 change:')
 })
 
 test('dispatchReviewRequest calls writePty once with a paste-bracketed payload', async () => {
@@ -441,7 +441,7 @@ test('formatReviewRequest with a single half emits only that group', () => {
 
   const prompt = formatReviewRequest(files, 'n0nce2')
 
-  expect(prompt).toContain('> Delegate a code review of these 1 change:')
+  expect(prompt).toContain('> Delegate a code review of this 1 change:')
   expect(prompt).toContain('> unstaged diff (`git diff`):')
   expect(prompt).not.toContain('staged diff (`git diff --cached`)')
 })

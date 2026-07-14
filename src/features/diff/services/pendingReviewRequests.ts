@@ -28,8 +28,8 @@ export interface ReviewedFile {
  * span of each hunk (additions) and the old-file span (deletions), tagged with
  * the staged axis. This is both the payload the review is scoped to and the
  * placement resolver: a finding's line anchors only if it falls in one of these
- * ranges (else it degrades to file-level). Returns ONE entry; callers wrap it
- * in an array when building a per-file snapshot.
+ * ranges (else it degrades to file-level). Returns ONE entry; the snapshot
+ * list is assembled by the callers (single-file arm, changelistSnapshot).
  */
 export const buildDiffSnapshot = (
   fileDiff: FileDiff,

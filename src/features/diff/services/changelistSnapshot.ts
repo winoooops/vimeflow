@@ -18,7 +18,7 @@ export type FetchFileDiff = (
   untracked: boolean
 ) => Promise<FileDiff>
 
-const SNAPSHOT_CONCURRENCY = 8
+export const SNAPSHOT_CONCURRENCY = 8
 
 // ponytail: minimal promise pool; results keep input order.
 const mapWithConcurrency = async <T, R>(

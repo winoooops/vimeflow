@@ -228,7 +228,7 @@ export const formatReviewRequest = (
   ]
 
   return [
-    `> Delegate a code review of these ${files.length} change${files.length === 1 ? '' : 's'}:`,
+    `> Delegate a code review of ${files.length === 1 ? 'this' : 'these'} ${files.length} change${files.length === 1 ? '' : 's'}:`,
     ...groups,
     '>',
     '> Anchor each finding with diff-side line numbers: "additions" uses new-file lines, "deletions" uses old-file lines.',

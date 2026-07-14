@@ -1,5 +1,8 @@
 import { describe, expect, test, vi } from 'vitest'
-import { fetchChangelistSnapshot } from './changelistSnapshot'
+import {
+  fetchChangelistSnapshot,
+  SNAPSHOT_CONCURRENCY,
+} from './changelistSnapshot'
 import type { ChangedFile, FileDiff } from '../types'
 
 const entry = (
@@ -89,6 +92,6 @@ describe('fetchChangelistSnapshot', () => {
     )
     await fetchChangelistSnapshot(entries, fetchFileDiff, '')
 
-    expect(maxActive).toBeLessThanOrEqual(8)
+    expect(maxActive).toBeLessThanOrEqual(SNAPSHOT_CONCURRENCY)
   })
 })
