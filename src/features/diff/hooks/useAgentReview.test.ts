@@ -57,10 +57,10 @@ const request = (
   nonce: 'abc',
   ownerKey: 'owner',
   cwd: '/repo',
-  staged: false,
   diffSnapshot: [
     {
       path: 'a.ts',
+      staged: false,
       additions: [{ start: 40, end: 50 }],
       deletions: [{ start: 5, end: 8 }],
     },

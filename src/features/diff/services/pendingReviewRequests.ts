@@ -18,35 +18,38 @@ export interface HunkRange {
 /** One reviewed file's hunk line ranges, per side, captured at dispatch. */
 export interface ReviewedFile {
   path: string
+  staged: boolean
   additions: HunkRange[]
   deletions: HunkRange[]
 }
 
 /**
- * Build the diff snapshot handed to the reviewer, from a parsed file diff — the
- * new-file line span of each hunk (additions) and the old-file span
- * (deletions). This is both the payload the review is scoped to and the
+ * Build one diff snapshot entry from a parsed file diff — the new-file line
+ * span of each hunk (additions) and the old-file span (deletions), tagged with
+ * the staged axis. This is both the payload the review is scoped to and the
  * placement resolver: a finding's line anchors only if it falls in one of these
- * ranges (else it degrades to file-level). Returns an array because a snapshot
- * is a list of files; today a review always covers exactly the one active file.
+ * ranges (else it degrades to file-level). Returns ONE entry; callers wrap it
+ * in an array when building a per-file snapshot.
  */
-export const buildDiffSnapshot = (fileDiff: FileDiff): ReviewedFile[] => [
-  {
-    path: fileDiff.filePath,
-    additions: fileDiff.hunks
-      .filter((hunk) => hunk.newLines > 0)
-      .map((hunk) => ({
-        start: hunk.newStart,
-        end: hunk.newStart + hunk.newLines - 1,
-      })),
-    deletions: fileDiff.hunks
-      .filter((hunk) => hunk.oldLines > 0)
-      .map((hunk) => ({
-        start: hunk.oldStart,
-        end: hunk.oldStart + hunk.oldLines - 1,
-      })),
-  },
-]
+export const buildDiffSnapshot = (
+  fileDiff: FileDiff,
+  staged: boolean
+): ReviewedFile => ({
+  path: fileDiff.filePath,
+  staged,
+  additions: fileDiff.hunks
+    .filter((hunk) => hunk.newLines > 0)
+    .map((hunk) => ({
+      start: hunk.newStart,
+      end: hunk.newStart + hunk.newLines - 1,
+    })),
+  deletions: fileDiff.hunks
+    .filter((hunk) => hunk.oldLines > 0)
+    .map((hunk) => ({
+      start: hunk.oldStart,
+      end: hunk.oldStart + hunk.oldLines - 1,
+    })),
+})
 
 export interface PendingReviewRequest {
   /**
@@ -59,8 +62,6 @@ export interface PendingReviewRequest {
   /** The feedback owner (sessionId:paneId) at dispatch — findings route here. */
   ownerKey: string
   cwd: string
-  /** The invoked diff view's staged axis; findings inherit it. */
-  staged: boolean
   /**
    * The diff the reviewer was given, captured at dispatch. Both the scope named
    * in the dispatch instruction AND the placement resolver — a finding resolves

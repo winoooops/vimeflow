@@ -195,11 +195,8 @@ export interface ReviewRequestFile extends ReviewedFile {
 // is no [#n] item list — only the scope (paths + staged mode) + the contract.
 export const formatReviewRequest = (
   files: ReviewRequestFile[],
-  staged: boolean,
   nonce: string
 ): string => {
-  const mode = staged ? 'staged' : 'unstaged'
-
   const fileLines = files.map((file) => {
     const path = stripControls(file.path)
 
@@ -210,7 +207,7 @@ export const formatReviewRequest = (
   })
 
   return [
-    `> Delegate a code review of the ${mode} diff of these ${files.length} file${files.length === 1 ? '' : 's'}:`,
+    `> Delegate a code review of these ${files.length} change${files.length === 1 ? '' : 's'}:`,
     ...fileLines,
     '>',
     '> Anchor each finding with diff-side line numbers: "additions" uses new-file lines, "deletions" uses old-file lines.',
@@ -226,12 +223,11 @@ export const formatReviewRequest = (
 
 export const dispatchReviewRequest = async (
   ptyId: string,
-  files: ReviewedFile[],
-  staged: boolean,
+  files: ReviewRequestFile[],
   nonce: string,
   writePty: (ptyId: string, data: string) => Promise<void>
 ): Promise<void> => {
-  const formatted = formatReviewRequest(files, staged, nonce)
+  const formatted = formatReviewRequest(files, nonce)
   const payload = `${PASTE_START}${formatted}${PASTE_END}\r`
 
   await writePty(ptyId, payload)

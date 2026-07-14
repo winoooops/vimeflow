@@ -81,7 +81,7 @@ export const useRequestReview = ({
       return null
     }
 
-    const files = buildDiffSnapshot(fileDiff)
+    const files = [buildDiffSnapshot(fileDiff, staged)]
     const normalizedRepoRoot = repoRoot?.replace(/[\\/]+$/, '') ?? ''
 
     const requestFiles =
@@ -96,7 +96,6 @@ export const useRequestReview = ({
       nonce,
       ownerKey,
       cwd,
-      staged,
       diffSnapshot: files,
       dispatchedAt: Date.now(),
     })
@@ -117,7 +116,6 @@ export const useRequestReview = ({
           await dispatchReviewRequest(
             pane.ptyId,
             armed.requestFiles,
-            staged,
             armed.nonce,
             writePty
           )
@@ -129,7 +127,7 @@ export const useRequestReview = ({
         }
       })()
     },
-    [arm, writePty, focusTerminal, staged, notify]
+    [arm, writePty, focusTerminal, notify]
   )
 
   const copyReviewRequest = useCallback((): void => {
@@ -141,7 +139,7 @@ export const useRequestReview = ({
 
     void (async (): Promise<void> => {
       const copied = await writeClipboardText(
-        formatReviewRequest(armed.requestFiles, staged, armed.nonce)
+        formatReviewRequest(armed.requestFiles, armed.nonce)
       )
       notify(
         copied
@@ -149,7 +147,7 @@ export const useRequestReview = ({
           : 'Could not copy the review request.'
       )
     })()
-  }, [arm, staged, notify])
+  }, [arm, notify])
 
   const openPopover = useCallback((): void => {
     if (canRequest) {

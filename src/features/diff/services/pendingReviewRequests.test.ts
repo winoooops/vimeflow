@@ -20,9 +20,13 @@ const request = (nonce = 'abc'): PendingReviewRequest => ({
   nonce,
   ownerKey: 'sess:pane',
   cwd: '/repo',
-  staged: false,
   diffSnapshot: [
-    { path: 'a.ts', additions: [{ start: 1, end: 10 }], deletions: [] },
+    {
+      path: 'a.ts',
+      staged: false,
+      additions: [{ start: 1, end: 10 }],
+      deletions: [],
+    },
   ],
   dispatchedAt: 1,
 })
@@ -69,7 +73,7 @@ describe('pendingReviewRequests', () => {
   test('set then get by nonce', () => {
     setPendingReviewRequest(request())
     expect(getPendingReviewRequest('abc')?.ownerKey).toBe('sess:pane')
-    expect(getPendingReviewRequest('abc')?.diffSnapshot[0].path).toBe('a.ts')
+    expect(getPendingReviewRequest('abc')?.diffSnapshot[0]?.path).toBe('a.ts')
   })
 
   test('set replaces the prior request for the same nonce', () => {
@@ -183,6 +187,32 @@ describe('reviewLevelNotes', () => {
 })
 
 describe('buildDiffSnapshot', () => {
+  test('buildDiffSnapshot returns a single ReviewedFile carrying the staged axis', () => {
+    const fileDiff: FileDiff = {
+      filePath: 'src/a.ts',
+      hunks: [
+        {
+          id: 'hunk-1-1',
+          header: '@@ -1,2 +1,3 @@',
+          oldStart: 1,
+          oldLines: 2,
+          newStart: 1,
+          newLines: 3,
+          lines: [],
+        },
+      ],
+    }
+
+    const entry = buildDiffSnapshot(fileDiff, true)
+
+    expect(entry).toEqual({
+      path: 'src/a.ts',
+      staged: true,
+      additions: [{ start: 1, end: 3 }],
+      deletions: [{ start: 1, end: 2 }],
+    })
+  })
+
   test('maps hunks to additions/deletions line ranges', () => {
     const fileDiff: FileDiff = {
       filePath: 'src/a.ts',
@@ -209,15 +239,14 @@ describe('buildDiffSnapshot', () => {
       ],
     }
 
-    expect(buildDiffSnapshot(fileDiff)).toEqual([
-      {
-        path: 'src/a.ts',
-        additions: [
-          { start: 40, end: 50 },
-          { start: 88, end: 94 },
-        ],
-        deletions: [{ start: 5, end: 7 }],
-      },
-    ])
+    expect(buildDiffSnapshot(fileDiff, false)).toEqual({
+      path: 'src/a.ts',
+      staged: false,
+      additions: [
+        { start: 40, end: 50 },
+        { start: 88, end: 94 },
+      ],
+      deletions: [{ start: 5, end: 7 }],
+    })
   })
 })

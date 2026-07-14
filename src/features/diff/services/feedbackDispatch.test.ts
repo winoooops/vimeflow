@@ -298,14 +298,24 @@ test('strips terminal control characters so a crafted path/comment cannot break 
 })
 
 const reviewedFiles: ReviewedFile[] = [
-  { path: 'src/auth.ts', additions: [{ start: 40, end: 50 }], deletions: [] },
-  { path: 'src/db.ts', additions: [], deletions: [{ start: 1, end: 3 }] },
+  {
+    path: 'src/auth.ts',
+    staged: false,
+    additions: [{ start: 40, end: 50 }],
+    deletions: [],
+  },
+  {
+    path: 'src/db.ts',
+    staged: false,
+    additions: [],
+    deletions: [{ start: 1, end: 3 }],
+  },
 ]
 
 test('formatReviewRequest names the scope, coordinate convention, and block (VIM-304)', () => {
-  const payload = formatReviewRequest(reviewedFiles, false, 'r3v13w')
+  const payload = formatReviewRequest(reviewedFiles, 'r3v13w')
 
-  expect(payload).toContain('unstaged diff of these 2 files')
+  expect(payload).toContain('> Delegate a code review of these 2 changes:')
   expect(payload).toContain('> ─ src/auth.ts')
   expect(payload).toContain('> ─ src/db.ts')
   expect(payload).toContain('"additions" uses new-file lines')
@@ -319,12 +329,12 @@ test('formatReviewRequest can include absolute prompt paths while preserving JSO
     [
       {
         path: 'src/auth.ts',
+        staged: false,
         promptPath: '/repo/src/auth.ts',
         additions: [{ start: 40, end: 50 }],
         deletions: [],
       },
     ],
-    false,
     'r3v13w'
   )
 
@@ -335,16 +345,16 @@ test('formatReviewRequest can include absolute prompt paths while preserving JSO
   expect(payload).toContain('"path":"<file>"')
 })
 
-test('formatReviewRequest uses the staged label + singular wording', () => {
-  const payload = formatReviewRequest([reviewedFiles[0]], true, 'n')
+test('formatReviewRequest singular wording', () => {
+  const payload = formatReviewRequest([reviewedFiles[0]], 'n')
 
-  expect(payload).toContain('staged diff of these 1 file:')
+  expect(payload).toContain('> Delegate a code review of these 1 change:')
 })
 
 test('dispatchReviewRequest calls writePty once with a paste-bracketed payload', async () => {
   const writePty = vi.fn().mockResolvedValue(undefined)
 
-  await dispatchReviewRequest('pty-1', reviewedFiles, false, 'n', writePty)
+  await dispatchReviewRequest('pty-1', reviewedFiles, 'n', writePty)
 
   expect(writePty).toHaveBeenCalledTimes(1)
   const sent = writePty.mock.calls[0][1] as string
@@ -354,8 +364,14 @@ test('dispatchReviewRequest calls writePty once with a paste-bracketed payload',
 
 test('formatReviewRequest strips control chars from a crafted path', () => {
   const payload = formatReviewRequest(
-    [{ path: 'src/ev\x1b[201~il.ts', additions: [], deletions: [] }],
-    false,
+    [
+      {
+        path: 'src/ev\x1b[201~il.ts',
+        staged: false,
+        additions: [],
+        deletions: [],
+      },
+    ],
     'n'
   )
 

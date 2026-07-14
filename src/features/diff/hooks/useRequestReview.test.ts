@@ -108,7 +108,6 @@ test('requestReview records the pending request and dispatches to the pane', asy
   expect(dispatchReviewRequest).toHaveBeenCalledWith(
     'pty-9',
     request?.diffSnapshot,
-    false,
     'nonce-1',
     writePty
   )
@@ -130,12 +129,12 @@ test('requestReview dispatches resolvable prompt paths without changing the stor
     [
       {
         path: 'src/a.ts',
+        staged: false,
         promptPath: '/repo/src/a.ts',
         additions: [{ start: 40, end: 50 }],
         deletions: [{ start: 5, end: 7 }],
       },
     ],
-    false,
     'nonce-1',
     writePty
   )
@@ -153,7 +152,6 @@ test('copyReviewRequest records a request and copies the prompt', async () => {
   expect(request?.ownerKey).toBe('owner')
   expect(formatReviewRequest).toHaveBeenCalledWith(
     request?.diffSnapshot,
-    false,
     'nonce-1'
   )
   expect(writeClipboardText).toHaveBeenCalledWith('REVIEW_PROMPT')

@@ -145,7 +145,7 @@ export const useAgentReview = ({
       }
 
       const reviewer = event.reviewer ?? 'Reviewer'
-      const { ownerKey, cwd, staged, diffSnapshot, nonce } = request
+      const { ownerKey, cwd, diffSnapshot, nonce } = request
 
       // Malformed marker, or a valid-but-empty clean review.
       if (event.findings === null) {
@@ -201,14 +201,21 @@ export const useAgentReview = ({
           reviewer,
           downgradeToFile
         )
-        addAnnotationForOwner(ownerKey, cwd, finding.path, staged, annotation)
+        addAnnotationForOwner(
+          ownerKey,
+          cwd,
+          finding.path,
+          file.staged,
+          annotation
+        )
+
         byOrdinal.set(ordinal, {
           kind: 'anchored',
           commentId: annotation.metadata.id,
           handle: {
             cwd,
             filePath: finding.path,
-            staged,
+            staged: file.staged,
             lineNumber: annotation.lineNumber,
             side: annotation.side,
             target: annotation.metadata.target,
