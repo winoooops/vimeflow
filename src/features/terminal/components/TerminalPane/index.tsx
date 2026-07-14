@@ -12,15 +12,18 @@ import {
   type MouseEvent,
   type ReactElement,
 } from 'react'
-import { useGitBranch } from '../../../diff/hooks/useGitBranch'
-import { useGitStatus } from '../../../diff/hooks/useGitStatus'
-import { useGitWorktree } from '../../../diff/hooks/useGitWorktree'
-import type { Pane, Session } from '../../../sessions/types'
-import { agentForPane } from '../../../sessions/utils/agentForSession'
-import type { NotifyPaneReady } from '../../hooks/useTerminal'
-import type { BurnerTarget } from '../../hooks/useBurnerTerminals'
-import type { NativeGhosttyShortcutContext } from '../../nativeGhosttyClient'
-import type { ITerminalService } from '../../services/terminalService'
+import { useGitBranch } from '@/features/diff/hooks/useGitBranch'
+import { useGitStatus } from '@/features/diff/hooks/useGitStatus'
+import { useGitWorktree } from '@/features/diff/hooks/useGitWorktree'
+import type { Pane, Session } from '@/features/sessions/types'
+import { agentForPane } from '@/features/sessions/utils/agentForSession'
+import type { NotifyPaneReady } from '@/features/terminal/hooks/useTerminal'
+import type {
+  BurnerPlacement,
+  BurnerTarget,
+} from '@/features/terminal/hooks/useBurnerTerminals'
+import type { NativeGhosttyShortcutContext } from '@/features/terminal/nativeGhosttyClient'
+import type { ITerminalService } from '@/features/terminal/services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
 import type { BodyMode } from './Body'
 import { Header } from './Header'
@@ -64,6 +67,8 @@ export interface TerminalPaneProps {
   onBurner?: (target: BurnerTarget) => void
   /** Sync this pane's burner terminal back to the pane cwd. */
   onSyncBurner?: (target: BurnerTarget) => void
+  /** Cycle this pane's nested native burner around the four pane edges. */
+  onCycleBurnerPlacement?: (target: BurnerTarget) => void
   /** Make this pane active — the burner button focuses its pane (spec §8). */
   onRequestActive?: (sessionId: string, paneId: string) => void
   onRequestFocus?: () => void
@@ -75,6 +80,8 @@ export interface TerminalPaneProps {
   runningBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys whose burner terminal cwd has drifted from its host pane cwd. */
   outOfSyncBurnerPaneKeys?: ReadonlySet<string>
+  /** Native burner placement keyed by stable pane key. */
+  burnerPlacementByPane?: ReadonlyMap<string, BurnerPlacement>
   onCwdChange?: (cwd: string) => void
   onCommandSubmit?: (ptyId: string, command: string) => void
   onRestart?: (sessionId: string, paneId?: string) => void
@@ -116,12 +123,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       onClose = undefined,
       onBurner = undefined,
       onSyncBurner = undefined,
+      onCycleBurnerPlacement = undefined,
       onRequestActive = undefined,
       onRequestFocus = undefined,
       activeBurnerPaneKeys = undefined,
       openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
       outOfSyncBurnerPaneKeys = undefined,
+      burnerPlacementByPane = undefined,
       onCwdChange = undefined,
       onCommandSubmit = undefined,
       onRestart = undefined,
@@ -272,6 +281,23 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       pane.cwd,
     ])
 
+    const handleCycleBurnerPlacement = useCallback((): void => {
+      onRequestActive?.(session.id, pane.id)
+      onCycleBurnerPlacement?.({
+        sessionId: session.id,
+        paneId: pane.id,
+        hostPtyId: pane.ptyId,
+        cwd: pane.cwd,
+      })
+    }, [
+      onCycleBurnerPlacement,
+      onRequestActive,
+      pane.cwd,
+      pane.id,
+      pane.ptyId,
+      session.id,
+    ])
+
     const handleRestart = useCallback(
       (restartSessionId: string): void => {
         if (!pane.active) {
@@ -335,6 +361,12 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           onClose={onClose ? handleClose : undefined}
           onBurner={onBurner ? handleBurner : undefined}
           onSyncBurner={onSyncBurner ? handleSyncBurner : undefined}
+          onCycleBurnerPlacement={
+            onCycleBurnerPlacement ? handleCycleBurnerPlacement : undefined
+          }
+          burnerPlacement={burnerPlacementByPane?.get(
+            `${session.id}:${pane.id}`
+          )}
           burnerActive={
             activeBurnerPaneKeys?.has(`${session.id}:${pane.id}`) ?? false
           }

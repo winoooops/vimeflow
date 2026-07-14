@@ -17,18 +17,21 @@ import {
   type ReactNode,
 } from 'react'
 import { WorkspaceView } from './WorkspaceView'
-import { SettingsProvider, SettingsContext } from '../settings/SettingsProvider'
-import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
-import type { AppSettings } from '../../bindings/AppSettings'
-import type { SessionManager } from '../sessions/hooks/useSessionManager'
-import type { AgentStatus } from '../agent-status/types'
-import type { Session } from '../sessions/types'
+import {
+  SettingsProvider,
+  SettingsContext,
+} from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
+import type { AppSettings } from '@/bindings/AppSettings'
+import type { SessionManager } from '@/features/sessions/hooks/useSessionManager'
+import type { AgentStatus } from '@/features/agent-status/types'
+import type { Session } from '@/features/sessions/types'
 import type {
   TerminalZoneHandle,
   TerminalZoneProps,
 } from './components/TerminalZone'
 import type { WorkspaceOverlayRegistrationsProps } from './overlays/WorkspaceOverlayRegistrations'
-import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../terminal/layout-registry'
+import { BUILTIN_PANE_LAYOUT_REGISTRY } from '@/features/terminal/layout-registry'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -67,8 +70,8 @@ const backendListeners = vi.hoisted(
 )
 
 // Mock all WorkspaceView dependencies
-vi.mock('../sessions/hooks/useSessionManager')
-vi.mock('../../lib/backend', () => ({
+vi.mock('@/features/sessions/hooks/useSessionManager')
+vi.mock('@/lib/backend', () => ({
   renameAgentSession: vi.fn().mockResolvedValue(undefined),
   // Stubs for any other backend functions imported by the workspace tree.
   // listen/invoke return inert no-ops so the WorkspaceView mount under
@@ -88,8 +91,8 @@ vi.mock('../../lib/backend', () => ({
     /* no-op unlisten */
   }),
 }))
-vi.mock('../../hooks/useResizable')
-vi.mock('../../hooks/useElasticContainer', () => ({
+vi.mock('@/hooks/useResizable')
+vi.mock('@/hooks/useElasticContainer', () => ({
   useElasticContainer: vi.fn(() => ({
     size: 400,
     isDragging: false,
@@ -102,13 +105,13 @@ vi.mock('../../hooks/useElasticContainer', () => ({
   })),
 }))
 vi.mock('./hooks/useNotifyInfo')
-vi.mock('../agent-status/hooks/useAgentStatus')
-vi.mock('../diff/hooks/useGitStatus')
-vi.mock('../editor/hooks/useEditorBuffer')
-vi.mock('../files/services/fileSystemService')
-vi.mock('../terminal/services/terminalService')
-vi.mock('../terminal/hooks/usePaneShortcuts')
-vi.mock('../terminal/hooks/useBurnerTerminals', () => ({
+vi.mock('@/features/agent-status/hooks/useAgentStatus')
+vi.mock('@/features/diff/hooks/useGitStatus')
+vi.mock('@/features/editor/hooks/useEditorBuffer')
+vi.mock('@/features/files/services/fileSystemService')
+vi.mock('@/features/terminal/services/terminalService')
+vi.mock('@/features/terminal/hooks/usePaneShortcuts')
+vi.mock('@/features/terminal/hooks/useBurnerTerminals', () => ({
   useBurnerTerminals: vi.fn(),
 }))
 
@@ -170,14 +173,14 @@ vi.mock('./components/DockPanel', () => ({
   ),
 }))
 
-vi.mock('../agent-status/components/AgentStatusPanel', () => ({
+vi.mock('@/features/agent-status/components/AgentStatusPanel', () => ({
   AgentStatusPanel: (): ReactElement => (
     <div data-testid="agent-status-panel" />
   ),
   PANEL_WIDTH_PX: 280,
 }))
 
-vi.mock('../editor/components/UnsavedChangesDialog', () => ({
+vi.mock('@/features/editor/components/UnsavedChangesDialog', () => ({
   UnsavedChangesDialog: ({
     isOpen,
     onSave,
@@ -336,11 +339,11 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     // Mock useSessionManager
     const { useSessionManager } =
-      await import('../sessions/hooks/useSessionManager')
+      await import('@/features/sessions/hooks/useSessionManager')
     vi.mocked(useSessionManager).mockReturnValue(mockSessionManager)
 
     // Mock useResizable
-    const { useResizable } = await import('../../hooks/useResizable')
+    const { useResizable } = await import('@/hooks/useResizable')
     vi.mocked(useResizable).mockReturnValue({
       size: 272,
       isDragging: false,
@@ -360,13 +363,13 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     // Mock useAgentStatus
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({ sessionId: 'pty-session-1' })
     )
 
     // Mock useGitStatus
-    const { useGitStatus } = await import('../diff/hooks/useGitStatus')
+    const { useGitStatus } = await import('@/features/diff/hooks/useGitStatus')
     vi.mocked(useGitStatus).mockReturnValue({
       files: [],
       filesCwd: null,
@@ -377,7 +380,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
 
     // Mock useEditorBuffer
-    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+    const { useEditorBuffer } =
+      await import('@/features/editor/hooks/useEditorBuffer')
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: null,
       originalContent: '',
@@ -394,7 +398,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     // Mock fileSystemService
     const { createFileSystemService } =
-      await import('../files/services/fileSystemService')
+      await import('@/features/files/services/fileSystemService')
     vi.mocked(createFileSystemService).mockReturnValue({
       listDir: vi.fn().mockResolvedValue([]),
       readFile: vi.fn().mockResolvedValue(''),
@@ -406,7 +410,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     // Mock terminalService
     const { createTerminalService } =
-      await import('../terminal/services/terminalService')
+      await import('@/features/terminal/services/terminalService')
     vi.mocked(createTerminalService).mockReturnValue({
       spawn: vi.fn().mockResolvedValue({
         sessionId: 'new-id',
@@ -433,11 +437,13 @@ describe('WorkspaceView - Command Palette Integration', () => {
     })
 
     const { useBurnerTerminals } =
-      await import('../terminal/hooks/useBurnerTerminals')
+      await import('@/features/terminal/hooks/useBurnerTerminals')
     vi.mocked(useBurnerTerminals).mockReturnValue({
       renderNode: null,
       toggle: vi.fn().mockResolvedValue(undefined),
       syncToPaneCwd: vi.fn(),
+      cyclePlacement: vi.fn(),
+      placementByPane: new Map(),
       runningByPane: new Map(),
       activeByPane: new Map(),
       outOfSyncByPane: new Map(),
@@ -612,11 +618,13 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('occludes browser panes while a burner terminal popup is visible', async () => {
     const { useBurnerTerminals } =
-      await import('../terminal/hooks/useBurnerTerminals')
+      await import('@/features/terminal/hooks/useBurnerTerminals')
     vi.mocked(useBurnerTerminals).mockReturnValue({
       renderNode: <div data-testid="burner-terminal-popup" />,
       toggle: vi.fn().mockResolvedValue(undefined),
       syncToPaneCwd: vi.fn(),
+      cyclePlacement: vi.fn(),
+      placementByPane: new Map(),
       runningByPane: new Map(),
       activeByPane: new Map(),
       outOfSyncByPane: new Map(),
@@ -631,7 +639,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('records detected agent type on the active session', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       isActive: true,
       agentExited: false,
@@ -664,7 +672,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('invalidates the active Codex identity only for context switches', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         isActive: true,
@@ -714,7 +722,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     }
 
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       isActive: true,
       agentExited: true,
@@ -759,7 +767,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     mockSessionManager.activeSessionId = 'session-2'
 
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue({
       isActive: true,
       agentExited: false,
@@ -798,7 +806,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('shows status bar context and turns for the selected pane active agent', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         isActive: true,
@@ -836,7 +844,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('hides status bar context and turns for active agent status from another pane', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         isActive: true,
@@ -862,7 +870,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('hides the status bar context before the first contextWindow payload', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         isActive: true,
@@ -885,7 +893,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('shows a <1m duration for a sub-minute agent session', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         isActive: true,
@@ -936,7 +944,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test(':close command respects dirty-session guard', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn(() => true)
-    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    const { useEditorBuffer } =
+      await import('@/features/editor/hooks/useEditorBuffer')
 
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: 'src/current.ts',
@@ -974,7 +984,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test(':edit command respects dirty buffer guard', async () => {
     const user = userEvent.setup()
     const openFile = vi.fn()
-    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    const { useEditorBuffer } =
+      await import('@/features/editor/hooks/useEditorBuffer')
 
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: 'src/current.ts',
@@ -1014,7 +1026,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test(':open-file respects the dirty-buffer guard', async () => {
     const user = userEvent.setup()
     const openFile = vi.fn()
-    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    const { useEditorBuffer } =
+      await import('@/features/editor/hooks/useEditorBuffer')
 
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: 'src/current.ts',
@@ -1062,7 +1076,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test(':open-file surfaces the editor after dirty-buffer save', async () => {
     const user = userEvent.setup()
     const openFile = vi.fn()
-    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    const { useEditorBuffer } =
+      await import('@/features/editor/hooks/useEditorBuffer')
 
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: 'src/current.ts',
@@ -1108,7 +1124,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
   test('does not open the palette while the unsaved dialog is active', async () => {
     const user = userEvent.setup()
     const hasUnsavedChanges = vi.fn(() => true)
-    const { useEditorBuffer } = await import('../editor/hooks/useEditorBuffer')
+
+    const { useEditorBuffer } =
+      await import('@/features/editor/hooks/useEditorBuffer')
 
     vi.mocked(useEditorBuffer).mockReturnValue({
       filePath: 'src/current.ts',
@@ -1403,7 +1421,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('does not append a stale pane reading when agentStatus.sessionId mismatches the active pane', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         sessionId: 'pty-stale',
@@ -1430,7 +1448,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
   test('appends the reading when agentStatus.sessionId matches the active pane', async () => {
     const { useAgentStatus } =
-      await import('../agent-status/hooks/useAgentStatus')
+      await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
       createAgentStatus({
         sessionId: 'pty-session-1',

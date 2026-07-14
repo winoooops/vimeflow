@@ -12,19 +12,22 @@ import type {
   PaneKind,
   PanePlacement,
   Session,
-} from '../../sessions/types'
-import type { ITerminalService } from '../../terminal/services/terminalService'
-import type { BurnerTarget } from '../../terminal/hooks/useBurnerTerminals'
-import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
+} from '@/features/sessions/types'
+import type { ITerminalService } from '@/features/terminal/services/terminalService'
+import type {
+  BurnerPlacement,
+  BurnerTarget,
+} from '@/features/terminal/hooks/useBurnerTerminals'
+import type { PaneLayoutRegistry } from '@/features/terminal/layout-registry'
 import type {
   PaneEventHandler,
   NotifyPaneReadyResult,
-} from '../../sessions/hooks/useSessionManager'
+} from '@/features/sessions/hooks/useSessionManager'
 import {
   SplitView,
   type SplitViewHandle,
-} from '../../terminal/components/SplitView'
-import { TERMINAL_CONTAINER_ID } from '../containerIds'
+} from '@/features/terminal/components/SplitView'
+import { TERMINAL_CONTAINER_ID } from '@/features/workspace/containerIds'
 
 export interface TerminalZoneProps {
   sessions: Session[]
@@ -75,6 +78,10 @@ export interface TerminalZoneProps {
   onBurner?: (target: BurnerTarget) => void
   /** Sync a pane's burner terminal back to its host pane cwd. */
   onSyncBurner?: (target: BurnerTarget) => void
+  /** Cycle a pane's burner terminal placement. */
+  onCycleBurnerPlacement?: (target: BurnerTarget) => void
+  /** Burner terminal placement keyed by pane. */
+  burnerPlacementByPane?: ReadonlyMap<string, BurnerPlacement>
   /** Pane-keys with a foreground command running — drives the amber button tint (VIM-71). */
   activeBurnerPaneKeys?: ReadonlySet<string>
   /** Pane-keys whose burner secondary terminal is currently visible. */
@@ -113,6 +120,8 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       onContainerFocus = undefined,
       onBurner = undefined,
       onSyncBurner = undefined,
+      onCycleBurnerPlacement = undefined,
+      burnerPlacementByPane = undefined,
       activeBurnerPaneKeys = undefined,
       openBurnerPaneKeys = undefined,
       runningBurnerPaneKeys = undefined,
@@ -236,6 +245,8 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     onPanePlacementsChange={setSessionPlacements}
                     onBurner={onBurner}
                     onSyncBurner={onSyncBurner}
+                    onCycleBurnerPlacement={onCycleBurnerPlacement}
+                    burnerPlacementByPane={burnerPlacementByPane}
                     layoutRegistry={layoutRegistry}
                     activeBurnerPaneKeys={activeBurnerPaneKeys}
                     openBurnerPaneKeys={openBurnerPaneKeys}

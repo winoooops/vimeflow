@@ -3,9 +3,9 @@ import { afterEach, test, expect, vi } from 'vitest'
 import { render, renderHook, act, waitFor } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { useBurnerTerminals, type BurnerTarget } from './useBurnerTerminals'
-import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
-import type { ITerminalService } from '../services/terminalService'
-import * as chordRegistry from '../../command-palette/chordRegistry'
+import type { FocusedPaneRef } from '@/features/command-palette/hooks/usePaneRenameChord'
+import type { ITerminalService } from '@/features/terminal/services/terminalService'
+import * as chordRegistry from '@/features/command-palette/chordRegistry'
 
 afterEach(() => {
   delete (window as unknown as { vimeflow?: unknown }).vimeflow
@@ -146,6 +146,120 @@ test('different panes get independent shells (keyed per pane)', async () => {
   ])
 })
 
+test('native burner placement defaults to bottom and cycles per pane', async () => {
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const testWindow = window as unknown as { vimeflow?: unknown }
+  testWindow.vimeflow = {
+    ghosttyNative: {
+      attachSecondary: vi.fn(() => Promise.resolve({})),
+      secondaryData: vi.fn(() => Promise.resolve({})),
+      focusSecondary: vi.fn(() => Promise.resolve({})),
+      removeSecondary: vi.fn(() => Promise.resolve({})),
+      setSecondaryVisible: vi.fn(() => Promise.resolve({})),
+    },
+  }
+
+  const service = makeService()
+  service.spawn = countingSpawn()
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => makeFocusedPane(),
+    })
+  )
+
+  const firstTarget: BurnerTarget = {
+    sessionId: 's1',
+    paneId: 'p0',
+    hostPtyId: 'host-0',
+    cwd: '/a',
+  }
+
+  const secondTarget: BurnerTarget = {
+    sessionId: 's1',
+    paneId: 'p1',
+    hostPtyId: 'host-1',
+    cwd: '/b',
+  }
+
+  await act(async () => {
+    await result.current.toggle(firstTarget)
+    await result.current.toggle(secondTarget)
+  })
+
+  expect(result.current.placementByPane.get('s1:p0')).toBe('bottom')
+  expect(result.current.placementByPane.get('s1:p1')).toBe('bottom')
+
+  for (const placement of ['left', 'top', 'right', 'bottom']) {
+    act(() => {
+      result.current.cyclePlacement(firstTarget)
+    })
+
+    expect(result.current.placementByPane.get('s1:p0')).toBe(placement)
+    expect(result.current.placementByPane.get('s1:p1')).toBe('bottom')
+  }
+})
+
+test('native placement changes update the mounted child without reattaching', async () => {
+  vi.stubGlobal('navigator', { platform: 'MacIntel' })
+  const attachSecondary = vi.fn(() => Promise.resolve({}))
+  const setSecondaryVisible = vi.fn(() => Promise.resolve({}))
+  const testWindow = window as unknown as { vimeflow?: unknown }
+  testWindow.vimeflow = {
+    ghosttyNative: {
+      attachSecondary,
+      secondaryData: vi.fn(() => Promise.resolve({})),
+      focusSecondary: vi.fn(() => Promise.resolve({})),
+      removeSecondary: vi.fn(() => Promise.resolve({})),
+      setSecondaryVisible,
+    },
+  }
+
+  const service = makeService()
+
+  const target: BurnerTarget = {
+    sessionId: 's1',
+    paneId: 'p0',
+    hostPtyId: 'host-pty',
+    cwd: '/repo',
+  }
+
+  const { result } = renderHook(() =>
+    useBurnerTerminals({
+      service,
+      resolveFocusedPane: () => makeFocusedPane(),
+    })
+  )
+
+  await act(async () => {
+    await result.current.toggle(target)
+  })
+  const view = render(result.current.renderNode)
+
+  await waitFor(() => {
+    expect(attachSecondary).toHaveBeenCalledOnce()
+  })
+
+  act(() => {
+    result.current.cyclePlacement(target)
+  })
+  view.rerender(result.current.renderNode)
+
+  await waitFor(() => {
+    expect(setSecondaryVisible).toHaveBeenCalledWith({
+      sessionId: 'host-pty',
+      paneId: 'p0',
+      secondarySessionId: 'burner-pty',
+      visible: true,
+      placement: 'left',
+    })
+  })
+  expect(attachSecondary).toHaveBeenCalledOnce()
+
+  view.unmount()
+})
+
 test('the no-target chord hides a visible burner instead of switching to the focused pane', async () => {
   const service = makeService()
   let focused = makeFocusedPane('s1', 'p0', '/a')
@@ -266,6 +380,7 @@ test('keeps a native burner in the DOM fallback when secondary attach is unavail
     sessionId: 'host-pty',
     paneId: 'p0',
     secondarySessionId: 'burner-pty',
+    placement: 'bottom',
   })
   expect(service.kill).not.toHaveBeenCalled()
   expect(result.current.runningByPane.get('s1:p0')).toBe('running')
@@ -358,6 +473,7 @@ test('reattaches a native burner when the host pane pty rotates', async () => {
       sessionId: 'host-old',
       paneId: 'p0',
       secondarySessionId: 'burner-pty',
+      placement: 'bottom',
     })
   })
 
@@ -372,6 +488,7 @@ test('reattaches a native burner when the host pane pty rotates', async () => {
       sessionId: 'host-new',
       paneId: 'p0',
       secondarySessionId: 'burner-pty',
+      placement: 'bottom',
     })
   })
 
@@ -1402,6 +1519,7 @@ test('falls back to the DOM popup without killing the burner when native attach 
     sessionId: 'host-pty',
     paneId: 'p0',
     secondarySessionId: 'burner-pty',
+    placement: 'bottom',
   })
   expect(service.kill).not.toHaveBeenCalled()
   expect(result.current.runningByPane.get('s1:p0')).toBe('running')

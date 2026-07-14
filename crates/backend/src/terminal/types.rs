@@ -115,6 +115,19 @@ pub struct PtyExitEvent {
     pub code: Option<i32>,
 }
 
+/// Edge where a burner terminal is nested inside its host pane.
+#[allow(dead_code)] // Canonical source for the generated TypeScript binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum BurnerPlacement {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 /// Burner foreground-state event (emitted when a burner shell's foreground
 /// process changes). `running` is true while a foreground command holds the
 /// terminal, false when the shell is idle at its prompt or the platform can't

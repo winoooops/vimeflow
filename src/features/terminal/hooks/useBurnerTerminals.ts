@@ -9,11 +9,11 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import { BurnerTerminalPopup } from '../components/BurnerTerminalPopup'
-import { registerChord } from '../../command-palette/chordRegistry'
-import type { ITerminalService } from '../services/terminalService'
+import { BurnerTerminalPopup } from '@/features/terminal/components/BurnerTerminalPopup'
+import { registerChord } from '@/features/command-palette/chordRegistry'
+import type { ITerminalService } from '@/features/terminal/services/terminalService'
 import type { NotifyPaneReady } from './useTerminal'
-import type { FocusedPaneRef } from '../../command-palette/hooks/usePaneRenameChord'
+import type { FocusedPaneRef } from '@/features/command-palette/hooks/usePaneRenameChord'
 import {
   attachNativeGhosttySecondary,
   canUseNativeGhosttySecondary,
@@ -21,11 +21,21 @@ import {
   removeNativeGhosttySecondary,
   sendNativeGhosttySecondaryData,
   setNativeGhosttySecondaryVisible,
+  type NativeGhosttySecondaryPlacement,
   type NativeGhosttySecondaryRequest,
-} from '../nativeGhosttyClient'
-import { parseOsc7Cwd } from '../components/TerminalPane/osc7'
+} from '@/features/terminal/nativeGhosttyClient'
+import { parseOsc7Cwd } from '@/features/terminal/components/TerminalPane/osc7'
 
 type BurnerStatus = 'running' | 'exited'
+
+export type BurnerPlacement = NativeGhosttySecondaryPlacement
+
+const NEXT_BURNER_PLACEMENT: Record<BurnerPlacement, BurnerPlacement> = {
+  bottom: 'left',
+  left: 'top',
+  top: 'right',
+  right: 'bottom',
+}
 
 interface BurnerEntry {
   burnerPtyId: string
@@ -42,6 +52,8 @@ interface BurnerEntry {
   currentCwd: string
   /** A foreground command is currently running in the shell (VIM-71). */
   active: boolean
+  /** Nested native terminal edge, retained independently for each host pane. */
+  placement: BurnerPlacement
   /** Native secondary attach failed for this PTY; keep the shell and use DOM. */
   nativeUnavailable?: boolean
 }
@@ -92,6 +104,7 @@ const OSC7_SEQUENCE_PATTERN = /\u001b\]7;([^\u0007\u001b]*)(?:\u0007|\u001b\\)/g
 
 interface NativeGhosttyBurnerTerminalProps {
   open: boolean
+  placement: BurnerPlacement
   hostPtyId: string
   paneId: string
   burnerPtyId: string
@@ -103,6 +116,7 @@ interface NativeGhosttyBurnerTerminalProps {
 
 const NativeGhosttyBurnerTerminal = ({
   open,
+  placement,
   hostPtyId,
   paneId,
   burnerPtyId,
@@ -115,6 +129,8 @@ const NativeGhosttyBurnerTerminal = ({
   onCwdChangeRef.current = onCwdChange
   const onUnavailableRef = useRef(onUnavailable)
   onUnavailableRef.current = onUnavailable
+  const placementRef = useRef(placement)
+  placementRef.current = placement
   const visibilityRequestRef = useRef(0)
 
   const request = useMemo<NativeGhosttySecondaryRequest>(
@@ -160,7 +176,10 @@ const NativeGhosttyBurnerTerminal = ({
     const attach = async (): Promise<void> => {
       let enabled = false
       try {
-        enabled = await attachNativeGhosttySecondary(request)
+        enabled = await attachNativeGhosttySecondary({
+          ...request,
+          placement: placementRef.current,
+        })
       } catch {
         if (!isCancelled()) {
           onUnavailableRef.current()
@@ -224,7 +243,11 @@ const NativeGhosttyBurnerTerminal = ({
 
     void (async (): Promise<void> => {
       try {
-        await setNativeGhosttySecondaryVisible({ ...request, visible: open })
+        await setNativeGhosttySecondaryVisible({
+          ...request,
+          visible: open,
+          placement,
+        })
         if (visibilityRequestRef.current !== requestId) {
           return
         }
@@ -236,7 +259,7 @@ const NativeGhosttyBurnerTerminal = ({
         // Best effort: losing the native child should not break burner state.
       }
     })()
-  }, [open, request])
+  }, [open, placement, request])
 
   return null
 }
@@ -291,6 +314,10 @@ export interface UseBurnerTerminals {
   toggle: (target?: BurnerTarget) => Promise<void>
   /** Sync a pane's burner shell to its host pane's current directory. */
   syncToPaneCwd: (target: BurnerTarget) => void
+  /** Cycle a pane's nested native burner clockwise around its four edges. */
+  cyclePlacement: (target: BurnerTarget) => void
+  /** Native side-burner placement keyed by `${sessionId}:${paneId}`. */
+  placementByPane: ReadonlyMap<string, BurnerPlacement>
   /**
    * Running burner shells keyed by `${sessionId}:${paneId}` — drives the
    * live-but-hidden cues. Global across sessions (hide ≠ kill survives a
@@ -495,6 +522,7 @@ export const useBurnerTerminals = ({
           cwd: result.cwd,
           currentCwd: result.cwd,
           active: false,
+          placement: existing?.placement ?? 'bottom',
         })
         commit()
       } catch (err) {
@@ -581,6 +609,23 @@ export const useBurnerTerminals = ({
       alignCwd(paneKey(target.sessionId, target.paneId))
     },
     [alignCwd]
+  )
+
+  const cyclePlacement = useCallback(
+    (target: BurnerTarget): void => {
+      const key = paneKey(target.sessionId, target.paneId)
+      const entry = entriesRef.current.get(key)
+      if (!entry) {
+        return
+      }
+
+      entriesRef.current.set(key, {
+        ...entry,
+        placement: NEXT_BURNER_PLACEMENT[entry.placement],
+      })
+      commit()
+    },
+    [commit]
   )
 
   // `Mod+;` then backtick chord — registered once, calls the latest toggle via a ref.
@@ -763,6 +808,21 @@ export const useBurnerTerminals = ({
     return map
   }, [entries])
 
+  const placementByPane = useMemo(() => {
+    const map = new Map<string, BurnerPlacement>()
+    if (!canUseNativeGhosttySecondary()) {
+      return map
+    }
+
+    entries.forEach((entry, key) => {
+      if (entry.hostPtyId && !entry.nativeUnavailable) {
+        map.set(key, entry.placement)
+      }
+    })
+
+    return map
+  }, [entries])
+
   const outOfSyncByPane = useMemo(() => {
     const map = new Map<string, boolean>()
     entries.forEach((entry, key) => {
@@ -794,6 +854,7 @@ export const useBurnerTerminals = ({
               return createElement(NativeGhosttyBurnerTerminal, {
                 key: `${key}:${entry.burnerPtyId}`,
                 open: visibleKey === key,
+                placement: entry.placement,
                 hostPtyId: entry.hostPtyId,
                 paneId: entry.hostPaneId,
                 burnerPtyId: entry.burnerPtyId,
@@ -848,6 +909,8 @@ export const useBurnerTerminals = ({
     renderNode,
     toggle,
     syncToPaneCwd,
+    cyclePlacement,
+    placementByPane,
     runningByPane,
     activeByPane,
     outOfSyncByPane,

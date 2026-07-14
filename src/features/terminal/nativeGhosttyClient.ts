@@ -1,4 +1,5 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
+import type { BurnerPlacement } from '@/bindings'
 import type { ITerminalService } from './services/terminalService'
 
 export interface NativeGhosttyBounds {
@@ -38,12 +39,19 @@ export interface NativeGhosttySecondaryRequest extends NativeGhosttyPaneRef {
   secondarySessionId: string
 }
 
+export type NativeGhosttySecondaryPlacement = BurnerPlacement
+
+export interface NativeGhosttySecondaryAttachRequest extends NativeGhosttySecondaryRequest {
+  placement: NativeGhosttySecondaryPlacement
+}
+
 export interface NativeGhosttySecondaryDataRequest extends NativeGhosttySecondaryRequest {
   data: string
 }
 
 export interface NativeGhosttySecondaryVisibleRequest extends NativeGhosttySecondaryRequest {
   visible: boolean
+  placement: NativeGhosttySecondaryPlacement
 }
 
 export interface NativeGhosttyApi {
@@ -51,7 +59,9 @@ export interface NativeGhosttyApi {
   data: (request: NativeGhosttyDataRequest) => Promise<unknown>
   focus: (request: NativeGhosttyPaneRef) => Promise<unknown>
   destroy: (request: NativeGhosttyPaneRef) => Promise<unknown>
-  attachSecondary?: (request: NativeGhosttySecondaryRequest) => Promise<unknown>
+  attachSecondary?: (
+    request: NativeGhosttySecondaryAttachRequest
+  ) => Promise<unknown>
   secondaryData?: (
     request: NativeGhosttySecondaryDataRequest
   ) => Promise<unknown>
@@ -159,7 +169,7 @@ export const destroyNativeGhostty = async (
 }
 
 export const attachNativeGhosttySecondary = async (
-  request: NativeGhosttySecondaryRequest
+  request: NativeGhosttySecondaryAttachRequest
 ): Promise<boolean> => {
   const api = nativeGhosttyApi()
   if (!api?.attachSecondary) {

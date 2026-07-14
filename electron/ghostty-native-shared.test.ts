@@ -6,6 +6,7 @@ import {
   isNonEmptyString,
   isOptionalFiniteNumber,
   isRecord,
+  isSecondaryPlacement,
   isString,
 } from './ghostty-native-shared'
 
@@ -37,5 +38,12 @@ describe('ghostty native shared guards', () => {
     expect(isOptionalFiniteNumber(10)).toBe(true)
     expect(isOptionalFiniteNumber(Number.NaN)).toBe(false)
     expect(isOptionalFiniteNumber('10')).toBe(false)
+  })
+
+  test('validates secondary terminal placements', () => {
+    expect(['top', 'bottom', 'left', 'right'].every(isSecondaryPlacement)).toBe(
+      true
+    )
+    expect(isSecondaryPlacement('diagonal')).toBe(false)
   })
 })

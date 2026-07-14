@@ -2,9 +2,10 @@
 import { useEffect, useRef, type DragEvent, type ReactElement } from 'react'
 import { Chip } from '@/components/Chip'
 import { AgentGlyph } from '@/components/AgentGlyph'
-import type { Agent } from '../../../../agents/registry'
-import type { Session } from '../../../sessions/types'
-import { register, unregister } from '../../paneHeaderRefs'
+import type { Agent } from '@/agents/registry'
+import type { Session } from '@/features/sessions/types'
+import type { BurnerPlacement } from '@/features/terminal/hooks/useBurnerTerminals'
+import { register, unregister } from '@/features/terminal/paneHeaderRefs'
 import { HeaderActions } from './HeaderActions'
 
 export interface HeaderProps {
@@ -22,6 +23,8 @@ export interface HeaderProps {
   onClose?: () => void
   onBurner?: () => void
   onSyncBurner?: () => void
+  onCycleBurnerPlacement?: () => void
+  burnerPlacement?: BurnerPlacement
   burnerActive?: boolean
   burnerOpen?: boolean
   burnerShellExists?: boolean
@@ -51,6 +54,8 @@ export const Header = ({
   onClose = undefined,
   onBurner = undefined,
   onSyncBurner = undefined,
+  onCycleBurnerPlacement = undefined,
+  burnerPlacement = undefined,
   burnerActive = false,
   burnerOpen = false,
   burnerShellExists = false,
@@ -130,6 +135,8 @@ export const Header = ({
           onClose={onClose}
           onBurner={onBurner}
           onSyncBurner={onSyncBurner}
+          onCycleBurnerPlacement={onCycleBurnerPlacement}
+          burnerPlacement={burnerPlacement}
           burnerActive={burnerActive}
           burnerOpen={burnerOpen}
           burnerShellExists={burnerShellExists}
