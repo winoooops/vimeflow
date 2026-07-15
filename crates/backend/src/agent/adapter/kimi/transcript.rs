@@ -21,11 +21,12 @@ use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, Transcrip
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::types::{stamp_snapshot, StatusSnapshot, ValidateTranscriptError};
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_replay_summary, emit_agent_status, emit_agent_tool_call,
-    emit_agent_turn, record_lifecycle, record_tool_call, ReplayActivity,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_status,
+    emit_agent_tool_call, emit_agent_turn, record_lifecycle, record_tool_call, ReplayActivity,
 };
+use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
 use crate::agent::types::{
-    AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -601,6 +602,9 @@ struct KimiTranscriptDecoder {
     agent_prefix: String,
     in_flight: InFlightToolCalls,
     num_turns: u32,
+    /// Main-wire assistant text parts for the CURRENT turn (VIM-293) — whole
+    /// blocks, joined at `step.end`/`end_turn` and drained per turn.
+    turn_text: String,
     last_phase: Option<AgentPhase>,
     replay_phase: Option<AgentPhase>,
     /// Historical tool calls are folded here until the first clean EOF.
@@ -662,6 +666,7 @@ impl KimiTranscriptDecoder {
             agent_prefix,
             in_flight: HashMap::new(),
             num_turns: 0,
+            turn_text: String::new(),
             last_phase: None,
             replay_phase: None,
             replay_activity: ReplayActivity::default(),
@@ -749,6 +754,10 @@ impl KimiTranscriptDecoder {
             return;
         }
 
+        // A fresh user turn starts a fresh reply buffer; injection prompts
+        // (mid-turn) fall out above and must not clear accumulated text.
+        self.turn_text.clear();
+
         self.num_turns = self.num_turns.saturating_add(1);
         if self.replay_done {
             let event = AgentTurnEvent {
@@ -830,14 +839,69 @@ impl KimiTranscriptDecoder {
                     is_test_file: call.is_test_file,
                 });
             }
+            KimiLoopEventType::ContentPart => {
+                // Kimi appends whole assistant parts (not token deltas); only
+                // the main wire's `text` parts are reply prose — `think`
+                // blocks and sub-agent output never reach the buffer.
+                if !self.is_main() {
+                    return;
+                }
+                let Some(text) = event
+                    .part
+                    .as_ref()
+                    .filter(|part| part.type_tag.as_deref() == Some("text"))
+                    .and_then(|part| part.text.as_deref())
+                    .filter(|text| !text.is_empty())
+                else {
+                    return;
+                };
+                if !self.turn_text.is_empty() {
+                    self.turn_text.push('\n');
+                }
+                self.turn_text.push_str(text);
+            }
             KimiLoopEventType::StepEnd => {
                 // Only the main wire's `end_turn` settles the pane idle; a
                 // sub-agent finishing a step must not, while main runs on.
                 if self.is_main() && event.finish_reason.as_deref() == Some("end_turn") {
+                    self.flush_turn_reply();
                     self.record_phase(AgentPhase::Idle);
                 }
             }
             KimiLoopEventType::Other => {}
+        }
+    }
+
+    /// The main wire's turn ended: extract a `VIMEFLOW_REPLY` block from the
+    /// accumulated text parts and emit it (VIM-293). The buffer drains per
+    /// turn regardless — replayed turns are drained without emitting,
+    /// mirroring codex/claude_code's `replay_done` gate.
+    fn flush_turn_reply(&mut self) {
+        let reply_text = std::mem::take(&mut self.turn_text);
+        if !self.replay_done {
+            return;
+        }
+        let Some(outcome) = extract_agent_reply(&reply_text) else {
+            return;
+        };
+
+        let (raw_text, nonce, replies) = match outcome {
+            AgentReplyOutcome::Structured {
+                raw,
+                nonce,
+                replies,
+            } => (raw, Some(nonce), Some(replies)),
+            AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
+        };
+
+        let event = AgentReplyEvent {
+            session_id: self.session_id.clone(),
+            nonce,
+            raw_text,
+            replies,
+        };
+        if let Err(e) = emit_agent_reply(self.events.as_ref(), &event) {
+            log::warn!("Failed to emit agent-reply event: {}", e);
         }
     }
 
@@ -1677,5 +1741,104 @@ mod tests {
             1,
             "duplicate START suppressed"
         );
+    }
+
+    // --- agent-reply capture (VIM-293) ---
+
+    fn agent_reply_events(sink: &FakeEventSink) -> Vec<Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-reply")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
+    fn content_part_line(part_type: &str, key: &str, body: &str) -> String {
+        json!({
+            "type": "context.append_loop_event",
+            "event": {
+                "type": "content.part",
+                "turnId": "0",
+                "part": { "type": part_type, key: body }
+            }
+        })
+        .to_string()
+    }
+
+    const KIMI_SENTINEL_REPLY: &str = "<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc123\",\"replies\":[{\"id\":1,\"status\":\"reply\",\"text\":\"done\"}]}\nVIMEFLOW_REPLY>>>";
+    const END_TURN: &str = r#"{"type":"context.append_loop_event","event":{"type":"step.end","finishReason":"end_turn"}}"#;
+
+    #[test]
+    fn text_parts_flush_one_reply_at_main_end_turn_and_reset_per_turn() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+
+        // Turn 1: the think part carries a DECOY sentinel block — if think
+        // text leaked into the buffer, extraction would find the decoy first
+        // and the nonce assertion below would fail. The real block sits in
+        // the second text part, proving the join spans parts.
+        let decoy = KIMI_SENTINEL_REPLY.replace("abc123", "decoy0");
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("think", "think", &decoy));
+        decoder.decode_line(&content_part_line("text", "text", "answer prose"));
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
+        decoder.decode_line(END_TURN);
+
+        let replies = agent_reply_events(&sink);
+        assert_eq!(replies.len(), 1, "one reply per completed turn");
+        assert_eq!(replies[0]["nonce"], "abc123");
+        // rawText is the extracted block (codex/claude semantics), not the
+        // surrounding prose.
+        let raw = replies[0]["rawText"].as_str().expect("rawText string");
+        assert!(raw.contains("\"nonce\":\"abc123\""), "raw block: {raw}");
+
+        // Turn 2: no sentinel — the buffer must have reset, nothing emits.
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("text", "text", "plain answer"));
+        decoder.decode_line(END_TURN);
+        assert_eq!(
+            agent_reply_events(&sink).len(),
+            1,
+            "no sentinel, no second emit — turn-1 text must not leak"
+        );
+    }
+
+    #[test]
+    fn sub_agent_text_parts_never_emit_replies() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = KimiTranscriptDecoder::new(
+            sink.clone(),
+            "sid".into(),
+            "session_x".into(),
+            "agent-0:".into(),
+        );
+        decoder.on_caught_up();
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
+        decoder.decode_line(END_TURN);
+        assert_eq!(sink.count("agent-reply"), 0);
+    }
+
+    #[test]
+    fn replayed_turns_drain_the_buffer_without_emitting() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+
+        // Historic turn replayed before caught-up: no emit, buffer drained.
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
+        decoder.decode_line(END_TURN);
+        decoder.on_caught_up();
+        assert_eq!(
+            sink.count("agent-reply"),
+            0,
+            "replayed reply is not re-emitted"
+        );
+
+        // Live turn after caught-up emits normally.
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
+        decoder.decode_line(END_TURN);
+        assert_eq!(sink.count("agent-reply"), 1);
     }
 }

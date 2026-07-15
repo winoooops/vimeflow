@@ -29,6 +29,7 @@ pub(super) enum KimiRecordType {
 pub(super) enum KimiLoopEventType {
     ToolCall,
     ToolResult,
+    ContentPart,
     StepEnd,
     Other,
 }
@@ -146,6 +147,12 @@ pub(super) struct KimiLoopEventDto {
     /// `step.end` finish reason — `"tool_use"` / `"end_turn"`.
     #[serde(default, rename = "finishReason", deserialize_with = "lenient_string")]
     pub finish_reason: Option<String>,
+
+    /// `content.part` completed assistant part — `{type, text|think}`. Kimi
+    /// appends whole parts (not token deltas); only `type == "text"` carries
+    /// reply prose (VIM-293).
+    #[serde(default)]
+    pub part: Option<KimiContentPartDto>,
 }
 
 impl KimiLoopEventDto {
@@ -153,10 +160,22 @@ impl KimiLoopEventDto {
         match self.type_tag.as_deref() {
             Some("tool.call") => KimiLoopEventType::ToolCall,
             Some("tool.result") => KimiLoopEventType::ToolResult,
+            Some("content.part") => KimiLoopEventType::ContentPart,
             Some("step.end") => KimiLoopEventType::StepEnd,
             _ => KimiLoopEventType::Other,
         }
     }
+}
+
+/// `content.part.part` — one completed assistant content block. `think`
+/// blocks carry a `think` field instead of `text`; only `text` is buffered.
+#[derive(Deserialize, Default)]
+pub(super) struct KimiContentPartDto {
+    #[serde(rename = "type", default, deserialize_with = "lenient_string")]
+    pub type_tag: Option<String>,
+
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub text: Option<String>,
 }
 
 /// `tool.call.display` — carries a resolved absolute `path` for file ops.
@@ -239,6 +258,28 @@ mod tests {
             event.display.and_then(|d| d.path).as_deref(),
             Some("/tmp/kimi-probe/note.txt")
         );
+    }
+
+    #[test]
+    fn loop_event_content_part_parses_text_and_skips_think() {
+        // Mirrors a real wire line: the part is a COMPLETE block, not a delta.
+        let line: KimiLineDto = serde_json::from_str(
+            r#"{"type":"context.append_loop_event","event":{"type":"content.part","uuid":"u1","turnId":"0","step":1,"part":{"type":"text","text":"the reply prose"}}}"#,
+        )
+        .unwrap();
+        let event = line.event.expect("event present");
+        assert_eq!(event.loop_event_type(), KimiLoopEventType::ContentPart);
+        let part = event.part.expect("part present");
+        assert_eq!(part.type_tag.as_deref(), Some("text"));
+        assert_eq!(part.text.as_deref(), Some("the reply prose"));
+
+        let think: KimiLineDto = serde_json::from_str(
+            r#"{"type":"context.append_loop_event","event":{"type":"content.part","part":{"type":"think","think":"reasoning"}}}"#,
+        )
+        .unwrap();
+        let think_part = think.event.expect("event").part.expect("part");
+        assert_eq!(think_part.type_tag.as_deref(), Some("think"));
+        assert_eq!(think_part.text, None);
     }
 
     #[test]
