@@ -528,6 +528,21 @@ const platformShortcutModifier = (): { control: boolean; meta: boolean } =>
     ? { control: false, meta: true }
     : { control: true, meta: false }
 
+const activityPanelShortcutInput = (): {
+  key: string
+  code: string
+  control: boolean
+  meta: boolean
+  alt: boolean
+  shift: boolean
+} => ({
+  key: process.platform === 'darwin' ? 'r' : 'R',
+  code: 'KeyR',
+  ...platformShortcutModifier(),
+  alt: false,
+  shift: process.platform !== 'darwin',
+})
+
 const handler = (channel: string): IpcHandler => {
   const registered = electronMock.handlers.get(channel)
   if (!registered) {
@@ -2255,7 +2270,7 @@ describe('BrowserPaneController', () => {
     expect(electronMock.views[0]?.webContents.focus).toHaveBeenCalled()
   })
 
-  test('forwards Meta+R to the workspace and restores browser focus', async () => {
+  test('forwards the activity panel shortcut to the workspace and restores browser focus', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
       paneId: 'p1',
@@ -2280,10 +2295,7 @@ describe('BrowserPaneController', () => {
       { preventDefault },
       {
         type: 'keyDown',
-        key: 'r',
-        code: 'KeyR',
-        ...platformShortcutModifier(),
-        alt: false,
+        ...activityPanelShortcutInput(),
       }
     )
 
@@ -2317,10 +2329,7 @@ describe('BrowserPaneController', () => {
       { preventDefault },
       {
         type: 'keyDown',
-        key: 'r',
-        code: 'KeyR',
-        ...platformShortcutModifier(),
-        alt: false,
+        ...activityPanelShortcutInput(),
         isAutoRepeat: true,
       }
     )
