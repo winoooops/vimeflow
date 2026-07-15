@@ -393,16 +393,19 @@ const now = (): number => Date.now()
 
 // --- assistant reply capture (VIM-293) ---
 //
-// Buffer the LATEST snapshot of each assistant text part in memory (a
+// Buffer the LATEST snapshot of each text part in memory (a
 // `message.part.updated` carries the part's full text-so-far, so overwrite by
-// part id — never append) and write ONE aggregated `assistant.text` record at
-// `session.idle`, then reset. Raw text parts are never written per-update
-// (that would re-serialize the growing text on every delta), and user parts
-// are never buffered — the dispatched review/feedback prompt itself contains
-// an example VIMEFLOW_REPLY block that must not round-trip as a reply.
-const MAX_REPLY_TEXT = 8192
+// part id — never append), keyed by message id so a part arriving before its
+// `message.updated` is tolerated. At `session.idle`, join ONLY the parts of
+// registered ASSISTANT messages into one tail-clamped `assistant.text` record,
+// then reset. Raw text parts are never written per-update, and user text is
+// buffered in memory only and never flushed — the dispatched review/feedback
+// prompt itself contains an example VIMEFLOW_REPLY block that must not
+// round-trip as a reply.
+const MAX_REPLY_TEXT = 32768
 const assistantMessages = new Map<string, Set<string>>()
-const assistantTextParts = new Map<string, Map<string, string>>()
+// sessionID → messageID → partID → latest text snapshot.
+const sessionTextParts = new Map<string, Map<string, Map<string, string>>>()
 
 const trackAssistantMessage = (info: any): void => {
   const record = asObject(info)
@@ -427,7 +430,7 @@ const trackAssistantMessage = (info: any): void => {
   ids.add(messageID)
 }
 
-const bufferAssistantTextPart = (part: any): void => {
+const bufferTextPart = (part: any): void => {
   const record = asObject(part)
   const sessionID = record.sessionID
   const messageID = record.messageID
@@ -444,18 +447,30 @@ const bufferAssistantTextPart = (part: any): void => {
     return
   }
 
-  if (assistantMessages.get(sessionID)?.has(messageID) !== true) {
-    return
+  let messages = sessionTextParts.get(sessionID)
+
+  if (messages === undefined) {
+    messages = new Map()
+    sessionTextParts.set(sessionID, messages)
   }
 
-  let parts = assistantTextParts.get(sessionID)
+  let parts = messages.get(messageID)
 
   if (parts === undefined) {
     parts = new Map()
-    assistantTextParts.set(sessionID, parts)
+    messages.set(messageID, parts)
   }
 
   parts.set(partID, text)
+}
+
+const clearAssistantBuffers = (sessionID: any): void => {
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  sessionTextParts.delete(sessionID)
+  assistantMessages.delete(sessionID)
 }
 
 const flushAssistantText = (sessionID: any): void => {
@@ -463,15 +478,31 @@ const flushAssistantText = (sessionID: any): void => {
     return
   }
 
-  const parts = assistantTextParts.get(sessionID)
-  assistantTextParts.delete(sessionID)
-  assistantMessages.delete(sessionID)
+  const messages = sessionTextParts.get(sessionID)
+  const assistantIds = assistantMessages.get(sessionID)
+  clearAssistantBuffers(sessionID)
 
-  if (parts === undefined || parts.size === 0) {
+  if (messages === undefined || assistantIds === undefined) {
     return
   }
 
-  const joined = [...parts.values()].join('\n')
+  const chunks: string[] = []
+
+  for (const [messageID, parts] of messages) {
+    if (!assistantIds.has(messageID)) {
+      continue
+    }
+
+    for (const text of parts.values()) {
+      chunks.push(text)
+    }
+  }
+
+  if (chunks.length === 0) {
+    return
+  }
+
+  const joined = chunks.join('\n')
   // Keep the TAIL — the reply contract puts the sentinel block at the end.
   const text =
     joined.length > MAX_REPLY_TEXT ? joined.slice(-MAX_REPLY_TEXT) : joined
@@ -550,10 +581,11 @@ const handleEvent = (event: any): void => {
     const partType =
       part != null && typeof part === 'object' ? part.type : undefined
 
-    // Assistant text parts are buffered in memory (VIM-293) — aggregated
-    // into one `assistant.text` record at session.idle, never written raw.
+    // Text parts are buffered in memory (VIM-293) — assistant ones are
+    // aggregated into one `assistant.text` record at session.idle; none are
+    // ever written raw.
     if (partType === 'text') {
-      bufferAssistantTextPart(part)
+      bufferTextPart(part)
 
       return
     }
@@ -569,6 +601,12 @@ const handleEvent = (event: any): void => {
 
   if (type === 'session.idle') {
     flushAssistantText(properties.sessionID)
+  }
+
+  // A turn ending in error never reaches idle — drop its buffers so the next
+  // idle can't flush stale text from the failed turn.
+  if (type === 'session.error') {
+    clearAssistantBuffers(properties.sessionID)
   }
 
   if (type === 'session.created' || type === 'session.updated') {

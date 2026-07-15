@@ -47,8 +47,18 @@ struct ReplyDto {
 /// None → no open sentinel (not a reply, caller emits nothing).
 /// Some(Malformed) → sentinel present but truncated or schema-invalid.
 /// Some(Structured) → schema-valid.
+///
+/// The LAST complete block wins: the dispatch contract says "END your reply
+/// with this exact block", and adapters that scan a whole turn's text (kimi,
+/// opencode) can legitimately contain an earlier restatement of the
+/// instructed example — which carries the real nonce. Trailing orphan opens
+/// after the last close don't shadow a complete block; with no close at all,
+/// the last open still degrades to Malformed-with-nonce.
 pub(crate) fn extract_agent_reply(reply_text: &str) -> Option<AgentReplyOutcome> {
-    let open_at = reply_text.find(OPEN)?;
+    let open_at = reply_text
+        .rfind(CLOSE)
+        .and_then(|last_close| reply_text[..last_close].rfind(OPEN))
+        .or_else(|| reply_text.rfind(OPEN))?;
     let after_open = open_at + OPEN.len();
     let Some(close_rel) = reply_text[after_open..].find(CLOSE) else {
         let json = normalize_reply_json(reply_text[after_open..].trim());
@@ -166,6 +176,37 @@ mod tests {
     #[test]
     fn no_sentinel_returns_none() {
         assert_eq!(extract_agent_reply("just a normal reply"), None);
+    }
+
+    #[test]
+    fn last_complete_block_wins_over_restated_example() {
+        // An agent may restate the instructed example (real nonce!) before the
+        // actual closing block — whole-turn scanners (kimi/opencode) see both.
+        let example =
+            block(r#"{"v":1,"nonce":"real42","replies":[{"id":1,"status":"reply","text":"..."}]}"#);
+        let real = block(
+            r#"{"v":1,"nonce":"real42","replies":[{"id":1,"status":"resolved","text":"actually done"}]}"#,
+        );
+        let text = format!("I'll end with this block:\n{example}\n…work…\n{real}");
+
+        let outcome = extract_agent_reply(&text).expect("block found");
+        let AgentReplyOutcome::Structured { replies, .. } = outcome else {
+            panic!("expected structured outcome");
+        };
+        assert_eq!(replies[0].text, "actually done");
+    }
+
+    #[test]
+    fn trailing_orphan_open_does_not_shadow_a_complete_block() {
+        let real =
+            block(r#"{"v":1,"nonce":"n1","replies":[{"id":1,"status":"reply","text":"t"}]}"#);
+        let text = format!("{real}\np.s. the marker was {OPEN}");
+
+        let outcome = extract_agent_reply(&text).expect("block found");
+        assert!(
+            matches!(outcome, AgentReplyOutcome::Structured { ref nonce, .. } if nonce == "n1"),
+            "complete block wins over the trailing orphan open: {outcome:?}"
+        );
     }
 
     #[test]

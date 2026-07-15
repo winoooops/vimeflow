@@ -33,6 +33,11 @@ use crate::runtime::EventSink;
 /// Maximum length for the args summary string.
 const MAX_ARGS_LEN: usize = 1024;
 
+/// Per-turn reply-text buffer cap (VIM-293) — tail-kept, since the reply
+/// contract puts the sentinel block at the end of the turn. Matches the
+/// opencode bridge plugin's `MAX_REPLY_TEXT`.
+const MAX_TURN_TEXT_BYTES: usize = 32 * 1024;
+
 /// How often the session supervisor rescans `state.json` for newly-spawned
 /// sub-agents, and the tick at which it checks the stop flag while waiting.
 const KIMI_AGENT_SCAN_INTERVAL_MS: u64 = 750;
@@ -859,6 +864,15 @@ impl KimiTranscriptDecoder {
                     self.turn_text.push('\n');
                 }
                 self.turn_text.push_str(text);
+                // Tail-clamp so a pathological turn stays bounded — the reply
+                // contract puts the sentinel block at the END of the turn.
+                if self.turn_text.len() > MAX_TURN_TEXT_BYTES {
+                    let excess = self.turn_text.len() - MAX_TURN_TEXT_BYTES;
+                    let cut = (excess..self.turn_text.len())
+                        .find(|&i| self.turn_text.is_char_boundary(i))
+                        .unwrap_or(excess);
+                    self.turn_text.drain(..cut);
+                }
             }
             KimiLoopEventType::StepEnd => {
                 // Only the main wire's `end_turn` settles the pane idle; a
@@ -1818,6 +1832,54 @@ mod tests {
         decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
         decoder.decode_line(END_TURN);
         assert_eq!(sink.count("agent-reply"), 0);
+    }
+
+    #[test]
+    fn mid_turn_tool_use_step_end_neither_flushes_nor_clears() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("text", "text", "answer prose"));
+        // A tool step ends mid-turn — must neither flush nor drop the buffer.
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","event":{"type":"step.end","finishReason":"tool_use"}}"#,
+        );
+        assert_eq!(
+            sink.count("agent-reply"),
+            0,
+            "tool_use step.end must not flush"
+        );
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
+        decoder.decode_line(END_TURN);
+
+        let replies = agent_reply_events(&sink);
+        assert_eq!(replies.len(), 1, "exactly one emit, at end_turn");
+        assert_eq!(replies[0]["nonce"], "abc123");
+    }
+
+    #[test]
+    fn aborted_turn_buffer_never_leaks_into_the_next_turn() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+
+        // Turn 1 carries a sentinel but is aborted — no end_turn arrives.
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REPLY));
+        // Turn 2: the fresh user prompt must clear the stale buffer.
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("text", "text", "plain answer"));
+        decoder.decode_line(END_TURN);
+
+        assert_eq!(
+            sink.count("agent-reply"),
+            0,
+            "turn-1's sentinel must not emit from turn-2's end_turn"
+        );
     }
 
     #[test]
