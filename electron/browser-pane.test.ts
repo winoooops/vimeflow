@@ -2506,7 +2506,9 @@ describe('BrowserPaneController', () => {
     )
 
     expect(preventDefault).not.toHaveBeenCalled()
-    expect(electronMock.win.webContents.executeJavaScript).not.toHaveBeenCalled()
+    expect(
+      electronMock.win.webContents.executeJavaScript
+    ).not.toHaveBeenCalled()
   })
 
   test('does not refocus the native pane after a forwarded dock shortcut', async () => {

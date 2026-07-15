@@ -2,8 +2,8 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-07-13
-ref_count: 7
+last_updated: 2026-07-15
+ref_count: 8
 ---
 
 # Dead Code
@@ -104,3 +104,15 @@ code and should be removed.
 - **Fix:** Removed the obsolete snapshot ref and returned the in-flight alias
   config promise result directly.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Keymap capture state accessor exported without a caller
+
+- **Source:** github-claude | PR #698 round 2 | 2026-07-15
+- **Severity:** LOW
+- **File:** `electron/command-palette-shortcut.ts`
+- **Finding:** `isKeymapCaptureActive` exposed `captureActiveByWindow` as a
+  public helper, but no Electron, renderer, or test call site used the export.
+  The capture state itself was still consumed internally by the command-palette
+  shortcut dispatcher, so only the exported accessor was dead surface.
+- **Fix:** Removed the unused export while keeping `setKeymapCaptureActive` and
+  the existing internal capture guard intact.

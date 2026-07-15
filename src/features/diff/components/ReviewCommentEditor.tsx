@@ -245,24 +245,23 @@ export const ReviewCommentEditor = ({
           .join(' ')}
         onChange={(e): void => updateText(e.target.value)}
         onKeyDownCapture={(e): void => {
-          if (mode !== 'reply') {
-            let direction: 1 | -1 | null = null
+          let direction: 1 | -1 | null = null
 
-            if (matches(e.nativeEvent, 'diff-comment-category-next')) {
-              direction = 1
-            } else if (
-              matches(e.nativeEvent, 'diff-comment-category-previous')
-            ) {
-              direction = -1
-            }
+          if (matches(e.nativeEvent, 'diff-comment-category-next')) {
+            direction = 1
+          } else if (matches(e.nativeEvent, 'diff-comment-category-previous')) {
+            direction = -1
+          }
 
-            if (direction !== null) {
-              e.preventDefault()
-              e.stopPropagation()
+          if (direction !== null) {
+            e.preventDefault()
+            e.stopPropagation()
+
+            if (mode !== 'reply') {
               cycleCategory(direction)
-
-              return
             }
+
+            return
           }
 
           if (matches(e.nativeEvent, 'diff-comment-insert-newline')) {
