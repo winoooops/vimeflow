@@ -12,7 +12,7 @@ import {
   type ReactElement,
 } from 'react'
 import type { Pane, Session } from '../../sessions/types'
-import { isMacPlatform } from '../../../lib/formatShortcut'
+import { useKeybindings } from '../../keymap/useKeybindings'
 import {
   activateBrowserPaneTab,
   closeBrowserPaneTab,
@@ -86,6 +86,7 @@ export const BrowserPane = ({
   shortcutHint = undefined,
   showFocusHighlight = true,
 }: BrowserPaneProps): ReactElement => {
+  const { matches } = useKeybindings()
   const contentRef = useRef<HTMLDivElement>(null)
   const url = pane.browserUrl ?? DEFAULT_BROWSER_URL
   const initialUrlRef = useRef(url)
@@ -656,21 +657,12 @@ export const BrowserPane = ({
 
   const handleChromeKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>): void => {
-      const withModifier = isMacPlatform()
-        ? event.metaKey && !event.ctrlKey
-        : event.ctrlKey && !event.metaKey
-      if (
-        withModifier &&
-        !event.altKey &&
-        !event.shiftKey &&
-        !event.repeat &&
-        event.code === 'KeyL'
-      ) {
+      if (!event.repeat && matches(event.nativeEvent, 'browser-location')) {
         event.preventDefault()
         setIsEditing(true)
       }
     },
-    []
+    [matches]
   )
 
   const isFocusVisible = showFocusHighlight && pane.active

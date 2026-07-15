@@ -2,6 +2,9 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
+import { getCommand } from '@/features/keymap/catalog'
+import { resolveDefault } from '@/features/keymap/resolve'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
 import { DiffChipToolbar, type DiffChipToolbarProps } from './DiffChipToolbar'
 
 // Capture the ResizeObserver callback so the test can flush PriorityPlus
@@ -107,10 +110,14 @@ type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
 type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
 type Overflow = NonNullable<BaseDiffOptions['overflow']>
 
+const defaultBindingFor: Keybindings['bindingFor'] = (id) =>
+  resolveDefault(getCommand(id), false)
+
 const renderToolbar = (
   overrides: Partial<DiffChipToolbarProps> = {}
 ): ReturnType<typeof render> => {
   const baseProps: DiffChipToolbarProps = {
+    bindingFor: defaultBindingFor,
     diffMode: 'unstaged',
     diffStyle: 'split',
     onDiffStyleChange: vi.fn<(next: DiffStyle) => void>(),
@@ -789,7 +796,8 @@ describe('DiffChipToolbar', () => {
       name: /finish feedback \(3\)/i,
     })
     expect(finish).toBeInTheDocument()
-    expect(finish).toHaveAttribute('aria-keyshortcuts', 'Y')
+    expect(finish).toHaveAttribute('aria-keyshortcuts', 'Shift+Y')
+    expect(finish).toHaveTextContent('Finish (Shift+Y)')
     // The count pill surfaces the number on the button text.
     expect(finish).toHaveTextContent('3')
 
@@ -829,7 +837,7 @@ describe('DiffChipToolbar', () => {
 
     const button = screen.getByRole('button', { name: /request review/i })
     expect(button).toBeInTheDocument()
-    expect(button).toHaveAttribute('aria-keyshortcuts', '@')
+    expect(button).toHaveAttribute('aria-keyshortcuts', 'Shift+2')
   })
 
   test('omits the Request review button when onRequestReview is undefined', () => {
@@ -873,13 +881,38 @@ describe('DiffChipToolbar', () => {
     const refresh = screen.getByRole('button', { name: 'refresh diff' })
     expect(refresh).toHaveTextContent('Refresh diff')
     expect(refresh).toHaveAttribute('aria-keyshortcuts', 'r')
-    expect(within(refresh).getByText('r')).toHaveAttribute(
+    expect(within(refresh).getByText('R')).toHaveAttribute(
       'aria-hidden',
       'true'
     )
 
     await user.click(refresh)
     expect(onRefresh).toHaveBeenCalledTimes(1)
+  })
+
+  test('renders a live keybinding override in its tooltip, label, and ARIA shortcut', async () => {
+    setNavigatorPlatform('Win32')
+
+    const user = userEvent.setup()
+
+    const bindingFor: Keybindings['bindingFor'] = (id) =>
+      id === 'diff-refresh'
+        ? { code: 'ArrowDown', mods: new Set(['Shift']) }
+        : defaultBindingFor(id)
+
+    renderToolbar({
+      bindingFor,
+      onRefreshActiveFile: vi.fn<() => void>(),
+    })
+
+    const refresh = screen.getByRole('button', { name: 'refresh diff' })
+    expect(refresh).toHaveAttribute('aria-keyshortcuts', 'Shift+ArrowDown')
+    expect(within(refresh).getByText('Shift+↓')).toBeInTheDocument()
+
+    await user.hover(refresh)
+    expect(await screen.findByTestId('tooltip-shortcut')).toHaveTextContent(
+      'Shift+↓'
+    )
   })
 
   test('the pinned feedback actions render outside PriorityPlus (never overflow)', () => {

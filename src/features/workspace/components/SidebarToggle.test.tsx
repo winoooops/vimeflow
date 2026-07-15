@@ -66,6 +66,15 @@ describe('SidebarToggle', () => {
     )
   })
 
+  test('exposes a configured shortcut to assistive technology', () => {
+    renderToggle({ collapsed: false, ariaKeyshortcuts: 'Meta+r' })
+
+    expect(screen.getByRole('button')).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Meta+r'
+    )
+  })
+
   // Open glyph = outline rect + rail-fill rect (2); collapsed glyph drops the
   // rail fill (1). The divider <path> is always drawn either way. SVG shapes
   // have no accessible role, so container.querySelectorAll is the only option.

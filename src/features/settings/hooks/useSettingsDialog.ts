@@ -67,11 +67,16 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
 
       const isMac = isMacPlatform()
 
-      const isSuper = isMac
-        ? event.metaKey && !event.ctrlKey
+      const isSettingsModifier = isMac
+        ? event.metaKey !== event.ctrlKey
         : event.ctrlKey && !event.metaKey
 
-      if (isSuper && event.key === ',' && !event.altKey && !event.shiftKey) {
+      if (
+        isSettingsModifier &&
+        event.key === ',' &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
         event.preventDefault()
         handlersRef.current.toggle()
 

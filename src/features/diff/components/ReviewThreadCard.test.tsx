@@ -1,8 +1,23 @@
 import { describe, expect, test, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement, ReactNode } from 'react'
+import { SettingsContext } from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import type { ThreadGroup } from '../services/threadGroups'
 import { ReviewThreadCard } from './ReviewThreadCard'
+
+const SettingsFixture = ({
+  children,
+}: {
+  children: ReactNode
+}): ReactElement => (
+  <SettingsContext.Provider
+    value={{ settings: DEFAULT_SETTINGS, saveError: null, update: vi.fn() }}
+  >
+    {children}
+  </SettingsContext.Provider>
+)
 
 const group = (overrides: Partial<ThreadGroup> = {}): ThreadGroup => ({
   threadId: 'c1',
@@ -102,11 +117,13 @@ describe('ReviewThreadCard', () => {
   test('reply expands the editor; confirm submits the draft', () => {
     const a = actions({ replying: true, replyDraft: 'follow-up text' })
     render(
-      <ReviewThreadCard group={group()} anchorLabel="line R40" actions={a} />
+      <ReviewThreadCard group={group()} anchorLabel="line R40" actions={a} />,
+      { wrapper: SettingsFixture }
     )
 
     fireEvent.keyDown(screen.getByPlaceholderText('Reply to the agent…'), {
       key: 'Enter',
+      code: 'Enter',
     })
     expect(a.onSubmitReply).toHaveBeenCalledWith('follow-up text')
   })

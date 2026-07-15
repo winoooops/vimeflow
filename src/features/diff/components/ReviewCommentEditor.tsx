@@ -5,6 +5,12 @@ import {
   type ReviewCommentCategory,
 } from '../hooks/useFeedbackBatch'
 import { REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
+import { formatShortcut } from '../../../lib/formatShortcut'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '../../keymap/displayKey'
+import { useKeybindings } from '../../keymap/useKeybindings'
 
 type CommentSide = 'deletions' | 'additions'
 
@@ -71,22 +77,6 @@ export const moveTextareaCursorVertically = (
   textarea.setSelectionRange(next, next)
 }
 
-const isCtrlTextNavigation = (
-  event: Pick<
-    KeyboardEvent,
-    'altKey' | 'code' | 'ctrlKey' | 'key' | 'keyCode' | 'metaKey'
-  >,
-  key: 'j' | 'k'
-): boolean =>
-  event.ctrlKey &&
-  !event.metaKey &&
-  !event.altKey &&
-  (event.key.toLowerCase() === key ||
-    (key === 'j' && event.key === 'Enter') ||
-    event.code === `Key${key.toUpperCase()}` ||
-    event.keyCode === (key === 'j' ? 10 : 11) ||
-    event.keyCode === key.toUpperCase().charCodeAt(0))
-
 const insertTextareaNewline = (
   textarea: HTMLTextAreaElement,
   updateText: (next: string) => void
@@ -102,8 +92,8 @@ const insertTextareaNewline = (
 
 // Codex-style inline comment editor. Rendered in Pierre's annotation slot
 // (full-width, below the target line) rather than as a floating popover, so it
-// sits in the diff flow and never chases the cursor. Enter submits, Shift+Enter
-// inserts a newline, Escape cancels.
+// sits in the diff flow and never chases the cursor. App actions resolve through
+// the keymap registry; Shift+Enter remains native textarea newline editing.
 export const ReviewCommentEditor = ({
   lineNumber = undefined,
   side = undefined,
@@ -120,6 +110,7 @@ export const ReviewCommentEditor = ({
   onCancel,
   mode = 'comment',
 }: ReviewCommentEditorProps): ReactElement => {
+  const { bindingFor, matches } = useKeybindings()
   const [uncontrolledText, setUncontrolledText] = useState(initialText)
 
   const [uncontrolledCategory, setUncontrolledCategory] =
@@ -136,7 +127,6 @@ export const ReviewCommentEditor = ({
     onCategoryChange?.(next)
   }
 
-  // Ctrl+H / Ctrl+L cycle the category (vim h/l).
   const cycleCategory = (direction: 1 | -1): void => {
     if (mode === 'reply') {
       return
@@ -176,6 +166,18 @@ export const ReviewCommentEditor = ({
 
   const targetDescription =
     targetLabel ?? `line ${side === 'deletions' ? 'L' : 'R'}${lineNumber ?? ''}`
+
+  const previousCategoryShortcut = formatShortcut(
+    chordToShortcutInput(bindingFor('diff-comment-category-previous'))
+  )
+
+  const nextCategoryShortcut = formatShortcut(
+    chordToShortcutInput(bindingFor('diff-comment-category-next'))
+  )
+  const insertNewlineShortcut = bindingFor('diff-comment-insert-newline')
+  const cursorUpShortcut = bindingFor('diff-comment-cursor-up')
+  const submitShortcut = bindingFor('diff-comment-submit')
+  const cancelShortcut = bindingFor('diff-comment-cancel')
 
   const className =
     chrome === 'card'
@@ -226,16 +228,44 @@ export const ReviewCommentEditor = ({
             )
           })}
           <span className="ml-auto text-[10px] text-on-surface-variant/70">
-            ⌃H / ⌃L
+            {previousCategoryShortcut} / {nextCategoryShortcut}
           </span>
         </div>
       )}
       <textarea
         ref={textareaRef}
         value={text}
+        aria-keyshortcuts={[
+          insertNewlineShortcut,
+          cursorUpShortcut,
+          submitShortcut,
+          cancelShortcut,
+        ]
+          .map((shortcut) => chordToAriaShortcut(shortcut))
+          .join(' ')}
         onChange={(e): void => updateText(e.target.value)}
         onKeyDownCapture={(e): void => {
-          if (isCtrlTextNavigation(e, 'j')) {
+          if (mode !== 'reply') {
+            let direction: 1 | -1 | null = null
+
+            if (matches(e.nativeEvent, 'diff-comment-category-next')) {
+              direction = 1
+            } else if (
+              matches(e.nativeEvent, 'diff-comment-category-previous')
+            ) {
+              direction = -1
+            }
+
+            if (direction !== null) {
+              e.preventDefault()
+              e.stopPropagation()
+              cycleCategory(direction)
+
+              return
+            }
+          }
+
+          if (matches(e.nativeEvent, 'diff-comment-insert-newline')) {
             e.preventDefault()
             e.stopPropagation()
             insertTextareaNewline(e.currentTarget, updateText)
@@ -243,7 +273,7 @@ export const ReviewCommentEditor = ({
             return
           }
 
-          if (isCtrlTextNavigation(e, 'k')) {
+          if (matches(e.nativeEvent, 'diff-comment-cursor-up')) {
             e.preventDefault()
             e.stopPropagation()
             moveTextareaCursorVertically(e.currentTarget, -1)
@@ -251,32 +281,10 @@ export const ReviewCommentEditor = ({
             return
           }
 
-          // Ctrl+H / Ctrl+L cycle the category (vim h/l). Capturing Ctrl+H
-          // overrides textarea backspace — deletion uses the Backspace key.
-          if (e.ctrlKey && !e.metaKey && !e.altKey) {
-            const lowered = e.key.toLowerCase()
-
-            if (lowered === 'l') {
-              e.preventDefault()
-              e.stopPropagation()
-              cycleCategory(1)
-
-              return
-            }
-
-            if (lowered === 'h') {
-              e.preventDefault()
-              e.stopPropagation()
-              cycleCategory(-1)
-
-              return
-            }
-          }
-
-          if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+          if (matches(e.nativeEvent, 'diff-comment-submit')) {
             e.preventDefault()
             submit()
-          } else if (e.key === 'Escape') {
+          } else if (matches(e.nativeEvent, 'diff-comment-cancel')) {
             e.preventDefault()
             onCancel()
           }
@@ -290,6 +298,7 @@ export const ReviewCommentEditor = ({
       <div className="flex justify-end gap-2">
         <button
           type="button"
+          aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
           onClick={(): void => onCancel()}
           className="rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface"
         >
@@ -297,6 +306,7 @@ export const ReviewCommentEditor = ({
         </button>
         <button
           type="button"
+          aria-keyshortcuts={chordToAriaShortcut(submitShortcut)}
           onClick={(): void => submit()}
           disabled={text.trim().length === 0}
           className="rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 disabled:opacity-50"

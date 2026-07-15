@@ -35,9 +35,10 @@ map vs **(P2)** introduce SQLite.
 - **Persistence: P1.** Extend `settings.json` with a `customKeybindings` map (a tolerant Rust
   deserializer keeps a malformed entry from wiping the durable file). No SQLite.
 - Supporting model decisions: per-command `matchPolicy` (`exact` default / `tolerant` for layout-
-  sensitive digit/backslash keys); a terminal-safety invariant (a rebindable override must keep
-  exactly one super); a final-set resolver (defaults ⊕ overrides validated as a set so swaps survive);
-  a pure conflict detector. Full data model in the spec.
+  sensitive digit/backslash keys); a terminal-safety invariant (a global rebindable override must
+  keep exactly one super, while focus-scoped Diff bindings may use zero or one); a final-set resolver
+  (defaults ⊕ overrides validated as a set so swaps survive); a pure conflict detector. Full data
+  model in the spec.
 - **Decomposition:** SP1 (this engine + migrate `usePaneShortcuts`/`useDockToggleShortcut`); SP2
   (editing UI); SP3 (customizable `⌘;` leader across renderer + Electron + Linux accelerator, +
   re-introduce the Vim leader chords removed in #460); SP4 (Custom / VS Code / JetBrains presets).
@@ -75,10 +76,39 @@ map vs **(P2)** introduce SQLite.
 - **Behavior drift on migration** → a behavior-preservation table test (`resolveDefault(cmd, isMac)`
   == today's hardcoded combo) + re-running each hook's existing guard suite unchanged.
 - **Durability** (a bad override wiping `settings.json`) → a total, tolerant Rust field deserializer.
-- **Terminal-safety** (an override stealing a bare key) → overrides must keep a super, enforced at
-  both the write (`setUserBinding`) and read (`resolveBindings`) boundaries.
+- **Terminal-safety** (an override stealing a bare key) → global overrides must keep a super;
+  bare/Shift-only Diff overrides are allowed because Diff dispatch is focus-scoped and ignores text
+  entry. Both rules are enforced at the write (`setUserBinding`) and read (`resolveBindings`)
+  boundaries.
 - **Leader reservation on exotic layouts** → the `⌘;` leader is reserved by its default physical code
   for standard layouts; perfect logical-key reservation is deferred to SP3 (when the leader migrates).
+
+## 2026-07-15 implementation addendum: cross-surface transport
+
+Option A still owns action dispatch: renderer hooks keep their focus, dialog, text-entry, and layout
+guards. The registry now also owns the complete transport boundary for native child surfaces. On
+initial settings load and every edit, the renderer publishes `customKeybindings`; Electron resolves
+the entire catalog for the current platform into a versioned snapshot of command id, context,
+physical `KeyboardEvent.code`, modifier policy, and resolved modifiers.
+
+That same snapshot drives all keyboard-input layers:
+
+- the workspace `BrowserWindow` forwards matching global shortcuts to its renderer;
+- each embedded browser `WebContentsView` handles its browser-local bindings and forwards matching
+  global shortcuts to the workspace renderer; and
+- each native Ghostty `NSView` receives the global projection through the C++/Swift bridge and maps
+  the AppKit hardware key code back to `KeyboardEvent.code` before matching.
+
+There are no per-key or per-command native forwarding allowlists. Adding or rebinding a global
+catalog entry therefore reaches all three layers automatically. Consumers may still apply
+action-state guards after matching (for example, suppressing a focus-pane command that targets the
+already-focused pane); those guards do not duplicate shortcut definitions. Context projection keeps
+Diff, editor, dock, terminal, and browser-local commands on their owning surfaces instead of letting
+a native terminal steal focus-scoped input.
+
+The superseded `VITE_GHOSTTY_NATIVE_MACOS` helper flag is now an alias for the parented NSView path,
+so an in-app AppKit terminal cannot bypass this snapshot transport. The standalone Swift smoke
+executable remains only as native development tooling.
 
 ## References
 

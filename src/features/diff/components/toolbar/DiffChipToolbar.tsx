@@ -5,6 +5,13 @@ import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { Popover } from '@/components/Popover'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import { formatShortcut, type ShortcutInput } from '@/lib/formatShortcut'
+import type { CommandId } from '@/features/keymap/catalog'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
 import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { Menu } from '@/components/Menu'
 import { PriorityPlus } from './PriorityPlus'
@@ -128,6 +135,7 @@ const DIFF_STYLE_OPTIONS: readonly {
 ]
 
 export interface DiffChipToolbarProps {
+  bindingFor: Keybindings['bindingFor']
   // Which side of the diff this toolbar is bound to. Drives whether the
   // `unstage` chip renders (staged view only).
   diffMode: DiffMode
@@ -217,6 +225,7 @@ export interface DiffChipToolbarProps {
 // are provided and there is more than one hunk. The pinned feedback actions
 // render when feedbackCount > 0 (PR4 inline review).
 export const DiffChipToolbar = ({
+  bindingFor,
   diffMode,
   diffStyle,
   onDiffStyleChange,
@@ -256,6 +265,15 @@ export const DiffChipToolbar = ({
   onRefreshActiveFile = undefined,
   onRequestReview = undefined,
 }: DiffChipToolbarProps): ReactElement => {
+  const shortcutFor = (id: CommandId): ShortcutInput =>
+    chordToShortcutInput(bindingFor(id))
+
+  const ariaShortcutFor = (id: CommandId): string =>
+    chordToAriaShortcut(bindingFor(id))
+
+  const shortcutLabelFor = (id: CommandId): string =>
+    formatShortcut(shortcutFor(id))
+
   // Discard All confirmation popover state. The trigger is the discard-all
   // button inside the tool-well; the confirm card renders on the shared Popover
   // anchored to that button.
@@ -322,7 +340,7 @@ export const DiffChipToolbar = ({
     onDiscardAll !== undefined ? (
       <Tooltip
         content="Discard all changes"
-        shortcut="D"
+        shortcut={shortcutFor('diff-file-discard')}
         disabled={discardAllOpen}
       >
         <span>
@@ -333,6 +351,7 @@ export const DiffChipToolbar = ({
             variant="danger"
             size="md"
             disabled={staging}
+            aria-keyshortcuts={ariaShortcutFor('diff-file-discard')}
             aria-haspopup="dialog"
             aria-expanded={discardAllOpen}
             showTooltip={TOOLTIP_SUPPRESSED} // outer Tooltip already wraps the discard-all span
@@ -390,7 +409,10 @@ export const DiffChipToolbar = ({
       options={['split', 'unified'] as const}
       onChange={onDiffStyleChange}
       icons={{ split: 'vertical_split', unified: 'view_headline' }}
-      shortcuts={{ split: 't', unified: 't' }}
+      shortcuts={{
+        split: shortcutFor('diff-view-toggle'),
+        unified: shortcutFor('diff-view-toggle'),
+      }}
     />,
     // hairline between the view-mode control and the navigation cluster.
     <ToolbarSeparator key="sep-nav" />,
@@ -404,6 +426,10 @@ export const DiffChipToolbar = ({
       navEnabled={fileNavEnabled}
       onPrev={onPrevFile}
       onNext={onNextFile}
+      previousShortcut={shortcutFor('diff-file-previous')}
+      previousAriaKeyshortcuts={ariaShortcutFor('diff-file-previous')}
+      nextShortcut={shortcutFor('diff-file-next')}
+      nextAriaKeyshortcuts={ariaShortcutFor('diff-file-next')}
     />,
     // 3. tool-well — staging group (stage / unstage / discard / discard-all) as
     // a flat ghost-icon group (one unit).
@@ -414,6 +440,10 @@ export const DiffChipToolbar = ({
       onStage={onStage}
       onUnstage={onUnstage}
       onDiscard={onDiscard}
+      stageShortcut={shortcutFor('diff-hunk-stage')}
+      stageAriaKeyshortcuts={ariaShortcutFor('diff-hunk-stage')}
+      discardShortcut={shortcutFor('diff-hunk-discard')}
+      discardAriaKeyshortcuts={ariaShortcutFor('diff-hunk-discard')}
       discardAllSlot={discardAllSlot}
     />,
     // 4. change stepper — azure (secondary) hunk-nav group (data_object glyph
@@ -424,6 +454,10 @@ export const DiffChipToolbar = ({
       navEnabled={hunkNavEnabled}
       onPrev={onPrevHunk}
       onNext={onNextHunk}
+      previousShortcut={shortcutFor('diff-hunk-previous')}
+      previousAriaKeyshortcuts={ariaShortcutFor('diff-hunk-previous')}
+      nextShortcut={shortcutFor('diff-hunk-next')}
+      nextAriaKeyshortcuts={ariaShortcutFor('diff-hunk-next')}
     />,
     // hairline between the navigation cluster and the config chips.
     <ToolbarSeparator key="sep-config" />,
@@ -538,7 +572,7 @@ export const DiffChipToolbar = ({
             onSelect={onPrevFile}
           >
             <span>Previous file</span>
-            <kbd>p</kbd>
+            <kbd>{shortcutLabelFor('diff-file-previous')}</kbd>
           </Menu.Row>
           <Menu.Row
             label="Next file"
@@ -547,7 +581,7 @@ export const DiffChipToolbar = ({
             onSelect={onNextFile}
           >
             <span>Next file</span>
-            <kbd>n</kbd>
+            <kbd>{shortcutLabelFor('diff-file-next')}</kbd>
           </Menu.Row>
         </Menu.Section>
       )
@@ -563,7 +597,7 @@ export const DiffChipToolbar = ({
             onSelect={(): Promise<void> | undefined => onStage?.()}
           >
             <span>Stage hunk</span>
-            <kbd>s</kbd>
+            <kbd>{shortcutLabelFor('diff-hunk-stage')}</kbd>
           </Menu.Row>
           {diffMode === 'staged' ? (
             <Menu.Row
@@ -573,7 +607,7 @@ export const DiffChipToolbar = ({
               onSelect={(): Promise<void> | undefined => onUnstage?.()}
             >
               <span>Unstage</span>
-              <kbd>s</kbd>
+              <kbd>{shortcutLabelFor('diff-hunk-stage')}</kbd>
             </Menu.Row>
           ) : null}
           <Menu.Row
@@ -583,7 +617,7 @@ export const DiffChipToolbar = ({
             onSelect={(): Promise<void> | undefined => onDiscard?.()}
           >
             <span>Discard hunk</span>
-            <kbd>d</kbd>
+            <kbd>{shortcutLabelFor('diff-hunk-discard')}</kbd>
           </Menu.Row>
           {onDiscardAll !== undefined ? (
             <Menu.Row
@@ -594,6 +628,7 @@ export const DiffChipToolbar = ({
               onSelect={openDiscardAllConfirmation}
             >
               <span>Discard all changes</span>
+              <kbd>{shortcutLabelFor('diff-file-discard')}</kbd>
             </Menu.Row>
           ) : null}
         </Menu.Section>
@@ -610,7 +645,7 @@ export const DiffChipToolbar = ({
             onSelect={onPrevHunk}
           >
             <span>Previous change</span>
-            <kbd>[</kbd>
+            <kbd>{shortcutLabelFor('diff-hunk-previous')}</kbd>
           </Menu.Row>
           <Menu.Row
             label="Next change"
@@ -619,7 +654,7 @@ export const DiffChipToolbar = ({
             onSelect={onNextHunk}
           >
             <span>Next change</span>
-            <kbd>]</kbd>
+            <kbd>{shortcutLabelFor('diff-hunk-next')}</kbd>
           </Menu.Row>
         </Menu.Section>
       )
@@ -739,12 +774,15 @@ export const DiffChipToolbar = ({
         {showPinnedActions ? (
           <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
             {onRefreshActiveFile !== undefined ? (
-              <Tooltip content="Refresh diff" shortcut="r">
+              <Tooltip
+                content="Refresh diff"
+                shortcut={shortcutFor('diff-refresh')}
+              >
                 <button
                   type="button"
                   data-testid="diff-active-file-refresh"
                   aria-label="refresh diff"
-                  aria-keyshortcuts="r"
+                  aria-keyshortcuts={ariaShortcutFor('diff-refresh')}
                   onClick={onRefreshActiveFile}
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-outline-variant/60 bg-transparent px-3 font-mono text-[0.6875rem] font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-surface-container hover:text-primary disabled:cursor-default disabled:opacity-70 disabled:hover:border-outline-variant/60 disabled:hover:bg-transparent disabled:hover:text-on-surface"
                 >
@@ -759,18 +797,21 @@ export const DiffChipToolbar = ({
                     aria-hidden="true"
                     className="rounded border border-outline-variant/40 px-1 text-[0.625rem] leading-none text-on-surface-muted"
                   >
-                    r
+                    {shortcutLabelFor('diff-refresh')}
                   </span>
                 </button>
               </Tooltip>
             ) : null}
             {canRequestReview ? (
-              <Tooltip content="Request agent review" shortcut="@">
+              <Tooltip
+                content="Request agent review"
+                shortcut={shortcutFor('diff-review-request')}
+              >
                 <button
                   type="button"
                   data-testid="diff-request-review"
                   aria-label="request review"
-                  aria-keyshortcuts="@"
+                  aria-keyshortcuts={ariaShortcutFor('diff-review-request')}
                   onClick={onRequestReview}
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-outline-variant/60 bg-transparent px-3 font-mono text-[0.6875rem] font-medium text-on-surface transition-colors hover:border-primary/50 hover:bg-surface-container hover:text-primary"
                 >
@@ -785,7 +826,7 @@ export const DiffChipToolbar = ({
                     aria-hidden="true"
                     className="rounded border border-outline-variant/40 px-1 text-[0.625rem] leading-none text-on-surface-muted"
                   >
-                    @
+                    {shortcutLabelFor('diff-review-request')}
                   </span>
                 </button>
               </Tooltip>
@@ -805,7 +846,7 @@ export const DiffChipToolbar = ({
               <button
                 type="button"
                 aria-label={`finish feedback (${feedbackCount})`}
-                aria-keyshortcuts="Y"
+                aria-keyshortcuts={ariaShortcutFor('diff-review-finish')}
                 disabled={!canFinishFeedback}
                 onClick={onFinishFeedback}
                 className="inline-flex items-center gap-[7px] h-7 pl-[11px] pr-2 rounded-md font-mono text-[0.6875rem] font-bold text-on-primary bg-primary hover:bg-primary-container shadow-[0_1px_5px_color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
@@ -816,7 +857,7 @@ export const DiffChipToolbar = ({
                 >
                   check
                 </span>
-                Finish (Y)
+                Finish ({shortcutLabelFor('diff-review-finish')})
                 <Chip
                   tone="custom"
                   radius="pill"

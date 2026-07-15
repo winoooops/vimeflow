@@ -1,10 +1,17 @@
 import { useRef } from 'react'
 import type { FocusEvent, ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 import { sumLines } from '../utils/sumLines'
 import type { ChangedFile } from '../types'
 
 export interface ChangedFilesListProps {
+  bindingFor: Keybindings['bindingFor']
   files: ChangedFile[]
   selectedFile: { path: string; staged: boolean } | null
   onSelectFile: (file: ChangedFile) => void
@@ -14,6 +21,7 @@ export interface ChangedFilesListProps {
 }
 
 interface ChangedFilesListSurfaceProps {
+  bindingFor: Keybindings['bindingFor']
   files: ChangedFile[]
   selectedFile: { path: string; staged: boolean } | null
   pinned: boolean
@@ -27,6 +35,8 @@ interface ChangedFilesListSurfaceProps {
 }
 
 interface ChangedFileItemProps {
+  commentAriaKeyshortcuts: string
+  commentShortcut: ShortcutInput
   file: ChangedFile
   selected: boolean
   onSelectFile: (file: ChangedFile) => void
@@ -68,6 +78,8 @@ const statusTone = (
 }
 
 const ChangedFileItem = ({
+  commentAriaKeyshortcuts,
+  commentShortcut,
   file,
   selected,
   onSelectFile,
@@ -123,7 +135,8 @@ const ChangedFileItem = ({
           icon="add_comment"
           label={`Comment on file ${fileName}`}
           size="sm"
-          shortcut={['Shift', 'I']}
+          shortcut={commentShortcut}
+          aria-keyshortcuts={commentAriaKeyshortcuts}
           onClick={(event): void => onAddFileComment(file, event.currentTarget)}
         />
       ) : null}
@@ -132,6 +145,7 @@ const ChangedFileItem = ({
 }
 
 interface ChangedFilesEdgeHintProps {
+  ariaKeyshortcuts: string
   count: number
   revealed: boolean
   onReveal: () => void
@@ -140,6 +154,7 @@ interface ChangedFilesEdgeHintProps {
 }
 
 const ChangedFilesEdgeHint = ({
+  ariaKeyshortcuts,
   count,
   revealed,
   onReveal,
@@ -176,7 +191,7 @@ const ChangedFilesEdgeHint = ({
     <button
       type="button"
       aria-label={`${revealed ? 'Hide' : 'Show'} changed files (${count})`}
-      aria-keyshortcuts="e"
+      aria-keyshortcuts={ariaKeyshortcuts}
       aria-expanded={revealed}
       data-testid="changed-files-edge-hint"
       className="absolute left-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-r-xl border border-l-0 border-outline-variant/25 bg-surface-container-high/70 px-1.5 py-2 text-on-surface shadow-xl backdrop-blur-[14px] backdrop-saturate-150 transition-all duration-200 hover:bg-surface-container-high focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
@@ -203,6 +218,7 @@ const ChangedFilesEdgeHint = ({
  * Displays all files with git changes, sorted by status.
  */
 export const ChangedFilesList = ({
+  bindingFor,
   files,
   selectedFile,
   onSelectFile,
@@ -211,6 +227,10 @@ export const ChangedFilesList = ({
   onTogglePinned = undefined,
 }: ChangedFilesListProps): ReactElement => {
   const totals = sumLines(files)
+  const commentShortcut = bindingFor('diff-comment-file')
+  const pinShortcut = bindingFor('diff-files-pin')
+  const commentShortcutInput = chordToShortcutInput(commentShortcut)
+  const commentAriaKeyshortcuts = chordToAriaShortcut(commentShortcut)
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -228,8 +248,8 @@ export const ChangedFilesList = ({
             label={pinned ? 'Unpin changed files' : 'Pin changed files'}
             pressed={pinned}
             size="sm"
-            shortcut={['Shift', 'E']}
-            aria-keyshortcuts="Shift+E"
+            shortcut={chordToShortcutInput(pinShortcut)}
+            aria-keyshortcuts={chordToAriaShortcut(pinShortcut)}
             onClick={onTogglePinned}
             className="text-on-surface-variant hover:text-primary"
           />
@@ -240,6 +260,8 @@ export const ChangedFilesList = ({
         {files.map((file) => (
           <ChangedFileItem
             key={`${file.path}:${file.staged}`}
+            commentAriaKeyshortcuts={commentAriaKeyshortcuts}
+            commentShortcut={commentShortcutInput}
             file={file}
             selected={
               selectedFile?.path === file.path &&
@@ -262,6 +284,7 @@ export const ChangedFilesList = ({
 }
 
 export const ChangedFilesListSurface = ({
+  bindingFor,
   files,
   selectedFile,
   pinned,
@@ -288,6 +311,7 @@ export const ChangedFilesListSurface = ({
 
   const list = (
     <ChangedFilesList
+      bindingFor={bindingFor}
       files={files}
       selectedFile={selectedFile}
       pinned={pinned}
@@ -311,6 +335,7 @@ export const ChangedFilesListSurface = ({
   return (
     <div className="contents" onBlur={handleBlur}>
       <ChangedFilesEdgeHint
+        ariaKeyshortcuts={chordToAriaShortcut(bindingFor('diff-files-toggle'))}
         count={files.length}
         revealed={revealed}
         onReveal={onReveal}

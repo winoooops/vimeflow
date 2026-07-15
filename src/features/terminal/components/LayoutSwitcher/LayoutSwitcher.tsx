@@ -8,6 +8,8 @@ import {
 } from '../../layout-registry'
 import { LayoutGlyph } from './LayoutGlyph'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import { chordToShortcutInput } from '@/features/keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
 
 export interface LayoutSwitcherProps {
   activeLayoutId: PaneLayoutId
@@ -55,7 +57,12 @@ export const LayoutSwitcher = ({
   labelSingleAsFocusAction = false,
   nativeOverlayTooltips = false,
 }: LayoutSwitcherProps): ReactElement => {
+  const { bindingFor } = useKeybindings()
   const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
+
+  const singlePaneFocusShortcut = chordToShortcutInput(
+    bindingFor('single-pane-focus')
+  )
 
   const layoutById = useMemo(
     () => new Map(layouts.map((layout) => [layout.id, layout])),
@@ -119,7 +126,7 @@ export const LayoutSwitcher = ({
             tooltip: label,
             shortcut:
               isSingleFocus && labelSingleAsFocusAction
-                ? ['Mod', 'Z']
+                ? singlePaneFocusShortcut
                 : undefined,
             disabled,
           }

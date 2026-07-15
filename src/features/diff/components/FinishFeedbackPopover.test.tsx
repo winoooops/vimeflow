@@ -1,8 +1,29 @@
 import { test, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
+import type { ReactElement, ReactNode } from 'react'
+import type { AppSettings } from '../../../bindings/AppSettings'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
+
+const render = (
+  ui: ReactElement,
+  customKeybindings: Record<string, string> = {}
+): ReturnType<typeof rtlRender> => {
+  const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+
+  return rtlRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }): ReactElement => (
+      <SettingsContext.Provider
+        value={{ settings, saveError: null, update: vi.fn() }}
+      >
+        {children}
+      </SettingsContext.Provider>
+    ),
+  })
+}
 
 const createAnchor = (): HTMLDivElement => {
   const el = document.createElement('div')
@@ -48,10 +69,10 @@ test('kind none shows no-agent message and Dismiss button calls onCancel', async
   ).toBeInTheDocument()
 
   expect(
-    screen.getByRole('button', { name: 'Dismiss (n)' })
+    screen.getByRole('button', { name: 'Dismiss (N)' })
   ).toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: 'Dismiss (n)' }))
+  await user.click(screen.getByRole('button', { name: 'Dismiss (N)' }))
   expect(onCancel).toHaveBeenCalledTimes(1)
   expect(onSend).not.toHaveBeenCalled()
 
@@ -82,12 +103,12 @@ test('kind one shows pane info, correct copy, and buttons work', async () => {
     )
   ).toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: 'Confirm (Y)' }))
+  await user.click(screen.getByRole('button', { name: 'Confirm (Shift+Y)' }))
   expect(onSend).toHaveBeenCalledTimes(1)
   expect(onSend).toHaveBeenCalledWith(pane)
 
   onSend.mockClear()
-  await user.click(screen.getByRole('button', { name: 'Cancel (n)' }))
+  await user.click(screen.getByRole('button', { name: 'Cancel (N)' }))
   expect(onCancel).toHaveBeenCalledTimes(1)
   expect(onSend).not.toHaveBeenCalled()
 
@@ -109,14 +130,14 @@ test('kind one confirmation buttons render visible keyboard focus styles', () =>
     />
   )
 
-  expect(screen.getByRole('button', { name: 'Cancel (n)' })).toHaveClass(
+  expect(screen.getByRole('button', { name: 'Cancel (N)' })).toHaveClass(
     'focus:outline-none',
     'focus-visible:bg-surface-container-high',
     'focus-visible:outline-none',
     'focus-visible:ring-0'
   )
 
-  expect(screen.getByRole('button', { name: 'Confirm (Y)' })).toHaveClass(
+  expect(screen.getByRole('button', { name: 'Confirm (Shift+Y)' })).toHaveClass(
     'focus:outline-none',
     'focus-visible:outline-none',
     'focus-visible:ring-2',
@@ -125,10 +146,9 @@ test('kind one confirmation buttons render visible keyboard focus styles', () =>
     'focus-visible:ring-offset-surface-container'
   )
 
-  expect(screen.getByRole('button', { name: 'Confirm (Y)' })).not.toHaveClass(
-    'focus-visible:brightness-110',
-    'focus-visible:ring-0'
-  )
+  expect(
+    screen.getByRole('button', { name: 'Confirm (Shift+Y)' })
+  ).not.toHaveClass('focus-visible:brightness-110', 'focus-visible:ring-0')
 
   anchor.remove()
 })
@@ -215,7 +235,7 @@ test('kind many renders row per candidate and sends to correct pane', async () =
   expect(onSend).toHaveBeenCalledTimes(1)
   expect(onSend).toHaveBeenCalledWith(paneB)
 
-  await user.click(screen.getByRole('button', { name: 'Cancel (n)' }))
+  await user.click(screen.getByRole('button', { name: 'Cancel (N)' }))
   expect(onCancel).toHaveBeenCalledTimes(1)
 
   anchor.remove()
@@ -278,7 +298,7 @@ test('shows a Copy button that calls onCopy on click and via the c key', async (
     />
   )
 
-  await user.click(screen.getByRole('button', { name: 'Copy (c)' }))
+  await user.click(screen.getByRole('button', { name: 'Copy (C)' }))
   expect(onCopy).toHaveBeenCalledTimes(1)
 
   await user.keyboard('c')
@@ -302,8 +322,55 @@ test('omits the Copy button when onCopy is not provided', () => {
   )
 
   expect(
-    screen.queryByRole('button', { name: 'Copy (c)' })
+    screen.queryByRole('button', { name: 'Copy (C)' })
   ).not.toBeInTheDocument()
+
+  anchor.remove()
+})
+
+test('uses customized finish-feedback actions and hints', () => {
+  const anchor = createAnchor()
+  const pane = makePane()
+  const onCopy = vi.fn()
+  const onCancel = vi.fn()
+  const onSend = vi.fn()
+
+  render(
+    <FinishFeedbackPopover
+      anchor={anchor}
+      result={{ kind: 'one', pane } as ResolveResult}
+      commentCount={1}
+      fileCount={1}
+      onSend={onSend}
+      onCancel={onCancel}
+      onCopy={onCopy}
+    />,
+    {
+      'diff-review-copy': 'Alt+KeyC',
+      'diff-confirm-cancel': 'Alt+Escape',
+      'diff-feedback-send': 'Alt+Enter',
+    }
+  )
+
+  expect(screen.getByRole('button', { name: 'Copy (Alt+C)' })).toHaveAttribute(
+    'aria-keyshortcuts',
+    'Alt+c'
+  )
+
+  expect(
+    screen.getByRole('button', { name: 'Cancel (Alt+Escape)' })
+  ).toHaveAttribute('aria-keyshortcuts', 'Alt+Escape')
+
+  expect(
+    screen.getByRole('button', { name: 'Confirm (Alt+Enter)' })
+  ).toHaveAttribute('aria-keyshortcuts', 'Alt+Enter')
+
+  fireEvent.keyDown(document, { key: 'c', code: 'KeyC', altKey: true })
+  fireEvent.keyDown(document, { key: 'Enter', code: 'Enter', altKey: true })
+  fireEvent.keyDown(document, { key: 'Escape', code: 'Escape', altKey: true })
+  expect(onCopy).toHaveBeenCalledOnce()
+  expect(onSend).toHaveBeenCalledWith(pane)
+  expect(onCancel).toHaveBeenCalledOnce()
 
   anchor.remove()
 })

@@ -1,7 +1,14 @@
 import type { KeyboardEvent, ReactElement, RefObject } from 'react'
 import { IconButton } from '@/components/IconButton'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
 
 interface DiffSearchPopupProps {
+  bindingFor: Keybindings['bindingFor']
+  matches: Keybindings['matches']
   open: boolean
   fileHeaderVisible: boolean
   query: string
@@ -10,7 +17,7 @@ interface DiffSearchPopupProps {
   confirming: boolean
   inputRef: RefObject<HTMLInputElement | null>
   onQueryChange: (query: string) => void
-  /** Enter (1) / Shift+Enter (-1) from the input. Distinct from onStep: the
+  /** Forward (1) / backward (-1) commit binding from the input. Distinct from onStep: the
    * first commit after typing jumps to the already-active match without
    * advancing and hands focus back to the diff so n/p take over; later
    * commits step in the given direction (vim search flow, spec §3). */
@@ -24,6 +31,8 @@ interface DiffSearchPopupProps {
  * NOT the shared Popover (spec §2 primitive-choice + UNIFIED.md exception).
  */
 export const DiffSearchPopup = ({
+  bindingFor,
+  matches,
   open,
   fileHeaderVisible,
   query,
@@ -37,20 +46,37 @@ export const DiffSearchPopup = ({
   onClose,
 }: DiffSearchPopupProps): ReactElement => {
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === 'Enter') {
+    if (matches(event.nativeEvent, 'diff-search-or-visual-cancel')) {
       event.preventDefault()
-      onCommit(event.shiftKey ? -1 : 1)
-    }
-
-    if (event.key === 'Escape') {
       event.stopPropagation()
       if (!confirming) {
         onClose()
       }
+
+      return
+    }
+
+    const commitDirection = matches(
+      event.nativeEvent,
+      'diff-search-commit-previous'
+    )
+      ? -1
+      : matches(event.nativeEvent, 'diff-search-commit-next')
+        ? 1
+        : null
+
+    if (commitDirection !== null) {
+      event.preventDefault()
+      onCommit(commitDirection)
     }
   }
 
   const topOffsetClass = fileHeaderVisible ? 'top-10' : 'top-1'
+  const previousShortcut = bindingFor('diff-file-previous')
+  const nextShortcut = bindingFor('diff-file-next')
+  const closeShortcut = bindingFor('diff-search-or-visual-cancel')
+  const commitNextShortcut = bindingFor('diff-search-commit-next')
+  const commitPreviousShortcut = bindingFor('diff-search-commit-previous')
 
   return (
     <div
@@ -66,6 +92,13 @@ export const DiffSearchPopup = ({
         ref={inputRef}
         type="text"
         aria-label="Search in diff"
+        aria-keyshortcuts={[
+          commitNextShortcut,
+          commitPreviousShortcut,
+          closeShortcut,
+        ]
+          .map((shortcut) => chordToAriaShortcut(shortcut))
+          .join(' ')}
         placeholder="Search in diff…"
         // eslint-disable-next-line react/jsx-boolean-value -- false is a meaningful DOM attribute value here, not a prop to omit
         spellCheck={false}
@@ -86,18 +119,24 @@ export const DiffSearchPopup = ({
         icon="keyboard_arrow_up"
         label="Previous match"
         size="sm"
+        shortcut={chordToShortcutInput(previousShortcut)}
+        aria-keyshortcuts={chordToAriaShortcut(previousShortcut)}
         onClick={(): void => onStep(-1)}
       />
       <IconButton
         icon="keyboard_arrow_down"
         label="Next match"
         size="sm"
+        shortcut={chordToShortcutInput(nextShortcut)}
+        aria-keyshortcuts={chordToAriaShortcut(nextShortcut)}
         onClick={(): void => onStep(1)}
       />
       <IconButton
         icon="close"
         label="Close search"
         size="sm"
+        shortcut={chordToShortcutInput(closeShortcut)}
+        aria-keyshortcuts={chordToAriaShortcut(closeShortcut)}
         onClick={onClose}
       />
     </div>

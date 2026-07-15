@@ -84,6 +84,8 @@ import { ReviewCommentRow } from './components/ReviewCommentRow'
 import { ReviewLevelNotes } from './components/ReviewLevelNotes'
 import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 import { DIFF_RANGE_BAR_UNSAFE_CSS } from './rangeBar/diffRangeBars'
+import { useKeybindings } from '../keymap/useKeybindings'
+import { chordToAriaShortcut, chordToShortcutInput } from '../keymap/displayKey'
 
 // One stable <style> injected into pierre's shadow tree: the search highlight
 // plus the persistent range-comment gutter bar (VIM-273). A module constant so
@@ -278,6 +280,8 @@ export const Panel = ({
   feedbackDispatch = undefined,
   feedbackOwnerKey = undefined,
 }: PanelProps): ReactElement => {
+  const { bindingFor, matches } = useKeybindings()
+
   const internalGitStatus = useGitStatus(cwd, {
     watch: true,
     enabled: gitStatus === undefined,
@@ -2543,6 +2547,7 @@ export const Panel = ({
         <Notifier
           toolbarProps={{
             ...toolbarSettingsProps,
+            bindingFor,
             diffMode: 'unstaged',
             currentFileIndex: -1,
             totalFiles: 0,
@@ -2601,6 +2606,7 @@ export const Panel = ({
       <Notifier
         toolbarProps={{
           ...toolbarSettingsProps,
+          bindingFor,
           diffMode: selectedFileStaged ? 'staged' : 'unstaged',
           totalHunks: hunkCount,
           focusedHunkIndex: clampedHunkIndex,
@@ -2644,6 +2650,7 @@ export const Panel = ({
         className="relative flex min-h-0 flex-1 overflow-hidden"
       >
         <ChangedFilesListSurface
+          bindingFor={bindingFor}
           files={effectiveFiles}
           selectedFile={
             effectiveSelectedFile !== null
@@ -2666,11 +2673,14 @@ export const Panel = ({
           <>
             {!diffSearch.isOpen ? (
               <DiffSearchButton
+                bindingFor={bindingFor}
                 fileHeaderVisible={fileHeaderVisible}
                 onOpen={diffSearch.open}
               />
             ) : null}
             <DiffSearchPopup
+              bindingFor={bindingFor}
+              matches={matches}
               open={diffSearch.isOpen}
               fileHeaderVisible={fileHeaderVisible}
               query={diffSearch.query}
@@ -2783,8 +2793,14 @@ export const Panel = ({
                     <ReviewCommentRow
                       key={annotation.metadata.id}
                       comment={annotation.metadata}
-                      editShortcut="Shift+U"
+                      editShortcut={chordToShortcutInput(
+                        bindingFor('diff-file-comment-update')
+                      )}
+                      editAriaKeyshortcuts={chordToAriaShortcut(
+                        bindingFor('diff-file-comment-update')
+                      )}
                       deleteShortcut={null}
+                      deleteAriaKeyshortcuts={null}
                       onSendNow={(): void => {
                         setFinishOpen(false)
                         setReplyDispatchThreadId(null)
@@ -2820,6 +2836,7 @@ export const Panel = ({
           ) : null}
           <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
           <PanelBody
+            bindingFor={bindingFor}
             scrollBodyRef={diffScrollBodyRef}
             diffError={diffError}
             diffLoading={diffLoading}

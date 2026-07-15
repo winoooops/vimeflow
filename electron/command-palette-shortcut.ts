@@ -346,6 +346,9 @@ export const setKeymapCaptureActive = (
   captureActiveByWindow.set(win, active)
 }
 
+export const isKeymapCaptureActive = (win: BrowserWindow): boolean =>
+  captureActiveByWindow.get(win) === true
+
 const createCommandPaletteToggleDispatcher = (
   win: BrowserWindow
 ): ((source?: CommandPaletteShortcutSource) => void) => {

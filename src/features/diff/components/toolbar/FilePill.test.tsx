@@ -12,6 +12,10 @@ const renderPill = (
     navEnabled: true,
     onPrev: vi.fn<() => void>(),
     onNext: vi.fn<() => void>(),
+    previousShortcut: 'p',
+    previousAriaKeyshortcuts: 'p',
+    nextShortcut: 'n',
+    nextAriaKeyshortcuts: 'n',
   }
 
   return render(<FilePill {...baseProps} {...overrides} />)
@@ -74,6 +78,10 @@ describe('FilePill', () => {
 
     expect(await screen.findByText('Next file')).toBeInTheDocument()
     expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('n')
+    expect(screen.getByRole('button', { name: /next file/i })).toHaveAttribute(
+      'aria-keyshortcuts',
+      'n'
+    )
   })
 
   test('arrows are disabled and inert when navEnabled is false', () => {

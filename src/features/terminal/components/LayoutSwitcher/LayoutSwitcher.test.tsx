@@ -1,8 +1,38 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  within,
+  type RenderResult,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import type { AppSettings } from '@/bindings/AppSettings'
+import { SettingsContext } from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import { SINGLE_PANE_FOCUS_LABEL } from '../../layout-registry'
 import { LayoutSwitcher } from './LayoutSwitcher'
+
+const renderWithKeybindings = (
+  ui: ReactElement,
+  customKeybindings: AppSettings['customKeybindings'] = {}
+): RenderResult =>
+  rtlRender(ui, {
+    wrapper: ({ children }) => (
+      <SettingsContext.Provider
+        value={{
+          settings: { ...DEFAULT_SETTINGS, customKeybindings },
+          saveError: null,
+          update: vi.fn(),
+        }}
+      >
+        {children}
+      </SettingsContext.Provider>
+    ),
+  })
+
+const render = (ui: ReactElement): RenderResult => renderWithKeybindings(ui)
 
 let restorePlatform: (() => void) | null = null
 
@@ -273,14 +303,15 @@ describe('LayoutSwitcher', () => {
     expect(within(quadTip).queryByTestId('tooltip-shortcut')).toBeNull()
   })
 
-  test('workspace focus mode labels single layout as an active-pane action', async () => {
+  test('workspace focus mode shows the resolved single-pane shortcut', async () => {
     const user = userEvent.setup()
-    render(
+    renderWithKeybindings(
       <LayoutSwitcher
         activeLayoutId="single"
         onPick={vi.fn()}
         labelSingleAsFocusAction
-      />
+      />,
+      { 'single-pane-focus': 'Mod+KeyO' }
     )
 
     const focusButton = screen.getByRole('button', {
@@ -290,7 +321,7 @@ describe('LayoutSwitcher', () => {
     const focusTip = await screen.findByRole('tooltip')
     expect(focusTip).toHaveTextContent(SINGLE_PANE_FOCUS_LABEL)
     expect(within(focusTip).getByTestId('tooltip-shortcut')).toHaveTextContent(
-      'Z'
+      'O'
     )
   })
 

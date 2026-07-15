@@ -1,9 +1,30 @@
 /* eslint-disable testing-library/no-container */
 /* eslint-disable testing-library/no-node-access */
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement, ReactNode } from 'react'
+import type { AppSettings } from '../../../bindings/AppSettings'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 import CommitInfoPanel from './CommitInfoPanel'
+
+const render = (
+  ui: ReactElement,
+  customKeybindings: Record<string, string> = {}
+): ReturnType<typeof rtlRender> => {
+  const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+
+  return rtlRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }): ReactElement => (
+      <SettingsContext.Provider
+        value={{ settings, saveError: null, update: vi.fn() }}
+      >
+        {children}
+      </SettingsContext.Provider>
+    ),
+  })
+}
 
 describe('CommitInfoPanel', () => {
   const mockProps = {
@@ -140,6 +161,32 @@ describe('CommitInfoPanel', () => {
     screen.getByRole('button', { name: /submit review/i }).focus()
     await user.keyboard('{Shift>}y{/Shift}')
 
+    expect(onSubmitReview).toHaveBeenCalledOnce()
+  })
+
+  test('uses the customized submit-review binding and hint', () => {
+    const onSubmitReview = vi.fn()
+    render(<CommitInfoPanel {...mockProps} onSubmitReview={onSubmitReview} />, {
+      'diff-commit-review-submit': 'Alt+Enter',
+    })
+
+    const button = screen.getByRole('button', {
+      name: 'Submit Review (Alt+Enter)',
+    })
+    expect(button).toHaveAttribute('aria-keyshortcuts', 'Alt+Enter')
+
+    fireEvent.keyDown(button, {
+      key: 'Y',
+      code: 'KeyY',
+      shiftKey: true,
+    })
+    expect(onSubmitReview).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(button, {
+      key: 'Enter',
+      code: 'Enter',
+      altKey: true,
+    })
     expect(onSubmitReview).toHaveBeenCalledOnce()
   })
 

@@ -72,7 +72,7 @@ describe('preload Ghostty env gating', () => {
     expect(ghosttyNative?.setSecondaryVisible).toEqual(expect.any(Function))
   })
 
-  test('omits secondary native methods in legacy helper mode', async () => {
+  test('routes the legacy flag to the complete parent native API', async () => {
     const api = await loadPreloadApi({
       VITE_GHOSTTY_NATIVE_MACOS: '1',
     })
@@ -87,10 +87,10 @@ describe('preload Ghostty env gating', () => {
       GHOSTTY_NATIVE_UPDATE,
       { sessionId: 'pty-1', paneId: 'pane-1' }
     )
-    expect(ghosttyNative?.attachSecondary).toBeUndefined()
-    expect(ghosttyNative?.secondaryData).toBeUndefined()
-    expect(ghosttyNative?.focusSecondary).toBeUndefined()
-    expect(ghosttyNative?.removeSecondary).toBeUndefined()
-    expect(ghosttyNative?.setSecondaryVisible).toBeUndefined()
+    expect(ghosttyNative?.attachSecondary).toEqual(expect.any(Function))
+    expect(ghosttyNative?.secondaryData).toEqual(expect.any(Function))
+    expect(ghosttyNative?.focusSecondary).toEqual(expect.any(Function))
+    expect(ghosttyNative?.removeSecondary).toEqual(expect.any(Function))
+    expect(ghosttyNative?.setSecondaryVisible).toEqual(expect.any(Function))
   })
 })

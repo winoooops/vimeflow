@@ -1,5 +1,11 @@
 import { useEffect, type ReactElement } from 'react'
 import { Popover } from '@/components/Popover'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
+import { formatShortcut } from '@/lib/formatShortcut'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
 
 const popoverGhostActionFocusClass =
@@ -20,10 +26,6 @@ interface FinishFeedbackPopoverProps {
   onCopy?: () => void
 }
 
-const isCapitalY = (event: KeyboardEvent): boolean =>
-  event.key === 'Y' ||
-  (event.shiftKey && (event.key.toLowerCase() === 'y' || event.code === 'KeyY'))
-
 export const FinishFeedbackPopover = ({
   anchor,
   result,
@@ -33,27 +35,30 @@ export const FinishFeedbackPopover = ({
   onCancel,
   onCopy = undefined,
 }: FinishFeedbackPopoverProps): ReactElement => {
+  const { bindingFor, matches } = useKeybindings()
   const commentWord = commentCount === 1 ? 'comment' : 'comments'
   const fileWord = fileCount === 1 ? 'file' : 'files'
+  const copyShortcut = bindingFor('diff-review-copy')
+  const cancelShortcut = bindingFor('diff-confirm-cancel')
+  const sendShortcut = bindingFor('diff-feedback-send')
+  const copyLabel = formatShortcut(chordToShortcutInput(copyShortcut))
+  const cancelLabel = formatShortcut(chordToShortcutInput(cancelShortcut))
+  const sendLabel = formatShortcut(chordToShortcutInput(sendShortcut))
 
   const copyButton = onCopy ? (
     <button
       type="button"
-      aria-keyshortcuts="c"
+      aria-keyshortcuts={chordToAriaShortcut(copyShortcut)}
       onClick={(): void => onCopy()}
       className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
     >
-      Copy (c)
+      Copy ({copyLabel})
     </button>
   ) : null
 
   useEffect((): (() => void) => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.ctrlKey || event.metaKey || event.altKey) {
-        return
-      }
-
-      if (event.key === 'n') {
+      if (matches(event, 'diff-confirm-cancel')) {
         event.preventDefault()
         event.stopPropagation()
         onCancel()
@@ -61,7 +66,7 @@ export const FinishFeedbackPopover = ({
         return
       }
 
-      if (onCopy && event.key === 'c') {
+      if (onCopy && matches(event, 'diff-review-copy')) {
         event.preventDefault()
         event.stopPropagation()
         onCopy()
@@ -69,7 +74,7 @@ export const FinishFeedbackPopover = ({
         return
       }
 
-      if (isCapitalY(event) && result.kind === 'one') {
+      if (matches(event, 'diff-feedback-send') && result.kind === 'one') {
         event.preventDefault()
         event.stopPropagation()
         onSend(result.pane)
@@ -81,7 +86,7 @@ export const FinishFeedbackPopover = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [onCancel, onCopy, onSend, result])
+  }, [matches, onCancel, onCopy, onSend, result])
 
   return (
     <Popover
@@ -112,11 +117,11 @@ export const FinishFeedbackPopover = ({
             {copyButton}
             <button
               type="button"
-              aria-keyshortcuts="n"
+              aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
               onClick={(): void => onCancel()}
               className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
-              Dismiss (n)
+              Dismiss ({cancelLabel})
             </button>
           </div>
         </div>
@@ -132,19 +137,19 @@ export const FinishFeedbackPopover = ({
             {copyButton}
             <button
               type="button"
-              aria-keyshortcuts="n"
+              aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
               onClick={(): void => onCancel()}
               className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
-              Cancel (n)
+              Cancel ({cancelLabel})
             </button>
             <button
               type="button"
-              aria-keyshortcuts="Y"
+              aria-keyshortcuts={chordToAriaShortcut(sendShortcut)}
               onClick={(): void => onSend(result.pane)}
               className={`rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 ${popoverPrimaryActionFocusClass}`}
             >
-              Confirm (Y)
+              Confirm ({sendLabel})
             </button>
           </div>
         </div>
@@ -178,11 +183,11 @@ export const FinishFeedbackPopover = ({
             {copyButton}
             <button
               type="button"
-              aria-keyshortcuts="n"
+              aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
               onClick={(): void => onCancel()}
               className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
-              Cancel (n)
+              Cancel ({cancelLabel})
             </button>
           </div>
         </div>

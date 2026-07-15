@@ -491,39 +491,6 @@ describe('WorkspaceView - Command Palette Integration', () => {
     return call[0]
   }
 
-  test('syncs separate palette and leader bindings to Electron', async () => {
-    const setCommandPaletteBindings = vi.fn()
-    const setCommandPaletteBinding = vi.fn()
-    window.vimeflow = {
-      setCommandPaletteBindings,
-      setCommandPaletteBinding,
-    } as unknown as Window['vimeflow']
-
-    const settings: AppSettings = {
-      ...DEFAULT_SETTINGS,
-      customKeybindings: {
-        palette: 'Mod+KeyP',
-        'palette-leader': 'Mod+KeyK',
-      },
-    }
-
-    rtlRender(
-      <SettingsContext.Provider
-        value={{ settings, saveError: null, update: vi.fn() }}
-      >
-        <WorkspaceView />
-      </SettingsContext.Provider>
-    )
-
-    await waitFor(() => {
-      expect(setCommandPaletteBindings).toHaveBeenCalledWith({
-        palette: 'Mod+KeyP',
-        leader: 'Mod+KeyK',
-      })
-    })
-    expect(setCommandPaletteBinding).not.toHaveBeenCalled()
-  })
-
   test(':new command creates a new session', async () => {
     const user = userEvent.setup()
     render(<WorkspaceView />)

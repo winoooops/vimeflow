@@ -1,7 +1,25 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
-import { createRef, type RefObject } from 'react'
+import { createElement, createRef, type ReactNode, type RefObject } from 'react'
+import type { AppSettings } from '../../../bindings/AppSettings'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 import { useKeyboard, type UseKeyboardOptions } from './useKeyboard'
+
+const codeForKey = (key: string): string => {
+  if (/^[a-z]$/i.test(key)) {
+    return `Key${key.toUpperCase()}`
+  }
+
+  return (
+    {
+      '/': 'Slash',
+      '@': 'Digit2',
+      '[': 'BracketLeft',
+      ']': 'BracketRight',
+    }[key] ?? key
+  )
+}
 
 const dispatch = (
   key: string,
@@ -13,6 +31,7 @@ const dispatch = (
 } => {
   const event = new KeyboardEvent('keydown', {
     key,
+    code: codeForKey(key),
     bubbles: true,
     cancelable: true,
     ...init,
@@ -51,7 +70,8 @@ const appendDiffRoot = (): {
 }
 
 const renderKeyboard = (
-  overrides: Partial<UseKeyboardOptions> = {}
+  overrides: Partial<UseKeyboardOptions> = {},
+  customKeybindings: Record<string, string> = {}
 ): {
   root: HTMLDivElement
   props: UseKeyboardOptions
@@ -97,7 +117,15 @@ const renderKeyboard = (
     onCancelConfirm: vi.fn(),
     ...overrides,
   }
-  const { unmount } = renderHook(() => useKeyboard(props))
+  const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+
+  const wrapper = ({ children }: { children: ReactNode }): ReactNode =>
+    createElement(
+      SettingsContext.Provider,
+      { value: { settings, saveError: null, update: vi.fn() } },
+      children
+    )
+  const { unmount } = renderHook(() => useKeyboard(props), { wrapper })
 
   return { root, props, unmount }
 }
@@ -120,6 +148,36 @@ describe('useKeyboard', () => {
 
     expect(props.onMoveLine).toHaveBeenNthCalledWith(1, 1)
     expect(props.onMoveLine).toHaveBeenNthCalledWith(2, -1)
+  })
+
+  test('uses a persisted Shift-only override instead of the default', () => {
+    const { props } = renderKeyboard(
+      {},
+      { 'diff-line-next': 'Shift+ArrowDown' }
+    )
+
+    dispatch('j')
+    expect(props.onMoveLine).not.toHaveBeenCalled()
+
+    dispatch('ArrowDown', undefined, {
+      code: 'ArrowDown',
+      shiftKey: true,
+    })
+
+    expect(props.onMoveLine).toHaveBeenCalledOnce()
+    expect(props.onMoveLine).toHaveBeenCalledWith(1)
+  })
+
+  test('uses a persisted Alt-only override', () => {
+    const { props } = renderKeyboard({}, { 'diff-line-next': 'Alt+ArrowDown' })
+
+    dispatch('ArrowDown', undefined, {
+      code: 'ArrowDown',
+      altKey: true,
+    })
+
+    expect(props.onMoveLine).toHaveBeenCalledOnce()
+    expect(props.onMoveLine).toHaveBeenCalledWith(1)
   })
 
   test('n and p navigate files', () => {
@@ -153,7 +211,7 @@ describe('useKeyboard', () => {
   test('Shift+E toggles the sticky changed-files list', () => {
     const { props } = renderKeyboard()
 
-    dispatch('E')
+    dispatch('E', undefined, { shiftKey: true })
 
     expect(props.onToggleFilesListPinned).toHaveBeenCalledOnce()
     expect(props.onToggleFilesList).not.toHaveBeenCalled()
@@ -178,7 +236,7 @@ describe('useKeyboard', () => {
   test('Shift+I opens comment editor for the selected file', () => {
     const { props } = renderKeyboard()
 
-    dispatch('I')
+    dispatch('I', undefined, { shiftKey: true })
 
     expect(props.onFileComment).toHaveBeenCalledOnce()
     expect(props.onComment).not.toHaveBeenCalled()
@@ -197,7 +255,7 @@ describe('useKeyboard', () => {
   test('Shift+U updates the selected file comment', () => {
     const { props } = renderKeyboard()
 
-    dispatch('U')
+    dispatch('U', undefined, { shiftKey: true })
 
     expect(props.onUpdateFileComment).toHaveBeenCalledOnce()
     expect(props.onUpdateComment).not.toHaveBeenCalled()
@@ -206,7 +264,7 @@ describe('useKeyboard', () => {
   test('Y opens finish review', () => {
     const { props } = renderKeyboard()
 
-    dispatch('Y')
+    dispatch('Y', undefined, { shiftKey: true })
 
     expect(props.onFinishReview).toHaveBeenCalledOnce()
   })
@@ -214,7 +272,7 @@ describe('useKeyboard', () => {
   test('@ opens request review', () => {
     const { props } = renderKeyboard()
 
-    dispatch('@')
+    dispatch('@', undefined, { shiftKey: true })
 
     expect(props.onRequestReview).toHaveBeenCalledOnce()
   })
@@ -224,7 +282,7 @@ describe('useKeyboard', () => {
 
     dispatch('s')
     dispatch('d')
-    dispatch('D')
+    dispatch('D', undefined, { shiftKey: true })
 
     expect(props.onStageHunk).toHaveBeenCalledOnce()
     expect(props.onDiscardHunk).toHaveBeenCalledOnce()
@@ -284,6 +342,15 @@ describe('useKeyboard', () => {
     expect(props.onScrollPage).toHaveBeenNthCalledWith(2, -1)
   })
 
+  test('Ctrl+D and Ctrl+U reject extra modifiers', () => {
+    const { props } = renderKeyboard()
+
+    dispatch('d', undefined, { ctrlKey: true, shiftKey: true })
+    dispatch('u', undefined, { altKey: true, ctrlKey: true })
+
+    expect(props.onScrollPage).not.toHaveBeenCalled()
+  })
+
   test('y and n confirm or cancel while a keyboard confirmation is open', () => {
     const { props } = renderKeyboard({ confirming: true })
 
@@ -293,6 +360,26 @@ describe('useKeyboard', () => {
     expect(props.onConfirm).toHaveBeenCalledOnce()
     expect(props.onCancelConfirm).toHaveBeenCalledOnce()
     expect(props.onNextFile).not.toHaveBeenCalled()
+  })
+
+  test('uses persisted confirmation bindings instead of y and n', () => {
+    const { props } = renderKeyboard(
+      { confirming: true },
+      {
+        'diff-confirm-accept': 'Alt+Enter',
+        'diff-confirm-cancel': 'Alt+Escape',
+      }
+    )
+
+    dispatch('y')
+    dispatch('n')
+    expect(props.onConfirm).not.toHaveBeenCalled()
+    expect(props.onCancelConfirm).not.toHaveBeenCalled()
+
+    dispatch('Enter', undefined, { altKey: true })
+    dispatch('Escape', undefined, { altKey: true })
+    expect(props.onConfirm).toHaveBeenCalledOnce()
+    expect(props.onCancelConfirm).toHaveBeenCalledOnce()
   })
 
   test('r is inert while a keyboard confirmation is open', () => {
@@ -442,7 +529,19 @@ describe('useKeyboard', () => {
       onCancelConfirm: vi.fn(),
     }
 
-    renderHook(() => useKeyboard(props))
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      customKeybindings: {},
+    }
+
+    const wrapper = ({ children }: { children: ReactNode }): ReactNode =>
+      createElement(
+        SettingsContext.Provider,
+        { value: { settings, saveError: null, update: vi.fn() } },
+        children
+      )
+
+    renderHook(() => useKeyboard(props), { wrapper })
     dispatch('j')
 
     expect(props.onMoveLine).not.toHaveBeenCalled()

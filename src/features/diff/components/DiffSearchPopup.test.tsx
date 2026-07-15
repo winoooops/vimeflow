@@ -1,12 +1,24 @@
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
+import { getCommand } from '@/features/keymap/catalog'
+import { eventMatchesChord } from '@/features/keymap/match'
+import { resolveDefault } from '@/features/keymap/resolve'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
 import { DiffSearchPopup } from './DiffSearchPopup'
 
 const fileHeaderHidden = false
 
+const bindingFor: Keybindings['bindingFor'] = (id) =>
+  resolveDefault(getCommand(id), false)
+
+const matches: Keybindings['matches'] = (event, id) =>
+  eventMatchesChord(event, bindingFor(id), 'ctrl', getCommand(id).matchPolicy)
+
 const baseProps = {
+  bindingFor,
+  matches,
   open: true,
   fileHeaderVisible: true,
   query: '',
@@ -31,15 +43,16 @@ describe('DiffSearchPopup', () => {
 
     expect(
       screen.getByRole('button', { name: /previous match/i })
-    ).toBeInTheDocument()
+    ).toHaveAttribute('aria-keyshortcuts', 'p')
 
-    expect(
-      screen.getByRole('button', { name: /next match/i })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /next match/i })).toHaveAttribute(
+      'aria-keyshortcuts',
+      'n'
+    )
 
     expect(
       screen.getByRole('button', { name: /close search/i })
-    ).toBeInTheDocument()
+    ).toHaveAttribute('aria-keyshortcuts', 'Escape')
   })
 
   test('counter states: empty query → blank; matches → k/N; none → 0/0', () => {
@@ -90,6 +103,62 @@ describe('DiffSearchPopup', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  test('uses resolved search commit bindings and exposes them to assistive tech', () => {
+    const onCommit = vi.fn()
+
+    const remappedBindingFor: Keybindings['bindingFor'] = (id) => {
+      if (id === 'diff-search-commit-next') {
+        return { code: 'Enter', mods: new Set(['Alt']) }
+      }
+      if (id === 'diff-search-commit-previous') {
+        return { code: 'Enter', mods: new Set(['Alt', 'Shift']) }
+      }
+
+      return bindingFor(id)
+    }
+
+    const remappedMatches: Keybindings['matches'] = (event, id) =>
+      eventMatchesChord(
+        event,
+        remappedBindingFor(id),
+        'ctrl',
+        getCommand(id).matchPolicy
+      )
+
+    render(
+      <DiffSearchPopup
+        {...baseProps}
+        bindingFor={remappedBindingFor}
+        matches={remappedMatches}
+        onCommit={onCommit}
+      />
+    )
+
+    const input = screen.getByRole('textbox', { name: /search in diff/i })
+    expect(input).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Alt+Enter Alt+Shift+Enter Escape'
+    )
+
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+    expect(onCommit).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(input, {
+      key: 'Enter',
+      code: 'Enter',
+      altKey: true,
+    })
+
+    fireEvent.keyDown(input, {
+      key: 'Enter',
+      code: 'Enter',
+      altKey: true,
+      shiftKey: true,
+    })
+    expect(onCommit).toHaveBeenNthCalledWith(1, 1)
+    expect(onCommit).toHaveBeenNthCalledWith(2, -1)
+  })
+
   test('Esc is inert while confirming (spec §3)', async () => {
     const onClose = vi.fn()
     render(<DiffSearchPopup {...baseProps} confirming onClose={onClose} />)
@@ -99,6 +168,83 @@ describe('DiffSearchPopup', () => {
       '{Escape}'
     )
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  test('uses the resolved close-search binding while the input is focused', () => {
+    const onClose = vi.fn()
+
+    const remappedBindingFor: Keybindings['bindingFor'] = (id) =>
+      id === 'diff-search-or-visual-cancel'
+        ? { code: 'ArrowDown', mods: new Set(['Shift']) }
+        : bindingFor(id)
+
+    const remappedMatches: Keybindings['matches'] = (event, id) =>
+      eventMatchesChord(
+        event,
+        remappedBindingFor(id),
+        'ctrl',
+        getCommand(id).matchPolicy
+      )
+
+    render(
+      <DiffSearchPopup
+        {...baseProps}
+        bindingFor={remappedBindingFor}
+        matches={remappedMatches}
+        onClose={onClose}
+      />
+    )
+
+    const input = screen.getByRole('textbox', { name: /search in diff/i })
+    const close = screen.getByRole('button', { name: /close search/i })
+
+    expect(close).toHaveAttribute('aria-keyshortcuts', 'Shift+ArrowDown')
+
+    fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(input, {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+      shiftKey: true,
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  test('a remapped Enter closes without also committing the search', () => {
+    const onClose = vi.fn()
+    const onCommit = vi.fn()
+
+    const remappedBindingFor: Keybindings['bindingFor'] = (id) =>
+      id === 'diff-search-or-visual-cancel'
+        ? { code: 'Enter', mods: new Set() }
+        : bindingFor(id)
+
+    const remappedMatches: Keybindings['matches'] = (event, id) =>
+      eventMatchesChord(
+        event,
+        remappedBindingFor(id),
+        'ctrl',
+        getCommand(id).matchPolicy
+      )
+
+    render(
+      <DiffSearchPopup
+        {...baseProps}
+        bindingFor={remappedBindingFor}
+        matches={remappedMatches}
+        onClose={onClose}
+        onCommit={onCommit}
+      />
+    )
+
+    fireEvent.keyDown(
+      screen.getByRole('textbox', { name: /search in diff/i }),
+      { key: 'Enter', code: 'Enter' }
+    )
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onCommit).not.toHaveBeenCalled()
   })
 
   test('typing forwards to onQueryChange', async () => {

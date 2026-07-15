@@ -14,7 +14,9 @@ import {
   BROWSER_PANE_SET_BOUNDS,
   BROWSER_PANE_TABS_CHANGED,
 } from './browser-pane-channels'
-import { BrowserPaneController, isFocusAddressShortcut } from './browser-pane'
+import { createWorkspaceKeybindingSnapshot } from '../src/features/keymap/snapshot'
+import { BrowserPaneController } from './browser-pane'
+import { setWorkspaceKeybindingSnapshot } from './workspace-keybindings'
 
 interface MockLookupAddress {
   address: string
@@ -1729,59 +1731,6 @@ describe('BrowserPaneController', () => {
     )
   })
 
-  test('isFocusAddressShortcut matches the platform modifier only', () => {
-    const keyL = {
-      type: 'keyDown',
-      key: 'l',
-      code: 'KeyL',
-      control: false,
-      meta: false,
-      alt: false,
-    }
-
-    expect(isFocusAddressShortcut({ ...keyL, meta: true }, 'darwin')).toBe(true)
-    expect(isFocusAddressShortcut({ ...keyL, control: true }, 'darwin')).toBe(
-      false
-    )
-
-    expect(isFocusAddressShortcut({ ...keyL, control: true }, 'linux')).toBe(
-      true
-    )
-    expect(isFocusAddressShortcut({ ...keyL, meta: true }, 'linux')).toBe(false)
-    expect(
-      isFocusAddressShortcut({ ...keyL, meta: true, alt: true }, 'darwin')
-    ).toBe(false)
-
-    expect(
-      isFocusAddressShortcut({ ...keyL, meta: true, shift: true }, 'darwin')
-    ).toBe(false)
-
-    expect(
-      isFocusAddressShortcut(
-        { ...keyL, meta: true, isAutoRepeat: true },
-        'darwin'
-      )
-    ).toBe(false)
-
-    expect(
-      isFocusAddressShortcut({ ...keyL, meta: true, type: 'keyUp' }, 'darwin')
-    ).toBe(false)
-
-    expect(
-      isFocusAddressShortcut(
-        {
-          type: 'keyDown',
-          key: 'j',
-          code: 'KeyJ',
-          control: false,
-          meta: true,
-          alt: false,
-        },
-        'darwin'
-      )
-    ).toBe(false)
-  })
-
   test('reconnect returns existing pane without creating a new WebContentsView', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
@@ -2175,7 +2124,7 @@ describe('BrowserPaneController', () => {
     expect(callbackTwo).toHaveBeenCalledWith(null)
   })
 
-  test('does not suppress digit shortcuts unless they target another pane', async () => {
+  test('gates rebound focus-pane shortcuts by pane context', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
       paneId: 'p1',
@@ -2183,6 +2132,16 @@ describe('BrowserPaneController', () => {
       initialUrl: 'https://example.com/',
       shortcutContext: { paneIds: ['p1'], activePaneId: 'p1' },
     })
+
+    setWorkspaceKeybindingSnapshot(
+      electronMock.win as unknown as Parameters<
+        typeof setWorkspaceKeybindingSnapshot
+      >[0],
+      createWorkspaceKeybindingSnapshot(
+        { 'focus-pane-2': 'Mod+Alt+KeyK' },
+        process.platform
+      )
+    )
 
     const beforeInputHandler = vi
       .mocked(electronMock.views[0]?.webContents.on)
@@ -2209,10 +2168,10 @@ describe('BrowserPaneController', () => {
       { preventDefault: preventOutOfRangeDefault },
       {
         type: 'keyDown',
-        key: '2',
-        code: 'Digit2',
+        key: 'k',
+        code: 'KeyK',
         ...platformShortcutModifier(),
-        alt: false,
+        alt: true,
       }
     )
 
@@ -2235,10 +2194,10 @@ describe('BrowserPaneController', () => {
       { preventDefault: preventSwitchDefault },
       {
         type: 'keyDown',
-        key: '2',
-        code: 'Digit2',
+        key: 'k',
+        code: 'KeyK',
         ...platformShortcutModifier(),
-        alt: false,
+        alt: true,
       }
     )
 
@@ -2296,7 +2255,7 @@ describe('BrowserPaneController', () => {
     expect(electronMock.views[0]?.webContents.focus).toHaveBeenCalled()
   })
 
-  test('does not refocus the native pane after a forwarded dock shortcut', async () => {
+  test('forwards Meta+R to the workspace and restores browser focus', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
       paneId: 'p1',
@@ -2306,6 +2265,199 @@ describe('BrowserPaneController', () => {
 
     vi.mocked(electronMock.win.webContents.executeJavaScript).mockResolvedValue(
       true
+    )
+
+    const beforeInputHandler = vi
+      .mocked(electronMock.views[0]?.webContents.on)
+      .mock.calls.find(([eventName]) => eventName === 'before-input-event')?.[1]
+
+    if (beforeInputHandler === undefined) {
+      throw new Error('missing before-input-event handler')
+    }
+
+    const preventDefault = vi.fn()
+    beforeInputHandler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: 'r',
+        code: 'KeyR',
+        ...platformShortcutModifier(),
+        alt: false,
+      }
+    )
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(
+      electronMock.win.webContents.executeJavaScript
+    ).toHaveBeenCalledOnce()
+
+    expect(
+      vi.mocked(electronMock.win.webContents.executeJavaScript).mock
+        .calls[0]?.[0]
+    ).toContain('KeyR')
+    expect(electronMock.views[0]?.webContents.focus).toHaveBeenCalled()
+  })
+
+  test('preserves auto-repeat when forwarding a registry shortcut', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const beforeInputHandler = listenerFor(0, 'before-input-event')
+    const preventDefault = vi.fn()
+    beforeInputHandler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: 'r',
+        code: 'KeyR',
+        ...platformShortcutModifier(),
+        alt: false,
+        isAutoRepeat: true,
+      }
+    )
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(
+      vi.mocked(electronMock.win.webContents.executeJavaScript).mock
+        .calls[0]?.[0]
+    ).toContain('"repeat":true')
+  })
+
+  test('uses the current registry binding instead of a hardcoded workspace key', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    setWorkspaceKeybindingSnapshot(
+      electronMock.win as unknown as Parameters<
+        typeof setWorkspaceKeybindingSnapshot
+      >[0],
+      createWorkspaceKeybindingSnapshot(
+        { 'activity-panel-toggle': 'Mod+Alt+KeyK' },
+        process.platform
+      )
+    )
+
+    vi.mocked(electronMock.win.webContents.executeJavaScript).mockResolvedValue(
+      true
+    )
+
+    const beforeInputHandler = listenerFor(0, 'before-input-event')
+    const oldPreventDefault = vi.fn()
+    beforeInputHandler(
+      { preventDefault: oldPreventDefault },
+      {
+        type: 'keyDown',
+        key: 'r',
+        code: 'KeyR',
+        ...platformShortcutModifier(),
+        alt: false,
+      }
+    )
+
+    expect(oldPreventDefault).not.toHaveBeenCalled()
+    expect(
+      electronMock.win.webContents.executeJavaScript
+    ).not.toHaveBeenCalled()
+
+    const newPreventDefault = vi.fn()
+    beforeInputHandler(
+      { preventDefault: newPreventDefault },
+      {
+        type: 'keyDown',
+        key: 'k',
+        code: 'KeyK',
+        ...platformShortcutModifier(),
+        alt: true,
+      }
+    )
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(newPreventDefault).toHaveBeenCalledOnce()
+    expect(
+      electronMock.win.webContents.executeJavaScript
+    ).toHaveBeenCalledOnce()
+
+    expect(
+      vi.mocked(electronMock.win.webContents.executeJavaScript).mock
+        .calls[0]?.[0]
+    ).toContain('KeyK')
+    expect(electronMock.views[0]?.webContents.focus).toHaveBeenCalled()
+  })
+
+  test('accepts every eligible registered global binding without an action allowlist', async () => {
+    const paneIds = Array.from({ length: 9 }, (_, index) => `p${index + 1}`)
+
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+      shortcutContext: { paneIds, activePaneId: 'p1' },
+    })
+
+    const snapshot = createWorkspaceKeybindingSnapshot({}, process.platform)
+
+    setWorkspaceKeybindingSnapshot(
+      electronMock.win as unknown as Parameters<
+        typeof setWorkspaceKeybindingSnapshot
+      >[0],
+      snapshot
+    )
+
+    const beforeInputHandler = listenerFor(0, 'before-input-event')
+
+    for (const binding of snapshot.bindings.filter(
+      ({ id, context }) => context === 'global' && id !== 'focus-pane-1'
+    )) {
+      const preventDefault = vi.fn()
+
+      beforeInputHandler(
+        { preventDefault },
+        {
+          type: 'keyDown',
+          key: binding.code,
+          code: binding.code,
+          control: binding.control,
+          meta: binding.meta,
+          alt: binding.alt,
+          shift: binding.shift,
+        }
+      )
+
+      expect(preventDefault, binding.id).toHaveBeenCalledOnce()
+    }
+  })
+
+  test('does not refocus the native pane after a forwarded dock shortcut', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    vi.mocked(electronMock.win.webContents.executeJavaScript).mockResolvedValue(
+      false
     )
 
     const beforeInputHandler = vi
@@ -2333,5 +2485,12 @@ describe('BrowserPaneController', () => {
 
     expect(electronMock.win.webContents.executeJavaScript).toHaveBeenCalled()
     expect(electronMock.views[0]?.webContents.focus).not.toHaveBeenCalled()
+
+    const forwardedScript = vi.mocked(
+      electronMock.win.webContents.executeJavaScript
+    ).mock.calls[0]?.[0]
+    expect(forwardedScript).toContain('proxyOwnsFocus')
+    expect(forwardedScript).toContain('dockHasFocus')
+    expect(forwardedScript).toContain('dialogOpen')
   })
 })

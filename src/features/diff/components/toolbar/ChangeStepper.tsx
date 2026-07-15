@@ -3,6 +3,7 @@ import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 
 export interface ChangeStepperProps {
   // 1-based `N/N` hunk position string (or `0/0` when there are no hunks),
@@ -14,6 +15,10 @@ export interface ChangeStepperProps {
   navEnabled: boolean
   onPrev: (() => void) | undefined
   onNext: (() => void) | undefined
+  previousShortcut: ShortcutInput
+  previousAriaKeyshortcuts: string
+  nextShortcut: ShortcutInput
+  nextAriaKeyshortcuts: string
 }
 
 // Azure (secondary) change-navigation group: a leading `data_object` glyph, the
@@ -36,6 +41,10 @@ export const ChangeStepper = ({
   navEnabled,
   onPrev,
   onNext,
+  previousShortcut,
+  previousAriaKeyshortcuts,
+  nextShortcut,
+  nextAriaKeyshortcuts,
 }: ChangeStepperProps): ReactElement => (
   // role="group" makes the aria-label a valid author name — ARIA 1.2 forbids
   // names on the implicit `generic` role of a bare <span>, so the hunk
@@ -63,25 +72,25 @@ export const ChangeStepper = ({
       </span>
     </Tooltip>
     <span className="flex flex-col">
-      <Tooltip content="Previous change" shortcut="[">
+      <Tooltip content="Previous change" shortcut={previousShortcut}>
         <IconButton
           icon="keyboard_arrow_up"
           label="prev hunk"
           size="sm"
           disabled={!navEnabled}
-          aria-keyshortcuts="["
+          aria-keyshortcuts={previousAriaKeyshortcuts}
           onClick={onPrev}
           showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}
         />
       </Tooltip>
-      <Tooltip content="Next change" shortcut="]">
+      <Tooltip content="Next change" shortcut={nextShortcut}>
         <IconButton
           icon="keyboard_arrow_down"
           label="next hunk"
           size="sm"
           disabled={!navEnabled}
-          aria-keyshortcuts="]"
+          aria-keyshortcuts={nextAriaKeyshortcuts}
           onClick={onNext}
           showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={VERTICAL_STEP_ARROW_CLASSES}

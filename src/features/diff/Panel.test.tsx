@@ -40,10 +40,52 @@ import {
 } from './services/pendingReviewRequests'
 import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 import { themeService } from '../../theme'
+import type { Keybindings } from '../keymap/useKeybindings'
+
+const codeForKey = (key: string): string => {
+  if (/^[a-z]$/i.test(key)) {
+    return `Key${key.toUpperCase()}`
+  }
+
+  return (
+    {
+      '/': 'Slash',
+      '[': 'BracketLeft',
+      ']': 'BracketRight',
+    }[key] ?? key
+  )
+}
+
+const keyDown = (
+  target: Element | Document | Window,
+  init: KeyboardEventInit & { key: string }
+): boolean =>
+  fireEvent.keyDown(target, {
+    ...init,
+    code: init.code ?? codeForKey(init.key),
+  })
 
 // Mock the hooks
 vi.mock('./hooks/useGitStatus')
 vi.mock('./hooks/useFileDiff')
+vi.mock('../keymap/useKeybindings', async () => {
+  const { getCommand } = await import('../keymap/catalog')
+  const { eventMatchesChord } = await import('../keymap/match')
+  const { resolveDefault } = await import('../keymap/resolve')
+
+  const bindingFor: Keybindings['bindingFor'] = (id) =>
+    resolveDefault(getCommand(id), false)
+
+  const matches: Keybindings['matches'] = (event, id) =>
+    eventMatchesChord(event, bindingFor(id), 'ctrl', getCommand(id).matchPolicy)
+
+  return {
+    useKeybindings: (): Pick<Keybindings, 'bindingFor' | 'matches'> => ({
+      bindingFor,
+      matches,
+    }),
+  }
+})
 
 // Stub @pierre/diffs/react: the real MultiFileDiff mounts a Pierre web
 // component and runs Shiki inside a Web Worker, neither of which jsdom
@@ -476,7 +518,7 @@ describe('Panel', () => {
       )
       await screen.findByRole('dialog', { name: 'Finish feedback' })
 
-      await user.click(screen.getByRole('button', { name: 'Copy (c)' }))
+      await user.click(screen.getByRole('button', { name: 'Copy (C)' }))
 
       await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
       const payload = writeText.mock.calls[0][0] as string
@@ -786,20 +828,26 @@ describe('Panel', () => {
 
     expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+    keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
 
     expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+    keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
 
     expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'E' })
+    keyDown(screen.getByTestId('diff-populated-state'), {
+      key: 'E',
+      shiftKey: true,
+    })
 
     expect(window.localStorage.getItem('vf-diff-files-open')).toBe('1')
     expect(screen.getByTestId('changed-files-pane')).toHaveClass('h-full')
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'E' })
+    keyDown(screen.getByTestId('diff-populated-state'), {
+      key: 'E',
+      shiftKey: true,
+    })
 
     expect(window.localStorage.getItem('vf-diff-files-open')).toBe('0')
     expect(screen.getByTestId('changed-files-pane')).toHaveClass('absolute')
@@ -843,7 +891,7 @@ describe('Panel', () => {
 
     render(<Panel />)
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+    keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
 
     await user.click(
       within(screen.getByTestId('changed-files-pane')).getByRole('button', {
@@ -902,7 +950,7 @@ describe('Panel', () => {
 
     render(<Panel />)
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
+    keyDown(screen.getByTestId('diff-populated-state'), { key: 'e' })
 
     const pinButton = within(
       screen.getByTestId('changed-files-pane')
@@ -912,7 +960,7 @@ describe('Panel', () => {
     })
     expect(pinButton).toHaveFocus()
 
-    fireEvent.keyDown(pinButton, { key: 'e' })
+    keyDown(pinButton, { key: 'e' })
 
     expect(screen.queryByTestId('changed-files-pane')).not.toBeInTheDocument()
     expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
@@ -1056,7 +1104,7 @@ describe('Panel', () => {
 
     render(<Panel />)
 
-    fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+    keyDown(screen.getByTestId('diff-populated-state'), {
       key: '/',
     })
 
@@ -1171,7 +1219,7 @@ describe('Panel', () => {
 
       render(<Panel />)
 
-      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+      keyDown(screen.getByTestId('diff-populated-state'), {
         key: 'e',
       })
       expect(screen.getByTestId('changed-files-pane')).toBeInTheDocument()
@@ -2517,14 +2565,14 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 's' })
+      keyDown(screen.getByTestId('multi-file-diff'), { key: 's' })
 
       const confirm = await screen.findByRole('dialog', {
         name: 'Stage hunk?',
       })
       expect(stageFile).not.toHaveBeenCalled()
-      const noButton = within(confirm).getByRole('button', { name: 'No (n)' })
-      const yesButton = within(confirm).getByRole('button', { name: 'Yes (y)' })
+      const noButton = within(confirm).getByRole('button', { name: 'No (N)' })
+      const yesButton = within(confirm).getByRole('button', { name: 'Yes (Y)' })
       expect(noButton).toHaveClass('focus-visible:ring-1')
       expect(noButton).toHaveClass('focus-visible:ring-primary')
       expect(noButton).not.toHaveClass('focus-visible:ring-0')
@@ -2566,14 +2614,14 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 'd' })
+      keyDown(screen.getByTestId('multi-file-diff'), { key: 'd' })
 
       const confirm = await screen.findByRole('dialog', {
         name: 'Discard hunk?',
       })
       expect(discardChanges).not.toHaveBeenCalled()
 
-      await user.click(within(confirm).getByRole('button', { name: 'Yes (y)' }))
+      await user.click(within(confirm).getByRole('button', { name: 'Yes (Y)' }))
 
       await waitFor(() => expect(discardChanges).toHaveBeenCalledTimes(1))
     })
@@ -2607,14 +2655,17 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 'D' })
+      keyDown(screen.getByTestId('multi-file-diff'), {
+        key: 'D',
+        shiftKey: true,
+      })
 
       const confirm = await screen.findByRole('dialog', {
         name: 'Discard file?',
       })
       expect(discardChanges).not.toHaveBeenCalled()
 
-      await user.click(within(confirm).getByRole('button', { name: 'Yes (y)' }))
+      await user.click(within(confirm).getByRole('button', { name: 'Yes (Y)' }))
 
       await waitFor(() => expect(discardChanges).toHaveBeenCalledTimes(1))
       expect(discardChanges.mock.calls[0][1]).toBeUndefined()
@@ -2649,12 +2700,12 @@ describe('Panel', () => {
       )
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 's' })
+      keyDown(diff, { key: 's' })
       expect(
         await screen.findByRole('dialog', { name: 'Stage hunk?' })
       ).toBeInTheDocument()
 
-      fireEvent.keyDown(document, { key: 'n' })
+      keyDown(document, { key: 'n' })
       expect(stageFile).not.toHaveBeenCalled()
       await waitFor(() =>
         expect(
@@ -2662,12 +2713,12 @@ describe('Panel', () => {
         ).not.toBeInTheDocument()
       )
 
-      fireEvent.keyDown(document, { key: 's' })
+      keyDown(document, { key: 's' })
       expect(
         await screen.findByRole('dialog', { name: 'Stage hunk?' })
       ).toBeInTheDocument()
 
-      fireEvent.keyDown(document, { key: 'y' })
+      keyDown(document, { key: 'y' })
 
       await waitFor(() => expect(stageFile).toHaveBeenCalledTimes(1))
     })
@@ -3178,7 +3229,7 @@ describe('Panel', () => {
       shadowRoot.append(additions)
       scrollBody.append(host)
 
-      fireEvent.keyDown(diff, { key: ']' })
+      keyDown(diff, { key: ']' })
       expect(
         screen.getByRole('group', { name: /hunk 2\/3/i })
       ).toBeInTheDocument()
@@ -3198,14 +3249,14 @@ describe('Panel', () => {
       scrollFirstHunkLineIntoView.mockClear()
       scrollLastHunkLineIntoView.mockClear()
 
-      fireEvent.keyDown(diff, { key: ']' })
+      keyDown(diff, { key: ']' })
       expect(
         screen.getByRole('group', { name: /hunk 3\/3/i })
       ).toBeInTheDocument()
       expect(diff.getAttribute('data-selected-lines-start')).toBe('50')
       expect(diff.getAttribute('data-selected-lines-side')).toBe('deletions')
 
-      fireEvent.keyDown(diff, { key: '[' })
+      keyDown(diff, { key: '[' })
       expect(
         screen.getByRole('group', { name: /hunk 2\/3/i })
       ).toBeInTheDocument()
@@ -3217,7 +3268,7 @@ describe('Panel', () => {
       })
       expect(scrollLastHunkLineIntoView).not.toHaveBeenCalled()
 
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'i' })
       expect(
         screen.getByRole('dialog', { name: /Comment on line R20/ })
       ).toBeInTheDocument()
@@ -3244,7 +3295,7 @@ describe('Panel', () => {
       expect(diff).toHaveAttribute('data-selected-lines-start', '20')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: ']' })
+      keyDown(diff, { key: ']' })
 
       expect(
         screen.getByRole('group', { name: /hunk 3\/3/i })
@@ -3271,7 +3322,7 @@ describe('Panel', () => {
         screen.getByRole('group', { name: /hunk 2\/3/i })
       ).toBeInTheDocument()
 
-      fireEvent.keyDown(diff, { key: ']' })
+      keyDown(diff, { key: ']' })
 
       expect(
         screen.getByRole('group', { name: /hunk 3\/3/i })
@@ -3689,7 +3740,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'I',
         shiftKey: true,
       })
@@ -3734,7 +3785,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'I',
         shiftKey: true,
       })
@@ -3788,7 +3839,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'I',
         shiftKey: true,
       })
@@ -3803,7 +3854,7 @@ describe('Panel', () => {
       )
       await user.keyboard('{Enter}')
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'U',
         shiftKey: true,
       })
@@ -3871,7 +3922,7 @@ describe('Panel', () => {
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'U',
         shiftKey: true,
       })
@@ -3908,7 +3959,7 @@ describe('Panel', () => {
 
       const { rerender } = render(<Panel {...props} />)
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'I',
         shiftKey: true,
       })
@@ -3992,11 +4043,11 @@ describe('Panel', () => {
 
       const diff = screen.getByTestId('multi-file-diff')
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '2')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'k' })
+      keyDown(diff, { key: 'k' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
     })
@@ -4014,16 +4065,16 @@ describe('Panel', () => {
 
       const diff = screen.getByTestId('multi-file-diff')
 
-      fireEvent.keyDown(diff, { key: 'v' })
+      keyDown(diff, { key: 'v' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-end', '1')
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-end', '2')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'k' })
+      keyDown(diff, { key: 'k' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-end', '1')
     })
@@ -4139,7 +4190,7 @@ describe('Panel', () => {
 
       const diff = screen.getByTestId('multi-file-diff')
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(scrollSecondIntoView).toHaveBeenCalledWith({
         block: 'nearest',
         inline: 'nearest',
@@ -4147,7 +4198,7 @@ describe('Panel', () => {
 
       scrollBody.scrollTop = 100
 
-      fireEvent.keyDown(diff, { key: 'k' })
+      keyDown(diff, { key: 'k' })
       expect(scrollFirstIntoView).toHaveBeenCalledWith({
         block: 'start',
         inline: 'nearest',
@@ -4228,16 +4279,16 @@ describe('Panel', () => {
       scrollBody.append(host)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'l' })
+      keyDown(diff, { key: 'l' })
       expect(scrollAdditionIntoView).toHaveBeenCalledWith({
         block: 'nearest',
         inline: 'nearest',
       })
 
-      fireEvent.keyDown(diff, { key: 'h' })
+      keyDown(diff, { key: 'h' })
       scrollDeletionIntoView.mockClear()
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
 
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
@@ -4256,8 +4307,8 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'j' })
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'i' })
 
       expect(
         screen.getByRole('dialog', { name: /Comment on line R2/ })
@@ -4294,9 +4345,9 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'v' })
-      fireEvent.keyDown(diff, { key: 'j' })
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'v' })
+      keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'i' })
 
       const dialog = screen.getByRole('dialog', {
         name: /Comment on lines R1-R2/,
@@ -4344,9 +4395,9 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'j' })
-      fireEvent.keyDown(diff, { key: 'v' })
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'v' })
+      keyDown(diff, { key: 'j' })
 
       expect(diff).toHaveAttribute('data-selected-lines-start', '2')
       expect(diff).toHaveAttribute('data-selected-lines-end', '3')
@@ -4473,8 +4524,8 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'v' })
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'v' })
+      keyDown(diff, { key: 'j' })
 
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-end', '2')
@@ -4495,7 +4546,7 @@ describe('Panel', () => {
         'comment-1',
         { text: 'Updated comment', category: 'change' }
       )
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'i' })
 
       expect(
         screen.getByRole('dialog', { name: /Comment on line R2/ })
@@ -4592,9 +4643,9 @@ describe('Panel', () => {
         setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
         const diff = screen.getByTestId('multi-file-diff')
-        fireEvent.keyDown(diff, { key: 'v' })
-        fireEvent.keyDown(diff, { key: 'j' })
-        fireEvent.keyDown(diff, { key: 'y' })
+        keyDown(diff, { key: 'v' })
+        keyDown(diff, { key: 'j' })
+        keyDown(diff, { key: 'y' })
         await waitFor(() =>
           expect(writeText).toHaveBeenCalledWith('alpha\nbeta')
         )
@@ -4618,7 +4669,7 @@ describe('Panel', () => {
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'I',
         shiftKey: true,
       })
@@ -4654,7 +4705,7 @@ describe('Panel', () => {
       await user.keyboard('{Enter}')
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'u' })
+      keyDown(diff, { key: 'u' })
 
       const editTextarea = within(
         screen.getByRole('dialog', { name: /Comment on line R1/ })
@@ -4667,7 +4718,7 @@ describe('Panel', () => {
 
       expect(screen.getByText('Updated comment')).toBeInTheDocument()
 
-      fireEvent.keyDown(diff, { key: 'x' })
+      keyDown(diff, { key: 'x' })
 
       expect(screen.queryByText('Updated comment')).not.toBeInTheDocument()
     })
@@ -4714,8 +4765,8 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'u' })
-      fireEvent.keyDown(diff, { key: 'x' })
+      keyDown(diff, { key: 'u' })
+      keyDown(diff, { key: 'x' })
 
       expect(
         screen.queryByRole('dialog', { name: /Comment on line R1/ })
@@ -4737,7 +4788,7 @@ describe('Panel', () => {
       )
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'i' })
 
       const textarea = within(
         screen.getByRole('dialog', { name: /Comment on line R1/ })
@@ -4776,10 +4827,10 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '2')
 
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'i' })
 
       const textarea = within(
         screen.getByRole('dialog', { name: /Comment on line R2/ })
@@ -4815,10 +4866,10 @@ describe('Panel', () => {
       )
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 'n' })
+      keyDown(diff, { key: 'n' })
       expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
 
-      fireEvent.keyDown(document, { key: 'p' })
+      keyDown(document, { key: 'p' })
 
       expect(onSelectedFileChange).toHaveBeenNthCalledWith(1, {
         path: 'src/bar.ts',
@@ -4876,7 +4927,7 @@ describe('Panel', () => {
         )
       ).toHaveFocus()
 
-      fireEvent.keyDown(document, { key: 'n' })
+      keyDown(document, { key: 'n' })
 
       expect(onSelectedFileChange).toHaveBeenCalledWith({
         path: 'src/bar.ts',
@@ -4931,7 +4982,7 @@ describe('Panel', () => {
         scrollBody.append(element)
       }
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), {
+      keyDown(screen.getByTestId('multi-file-diff'), {
         key: 'd',
         ctrlKey: true,
       })
@@ -4940,7 +4991,7 @@ describe('Panel', () => {
       expect(diff).toHaveAttribute('data-selected-lines-start', '3')
       expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
 
-      fireEvent.keyDown(document, { key: 'u', ctrlKey: true })
+      keyDown(document, { key: 'u', ctrlKey: true })
       expect(scrollBody.scrollTop).toBe(0)
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
     })
@@ -4959,7 +5010,7 @@ describe('Panel', () => {
       const diff = screen.getByTestId('multi-file-diff')
       expect(diff).toHaveAttribute('data-diff-style', 'split')
 
-      fireEvent.keyDown(diff, { key: 't' })
+      keyDown(diff, { key: 't' })
 
       expect(diff).toHaveAttribute('data-diff-style', 'unified')
     })
@@ -5014,27 +5065,27 @@ describe('Panel', () => {
 
       const diff = screen.getByTestId('multi-file-diff')
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '2')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'k' })
+      keyDown(diff, { key: 'k' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'h' })
+      keyDown(diff, { key: 'h' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
 
-      fireEvent.keyDown(diff, { key: 'l' })
+      keyDown(diff, { key: 'l' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'h' })
+      keyDown(diff, { key: 'h' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'deletions')
 
-      fireEvent.keyDown(diff, { key: 'i' })
+      keyDown(diff, { key: 'i' })
       expect(
         screen.getByRole('dialog', { name: /Comment on line L1/ })
       ).toBeInTheDocument()
@@ -5089,18 +5140,18 @@ describe('Panel', () => {
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 100)
 
       const diff = screen.getByTestId('multi-file-diff')
-      fireEvent.keyDown(diff, { key: 't' })
+      keyDown(diff, { key: 't' })
       expect(diff).toHaveAttribute('data-diff-style', 'unified')
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'j' })
+      keyDown(diff, { key: 'j' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '2')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
 
-      fireEvent.keyDown(diff, { key: 'k' })
+      keyDown(diff, { key: 'k' })
       expect(diff).toHaveAttribute('data-selected-lines-start', '1')
       expect(diff).toHaveAttribute('data-selected-lines-side', 'additions')
     })
@@ -5357,7 +5408,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 'r' })
+      keyDown(screen.getByTestId('multi-file-diff'), { key: 'r' })
 
       expect(acceptLatestDiff).toHaveBeenCalledOnce()
     })
@@ -5386,7 +5437,7 @@ describe('Panel', () => {
         />
       )
 
-      fireEvent.keyDown(screen.getByTestId('multi-file-diff'), { key: 'r' })
+      keyDown(screen.getByTestId('multi-file-diff'), { key: 'r' })
 
       expect(acceptLatestDiff).not.toHaveBeenCalled()
     })
@@ -5480,7 +5531,7 @@ describe('Panel', () => {
         )
       })
 
-      fireEvent.keyDown(document, { key: 'n' })
+      keyDown(document, { key: 'n' })
 
       expect(onSelectedFileChange).toHaveBeenCalledWith({
         path: 'src/bar.ts',
@@ -5578,7 +5629,7 @@ describe('Panel', () => {
       // eslint-disable-next-line testing-library/no-node-access -- asserting the browser body-focus handoff was not reclaimed
       expect(document.activeElement).toBe(document.body)
 
-      fireEvent.keyDown(document, { key: 'n' })
+      keyDown(document, { key: 'n' })
 
       expect(onSelectedFileChange).not.toHaveBeenCalled()
     })
@@ -5681,7 +5732,7 @@ describe('Panel', () => {
 
         expect(screen.getByTestId('diff-populated-state')).toHaveFocus()
 
-        fireEvent.keyDown(document, { key: 'n' })
+        keyDown(document, { key: 'n' })
 
         expect(onSelectedFileChange).toHaveBeenCalledWith({
           path: 'src/bar.ts',
@@ -5957,7 +6008,7 @@ describe('Panel', () => {
         await screen.findByRole('button', { name: /finish feedback \(1\)/i })
       ).toBeInTheDocument()
 
-      await user.keyboard('Y')
+      await user.keyboard('{Shift>}y{/Shift}')
 
       const popover = await screen.findByRole('dialog', {
         name: 'Finish feedback',
@@ -5965,10 +6016,10 @@ describe('Panel', () => {
       expect(popover).toHaveTextContent(/Send 1 comment/)
 
       expect(
-        within(popover).getByRole('button', { name: 'Confirm (Y)' })
-      ).toHaveAttribute('aria-keyshortcuts', 'Y')
+        within(popover).getByRole('button', { name: 'Confirm (Shift+Y)' })
+      ).toHaveAttribute('aria-keyshortcuts', 'Shift+Y')
 
-      await user.keyboard('Y')
+      await user.keyboard('{Shift>}y{/Shift}')
 
       await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
       await waitFor(() => expect(focusTerminal).toHaveBeenCalledOnce())
@@ -6079,7 +6130,7 @@ describe('Panel', () => {
       })
       expect(popover).toHaveTextContent(/Send 1 comment/)
 
-      await user.keyboard('Y')
+      await user.keyboard('{Shift>}y{/Shift}')
 
       await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
       const [, payload] = writePty.mock.calls[0]
@@ -6274,7 +6325,7 @@ describe('Panel', () => {
         'Reply to the agent…'
       )
       await user.type(replyTextarea, 'How does that interact with resize?')
-      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+      keyDown(replyTextarea, { key: 'Enter' })
 
       // Confirm popover should open scoped to 1 comment.
       const popover = await screen.findByRole('dialog', {
@@ -6287,7 +6338,7 @@ describe('Panel', () => {
         within(popover).queryByRole('button', { name: /copy/i })
       ).not.toBeInTheDocument()
 
-      await user.keyboard('Y')
+      await user.keyboard('{Shift>}y{/Shift}')
 
       await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
 
@@ -6488,10 +6539,10 @@ describe('Panel', () => {
         'Reply to the agent…'
       )
       await user.type(replyTextarea, 'Follow-up question')
-      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+      keyDown(replyTextarea, { key: 'Enter' })
 
       await screen.findByRole('dialog', { name: 'Finish feedback' })
-      await user.keyboard('Y')
+      await user.keyboard('{Shift>}y{/Shift}')
 
       // Write rejected — no comment inserted.
       await waitFor(() => expect(writePty).toHaveBeenCalledOnce())
@@ -6588,7 +6639,7 @@ describe('Panel', () => {
         'Reply to the agent…'
       )
       await user.type(replyTextarea, 'Typed draft text')
-      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+      keyDown(replyTextarea, { key: 'Enter' })
 
       const popover = await screen.findByRole('dialog', {
         name: 'Finish feedback',
@@ -6729,14 +6780,14 @@ describe('Panel', () => {
         'Reply to the agent…'
       )
       await user.type(replyTextarea, 'Sub-directory follow-up')
-      fireEvent.keyDown(replyTextarea, { key: 'Enter' })
+      keyDown(replyTextarea, { key: 'Enter' })
 
       const popover = await screen.findByRole('dialog', {
         name: 'Finish feedback',
       })
       expect(popover).toHaveTextContent(/Send 1 comment/)
 
-      await user.keyboard('Y')
+      await user.keyboard('{Shift>}y{/Shift}')
 
       await waitFor(() => expect(writePty).toHaveBeenCalledOnce())
 
@@ -6844,7 +6895,7 @@ describe('Panel', () => {
 
       expect(screen.getByTestId('diff-body-region')).toHaveClass('relative')
 
-      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+      keyDown(screen.getByTestId('diff-populated-state'), {
         key: '/',
       })
 
@@ -6880,7 +6931,7 @@ describe('Panel', () => {
       expect(button).not.toHaveClass('right-[72px]')
       expect(button).not.toHaveClass('top-10')
 
-      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+      keyDown(screen.getByTestId('diff-populated-state'), {
         key: '/',
       })
 
@@ -6893,7 +6944,7 @@ describe('Panel', () => {
 
     test('popup closes when the selected file goes away', async (): Promise<void> => {
       const { clearFiles } = renderPanel()
-      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+      keyDown(screen.getByTestId('diff-populated-state'), {
         key: '/',
       })
       await screen.findByRole('search')
@@ -6912,7 +6963,7 @@ describe('Panel', () => {
         screen.queryByRole('button', { name: /search in diff/i })
       ).not.toBeInTheDocument()
 
-      fireEvent.keyDown(screen.getByTestId('diff-populated-state'), {
+      keyDown(screen.getByTestId('diff-populated-state'), {
         key: '/',
       })
 
@@ -7029,7 +7080,7 @@ describe('Panel', () => {
 
       // Switch to changelist scope (already forced; this verifies the SegmentedControl rendered)
       expect(
-        screen.getByRole('group', { name: 'Review scope (f/a)' })
+        screen.getByRole('group', { name: 'Review scope' })
       ).toBeInTheDocument()
 
       // 'All changes (3)' should have aria-pressed=true (forced changelist — no active diff)
@@ -7038,7 +7089,11 @@ describe('Panel', () => {
       ).toHaveAttribute('aria-pressed', 'true')
 
       // Delegate via Y
-      await user.keyboard('Y')
+      fireEvent.keyDown(document, {
+        key: 'Y',
+        code: 'KeyY',
+        shiftKey: true,
+      })
 
       // Wait for writePty to be called (async arm)
       await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
@@ -7147,7 +7202,7 @@ describe('Panel', () => {
 
       // Scope group must be present
       expect(
-        screen.getByRole('group', { name: 'Review scope (f/a)' })
+        screen.getByRole('group', { name: 'Review scope' })
       ).toBeInTheDocument()
 
       // No active diff → 'This file' must be disabled
@@ -7222,7 +7277,7 @@ describe('Panel', () => {
 
       // Scope control must be absent in the degenerate case
       expect(
-        screen.queryByRole('group', { name: 'Review scope (f/a)' })
+        screen.queryByRole('group', { name: 'Review scope' })
       ).not.toBeInTheDocument()
     })
 
@@ -7296,7 +7351,7 @@ describe('Panel', () => {
       ).toHaveAttribute('aria-pressed', 'true')
 
       // Press 'f' to switch to file scope
-      fireEvent.keyDown(document, { key: 'f' })
+      fireEvent.keyDown(document, { key: 'f', code: 'KeyF' })
 
       // 'This file' becomes the active scope
       await waitFor(() => {
@@ -7306,7 +7361,11 @@ describe('Panel', () => {
       })
 
       // Delegate via Y and assert single-file payload
-      await user.keyboard('Y')
+      fireEvent.keyDown(document, {
+        key: 'Y',
+        code: 'KeyY',
+        shiftKey: true,
+      })
 
       await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
 

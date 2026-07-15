@@ -1,8 +1,14 @@
 import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
+import { getCommand, type CommandId } from '@/features/keymap/catalog'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
+import { resolveDefault } from '@/features/keymap/resolve'
 import type { ChangedFile } from '../types'
 import { ChangedFilesList, ChangedFilesListSurface } from './ChangedFilesList'
+
+const bindingFor: Keybindings['bindingFor'] = (id: CommandId) =>
+  resolveDefault(getCommand(id), false)
 
 describe('ChangedFilesList', () => {
   const mockFiles: ChangedFile[] = [
@@ -32,6 +38,7 @@ describe('ChangedFilesList', () => {
   test('renders CHANGED FILES header', () => {
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -47,6 +54,7 @@ describe('ChangedFilesList', () => {
   test('renders file list with status glyphs, names, and directories', () => {
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -69,6 +77,7 @@ describe('ChangedFilesList', () => {
   test('displays insertion and deletion counts', () => {
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -89,6 +98,7 @@ describe('ChangedFilesList', () => {
   test('applies active file highlighting when selected', () => {
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
         onSelectFile={vi.fn()}
@@ -109,6 +119,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -125,12 +136,45 @@ describe('ChangedFilesList', () => {
     expect(onTogglePinned).toHaveBeenCalledOnce()
   })
 
+  test('shows resolved pin and file-comment shortcuts', () => {
+    const remappedBindingFor: Keybindings['bindingFor'] = (id) => {
+      if (id === 'diff-files-pin') {
+        return { code: 'ArrowDown', mods: new Set(['Shift']) }
+      }
+      if (id === 'diff-comment-file') {
+        return { code: 'ArrowUp', mods: new Set(['Alt']) }
+      }
+
+      return bindingFor(id)
+    }
+
+    render(
+      <ChangedFilesList
+        bindingFor={remappedBindingFor}
+        files={mockFiles}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+        onAddFileComment={vi.fn()}
+        onTogglePinned={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: /pin changed files/i })
+    ).toHaveAttribute('aria-keyshortcuts', 'Shift+ArrowDown')
+
+    expect(
+      screen.getByRole('button', { name: 'Comment on file NavBar.tsx' })
+    ).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp')
+  })
+
   test('calls onSelectFile when file is clicked', async () => {
     const handleSelect = vi.fn()
     const user = userEvent.setup()
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={handleSelect}
@@ -151,6 +195,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={handleSelect}
@@ -198,6 +243,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={orderedFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -217,6 +263,7 @@ describe('ChangedFilesList', () => {
   test('applies hover state styling', () => {
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -246,6 +293,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={longPathFile}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -269,6 +317,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={directoryLikePath}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -280,7 +329,12 @@ describe('ChangedFilesList', () => {
 
   test('renders empty state when no files', () => {
     render(
-      <ChangedFilesList files={[]} selectedFile={null} onSelectFile={vi.fn()} />
+      <ChangedFilesList
+        bindingFor={bindingFor}
+        files={[]}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+      />
     )
 
     const header = screen.getByText(/Changed Files/i)
@@ -294,6 +348,7 @@ describe('ChangedFilesList', () => {
   test('uses correct color for insertions (green) and deletions (red)', () => {
     const { container } = render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -334,6 +389,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mmFiles}
         selectedFile={null}
         onSelectFile={onSelect}
@@ -373,6 +429,7 @@ describe('ChangedFilesList', () => {
 
     render(
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mmFiles}
         selectedFile={null}
         onSelectFile={vi.fn()}
@@ -404,8 +461,14 @@ describe('ChangedFilesListSurface', () => {
     const unpinned = false
     const hidden = false
 
+    const remappedBindingFor: Keybindings['bindingFor'] = (id) =>
+      id === 'diff-files-toggle'
+        ? { code: 'ArrowLeft', mods: new Set(['Shift']) }
+        : bindingFor(id)
+
     render(
       <ChangedFilesListSurface
+        bindingFor={remappedBindingFor}
         files={mockFiles}
         selectedFile={null}
         pinned={unpinned}
@@ -419,9 +482,12 @@ describe('ChangedFilesListSurface', () => {
       />
     )
 
-    await user.click(
-      screen.getByRole('button', { name: /show changed files \(1\)/i })
-    )
+    const edgeHint = screen.getByRole('button', {
+      name: /show changed files \(1\)/i,
+    })
+    expect(edgeHint).toHaveAttribute('aria-keyshortcuts', 'Shift+ArrowLeft')
+
+    await user.click(edgeHint)
 
     expect(onReveal).toHaveBeenCalled()
     expect(onToggle).not.toHaveBeenCalled()
@@ -436,6 +502,7 @@ describe('ChangedFilesListSurface', () => {
     render(
       <>
         <ChangedFilesListSurface
+          bindingFor={bindingFor}
           files={mockFiles}
           selectedFile={null}
           pinned={unpinned}

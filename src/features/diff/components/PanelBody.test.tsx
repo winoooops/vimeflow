@@ -2,6 +2,11 @@ import { createRef, type ReactElement, type ReactNode } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { getCommand, type CommandId } from '@/features/keymap/catalog'
+import { resolveDefault } from '@/features/keymap/resolve'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
+import { SettingsContext } from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import { PanelBody } from './PanelBody'
 import type { ReviewComment } from '../hooks/useFeedbackBatch'
 import type { PierreFileInputs } from '../services/pierreAdapter'
@@ -73,9 +78,25 @@ const options: FileDiffOptions<ReviewComment> = {
   theme: 'pierre-dark',
 }
 
+const bindingFor: Keybindings['bindingFor'] = (id: CommandId) =>
+  resolveDefault(getCommand(id), false)
+
+const SettingsFixture = ({
+  children,
+}: {
+  children: ReactNode
+}): ReactElement => (
+  <SettingsContext.Provider
+    value={{ settings: DEFAULT_SETTINGS, saveError: null, update: vi.fn() }}
+  >
+    {children}
+  </SettingsContext.Provider>
+)
+
 const createBodyProps = (
   overrides: Partial<Parameters<typeof PanelBody>[0]> = {}
 ): Parameters<typeof PanelBody>[0] => ({
+  bindingFor,
   scrollBodyRef: createRef<HTMLDivElement>(),
   diffError: null,
   diffLoading: false,
@@ -102,7 +123,9 @@ const createBodyProps = (
 const renderBody = (
   overrides: Partial<Parameters<typeof PanelBody>[0]> = {}
 ): ReturnType<typeof render> =>
-  render(<PanelBody {...createBodyProps(overrides)} />)
+  render(<PanelBody {...createBodyProps(overrides)} />, {
+    wrapper: SettingsFixture,
+  })
 
 describe('PanelBody', () => {
   beforeEach(() => {
@@ -146,6 +169,43 @@ describe('PanelBody', () => {
     expect(renderer).toHaveAttribute('data-old-file', 'src/foo.ts')
     expect(renderer).toHaveAttribute('data-new-file', 'src/foo.ts')
     expect(renderer).toHaveAttribute('data-diff-style', 'split')
+  })
+
+  test('shows resolved comment action shortcuts', () => {
+    const remappedBindingFor: Keybindings['bindingFor'] = (id) => {
+      if (id === 'diff-comment-update') {
+        return { code: 'ArrowDown', mods: new Set(['Shift']) }
+      }
+      if (id === 'diff-comment-delete') {
+        return { code: 'ArrowUp', mods: new Set(['Alt']) }
+      }
+
+      return bindingFor(id)
+    }
+
+    const annotation: DiffLineAnnotation<ReviewComment> = {
+      side: 'additions',
+      lineNumber: 2,
+      metadata: {
+        id: 'pending',
+        text: 'Pending comment',
+        author: 'self',
+        createdAt: 1,
+      },
+    }
+
+    renderBody({
+      bindingFor: remappedBindingFor,
+      lineAnnotations: [annotation],
+    })
+
+    expect(
+      screen.getByRole('button', { name: 'Edit comment' })
+    ).toHaveAttribute('aria-keyshortcuts', 'Shift+ArrowDown')
+
+    expect(
+      screen.getByRole('button', { name: 'Delete comment' })
+    ).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp')
   })
 
   test('rerenders Pierre when the active diff highlight cache becomes available', async () => {

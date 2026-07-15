@@ -78,6 +78,23 @@ describe('useSettingsDialog', () => {
     expect(result.current.isOpen).toBe(true)
   })
 
+  test('literal Ctrl+, toggles the dialog open on macOS', () => {
+    vi.stubGlobal('navigator', { userAgent: 'test-mac', platform: 'MacIntel' })
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          ctrlKey: true,
+          key: ',',
+          bubbles: true,
+        })
+      )
+    })
+
+    expect(result.current.isOpen).toBe(true)
+  })
+
   test('Ctrl+, toggles the dialog open on non-macOS', () => {
     vi.stubGlobal('navigator', {
       userAgent: 'test-linux',

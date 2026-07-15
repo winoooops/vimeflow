@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
 import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
@@ -36,6 +37,7 @@ import {
   type GhosttyNativeShortcutContext,
   type GhosttyNativeUpdateRequest,
 } from './ghostty-native-shared'
+import { getWorkspaceKeybindingSnapshot } from './workspace-keybindings'
 
 interface GhosttyNativePayloadByKind {
   update: GhosttyNativeUpdateRequest
@@ -65,7 +67,8 @@ interface GhosttyNativeParentAddon {
       meta: boolean,
       alt: boolean,
       shift: boolean,
-      repeat: boolean
+      repeat: boolean,
+      fromSecondary?: boolean
     ) => void,
     onRenamePane: () => void
   ) => GhosttyNativeSurface
@@ -78,7 +81,7 @@ interface GhosttyNativeParentAddon {
     bottomCornerRadius: number,
     parentHeight: number
   ) => void
-  setShortcutDigits?: (surface: GhosttyNativeSurface, digits: string) => void
+  setKeybindings?: (surface: GhosttyNativeSurface, bindings: string) => void
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
@@ -127,7 +130,8 @@ interface GhosttyNativeSurfaceState {
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
-  lastShortcutDigits: string | null
+  shortcutContext: GhosttyNativeShortcutContext | null
+  lastKeybindings: string | null
 }
 
 interface GhosttyNativeSecondaryCallbacks {
@@ -159,6 +163,7 @@ interface GhosttyNativeShortcutInput {
 interface GhosttyNativeShortcutDispatchState {
   activeGhosttyPane: boolean
   dockHasFocus: boolean
+  dialogOpen?: boolean
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -179,15 +184,18 @@ const GHOSTTY_RESIZE_THROTTLE_MS =
     ? throttleMsOverride
     : 16
 
-// Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in with
-// VITE_GHOSTTY_NATIVE_MACOS_PARENT so ordinary local runs can keep the fallback.
+// Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in so
+// ordinary local runs can keep the fallback. The old helper flag is retained
+// as an alias, but now selects this same parented NSView implementation.
 export const isGhosttyNativeParentEnabled = (
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
   packaged = false
 ): boolean =>
   platform === 'darwin' &&
-  (packaged || env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1')
+  (packaged ||
+    env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1' ||
+    env.VITE_GHOSTTY_NATIVE_MACOS === '1')
 
 const nativeParentDir = (packaged = false, resourcesPath = ''): string => {
   if (packaged) {
@@ -222,29 +230,15 @@ const isShortcutDispatchState = (
 ): value is GhosttyNativeShortcutDispatchState =>
   isRecord(value) &&
   typeof value.activeGhosttyPane === 'boolean' &&
-  typeof value.dockHasFocus === 'boolean'
+  typeof value.dockHasFocus === 'boolean' &&
+  (value.dialogOpen === undefined || typeof value.dialogOpen === 'boolean')
 
-// Keep this paired with GhosttyElectronBridge.workspaceShortcutByKeyCode until
-// VIM-294 replaces the native forwarding allowlist with a shared registry.
 const shouldRefocusGhosttyAfterWorkspaceShortcut = (
-  input: GhosttyNativeShortcutInput,
   dispatchState: GhosttyNativeShortcutDispatchState
-): boolean => {
-  if (!dispatchState.activeGhosttyPane || dispatchState.dockHasFocus) {
-    return false
-  }
-
-  return (
-    /^Digit[1-9]$/.test(input.code) ||
-    input.code === 'Backslash' ||
-    input.code === 'Digit0' ||
-    input.code === 'KeyB' ||
-    input.code === 'KeyE' ||
-    input.code === 'KeyG' ||
-    input.code === 'KeyN' ||
-    input.code === 'KeyZ'
-  )
-}
+): boolean =>
+  dispatchState.activeGhosttyPane &&
+  !dispatchState.dockHasFocus &&
+  dispatchState.dialogOpen !== true
 
 const isShortcutContext = (
   value: unknown
@@ -254,20 +248,33 @@ const isShortcutContext = (
   value.paneIds.every(isNonEmptyString) &&
   (value.activePaneId === null || isNonEmptyString(value.activePaneId))
 
-const shortcutDigitsForPane = (
+const serializedKeybindingsForPane = (
+  win: BrowserWindow,
   paneId: string,
   context: GhosttyNativeShortcutContext | null
 ): string => {
-  if (context?.activePaneId !== paneId) {
-    return ''
-  }
+  const snapshot = getWorkspaceKeybindingSnapshot(win)
 
-  return context.paneIds
-    .slice(0, 9)
-    .flatMap((targetPaneId, index) =>
-      targetPaneId === paneId ? [] : String(index + 1)
-    )
-    .join('')
+  const bindings = snapshot.bindings.filter((binding) => {
+    if (binding.context !== 'global') {
+      return false
+    }
+
+    const paneMatch = /^focus-pane-([1-9])$/.exec(binding.id)
+    if (paneMatch === null) {
+      return true
+    }
+
+    if (context?.activePaneId !== paneId) {
+      return false
+    }
+
+    const targetPaneId = context.paneIds.at(Number(paneMatch[1]) - 1)
+
+    return targetPaneId !== undefined && targetPaneId !== paneId
+  })
+
+  return JSON.stringify({ version: snapshot.version, bindings })
 }
 
 const loadAddon = (dir: string): GhosttyNativeParentAddon => {
@@ -455,6 +462,23 @@ export class GhosttyNativeParentController {
     this.windowClosedHandlers.clear()
   }
 
+  refreshKeybindings(win: BrowserWindow): void {
+    if (!this.enabled() || this.surfaces.size === 0) {
+      return
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon?.setKeybindings) {
+      return
+    }
+
+    for (const state of this.surfaces.values()) {
+      if (state.ownerWindowId === win.id) {
+        this.applyKeybindings(addon, win, state)
+      }
+    }
+  }
+
   private update(
     sender: WebContents,
     payload: GhosttyNativeUpdateRequest
@@ -478,11 +502,7 @@ export class GhosttyNativeParentController {
     const state = this.getOrCreatePaneState(payload)
 
     const surface = this.getOrCreateSurface(addon, win, state)
-
-    const shortcutDigits = shortcutDigitsForPane(
-      state.pane.paneId,
-      payload.shortcutContext ?? null
-    )
+    state.shortcutContext = payload.shortcutContext ?? null
 
     const roundedWidth = Math.round(payload.bounds.width)
     const roundedHeight = Math.round(payload.bounds.height)
@@ -530,10 +550,7 @@ export class GhosttyNativeParentController {
       frame.bottomCornerRadius,
       frame.parentHeight
     )
-    if (state.lastShortcutDigits !== shortcutDigits) {
-      state.lastShortcutDigits = shortcutDigits
-      addon.setShortcutDigits?.(surface, shortcutDigits)
-    }
+    this.applyKeybindings(addon, win, state)
     if (state.pendingData.length > 0) {
       this.flushPendingData(addon, state)
     }
@@ -837,7 +854,8 @@ export class GhosttyNativeParentController {
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
-      lastShortcutDigits: null,
+      shortcutContext: null,
+      lastKeybindings: null,
     }
     this.surfaces.set(key, state)
 
@@ -924,7 +942,7 @@ export class GhosttyNativeParentController {
           payload: state.pane,
         })
       },
-      (shortcutKey, code, control, meta, alt, shift, repeat) => {
+      (shortcutKey, code, control, meta, alt, shift, repeat, fromSecondary) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
           return
         }
@@ -948,15 +966,21 @@ export class GhosttyNativeParentController {
           return
         }
 
-        void this.forwardShortcutToAppRenderer(addon, win, state, {
-          key: shortcutKey,
-          code,
-          control,
-          meta,
-          alt,
-          shift,
-          repeat,
-        })
+        void this.forwardShortcutToAppRenderer(
+          addon,
+          win,
+          state,
+          {
+            key: shortcutKey,
+            code,
+            control,
+            meta,
+            alt,
+            shift,
+            repeat,
+          },
+          fromSecondary === true
+        )
       },
       () => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
@@ -1013,7 +1037,8 @@ export class GhosttyNativeParentController {
     addon: GhosttyNativeParentAddon,
     win: BrowserWindow,
     state: GhosttyNativeSurfaceState,
-    input: GhosttyNativeShortcutInput
+    input: GhosttyNativeShortcutInput,
+    fromSecondary: boolean
   ): Promise<void> {
     if (win.isDestroyed() || win.webContents.isDestroyed() || !state.surface) {
       return
@@ -1057,7 +1082,8 @@ export class GhosttyNativeParentController {
                 node.getAttribute('data-pane-id') === ${JSON.stringify(state.pane.paneId)} &&
                 node.getAttribute('data-pty-id') === ${JSON.stringify(state.pane.sessionId)}
               )
-              resolve({ activeGhosttyPane: !renameInputOpen && activeGhosttyPane, dockHasFocus })
+              const dialogOpen = document.querySelector(${JSON.stringify(DIALOG_SELECTOR)}) !== null
+              resolve({ activeGhosttyPane: !renameInputOpen && activeGhosttyPane, dockHasFocus, dialogOpen })
             })
           })
         })()`,
@@ -1066,7 +1092,7 @@ export class GhosttyNativeParentController {
 
       if (
         isShortcutDispatchState(shouldRefocus) &&
-        shouldRefocusGhosttyAfterWorkspaceShortcut(input, shouldRefocus)
+        shouldRefocusGhosttyAfterWorkspaceShortcut(shouldRefocus)
       ) {
         const key = this.paneKey(state.pane)
         const currentState = this.surfaces.get(key)
@@ -1074,8 +1100,16 @@ export class GhosttyNativeParentController {
         const currentSurface =
           currentState === state ? currentState.surface : null
 
-        if (currentSurface && !this.inputBlocked(win)) {
-          addon.focus(currentSurface)
+        if (currentSurface && win.isFocused() && !this.inputBlocked(win)) {
+          if (
+            fromSecondary &&
+            currentState?.secondary?.visible === true &&
+            addon.focusSecondary
+          ) {
+            addon.focusSecondary(currentSurface)
+          } else {
+            addon.focus(currentSurface)
+          }
         }
       }
     } catch {
@@ -1096,6 +1130,28 @@ export class GhosttyNativeParentController {
     for (const data of state.pendingData.splice(0)) {
       addon.write(state.surface, data)
     }
+  }
+
+  private applyKeybindings(
+    addon: GhosttyNativeParentAddon,
+    win: BrowserWindow,
+    state: GhosttyNativeSurfaceState
+  ): void {
+    if (!state.surface || !addon.setKeybindings) {
+      return
+    }
+
+    const keybindings = serializedKeybindingsForPane(
+      win,
+      state.pane.paneId,
+      state.shortcutContext
+    )
+    if (state.lastKeybindings === keybindings) {
+      return
+    }
+
+    state.lastKeybindings = keybindings
+    addon.setKeybindings(state.surface, keybindings)
   }
 
   // Leading+trailing throttle: forward immediately when idle, then hold a
@@ -1185,7 +1241,7 @@ export class GhosttyNativeParentController {
   private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
     state.lastBackgroundColor = null
     state.lastForegroundColor = null
-    state.lastShortcutDigits = null
+    state.lastKeybindings = null
   }
 
   private invokeSidecar(

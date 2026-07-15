@@ -1,5 +1,17 @@
 # Keybinding Engine — Design (VIM-136 / SP1)
 
+> **2026-07-14 addendum:** Focus-scoped Diff commands now use this registry and Settings editor.
+> Unlike global commands, a Diff binding may use zero or one primary modifier so Vim-style bare-key
+> defaults can be replaced with Shift/Alt combinations. Diff focus and text-entry guards provide the
+> safety boundary; global bindings retain the exactly-one-super invariant described below.
+
+> **2026-07-15 addendum:** The resolved catalog is also the process/native transport contract.
+> Settings publishes the complete override map on load and edit; Electron produces one platform-
+> expanded, versioned snapshot for the workspace window, embedded browser views, and native Ghostty
+> views. Native layers match physical key codes and modifiers from that snapshot without maintaining
+> shortcut allowlists. Adding a global catalog binding therefore propagates to every input layer;
+> focus-scoped contexts remain with their renderer owner and retain their existing action guards.
+
 **Status:** Accepted (codex-reviewed 2026-06-16T04:05:18Z; TDD implementation pending in
 `feature/vim-136`).
 

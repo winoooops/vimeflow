@@ -5,6 +5,14 @@ import type { PlatformSuper } from './match'
 
 export type CustomKeybindings = Partial<Record<CommandId, string>>
 
+export const isValidBinding = (
+  command: Pick<CommandDescriptor, 'context'>,
+  chord: Chord
+): boolean =>
+  command.context === 'diff'
+    ? !(chord.mods.has('Mod') && chord.mods.has('Ctrl'))
+    : exactlyOneSuper(chord)
+
 export const resolveDefault = (
   cmd: Pick<CommandDescriptor, 'defaultCombo'>,
   isMac: boolean
@@ -39,7 +47,7 @@ export const resolveBindings = (
       continue
     }
     const chord = parseChord(token)
-    if (chord !== null && exactlyOneSuper(chord)) {
+    if (chord !== null && isValidBinding(cmd, chord)) {
       resolved.set(cmd.id, chord)
     }
   }

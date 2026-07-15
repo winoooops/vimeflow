@@ -46,12 +46,12 @@ const sessions: Session[] = [
 // End-to-end: a persisted override flows settings → useKeybindings → the migrated
 // hook, so it dispatches on the new combo and not the old default. jsdom is
 // non-mac, so useKeybindings resolves `Mod` to `ctrl`.
-test('persisted override changes the live shortcut (focus-pane-2 -> Mod+KeyK)', () => {
+test('persisted override changes the live shortcut (focus-pane-2 -> Mod+KeyM)', () => {
   const setSessionActivePane = vi.fn()
 
   const settings: AppSettings = {
     ...DEFAULT_SETTINGS,
-    customKeybindings: { 'focus-pane-2': 'Mod+KeyK' },
+    customKeybindings: { 'focus-pane-2': 'Mod+KeyM' },
   }
 
   const wrapper = ({ children }: { children: ReactNode }): ReactNode =>
@@ -77,7 +77,7 @@ test('persisted override changes the live shortcut (focus-pane-2 -> Mod+KeyK)', 
   )
 
   document.dispatchEvent(
-    new KeyboardEvent('keydown', { code: 'KeyK', ctrlKey: true })
+    new KeyboardEvent('keydown', { code: 'KeyM', ctrlKey: true })
   )
   expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1') // rebound combo focuses pane 2
 

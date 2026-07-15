@@ -2145,6 +2145,9 @@ describe('buildWorkspaceCommands - shortcut chips', () => {
     expect(chip(commands, 'open-editor')).toEqual(['⌘', 'E'])
     expect(chip(commands, 'open-diff')).toEqual(['⌘', 'G'])
     expect(chip(commands, 'toggle-dock')).toEqual(['⌘', '0'])
+    expect(chip(commands, 'next')).toEqual(['⌘', ']'])
+    expect(chip(commands, 'previous')).toEqual(['⌘', '['])
+    expect(chip(commands, 'burner')).toEqual(['⌃', '`'])
   })
 
   test('Linux chips match the wired accelerators', () => {
@@ -2154,9 +2157,12 @@ describe('buildWorkspaceCommands - shortcut chips', () => {
     expect(chip(commands, 'open-editor')).toEqual(['Ctrl', 'E'])
     expect(chip(commands, 'open-diff')).toEqual(['Ctrl', 'G'])
     expect(chip(commands, 'toggle-dock')).toEqual(['Ctrl', '0'])
+    expect(chip(commands, 'next')).toEqual(['Ctrl', '⇧', ']'])
+    expect(chip(commands, 'previous')).toEqual(['Ctrl', '⇧', '['])
+    expect(chip(commands, 'burner')).toEqual(['Ctrl', '`'])
   })
 
-  test('only the five accelerator commands carry chips', () => {
+  test('only commands with registered accelerators carry chips', () => {
     vi.mocked(isMacPlatform).mockReturnValue(true)
 
     const commands = buildWorkspaceCommands({
@@ -2174,11 +2180,39 @@ describe('buildWorkspaceCommands - shortcut chips', () => {
     expect(withChips).toEqual(
       [
         'new',
+        'next',
         'open-diff',
         'open-editor',
+        'previous',
+        'burner',
         'toggle-dock',
         'toggle-sidebar',
       ].sort()
     )
+  })
+
+  test('uses resolved registry chips when supplied', () => {
+    const commands = buildWorkspaceCommands({
+      ...chipDeps(),
+      toggleActivityPanel: vi.fn(),
+      showSidebarTab: vi.fn(),
+      keybindingShortcut: (id) => ['custom', id],
+    })
+
+    expect(chip(commands, 'new')).toEqual(['custom', 'new-session'])
+    expect(chip(commands, 'toggle-sidebar')).toEqual([
+      'custom',
+      'sidebar-toggle',
+    ])
+
+    expect(chip(commands, 'toggle-activity')).toEqual([
+      'custom',
+      'activity-panel-toggle',
+    ])
+
+    expect(chip(commands, 'show-sessions')).toEqual([
+      'custom',
+      'sidebar-sessions',
+    ])
   })
 })

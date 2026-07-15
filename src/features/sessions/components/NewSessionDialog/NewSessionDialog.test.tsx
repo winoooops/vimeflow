@@ -2,9 +2,22 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { AgentAlias } from '@/bindings'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
 import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../../terminal/layout-registry'
 import { NewSessionDialog } from './NewSessionDialog'
+
+vi.mock('@/features/keymap/useKeybindings', async () => {
+  const { getCommand } = await import('@/features/keymap/catalog')
+  const { resolveDefault } = await import('@/features/keymap/resolve')
+
+  const bindingFor: Keybindings['bindingFor'] = (id) =>
+    resolveDefault(getCommand(id), false)
+
+  return {
+    useKeybindings: (): Pick<Keybindings, 'bindingFor'> => ({ bindingFor }),
+  }
+})
 
 interface CapturedNativeOverlayRequest {
   surfaceId: string

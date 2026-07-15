@@ -35,12 +35,12 @@ The native Ghostty terminal path is opt-in in dev. Use the wrapper script or set
 npm run electron:dev:ghostty   # = VITE_GHOSTTY_NATIVE_MACOS_PARENT=1 VITE_NATIVE_OVERLAY=1 on port 5174
 ```
 
-| Env var                              | Effect                                                                                         |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `VITE_GHOSTTY_NATIVE_MACOS_PARENT=1` | Enable the native Ghostty parent-window surface (the macOS backbone; always on when packaged). |
-| `VITE_NATIVE_OVERLAY=1`              | Enable native overlay layering used with the parent surface.                                   |
-| `VITE_GHOSTTY_NATIVE_MACOS=1`        | Enable the older native helper path (superseded by the parent path).                           |
-| `GHOSTTY_RESIZE_THROTTLE_MS=<ms>`    | Override the resize throttle for the native parent surface.                                    |
+| Env var                              | Effect                                                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `VITE_GHOSTTY_NATIVE_MACOS_PARENT=1` | Enable the native Ghostty parent-window surface (the macOS backbone; always on when packaged).  |
+| `VITE_NATIVE_OVERLAY=1`              | Enable native overlay layering used with the parent surface.                                    |
+| `VITE_GHOSTTY_NATIVE_MACOS=1`        | Deprecated alias for `VITE_GHOSTTY_NATIVE_MACOS_PARENT=1`; the separate helper path is retired. |
+| `GHOSTTY_RESIZE_THROTTLE_MS=<ms>`    | Override the resize throttle for the native parent surface.                                     |
 
 Run dev alongside the installed prod app with the native terminal and a clean profile:
 

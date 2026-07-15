@@ -156,12 +156,12 @@ describe('useDockShortcuts', () => {
 
   test('focus-editor fires on a rebound combo supplied by the registry matcher', () => {
     const props = makeProps({
-      matches: matchesFor(false, { 'focus-editor': 'Mod+KeyK' }),
+      matches: matchesFor(false, { 'focus-editor': 'Mod+KeyO' }),
     })
     const dockElement = attachDockAndFocus()
     renderHook(() => useDockShortcuts(props))
 
-    const event = fire('k', { ctrlKey: true })
+    const event = fire('o', { ctrlKey: true })
 
     expect(props.openDock).toHaveBeenCalledWith('editor')
     expect(event.preventDefaultSpy).toHaveBeenCalled()

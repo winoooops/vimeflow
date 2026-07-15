@@ -14,6 +14,7 @@ const bridgePath = join(nativeDir, 'libGhosttyElectronBridge.dylib')
 const expectedExports = [
   'create',
   'setFrame',
+  'setKeybindings',
   'write',
   'focus',
   'addSecondary',

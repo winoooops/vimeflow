@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { ChangedFilesList } from '../../../diff/components/ChangedFilesList'
 import type { ChangedFile } from '../../../diff/types'
+import { useKeybindings } from '../../../keymap/useKeybindings'
 
 // Mock changed files data for the diff panel
 const mockChangedFiles: ChangedFile[] = [
@@ -33,6 +34,8 @@ const mockChangedFiles: ChangedFile[] = [
  * Shows files with git status badges (M/A/D) in a scrollable list.
  */
 export const DiffPanel = (): ReactElement => {
+  const { bindingFor } = useKeybindings()
+
   const [selectedFile, setSelectedFile] = useState<{
     path: string
     staged: boolean
@@ -44,6 +47,7 @@ export const DiffPanel = (): ReactElement => {
       data-testid="diff-panel"
     >
       <ChangedFilesList
+        bindingFor={bindingFor}
         files={mockChangedFiles}
         selectedFile={selectedFile}
         onSelectFile={(file): void => {

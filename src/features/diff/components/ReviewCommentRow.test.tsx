@@ -90,8 +90,10 @@ describe('ReviewCommentRow', () => {
           author: 'self',
           createdAt: 2000,
         }}
-        editShortcut="Shift+U"
+        editShortcut={['Shift', 'U']}
+        editAriaKeyshortcuts="Shift+U"
         deleteShortcut={null}
+        deleteAriaKeyshortcuts={null}
         onEdit={vi.fn()}
         onDelete={vi.fn()}
       />

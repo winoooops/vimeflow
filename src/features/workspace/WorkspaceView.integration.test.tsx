@@ -397,6 +397,58 @@ describe('WorkspaceView Integration Tests', () => {
       ).toBeInTheDocument()
       expect(screen.queryByTestId('agent-status-rail')).not.toBeInTheDocument()
     })
+
+    test('Meta+R toggles the activity panel without reloading the app', async () => {
+      const originalPlatform = navigator.platform
+      Object.defineProperty(navigator, 'platform', {
+        value: 'MacIntel',
+        configurable: true,
+      })
+
+      try {
+        render(<WorkspaceView />)
+
+        await screen.findByRole('button', { name: 'session 1' })
+
+        const collapseEvent = new KeyboardEvent('keydown', {
+          key: 'r',
+          code: 'KeyR',
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+
+        act(() => {
+          document.dispatchEvent(collapseEvent)
+        })
+
+        expect(collapseEvent.defaultPrevented).toBe(true)
+        expect(
+          await screen.findByTestId('agent-status-rail')
+        ).toBeInTheDocument()
+
+        act(() => {
+          document.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'r',
+              code: 'KeyR',
+              metaKey: true,
+              bubbles: true,
+              cancelable: true,
+            })
+          )
+        })
+
+        expect(
+          await screen.findByTestId('agent-status-panel-header')
+        ).toBeInTheDocument()
+      } finally {
+        Object.defineProperty(navigator, 'platform', {
+          value: originalPlatform,
+          configurable: true,
+        })
+      }
+    })
   })
 
   describe('File open flow integration', () => {

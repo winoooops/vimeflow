@@ -1,9 +1,28 @@
 import { test, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 import {
   BrowserAddressBar,
   type BrowserAddressBarProps,
 } from './BrowserAddressBar'
+
+const render = (
+  ui: ReactElement,
+  customKeybindings: Record<string, string> = {}
+): ReturnType<typeof rtlRender> =>
+  rtlRender(
+    <SettingsContext.Provider
+      value={{
+        settings: { ...DEFAULT_SETTINGS, customKeybindings },
+        saveError: null,
+        update: vi.fn(),
+      }}
+    >
+      {ui}
+    </SettingsContext.Provider>
+  )
 
 const baseProps: BrowserAddressBarProps = {
   committedUrl: 'https://github.com/winoooops/vimeflow',
@@ -90,4 +109,15 @@ test('the decorative lock icon is aria-hidden', () => {
   render(<BrowserAddressBar {...baseProps} />)
 
   expect(screen.getByText('lock')).toHaveAttribute('aria-hidden', 'true')
+})
+
+test('renders the resolved browser-location shortcut and ARIA binding', () => {
+  render(<BrowserAddressBar {...baseProps} />, {
+    'browser-location': 'Mod+Shift+KeyK',
+  })
+
+  expect(screen.getByText('Ctrl+Shift+K')).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: /Ctrl\+Shift\+K/ })
+  ).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+K')
 })

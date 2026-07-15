@@ -26,6 +26,7 @@ public typealias VimeflowGhosttyShortcutCallback = @convention(c) (
     Bool,
     Bool,
     Bool,
+    Bool,
     Bool
 ) -> Void
 
@@ -298,7 +299,8 @@ private final class CallbackBox: @unchecked Sendable {
         meta: Bool,
         alt: Bool,
         shift: Bool,
-        repeatEvent: Bool
+        repeatEvent: Bool,
+        fromSecondary: Bool
     ) {
         key.withCString { keyPointer in
             code.withCString { codePointer in
@@ -310,7 +312,8 @@ private final class CallbackBox: @unchecked Sendable {
                     meta,
                     alt,
                     shift,
-                    repeatEvent
+                    repeatEvent,
+                    fromSecondary
                 )
             }
         }
@@ -409,35 +412,76 @@ private final class EmbeddedGhosttyChild {
 
 @MainActor
 private final class EmbeddedGhosttySurface: NSObject {
-    private static let shortcutDigitByKeyCode: [UInt16: Character] = [
-        18: "1",
-        19: "2",
-        20: "3",
-        21: "4",
-        23: "5",
-        22: "6",
-        26: "7",
-        28: "8",
-        25: "9"
-    ]
+    private struct KeybindingSnapshot: Decodable {
+        let version: Int
+        let bindings: [Keybinding]
+    }
 
-    // App-owned shortcuts must cross the AppKit -> Electron boundary while
-    // Ghostty has focus. VIM-294 tracks replacing this explicit list with a
-    // shared shortcut registry; Cmd+R/reload is still a later scope.
-    private static let workspaceShortcutByKeyCode: [UInt16: (key: String, code: String)] = [
-        5: ("g", "KeyG"),
-        6: ("z", "KeyZ"),
-        11: ("b", "KeyB"),
-        14: ("e", "KeyE"),
-        29: ("0", "Digit0"),
-        42: ("\\", "Backslash"),
-        45: ("n", "KeyN")
-    ]
+    private struct Keybinding: Decodable {
+        let context: String
+        let matchPolicy: String
+        let code: String
+        let control: Bool
+        let meta: Bool
+        let alt: Bool
+        let shift: Bool
 
-    private static let workspaceShortcutCodesAllowingExtraModifiers = Set([
-        "Digit0",
-        "Backslash"
-    ])
+        func matches(_ flags: NSEvent.ModifierFlags) -> Bool {
+            guard flags.contains(.control) == control,
+                  flags.contains(.command) == meta
+            else {
+                return false
+            }
+
+            if shift {
+                guard flags.contains(.shift) else { return false }
+            } else if matchPolicy == "exact" && flags.contains(.shift) {
+                return false
+            }
+
+            if alt {
+                guard flags.contains(.option) else { return false }
+            } else if matchPolicy == "exact" && flags.contains(.option) {
+                return false
+            }
+
+            return true
+        }
+    }
+
+    // NSEvent exposes the platform's physical key code while the shared
+    // registry uses KeyboardEvent.code. This table translates the keyboard
+    // vocabulary once; app commands never appear here.
+    private static let webCodeByMacKeyCode: [UInt16: String] = [
+        0: "KeyA", 1: "KeyS", 2: "KeyD", 3: "KeyF", 4: "KeyH",
+        5: "KeyG", 6: "KeyZ", 7: "KeyX", 8: "KeyC", 9: "KeyV",
+        10: "IntlBackslash", 11: "KeyB", 12: "KeyQ", 13: "KeyW",
+        14: "KeyE", 15: "KeyR", 16: "KeyY", 17: "KeyT",
+        18: "Digit1", 19: "Digit2", 20: "Digit3", 21: "Digit4",
+        22: "Digit6", 23: "Digit5", 24: "Equal", 25: "Digit9",
+        26: "Digit7", 27: "Minus", 28: "Digit8", 29: "Digit0",
+        30: "BracketRight", 31: "KeyO", 32: "KeyU",
+        33: "BracketLeft", 34: "KeyI", 35: "KeyP", 36: "Enter",
+        37: "KeyL", 38: "KeyJ", 39: "Quote", 40: "KeyK",
+        41: "Semicolon", 42: "Backslash", 43: "Comma", 44: "Slash",
+        45: "KeyN", 46: "KeyM", 47: "Period", 48: "Tab",
+        49: "Space", 50: "Backquote", 51: "Backspace", 53: "Escape",
+        64: "F17", 65: "NumpadDecimal", 67: "NumpadMultiply",
+        69: "NumpadAdd", 71: "NumLock", 75: "NumpadDivide",
+        76: "NumpadEnter", 78: "NumpadSubtract", 79: "F18", 80: "F19",
+        81: "NumpadEqual", 82: "Numpad0", 83: "Numpad1",
+        84: "Numpad2", 85: "Numpad3", 86: "Numpad4",
+        87: "Numpad5", 88: "Numpad6", 89: "Numpad7", 90: "F20",
+        91: "Numpad8", 92: "Numpad9", 93: "IntlYen", 94: "IntlRo",
+        95: "NumpadComma", 96: "F5", 97: "F6", 98: "F7", 99: "F3",
+        100: "F8", 101: "F9", 102: "Lang2", 103: "F11",
+        104: "Lang1", 105: "F13", 106: "F16", 107: "F14",
+        109: "F10", 110: "ContextMenu", 111: "F12", 113: "F15", 114: "Insert",
+        115: "Home", 116: "PageUp", 117: "Delete", 118: "F4",
+        119: "End", 120: "F2", 121: "PageDown", 122: "F1",
+        123: "ArrowLeft", 124: "ArrowRight", 125: "ArrowDown",
+        126: "ArrowUp"
+    ]
 
     private let parentView: NSView
     private let container = EmbeddedGhosttyContainerView(frame: .zero)
@@ -445,7 +489,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var focusMonitor: Any?
     private var contextMenuMonitor: Any?
     private var shortcutMonitor: Any?
-    private var shortcutDigits = Set<Character>()
+    private var keybindingsByCode: [String: [Keybinding]] = [:]
     private var backgroundHexColor = "000000"
     private var foregroundHexColor = "ffffff"
     private var fontFamily: String?
@@ -567,14 +611,18 @@ private final class EmbeddedGhosttySurface: NSObject {
         container.isHidden = safeWidth <= 0 || safeHeight <= 0
     }
 
-    func setShortcutDigits(_ digits: String) {
-        shortcutDigits = Set(digits.filter { character in
-            guard let value = character.wholeNumberValue else {
-                return false
-            }
+    func setKeybindings(_ value: String) {
+        guard let data = value.data(using: .utf8),
+              let snapshot = try? JSONDecoder().decode(KeybindingSnapshot.self, from: data),
+              snapshot.version == 1
+        else {
+            keybindingsByCode = [:]
+            return
+        }
 
-            return (1...9).contains(value)
-        })
+        keybindingsByCode = Dictionary(grouping: snapshot.bindings.filter {
+            $0.context == "global"
+        }, by: \.code)
     }
 
     func setBackgroundColor(_ hexColor: String) {
@@ -991,60 +1039,27 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
 
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.contains(.command), !flags.contains(.control) else {
+        guard let code = Self.webCodeByMacKeyCode[event.keyCode],
+              let binding = keybindingsByCode[code]?.first(where: {
+                  $0.matches(flags)
+              })
+        else {
             return false
         }
 
-        if !flags.contains(.option),
-           !flags.contains(.shift),
-           event.charactersIgnoringModifiers == ";" {
-            callbacks.forwardShortcut(
-                key: ";",
-                code: "Semicolon",
-                control: flags.contains(.control),
-                meta: flags.contains(.command),
-                alt: flags.contains(.option),
-                shift: flags.contains(.shift),
-                repeatEvent: event.isARepeat
-            )
-
-            return true
-        }
-
-        if let shortcut = Self.workspaceShortcutByKeyCode[event.keyCode] {
-            let allowsExtraModifiers =
-                Self.workspaceShortcutCodesAllowingExtraModifiers.contains(shortcut.code)
-            if allowsExtraModifiers || (!flags.contains(.option) && !flags.contains(.shift)) {
-                callbacks.forwardShortcut(
-                    key: shortcut.key,
-                    code: shortcut.code,
-                    control: flags.contains(.control),
-                    meta: flags.contains(.command),
-                    alt: flags.contains(.option),
-                    shift: flags.contains(.shift),
-                    repeatEvent: event.isARepeat
-                )
-
-                return true
-            }
-        }
-
-        guard let digit = Self.shortcutDigitByKeyCode[event.keyCode] else {
-            return false
-        }
-
-        guard shortcutDigits.contains(digit) else {
-            return false
-        }
+        let key = event.charactersIgnoringModifiers.flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? code
 
         callbacks.forwardShortcut(
-            key: String(digit),
-            code: "Digit\(digit)",
+            key: key,
+            code: binding.code,
             control: flags.contains(.control),
             meta: flags.contains(.command),
             alt: flags.contains(.option),
             shift: flags.contains(.shift),
-            repeatEvent: event.isARepeat
+            repeatEvent: event.isARepeat,
+            fromSecondary: secondaryFocused
         )
 
         return true
@@ -1118,20 +1133,20 @@ public func vimeflowGhosttySetFrame(
     }
 }
 
-@_cdecl("vimeflow_ghostty_set_shortcut_digits")
-public func vimeflowGhosttySetShortcutDigits(
+@_cdecl("vimeflow_ghostty_set_keybindings")
+public func vimeflowGhosttySetKeybindings(
     _ surfacePointer: UnsafeMutableRawPointer?,
-    _ digitsPointer: UnsafePointer<CChar>?
+    _ bindingsPointer: UnsafePointer<CChar>?
 ) {
-    guard let surfacePointer, let digitsPointer else {
+    guard let surfacePointer, let bindingsPointer else {
         return
     }
 
     let pointer = SendablePointer(value: surfacePointer)
-    let digits = String(cString: digitsPointer)
+    let bindings = String(cString: bindingsPointer)
     mainActorSync {
         guard let surface = liveSurface(from: pointer) else { return }
-        surface.setShortcutDigits(digits)
+        surface.setKeybindings(bindings)
     }
 }
 

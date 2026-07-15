@@ -9,6 +9,8 @@ import { emptyActivity } from '../../sessions/constants'
 import { BrowserPane, type BrowserPaneProps } from './BrowserPane'
 import { OverlayStackProvider } from '../../workspace/overlays/OverlayStackProvider'
 import { useOverlayRegistration } from '../../workspace/overlays/useOverlayRegistration'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 
 const bridgeMocks = vi.hoisted(() => ({
   activateBrowserPaneTab: vi.fn().mockResolvedValue(undefined),
@@ -130,16 +132,26 @@ const OverlayProbe = ({ isOpen }: OverlayProbeProps): ReactElement | null => {
 
 interface BrowserPaneHarnessProps extends BrowserPaneProps {
   overlayOpen?: boolean
+  customKeybindings?: Record<string, string>
 }
 
 const BrowserPaneHarness = ({
   overlayOpen = false,
+  customKeybindings = {},
   ...props
 }: BrowserPaneHarnessProps): ReactElement => (
-  <OverlayStackProvider>
-    <OverlayProbe isOpen={overlayOpen} />
-    <BrowserPane {...props} />
-  </OverlayStackProvider>
+  <SettingsContext.Provider
+    value={{
+      settings: { ...DEFAULT_SETTINGS, customKeybindings },
+      saveError: null,
+      update: vi.fn(),
+    }}
+  >
+    <OverlayStackProvider>
+      <OverlayProbe isOpen={overlayOpen} />
+      <BrowserPane {...props} />
+    </OverlayStackProvider>
+  </SettingsContext.Provider>
 )
 
 interface UrlEvent {
@@ -782,8 +794,18 @@ describe('BrowserPane', () => {
     ).toBeInTheDocument()
   })
 
-  test('Cmd/Ctrl+L from the chrome enters address edit', async () => {
-    render(<BrowserPaneHarness session={session} pane={browserPane} isActive />)
+  test('the resolved browser-location shortcut enters address edit from chrome', async () => {
+    render(
+      <BrowserPaneHarness
+        session={session}
+        pane={browserPane}
+        isActive
+        customKeybindings={{
+          'browser-location': 'Mod+Shift+KeyK',
+        }}
+      />
+    )
+
     await waitFor(() => {
       expect(bridgeMocks.createBrowserPane).toHaveBeenCalledOnce()
     })
@@ -791,6 +813,13 @@ describe('BrowserPane', () => {
     fireEvent.keyDown(screen.getByTestId('browser-pane'), {
       code: 'KeyL',
       ctrlKey: true,
+    })
+    expect(screen.queryByLabelText('browser address')).toBeNull()
+
+    fireEvent.keyDown(screen.getByTestId('browser-pane'), {
+      code: 'KeyK',
+      ctrlKey: true,
+      shiftKey: true,
     })
 
     expect(screen.getByLabelText('browser address')).toBeInTheDocument()

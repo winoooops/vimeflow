@@ -15,6 +15,7 @@ import {
   SINGLE_PANE_FOCUS_LAYOUT_ID,
 } from '../../terminal/layout-registry'
 import { themeService } from '../../../theme'
+import type { CommandId } from '../../keymap/catalog'
 
 export type DockPositionCommandArg = 'bottom' | 'top' | 'left' | 'right'
 
@@ -83,7 +84,7 @@ export interface WorkspaceCommandDeps {
   toggleSidebar?: () => void
   /**
    * Toggle the focused pane's burner terminal (VIM-72). Resolves the focused
-   * pane and hides-if-shown, same as the `Mod+;` then backtick chord. Optional
+   * pane and hides-if-shown, same as the registered burner shortcut. Optional
    * so the builder's unit tests need not thread it; WorkspaceView always wires it.
    */
   toggleBurner?: () => void
@@ -132,6 +133,8 @@ export interface WorkspaceCommandDeps {
   focusTerminal?: () => void
   // Open a file in the dock editor by absolute path.
   openFile?: (path: string) => void
+  // Resolved registry display tokens for commands with a live accelerator.
+  keybindingShortcut?: (id: CommandId) => string[]
 }
 
 interface FallbackPaneRenameRequestState {
@@ -208,9 +211,13 @@ export const buildWorkspaceCommands = (
     showSidebarTab,
     focusTerminal,
     openFile,
+    keybindingShortcut,
   } = deps
 
   const isMac = isMacPlatform()
+
+  const shortcutFor = (id: CommandId, fallback: string[]): string[] =>
+    keybindingShortcut?.(id) ?? fallback
 
   const fallbackPaneRenameRequestState =
     fallbackPaneRenameRequestStateFor(renameAgentSession)
@@ -302,8 +309,10 @@ export const buildWorkspaceCommands = (
         description: 'Open editor',
         hint: 'edit files in the dock',
         icon: 'code',
-        // ⌘E / Ctrl+E — useDockShortcuts.
-        shortcut: isMac ? ['⌘', 'E'] : ['Ctrl', 'E'],
+        shortcut: shortcutFor(
+          'focus-editor',
+          isMac ? ['⌘', 'E'] : ['Ctrl', 'E']
+        ),
         execute: (): void => {
           openEditor()
         },
@@ -317,8 +326,7 @@ export const buildWorkspaceCommands = (
         description: 'Open diff',
         hint: 'review changes vs HEAD',
         icon: 'difference',
-        // ⌘G / Ctrl+G — useDockShortcuts.
-        shortcut: isMac ? ['⌘', 'G'] : ['Ctrl', 'G'],
+        shortcut: shortcutFor('focus-diff', isMac ? ['⌘', 'G'] : ['Ctrl', 'G']),
         execute: (): void => {
           openDiff()
         },
@@ -332,8 +340,10 @@ export const buildWorkspaceCommands = (
         description: 'Toggle dock',
         hint: 'show or hide the panel',
         icon: 'horizontal_split',
-        // ⌘0 / Ctrl+0 — useDockToggleShortcut.
-        shortcut: isMac ? ['⌘', '0'] : ['Ctrl', '0'],
+        shortcut: shortcutFor(
+          'dock-toggle',
+          isMac ? ['⌘', '0'] : ['Ctrl', '0']
+        ),
         execute: (): void => {
           toggleDock()
         },
@@ -361,9 +371,10 @@ export const buildWorkspaceCommands = (
             icon: 'grid_view',
             shortcut:
               layout.id === SINGLE_PANE_FOCUS_LAYOUT_ID
-                ? isMac
-                  ? ['⌘', 'Z']
-                  : ['Ctrl', 'Z']
+                ? shortcutFor(
+                    'single-pane-focus',
+                    isMac ? ['⌘', 'Z'] : ['Ctrl', 'Z']
+                  )
                 : undefined,
             execute: (): void => {
               // `false` means the active session has more panes than this layout holds.
@@ -404,6 +415,10 @@ export const buildWorkspaceCommands = (
         description: 'Activity panel',
         hint: 'show or hide agent activity',
         icon: 'notes',
+        shortcut: shortcutFor(
+          'activity-panel-toggle',
+          isMac ? ['⌘', 'R'] : ['Ctrl', 'R']
+        ),
         execute: (): void => {
           toggleActivityPanel()
         },
@@ -417,6 +432,10 @@ export const buildWorkspaceCommands = (
         description: 'Sessions tab',
         hint: 'open the sessions sidebar',
         icon: 'view_agenda',
+        shortcut: shortcutFor(
+          'sidebar-sessions',
+          isMac ? ['⌘', '⇧', 'S'] : ['Ctrl', '⇧', 'S']
+        ),
         execute: (): void => {
           showSidebarTab('sessions')
         },
@@ -430,6 +449,10 @@ export const buildWorkspaceCommands = (
         description: 'Files tab',
         hint: 'open the file tree',
         icon: 'folder_open',
+        shortcut: shortcutFor(
+          'sidebar-files',
+          isMac ? ['⌘', '⇧', 'F'] : ['Ctrl', '⇧', 'F']
+        ),
         execute: (): void => {
           showSidebarTab('files')
         },
@@ -507,8 +530,10 @@ export const buildWorkspaceCommands = (
       description: 'New session',
       hint: 'spawn a terminal session',
       icon: 'add',
-      // ⌘N / Ctrl+⇧N — useNewSessionShortcut.
-      shortcut: isMac ? ['⌘', 'N'] : ['Ctrl', '⇧', 'N'],
+      shortcut: shortcutFor(
+        'new-session',
+        isMac ? ['⌘', 'N'] : ['Ctrl', '⇧', 'N']
+      ),
       execute: (): void => {
         createSession()
       },
@@ -633,6 +658,10 @@ export const buildWorkspaceCommands = (
       description: 'Next session',
       hint: 'switch forward',
       icon: 'arrow_forward',
+      shortcut: shortcutFor(
+        'session-next',
+        isMac ? ['⌘', ']'] : ['Ctrl', '⇧', ']']
+      ),
       execute: (): void => {
         switchRelativeSession(1)
       },
@@ -643,6 +672,10 @@ export const buildWorkspaceCommands = (
       description: 'Previous session',
       hint: 'switch back',
       icon: 'arrow_back',
+      shortcut: shortcutFor(
+        'session-prev',
+        isMac ? ['⌘', '['] : ['Ctrl', '⇧', '[']
+      ),
       execute: (): void => {
         switchRelativeSession(-1)
       },
@@ -737,8 +770,10 @@ export const buildWorkspaceCommands = (
       description: 'Toggle sidebar',
       hint: 'show or hide the sidebar',
       icon: 'left_panel_close',
-      // ⌘B / Ctrl+⇧B — useSidebarShortcut.
-      shortcut: isMac ? ['⌘', 'B'] : ['Ctrl', '⇧', 'B'],
+      shortcut: shortcutFor(
+        'sidebar-toggle',
+        isMac ? ['⌘', 'B'] : ['Ctrl', '⇧', 'B']
+      ),
       execute: (): void => {
         toggleSidebar?.()
       },
@@ -749,7 +784,10 @@ export const buildWorkspaceCommands = (
       description: 'Burner terminal',
       hint: 'toggle for the focused pane',
       icon: 'terminal',
-      // No chip: :burner is a ⌘; then ` leader chord, not a single combo.
+      shortcut: shortcutFor(
+        'burner-toggle',
+        isMac ? ['⌃', '`'] : ['Ctrl', '`']
+      ),
       execute: (): void => {
         toggleBurner?.()
       },

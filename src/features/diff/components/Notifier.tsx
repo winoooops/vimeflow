@@ -1,6 +1,12 @@
 import { useRef, type ReactElement } from 'react'
 import { Button } from '@/components/Button'
 import { Popover } from '@/components/Popover'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
+import { formatShortcut } from '@/lib/formatShortcut'
 import { DiffChipToolbar, type DiffChipToolbarProps } from './toolbar'
 import { FinishFeedbackPopover } from './FinishFeedbackPopover'
 import {
@@ -68,6 +74,11 @@ export const Notifier = ({
   onConfirmKeyboardAction,
 }: NotifierProps): ReactElement => {
   const toolbarShellRef = useRef<HTMLDivElement>(null)
+  const { bindingFor } = useKeybindings()
+  const confirmShortcut = bindingFor('diff-confirm-accept')
+  const cancelShortcut = bindingFor('diff-confirm-cancel')
+  const confirmLabel = formatShortcut(chordToShortcutInput(confirmShortcut))
+  const cancelLabel = formatShortcut(chordToShortcutInput(cancelShortcut))
 
   return (
     <div
@@ -161,18 +172,18 @@ export const Notifier = ({
               <Button
                 size="sm"
                 variant="ghost"
-                aria-keyshortcuts="n"
+                aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
                 onClick={onCancelKeyboardConfirm}
               >
-                No (n)
+                No ({cancelLabel})
               </Button>
               <Button
                 size="sm"
                 variant={keyboardConfirm.variant}
-                aria-keyshortcuts="y"
+                aria-keyshortcuts={chordToAriaShortcut(confirmShortcut)}
                 onClick={onConfirmKeyboardAction}
               >
-                Yes (y)
+                Yes ({confirmLabel})
               </Button>
             </div>
           </div>
