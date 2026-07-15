@@ -49,10 +49,13 @@ use crate::agent::adapter::claude_code::test_runners::test_file_patterns::is_tes
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_replay_summary, emit_agent_tool_call, emit_agent_turn,
-    record_tool_call, ReplayActivity,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
+    emit_agent_turn, record_tool_call, ReplayActivity,
 };
-use crate::agent::types::{AgentCwdEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus};
+use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
+use crate::agent::types::{
+    AgentCwdEvent, AgentReplyEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+};
 use crate::runtime::EventSink;
 
 use super::locator::OpenCodeLocator;
@@ -214,6 +217,7 @@ impl OpencodeTranscriptDecoder {
         match dto.event_type() {
             OpencodeEventType::MessageUpdated => self.process_message_updated(dto),
             OpencodeEventType::MessagePartUpdated => self.process_part_updated(dto, timestamp),
+            OpencodeEventType::AssistantText => self.process_assistant_text(dto),
             OpencodeEventType::SessionCreated | OpencodeEventType::SessionUpdated => {
                 self.process_session_event(dto);
             }
@@ -221,6 +225,47 @@ impl OpencodeTranscriptDecoder {
             // todo.updated — observed for status/phase refresh; v1 emits no
             // lifecycle phase for opencode, so there's nothing to emit here.
             _ => {}
+        }
+    }
+
+    /// A bridge-synthesized `assistant.text` record: the assistant's whole
+    /// turn text, aggregated by the plugin at `session.idle` (VIM-293).
+    /// Extract a `VIMEFLOW_REPLY` block and emit it — one-call wiring like
+    /// codex's `last_agent_message`, gated behind `replay_done` so replayed
+    /// history never re-emits.
+    fn process_assistant_text(&mut self, dto: &OpencodeLineDto) {
+        if !self.replay_done {
+            return;
+        }
+        let Some(text) = dto
+            .data
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+        else {
+            return;
+        };
+        let Some(outcome) = extract_agent_reply(text) else {
+            return;
+        };
+
+        let (raw_text, nonce, replies) = match outcome {
+            AgentReplyOutcome::Structured {
+                raw,
+                nonce,
+                replies,
+            } => (raw, Some(nonce), Some(replies)),
+            AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
+        };
+
+        let event = AgentReplyEvent {
+            session_id: self.session_id.clone(),
+            nonce,
+            raw_text,
+            replies,
+        };
+        if let Err(e) = emit_agent_reply(self.events.as_ref(), &event) {
+            log::warn!("Failed to emit agent-reply event: {}", e);
         }
     }
 
@@ -1397,5 +1442,60 @@ mod tests {
         dec.decode_line(r#"{"v":1,"kind":"totally.unknown"}"#);
         assert_eq!(sink.count("agent-turn"), 0);
         assert_eq!(sink.count("agent-tool-call"), 0);
+    }
+
+    // --- agent-reply capture (VIM-293) ---
+
+    fn assistant_text_line(text: &str) -> String {
+        serde_json::json!({
+            "v": 1,
+            "ts": 1_781_965_830_000_i64,
+            "kind": "event",
+            "type": "assistant.text",
+            "data": { "sessionID": "ses_sample001", "text": text }
+        })
+        .to_string()
+    }
+
+    const OPENCODE_SENTINEL_REPLY: &str = "prose before\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"oc4242\",\"replies\":[{\"id\":1,\"status\":\"resolved\",\"text\":\"fixed\"}]}\nVIMEFLOW_REPLY>>>";
+
+    #[test]
+    fn assistant_text_with_sentinel_emits_one_reply() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+        dec.decode_line(&assistant_text_line(OPENCODE_SENTINEL_REPLY));
+
+        let replies: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-reply")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0]["nonce"], "oc4242");
+        assert_eq!(replies[0]["sessionId"], "sid");
+    }
+
+    #[test]
+    fn assistant_text_without_sentinel_emits_nothing() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+        dec.decode_line(&assistant_text_line("just a plain answer"));
+        assert_eq!(sink.count("agent-reply"), 0);
+    }
+
+    #[test]
+    fn replayed_assistant_text_never_re_emits() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        // Before caught-up = historic replay.
+        dec.decode_line(&assistant_text_line(OPENCODE_SENTINEL_REPLY));
+        dec.on_caught_up();
+        assert_eq!(sink.count("agent-reply"), 0);
+        // Live line after caught-up emits.
+        dec.decode_line(&assistant_text_line(OPENCODE_SENTINEL_REPLY));
+        assert_eq!(sink.count("agent-reply"), 1);
     }
 }

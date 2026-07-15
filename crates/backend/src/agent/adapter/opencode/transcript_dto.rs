@@ -50,6 +50,10 @@ pub(crate) enum OpencodeEventType {
     MessageUpdated,
     #[serde(rename = "message.part.updated")]
     MessagePartUpdated,
+    /// Bridge-synthesized (not an opencode bus event): the assistant's
+    /// aggregated turn text, written once at `session.idle` (VIM-293).
+    #[serde(rename = "assistant.text")]
+    AssistantText,
     #[serde(rename = "todo.updated")]
     TodoUpdated,
     #[serde(other)]
@@ -211,6 +215,21 @@ mod tests {
         assert_eq!(dto.v, Some(1));
         assert_eq!(dto.kind(), OpencodeKind::Event);
         assert_eq!(dto.event_type(), OpencodeEventType::SessionIdle);
+    }
+
+    #[test]
+    fn assistant_text_classifies_and_carries_data_text() {
+        // Bridge-synthesized record (VIM-293) — not an opencode bus event.
+        let dto: OpencodeLineDto = serde_json::from_str(
+            r#"{"v":1,"ts":1,"kind":"event","type":"assistant.text","data":{"sessionID":"ses_x","text":"the reply"}}"#,
+        )
+        .expect("assistant.text parses");
+        assert_eq!(dto.kind(), OpencodeKind::Event);
+        assert_eq!(dto.event_type(), OpencodeEventType::AssistantText);
+        assert_eq!(
+            dto.data.get("text").and_then(serde_json::Value::as_str),
+            Some("the reply")
+        );
     }
 
     #[test]
