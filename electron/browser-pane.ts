@@ -403,7 +403,7 @@ const loadBrowserUrl = async (
   }
 }
 
-const BROWSER_FORWARDABLE_WORKSPACE_SHORTCUT_IDS = new Set<string>([
+const BROWSER_WORKSPACE_SHORTCUT_IDS_TO_FORWARD = new Set<string>([
   'activity-panel-toggle',
   'burner-toggle',
   'cycle-layout',
@@ -432,7 +432,7 @@ const shouldForwardBrowserWorkspaceShortcut = (
 ): boolean => {
   const digitMatch = /^focus-pane-([1-9])$/.exec(commandId)
   if (!digitMatch) {
-    return BROWSER_FORWARDABLE_WORKSPACE_SHORTCUT_IDS.has(commandId)
+    return BROWSER_WORKSPACE_SHORTCUT_IDS_TO_FORWARD.has(commandId)
   }
 
   const shortcutContext = record.shortcutContext

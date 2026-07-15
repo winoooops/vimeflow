@@ -2434,7 +2434,8 @@ describe('BrowserPaneController', () => {
     )
 
     const beforeInputHandler = listenerFor(0, 'before-input-event')
-    const forwardableIds = new Set([
+
+    const forwardedIds = new Set([
       'activity-panel-toggle',
       'burner-toggle',
       'cycle-layout',
@@ -2460,7 +2461,7 @@ describe('BrowserPaneController', () => {
     for (const binding of snapshot.bindings.filter(
       ({ id, context }) =>
         context === 'global' &&
-        (forwardableIds.has(id) || /^focus-pane-[2-9]$/.test(id))
+        (forwardedIds.has(id) || /^focus-pane-[2-9]$/.test(id))
     )) {
       const preventDefault = vi.fn()
 
