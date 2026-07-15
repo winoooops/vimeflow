@@ -8,6 +8,7 @@
 
 ### Added
 
+- Kimi 与 OpenCode 的代理回复捕获（VIM-293）：向 Kimi 或 OpenCode 会话派发评审意见或提问后，代理的结构化回复现在会像 Codex 和 Claude Code 一样渲染到 diff 线程中。Kimi 按轮次缓冲主 wire 上流式追加的 `content.part` 文本块，在 `step.end`/`end_turn` 时提取；OpenCode 的桥接插件（v3）在内存中聚合助手文本分片快照，并在 `session.idle` 时写入一条尾部截断的 `assistant.text` 记录 —— 用户文本永不落盘，且捕获范围仅限助手消息，避免派发提示词自带的示例哨兵块被误认为回复。
 - 全变更集委托评审（VIM-327）：Diff 工具栏的 Request-review 弹层新增「当前文件 / 全部变更 (N)」作用域选择（`f`/`a` 快捷键）。「全部变更」会把文件列表中的每一项 —— 已暂存 + 未暂存 + 未跟踪，部分暂存的文件两个半区都会包含 —— 以一条仅含路径的请求发给评审代理，按 `git diff` / `git diff --cached` 分组，未跟踪文件带有「直接读取文件」标注。返回的评审发现基于同一 nonce 锚定到所有被评审文件；同一路径同时存在于两个半区时按行号范围匹配裁决，平局优先工作区。变更集快照在弹层打开时即预取（Copy 保持在剪贴板用户激活窗口内）；合并冲突文件不再解析出错误的 hunk 范围 —— 合并格式（`diff --cc`）的 diff 现在全局降级为文件级锚点。规格文档：[`docs/superpowers/specs/2026-07-13-vim-327-changelist-review-design.md`](./docs/superpowers/specs/2026-07-13-vim-327-changelist-review-design.md)。
 - Diff 文件内搜索（VIM-252 的搜索部分）：悬浮在 diff 区域上方的玻璃质感放大镜按钮，可展开一个非阻塞的玻璃搜索弹层（复用 #645 未固定侧栏的玻璃配方），通过 CSS Custom Highlight API 在 Pierre 的 shadow DOM 内实现子串级精确高亮，并带有「当前/总数」计数器与 vim 风格的模态按键 —— `/` 打开搜索，`Esc` 关闭并清除，搜索打开时 `n`/`p` 在匹配间跳转、关闭后恢复为文件导航；新增 `r` 键从键盘刷新当前 diff（刷新按钮内亦显示该快捷键徽标）。匹配为大小写不敏感、作用域限定在当前选中文件，并且在代理持续改写文件导致的刷新中保持存活 —— 查询词、高亮与当前匹配位置在 Pierre 每次重建后都会保留并重绘。规格文档：[`docs/superpowers/specs/2026-07-02-diff-search-design.md`](./docs/superpowers/specs/2026-07-02-diff-search-design.md)。
 - macOS arm64 打包版本内置原生 Ghostty 终端运行时。应用通过 SwiftPM bridge 打包 `libghostty-spm` 和 `ghostty_native_parent.node`，让 parented Ghostty `NSView` 成为 macOS 终端骨架；Rust 旁路仍拥有 PTY。Linux、开发回退和 native Ghostty 不可用时继续使用 xterm.js。

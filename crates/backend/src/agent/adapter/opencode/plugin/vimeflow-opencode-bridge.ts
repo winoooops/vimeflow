@@ -1,4 +1,4 @@
-// vimeflow-bridge-version: 2
+// vimeflow-bridge-version: 3
 //
 // Vimeflow opencode bridge plugin.
 //
@@ -17,6 +17,12 @@
 // no permission/credential/account payloads are emitted. All filesystem I/O is
 // wrapped in try/catch so a write error never throws into the host opencode
 // session.
+//
+// One deliberate exception (VIM-293): the assistant's own turn text is
+// aggregated in memory and written as a single tail-clamped `assistant.text`
+// record at session.idle so Vimeflow can capture VIMEFLOW_REPLY blocks — the
+// same conversation text kimi/claude/codex already persist in their own
+// transcripts. User text is never written.
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -385,6 +391,133 @@ const appendSessionLine = (sessionID: any, record: any): void => {
 
 const now = (): number => Date.now()
 
+// --- assistant reply capture (VIM-293) ---
+//
+// Buffer the LATEST snapshot of each text part in memory (a
+// `message.part.updated` carries the part's full text-so-far, so overwrite by
+// part id — never append), keyed by message id so a part arriving before its
+// `message.updated` is tolerated. At `session.idle`, join ONLY the parts of
+// registered ASSISTANT messages into one tail-clamped `assistant.text` record,
+// then reset. Raw text parts are never written per-update, and user text is
+// buffered in memory only and never flushed — the dispatched review/feedback
+// prompt itself contains an example VIMEFLOW_REPLY block that must not
+// round-trip as a reply.
+const MAX_REPLY_TEXT = 32768
+const assistantMessages = new Map<string, Set<string>>()
+// sessionID → messageID → partID → latest text snapshot.
+const sessionTextParts = new Map<string, Map<string, Map<string, string>>>()
+
+const tailClampReplyText = (text: string): string =>
+  text.length > MAX_REPLY_TEXT ? text.slice(-MAX_REPLY_TEXT) : text
+
+const trackAssistantMessage = (info: any): void => {
+  const record = asObject(info)
+  const sessionID = record.sessionID
+  const messageID = record.id
+
+  if (
+    record.role !== 'assistant' ||
+    typeof sessionID !== 'string' ||
+    typeof messageID !== 'string'
+  ) {
+    return
+  }
+
+  let ids = assistantMessages.get(sessionID)
+
+  if (ids === undefined) {
+    ids = new Set()
+    assistantMessages.set(sessionID, ids)
+  }
+
+  ids.add(messageID)
+}
+
+const bufferTextPart = (part: any): void => {
+  const record = asObject(part)
+  const sessionID = record.sessionID
+  const messageID = record.messageID
+  const partID = record.id
+  const text = record.text
+
+  if (
+    typeof sessionID !== 'string' ||
+    typeof messageID !== 'string' ||
+    typeof partID !== 'string' ||
+    typeof text !== 'string' ||
+    text.length === 0
+  ) {
+    return
+  }
+
+  let messages = sessionTextParts.get(sessionID)
+
+  if (messages === undefined) {
+    messages = new Map()
+    sessionTextParts.set(sessionID, messages)
+  }
+
+  let parts = messages.get(messageID)
+
+  if (parts === undefined) {
+    parts = new Map()
+    messages.set(messageID, parts)
+  }
+
+  parts.set(partID, tailClampReplyText(text))
+}
+
+const clearAssistantBuffers = (sessionID: any): void => {
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  sessionTextParts.delete(sessionID)
+  assistantMessages.delete(sessionID)
+}
+
+const flushAssistantText = (sessionID: any): void => {
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  const messages = sessionTextParts.get(sessionID)
+  const assistantIds = assistantMessages.get(sessionID)
+  clearAssistantBuffers(sessionID)
+
+  if (messages === undefined || assistantIds === undefined) {
+    return
+  }
+
+  const chunks: string[] = []
+
+  for (const [messageID, parts] of messages) {
+    if (!assistantIds.has(messageID)) {
+      continue
+    }
+
+    for (const text of parts.values()) {
+      chunks.push(text)
+    }
+  }
+
+  if (chunks.length === 0) {
+    return
+  }
+
+  const joined = chunks.join('\n')
+  // Keep the TAIL — the reply contract puts the sentinel block at the end.
+  const text = tailClampReplyText(joined)
+
+  appendSessionLine(sessionID, {
+    v: SCHEMA_VERSION,
+    ts: now(),
+    kind: 'event',
+    type: 'assistant.text',
+    data: { sessionID, text },
+  })
+}
+
 // Last-seen directory per session, so we only append an index row on
 // session.created and on a session.updated where the directory changed.
 const lastDirectory = new Map<string, string>()
@@ -450,9 +583,32 @@ const handleEvent = (event: any): void => {
     const partType =
       part != null && typeof part === 'object' ? part.type : undefined
 
+    // Text parts are buffered in memory (VIM-293) — assistant ones are
+    // aggregated into one `assistant.text` record at session.idle; none are
+    // ever written raw.
+    if (partType === 'text') {
+      bufferTextPart(part)
+
+      return
+    }
+
     if (typeof partType !== 'string' || !PART_WHITELIST.has(partType)) {
       return
     }
+  }
+
+  if (type === 'message.updated') {
+    trackAssistantMessage(properties.info)
+  }
+
+  if (type === 'session.idle') {
+    flushAssistantText(properties.sessionID)
+  }
+
+  // A turn ending in error never reaches idle — drop its buffers so the next
+  // idle can't flush stale text from the failed turn.
+  if (type === 'session.error') {
+    clearAssistantBuffers(properties.sessionID)
   }
 
   if (type === 'session.created' || type === 'session.updated') {

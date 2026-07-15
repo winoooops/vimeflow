@@ -2,8 +2,8 @@
 id: bridge-payload-minimization
 category: security
 created: 2026-06-20
-last_updated: 2026-06-21
-ref_count: 4
+last_updated: 2026-07-15
+ref_count: 5
 ---
 
 # Bridge Payload Minimization
@@ -48,4 +48,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
 - **Finding:** The opencode bridge redacted exact normalized credential-key names but did not match namespaced custom-tool args such as `apiSecretKey`, `myAccessKey`, or `awsSecretAccessKey`. Those scalar credential values could still be persisted in local bridge JSONL.
 - **Fix:** Added targeted compound suffix matching for access, secret, signing, and encryption key field names, and extended the bridge JSONL regression test with prefixed variants while preserving a benign key label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. OpenCode assistant text snapshots were bounded only at flush time
+
+- **Source:** github-codex-connector | PR #697 round 1 | 2026-07-15
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
+- **Finding:** The OpenCode bridge buffered each `message.part.updated` text snapshot in memory at full size and applied the 32 KiB tail cap only when `session.idle` flushed `assistant.text`. A large prompt or verbose assistant response could therefore grow plugin memory before the intended minimization boundary ran.
+- **Fix:** Added a shared tail-clamp helper and applied it before storing text parts in `sessionTextParts`, while keeping the final joined `assistant.text` row tail-clamped as before. Added a bridge regression test that verifies large assistant text emits a bounded tail row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

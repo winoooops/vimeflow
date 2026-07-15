@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-09
-ref_count: 11
+last_updated: 2026-07-15
+ref_count: 12
 ---
 
 # Parser Resilience
@@ -328,4 +328,13 @@ true` and drop the chunk.
 - **File:** `src/features/diff/hooks/useAgentReview.ts`
 - **Finding:** A `scope: "range"` finding with a valid `startLine` but `endLine: null` skipped file-level downgrade, failed range target construction, and fell through to a line annotation at line `0` with no file target. The reviewer finding then rendered nowhere.
 - **Fix:** Folded `endLine !== null` into the same target-in-hunk check used by the downgrade path and added regression coverage for missing and out-of-hunk range endpoints.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Last structured reply block scan treated embedded open markers as anchors
+
+- **Source:** github-claude | PR #697 round 1 | 2026-07-15
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/reply.rs`
+- **Finding:** `extract_agent_reply` selected the last complete block by finding the rightmost close marker and then the nearest preceding open marker. If a valid final JSON payload mentioned `<<<VIMEFLOW_REPLY` inside a text field, that embedded substring became the candidate opener and the parser sliced malformed tail JSON, losing an otherwise valid reply.
+- **Fix:** Replaced the two-sided `rfind` heuristic with a forward scan that pairs each open marker with its nearest following close, records complete blocks, and validates the last recorded block. Added a regression test where the final structured reply text quotes the open marker.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
