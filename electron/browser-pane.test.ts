@@ -2413,7 +2413,7 @@ describe('BrowserPaneController', () => {
     expect(electronMock.views[0]?.webContents.focus).toHaveBeenCalled()
   })
 
-  test('accepts every eligible registered global binding without an action allowlist', async () => {
+  test('forwards browser-safe registered global bindings', async () => {
     const paneIds = Array.from({ length: 9 }, (_, index) => `p${index + 1}`)
 
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
@@ -2434,9 +2434,33 @@ describe('BrowserPaneController', () => {
     )
 
     const beforeInputHandler = listenerFor(0, 'before-input-event')
+    const forwardableIds = new Set([
+      'activity-panel-toggle',
+      'burner-toggle',
+      'cycle-layout',
+      'dock-toggle',
+      'focus-diff',
+      'focus-editor',
+      'focus-pane-down',
+      'focus-pane-left',
+      'focus-pane-right',
+      'focus-pane-up',
+      'new-session',
+      'palette',
+      'palette-leader',
+      'session-next',
+      'session-prev',
+      'settings',
+      'settings-control',
+      'sidebar-files',
+      'sidebar-sessions',
+      'sidebar-toggle',
+    ])
 
     for (const binding of snapshot.bindings.filter(
-      ({ id, context }) => context === 'global' && id !== 'focus-pane-1'
+      ({ id, context }) =>
+        context === 'global' &&
+        (forwardableIds.has(id) || /^focus-pane-[2-9]$/.test(id))
     )) {
       const preventDefault = vi.fn()
 
@@ -2455,6 +2479,33 @@ describe('BrowserPaneController', () => {
 
       expect(preventDefault, binding.id).toHaveBeenCalledOnce()
     }
+  })
+
+  test('leaves browser text-editing shortcuts in the page', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const beforeInputHandler = listenerFor(0, 'before-input-event')
+    const preventDefault = vi.fn()
+
+    beforeInputHandler(
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: process.platform === 'darwin' ? 'z' : 'Z',
+        code: 'KeyZ',
+        ...platformShortcutModifier(),
+        alt: false,
+        shift: false,
+      }
+    )
+
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(electronMock.win.webContents.executeJavaScript).not.toHaveBeenCalled()
   })
 
   test('does not refocus the native pane after a forwarded dock shortcut', async () => {

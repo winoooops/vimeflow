@@ -403,13 +403,36 @@ const loadBrowserUrl = async (
   }
 }
 
+const BROWSER_FORWARDABLE_WORKSPACE_SHORTCUT_IDS = new Set<string>([
+  'activity-panel-toggle',
+  'burner-toggle',
+  'cycle-layout',
+  'dock-toggle',
+  'focus-diff',
+  'focus-editor',
+  'focus-pane-down',
+  'focus-pane-left',
+  'focus-pane-right',
+  'focus-pane-up',
+  'new-session',
+  'palette',
+  'palette-leader',
+  'session-next',
+  'session-prev',
+  'settings',
+  'settings-control',
+  'sidebar-files',
+  'sidebar-sessions',
+  'sidebar-toggle',
+])
+
 const shouldForwardBrowserWorkspaceShortcut = (
   record: BrowserPaneRecord,
   commandId: string
 ): boolean => {
   const digitMatch = /^focus-pane-([1-9])$/.exec(commandId)
   if (!digitMatch) {
-    return true
+    return BROWSER_FORWARDABLE_WORKSPACE_SHORTCUT_IDS.has(commandId)
   }
 
   const shortcutContext = record.shortcutContext

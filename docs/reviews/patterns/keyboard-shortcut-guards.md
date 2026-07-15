@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-09
-ref_count: 12
+last_updated: 2026-07-15
+ref_count: 13
 ---
 
 # Keyboard Shortcut Guards
@@ -488,4 +488,19 @@ against three classes of false-fire:
 - **Fix:** Route Linux global accelerator callbacks through the shared window
   dispatcher with a synthesized shortcut input so source resolution, key-capture
   guards, focus, and deduplication stay identical to `before-input-event`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Browser shortcut forwarding stole page undo
+
+- **Source:** github-codex-connector | PR #698 round 1 | 2026-07-15
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/browser-pane.ts`
+- **Finding:** The embedded browser `before-input-event` path matched every
+  global workspace binding and forwarded it into the app renderer. That included
+  `single-pane-focus` on `Mod+Z` / `Ctrl+Z`, so text inputs inside a
+  `WebContentsView` lost the normal page undo shortcut before renderer text-entry
+  guards could inspect the original target.
+- **Fix:** Restricted browser shortcut forwarding to an explicit browser-safe
+  workspace command allowlist while preserving pane-index gating, and added a
+  regression test that leaves `Mod+Z` / `Ctrl+Z` in the page.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
