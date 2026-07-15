@@ -45,6 +45,22 @@ export const chordToShortcutInput = (chord: Chord): readonly string[] => [
   codeToDisplay(chord.code),
 ]
 
+const codeToVisibleShortcutKey = (chord: Chord): string => {
+  const letter = /^Key([A-Z])$/.exec(chord.code)
+  if (letter !== null && chord.mods.size === 0) {
+    return letter[1].toLowerCase()
+  }
+
+  return codeToDisplay(chord.code)
+}
+
+export const chordToVisibleShortcutInput = (
+  chord: Chord
+): readonly string[] => [
+  ...MOD_DISPLAY_ORDER.filter((mod) => chord.mods.has(mod)),
+  codeToVisibleShortcutKey(chord),
+]
+
 export const chordToKeycapShortcut = (
   chord: Chord,
   isMac = isMacPlatform()

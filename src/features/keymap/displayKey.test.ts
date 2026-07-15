@@ -3,6 +3,7 @@ import {
   chordToAriaShortcut,
   chordToKeycapShortcut,
   chordToShortcutInput,
+  chordToVisibleShortcutInput,
 } from './displayKey'
 import { formatShortcut } from '../../lib/formatShortcut'
 import type { Chord, Mod } from './chord'
@@ -51,6 +52,20 @@ describe('chordToAriaShortcut', () => {
       'Shift+ArrowDown'
     )
     expect(chordToAriaShortcut(c('Slash'), false)).toBe('/')
+  })
+})
+
+describe('chordToVisibleShortcutInput', () => {
+  test('renders bare letter chords in typed case', () => {
+    expect(chordToVisibleShortcutInput(c('KeyJ'))).toEqual(['j'])
+    expect(chordToVisibleShortcutInput(c('KeyJ', 'Shift'))).toEqual([
+      'Shift',
+      'J',
+    ])
+  })
+
+  test('keeps modifier shortcut labels conventional', () => {
+    expect(chordToVisibleShortcutInput(c('KeyC', 'Mod'))).toEqual(['Mod', 'C'])
   })
 })
 

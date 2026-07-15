@@ -83,6 +83,11 @@ describe('KeymapPane', () => {
     expect(screen.getByText('Command palette leader')).toBeInTheDocument()
     expect(screen.getByText('Focus browser address bar')).toBeInTheDocument()
     expect(screen.getByText('Move to next line')).toBeInTheDocument()
+    expect(
+      within(
+        screen.getByTestId('settings-target-keymap-command-diff-line-next')
+      ).getByText('j')
+    ).toBeInTheDocument()
     expect(screen.getByText('Next file / search match')).toBeInTheDocument()
     expect(screen.getByText('Previous hunk')).toBeInTheDocument()
     expect(screen.getByText('Stage / unstage hunk')).toBeInTheDocument()

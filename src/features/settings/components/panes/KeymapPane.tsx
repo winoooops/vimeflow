@@ -26,7 +26,7 @@ import {
   KEYMAP_CAPTURE_TARGET_ATTRIBUTE,
 } from '../../../keymap/capture'
 import type { Chord } from '../../../keymap/chord'
-import { chordToShortcutInput } from '../../../keymap/displayKey'
+import { chordToVisibleShortcutInput } from '../../../keymap/displayKey'
 import {
   useKeybindings,
   type SetBindingResult,
@@ -131,7 +131,7 @@ const labelCell = (text: string): ReactElement => (
 )
 
 const shortcutLabel = (chord: Chord): string =>
-  formatShortcut(chordToShortcutInput(chord))
+  formatShortcut(chordToVisibleShortcutInput(chord))
 
 const iconButtonClass = (disabled = false): string =>
   `inline-flex h-7 w-7 items-center justify-center rounded-md border border-outline-variant/35 bg-surface-container-low/70 text-on-surface-muted transition-colors ${
