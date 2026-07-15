@@ -130,4 +130,73 @@ describe('VimeflowOpencodeBridge', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  test('tail-clamps assistant text before writing assistant text rows', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vimeflow-opencode-bridge-'))
+    process.env.VIMEFLOW_OPENCODE_BRIDGE_DIR = dir
+
+    try {
+      const bridge = await importBridge()
+      const prefix = 'x'.repeat(40_000)
+      const tail = 'assistant tail reply'
+
+      await bridge.event({
+        event: {
+          type: 'message.part.updated',
+          properties: {
+            part: {
+              type: 'text',
+              sessionID: 'session-assistant-text',
+              messageID: 'message-assistant',
+              id: 'part-large',
+              text: `${prefix}${tail}`,
+            },
+          },
+        },
+      })
+      await bridge.event({
+        event: {
+          type: 'message.updated',
+          properties: {
+            info: {
+              role: 'assistant',
+              sessionID: 'session-assistant-text',
+              id: 'message-assistant',
+            },
+          },
+        },
+      })
+      await bridge.event({
+        event: {
+          type: 'session.idle',
+          properties: {
+            sessionID: 'session-assistant-text',
+          },
+        },
+      })
+
+      const records = readFileSync(
+        join(dir, 'session-assistant-text.jsonl'),
+        'utf8'
+      )
+        .trim()
+        .split('\n')
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              type: string
+              data: { text: string }
+            }
+        )
+      const record = records.find(
+        (candidate) => candidate.type === 'assistant.text'
+      )
+
+      expect(record).toBeDefined()
+      expect(record?.data.text.length).toBeLessThanOrEqual(32768)
+      expect(record?.data.text.endsWith(tail)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

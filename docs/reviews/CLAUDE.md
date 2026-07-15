@@ -67,7 +67,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 6        | 3    | 2026-07-09   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 4        | 4    | 2026-06-21   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 11       | 2    | 2026-07-09   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
@@ -88,7 +88,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 20       | 10   | 2026-07-13   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 22       | 9    | 2026-07-09   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 23       | 12   | 2026-07-15   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
 | [Identifier Prefix Matching](patterns/identifier-prefix-matching.md)                                 | correctness        | 4        | 2    | 2026-06-17   |

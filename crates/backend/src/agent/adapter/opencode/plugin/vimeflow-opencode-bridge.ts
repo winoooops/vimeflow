@@ -407,6 +407,9 @@ const assistantMessages = new Map<string, Set<string>>()
 // sessionID → messageID → partID → latest text snapshot.
 const sessionTextParts = new Map<string, Map<string, Map<string, string>>>()
 
+const tailClampReplyText = (text: string): string =>
+  text.length > MAX_REPLY_TEXT ? text.slice(-MAX_REPLY_TEXT) : text
+
 const trackAssistantMessage = (info: any): void => {
   const record = asObject(info)
   const sessionID = record.sessionID
@@ -461,7 +464,7 @@ const bufferTextPart = (part: any): void => {
     messages.set(messageID, parts)
   }
 
-  parts.set(partID, text)
+  parts.set(partID, tailClampReplyText(text))
 }
 
 const clearAssistantBuffers = (sessionID: any): void => {
@@ -504,8 +507,7 @@ const flushAssistantText = (sessionID: any): void => {
 
   const joined = chunks.join('\n')
   // Keep the TAIL — the reply contract puts the sentinel block at the end.
-  const text =
-    joined.length > MAX_REPLY_TEXT ? joined.slice(-MAX_REPLY_TEXT) : joined
+  const text = tailClampReplyText(joined)
 
   appendSessionLine(sessionID, {
     v: SCHEMA_VERSION,
