@@ -193,10 +193,10 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn embedded_version_is_two() {
-        // Bumped 1 → 2 so the auto-installer replaces the already-installed v1
-        // plugin (widened `previewArgs`).
-        assert_eq!(embedded_version(), Some(2));
+    fn embedded_version_is_three() {
+        // Bumped 2 → 3 so the auto-installer replaces the already-installed
+        // v2 plugin (assistant.text reply capture, VIM-293).
+        assert_eq!(embedded_version(), Some(3));
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod tests {
 
         let written = fs::read_to_string(&target).expect("read installed");
         assert_eq!(written, BRIDGE_PLUGIN_SOURCE);
-        assert_eq!(parse_version(&written), Some(2));
+        assert_eq!(parse_version(&written), Some(3));
     }
 
     #[test]
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn embedded_plugin_matches_rust_contract() {
         let src = BRIDGE_PLUGIN_SOURCE;
-        assert!(src.contains("vimeflow-bridge-version: 2"));
+        assert!(src.contains("vimeflow-bridge-version: 3"));
 
         // Registered hooks.
         assert!(src.contains("event:"), "event hook");

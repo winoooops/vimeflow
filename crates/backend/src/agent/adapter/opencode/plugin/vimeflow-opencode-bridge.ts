@@ -1,4 +1,4 @@
-// vimeflow-bridge-version: 2
+// vimeflow-bridge-version: 3
 //
 // Vimeflow opencode bridge plugin.
 //
@@ -17,6 +17,12 @@
 // no permission/credential/account payloads are emitted. All filesystem I/O is
 // wrapped in try/catch so a write error never throws into the host opencode
 // session.
+//
+// One deliberate exception (VIM-293): the assistant's own turn text is
+// aggregated in memory and written as a single tail-clamped `assistant.text`
+// record at session.idle so Vimeflow can capture VIMEFLOW_REPLY blocks — the
+// same conversation text kimi/claude/codex already persist in their own
+// transcripts. User text is never written.
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -385,6 +391,100 @@ const appendSessionLine = (sessionID: any, record: any): void => {
 
 const now = (): number => Date.now()
 
+// --- assistant reply capture (VIM-293) ---
+//
+// Buffer the LATEST snapshot of each assistant text part in memory (a
+// `message.part.updated` carries the part's full text-so-far, so overwrite by
+// part id — never append) and write ONE aggregated `assistant.text` record at
+// `session.idle`, then reset. Raw text parts are never written per-update
+// (that would re-serialize the growing text on every delta), and user parts
+// are never buffered — the dispatched review/feedback prompt itself contains
+// an example VIMEFLOW_REPLY block that must not round-trip as a reply.
+const MAX_REPLY_TEXT = 8192
+const assistantMessages = new Map<string, Set<string>>()
+const assistantTextParts = new Map<string, Map<string, string>>()
+
+const trackAssistantMessage = (info: any): void => {
+  const record = asObject(info)
+  const sessionID = record.sessionID
+  const messageID = record.id
+
+  if (
+    record.role !== 'assistant' ||
+    typeof sessionID !== 'string' ||
+    typeof messageID !== 'string'
+  ) {
+    return
+  }
+
+  let ids = assistantMessages.get(sessionID)
+
+  if (ids === undefined) {
+    ids = new Set()
+    assistantMessages.set(sessionID, ids)
+  }
+
+  ids.add(messageID)
+}
+
+const bufferAssistantTextPart = (part: any): void => {
+  const record = asObject(part)
+  const sessionID = record.sessionID
+  const messageID = record.messageID
+  const partID = record.id
+  const text = record.text
+
+  if (
+    typeof sessionID !== 'string' ||
+    typeof messageID !== 'string' ||
+    typeof partID !== 'string' ||
+    typeof text !== 'string' ||
+    text.length === 0
+  ) {
+    return
+  }
+
+  if (assistantMessages.get(sessionID)?.has(messageID) !== true) {
+    return
+  }
+
+  let parts = assistantTextParts.get(sessionID)
+
+  if (parts === undefined) {
+    parts = new Map()
+    assistantTextParts.set(sessionID, parts)
+  }
+
+  parts.set(partID, text)
+}
+
+const flushAssistantText = (sessionID: any): void => {
+  if (typeof sessionID !== 'string') {
+    return
+  }
+
+  const parts = assistantTextParts.get(sessionID)
+  assistantTextParts.delete(sessionID)
+  assistantMessages.delete(sessionID)
+
+  if (parts === undefined || parts.size === 0) {
+    return
+  }
+
+  const joined = [...parts.values()].join('\n')
+  // Keep the TAIL — the reply contract puts the sentinel block at the end.
+  const text =
+    joined.length > MAX_REPLY_TEXT ? joined.slice(-MAX_REPLY_TEXT) : joined
+
+  appendSessionLine(sessionID, {
+    v: SCHEMA_VERSION,
+    ts: now(),
+    kind: 'event',
+    type: 'assistant.text',
+    data: { sessionID, text },
+  })
+}
+
 // Last-seen directory per session, so we only append an index row on
 // session.created and on a session.updated where the directory changed.
 const lastDirectory = new Map<string, string>()
@@ -450,9 +550,25 @@ const handleEvent = (event: any): void => {
     const partType =
       part != null && typeof part === 'object' ? part.type : undefined
 
+    // Assistant text parts are buffered in memory (VIM-293) — aggregated
+    // into one `assistant.text` record at session.idle, never written raw.
+    if (partType === 'text') {
+      bufferAssistantTextPart(part)
+
+      return
+    }
+
     if (typeof partType !== 'string' || !PART_WHITELIST.has(partType)) {
       return
     }
+  }
+
+  if (type === 'message.updated') {
+    trackAssistantMessage(properties.info)
+  }
+
+  if (type === 'session.idle') {
+    flushAssistantText(properties.sessionID)
   }
 
   if (type === 'session.created' || type === 'session.updated') {
