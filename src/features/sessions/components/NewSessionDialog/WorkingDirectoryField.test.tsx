@@ -29,12 +29,15 @@ describe('WorkingDirectoryField', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  test('a rejected pick does not call onChange', async () => {
+  test('a rejected pick shows an error and does not call onChange', async () => {
     vi.mocked(pickDirectory).mockRejectedValue(new Error('IPC unavailable'))
     const onChange = vi.fn()
     const user = userEvent.setup()
     render(<WorkingDirectoryField path="~/code/vf" onChange={onChange} />)
     await user.click(screen.getByRole('button', { name: /browse/i }))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not open the folder picker.'
+    )
     expect(onChange).not.toHaveBeenCalled()
   })
 
