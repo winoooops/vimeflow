@@ -42,6 +42,9 @@ import {
 } from '@/features/terminal/components/TerminalPane'
 import { EmptySlot } from '@/features/terminal/components/SplitView/EmptySlot'
 import { Tooltip } from '@/components/Tooltip'
+import type { CommandId } from '@/features/keymap/catalog'
+import { chordToShortcutInput } from '@/features/keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
 import { formatShortcut } from '@/lib/formatShortcut'
 import { SplitDividers } from '@/features/terminal/components/SplitView/SplitDividers'
 import { resolveGrid } from '@/features/terminal/components/SplitView/resolveGrid'
@@ -212,6 +215,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     }: SplitViewProps,
     ref
   ): ReactElement {
+    const { bindingFor } = useKeybindings()
     const layout = layoutRegistry.getFallbackLayout(session.layout)
     const outerDivRef = useRef<HTMLDivElement>(null)
 
@@ -561,6 +565,15 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               const isBrowserPane = !isShellPane(pane)
               const mode = isBrowserPane ? 'browser' : paneMode(pane)
               const slotIndex = layout.definition.addOrder.indexOf(slotId)
+
+              const shortcutHint =
+                slotIndex >= 0 && slotIndex < 9
+                  ? formatShortcut(
+                      chordToShortcutInput(
+                        bindingFor(`focus-pane-${slotIndex + 1}` as CommandId)
+                      )
+                    )
+                  : undefined
               // Only the visible session's selected pane is globally active.
               const isActive = isSessionVisible && pane.active
 
@@ -665,11 +678,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                           onRequestActive={onSetActivePane}
                           onRequestFocus={onRequestFocus}
                           onUrlChange={onBrowserPaneUrlChange}
-                          shortcutHint={
-                            slotIndex < 9
-                              ? formatShortcut(['Mod', String(slotIndex + 1)])
-                              : undefined
-                          }
+                          shortcutHint={shortcutHint}
                         />
                       </>
                     ) : (
@@ -700,11 +709,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         isActive={isActive}
                         isSessionVisible={isSessionVisible}
                         shortcutContext={nativeShortcutContext}
-                        shortcutHint={
-                          slotIndex < 9
-                            ? formatShortcut(['Mod', String(slotIndex + 1)])
-                            : undefined
-                        }
+                        shortcutHint={shortcutHint}
                         deferFit={deferTerminalFit}
                         showFocusHighlight={showPaneFocusHighlight}
                         terminalFontFamily={terminalFontFamily}

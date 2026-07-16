@@ -19,12 +19,31 @@ import type { UseFileDiffReturn } from '../../diff/hooks/useFileDiff'
 import type { ChangedFile, SelectedDiffFile } from '../../diff/types'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { javascript } from '@codemirror/lang-javascript'
+import type { Keybindings } from '../../keymap/useKeybindings'
 
 vi.mock('../../editor/hooks/useCodeMirror')
 vi.mock('../../editor/hooks/useVimMode')
 vi.mock('../../editor/services/languageService')
 vi.mock('../../diff/hooks/useGitStatus')
 vi.mock('../../diff/hooks/useFileDiff')
+vi.mock('../../keymap/useKeybindings', async () => {
+  const { getCommand } = await import('../../keymap/catalog')
+  const { eventMatchesChord } = await import('../../keymap/match')
+  const { resolveDefault } = await import('../../keymap/resolve')
+
+  const bindingFor: Keybindings['bindingFor'] = (id) =>
+    resolveDefault(getCommand(id), false)
+
+  const matches: Keybindings['matches'] = (event, id) =>
+    eventMatchesChord(event, bindingFor(id), 'ctrl', getCommand(id).matchPolicy)
+
+  return {
+    useKeybindings: (): Pick<Keybindings, 'bindingFor' | 'matches'> => ({
+      bindingFor,
+      matches,
+    }),
+  }
+})
 
 interface MockLineAnnotation {
   lineNumber: number
@@ -1593,7 +1612,7 @@ describe('DockPanel', () => {
       name: 'Finish feedback',
     })
     await user.click(
-      within(popover).getByRole('button', { name: 'Confirm (Y)' })
+      within(popover).getByRole('button', { name: 'Confirm (Shift+Y)' })
     )
 
     await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))

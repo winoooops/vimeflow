@@ -78,14 +78,16 @@ const WellButton = ({
   icon,
   label,
   tooltip,
-  shortcut = undefined,
+  shortcut,
+  ariaKeyshortcuts,
   onClick,
   disabled,
 }: {
   icon: string
   label: string
   tooltip: string
-  shortcut?: ShortcutInput
+  shortcut: ShortcutInput
+  ariaKeyshortcuts: string
   onClick: () => void
   disabled: boolean
 }): ReactElement => (
@@ -95,6 +97,7 @@ const WellButton = ({
       label={label}
       size="md"
       disabled={disabled}
+      aria-keyshortcuts={ariaKeyshortcuts}
       onClick={onClick}
       showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
       className={disabled ? WELL_DISABLED_BUTTON_CLASSES : WELL_BUTTON_CLASSES}
@@ -114,6 +117,10 @@ export interface ToolWellProps {
   onStage: (() => Promise<void>) | undefined
   onUnstage: (() => Promise<void>) | undefined
   onDiscard: (() => Promise<void>) | undefined
+  stageShortcut: ShortcutInput
+  stageAriaKeyshortcuts: string
+  discardShortcut: ShortcutInput
+  discardAriaKeyshortcuts: string
   // The discard-all button is rendered by the parent (it owns the confirm
   // popover + floating refs) and slotted in here so it sits inside the same
   // tonal well, after the felt divider.
@@ -135,6 +142,10 @@ export const ToolWell = ({
   onStage,
   onUnstage,
   onDiscard,
+  stageShortcut,
+  stageAriaKeyshortcuts,
+  discardShortcut,
+  discardAriaKeyshortcuts,
   discardAllSlot,
 }: ToolWellProps): ReactElement => (
   <span className="inline-flex items-center gap-px">
@@ -144,7 +155,8 @@ export const ToolWell = ({
         icon="add_box"
         label="stage"
         tooltip="Stage hunk"
-        shortcut="s"
+        shortcut={stageShortcut}
+        ariaKeyshortcuts={stageAriaKeyshortcuts}
         onClick={(): void => {
           void onStage()
         }}
@@ -161,7 +173,8 @@ export const ToolWell = ({
           icon="indeterminate_check_box"
           label="unstage"
           tooltip="Unstage"
-          shortcut="s"
+          shortcut={stageShortcut}
+          ariaKeyshortcuts={stageAriaKeyshortcuts}
           onClick={(): void => {
             void onUnstage()
           }}
@@ -178,7 +191,8 @@ export const ToolWell = ({
         icon="backspace"
         label="discard"
         tooltip="Discard hunk"
-        shortcut="d"
+        shortcut={discardShortcut}
+        ariaKeyshortcuts={discardAriaKeyshortcuts}
         onClick={(): void => {
           void onDiscard()
         }}

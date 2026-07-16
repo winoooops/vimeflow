@@ -1,7 +1,37 @@
-import { act, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  render as rtlRender,
+  screen,
+  within,
+  type RenderResult,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 import { describe, test, expect, vi } from 'vitest'
+import type { AppSettings } from '@/bindings/AppSettings'
+import { SettingsContext } from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import { DockTab } from './DockTab'
+
+const renderWithKeybindings = (
+  ui: ReactElement,
+  customKeybindings: AppSettings['customKeybindings'] = {}
+): RenderResult =>
+  rtlRender(ui, {
+    wrapper: ({ children }) => (
+      <SettingsContext.Provider
+        value={{
+          settings: { ...DEFAULT_SETTINGS, customKeybindings },
+          saveError: null,
+          update: vi.fn(),
+        }}
+      >
+        {children}
+      </SettingsContext.Provider>
+    ),
+  })
+
+const render = (ui: ReactElement): RenderResult => renderWithKeybindings(ui)
 
 describe('DockTab', () => {
   test('renders Editor and Diff Viewer buttons', () => {
@@ -232,36 +262,43 @@ describe('DockTab', () => {
   })
 
   describe('tooltip wiring', () => {
-    test('Editor tab tooltip shows the Mod+E shortcut chip', async () => {
+    test('Editor tab tooltip shows the resolved focus-editor shortcut', async () => {
       const user = userEvent.setup()
-      render(<DockTab tab="diff" onTabChange={vi.fn()} onClose={vi.fn()} />)
+      renderWithKeybindings(
+        <DockTab tab="diff" onTabChange={vi.fn()} onClose={vi.fn()} />,
+        { 'focus-editor': 'Mod+KeyO' }
+      )
 
       await user.hover(screen.getByRole('button', { name: /editor/i }))
       const tip = await screen.findByRole('tooltip')
       expect(tip).toHaveTextContent('Editor')
-      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('E')
+      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('O')
     })
 
-    test('Diff Viewer tab tooltip shows the Mod+G shortcut chip', async () => {
+    test('Diff Viewer tab tooltip shows the resolved focus-diff shortcut', async () => {
       const user = userEvent.setup()
-      render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
+      renderWithKeybindings(
+        <DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />,
+        { 'focus-diff': 'Mod+KeyQ' }
+      )
 
       await user.hover(screen.getByRole('button', { name: /diff viewer/i }))
       const tip = await screen.findByRole('tooltip')
       expect(tip).toHaveTextContent('Diff Viewer')
-      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('G')
+      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('Q')
     })
 
-    test('Collapse panel tooltip shows the Mod+0 shortcut chip', async () => {
+    test('Collapse panel tooltip shows the resolved dock-toggle shortcut', async () => {
       const user = userEvent.setup()
-      render(<DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />)
+      renderWithKeybindings(
+        <DockTab tab="editor" onTabChange={vi.fn()} onClose={vi.fn()} />,
+        { 'dock-toggle': 'Mod+KeyQ' }
+      )
 
       await user.hover(screen.getByRole('button', { name: /collapse panel/i }))
       const tip = await screen.findByRole('tooltip')
       expect(tip).toHaveTextContent('Collapse panel')
-      // Shares the dock-toggle keybinding (Mod+0) advertised on the
-      // bottom-bar dock button.
-      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('0')
+      expect(within(tip).getByTestId('tooltip-shortcut')).toHaveTextContent('Q')
     })
 
     // Guards the `disabled={actionsOpen}` branch on the More button's

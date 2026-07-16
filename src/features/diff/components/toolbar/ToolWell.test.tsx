@@ -12,6 +12,10 @@ const renderWell = (
     onStage: undefined,
     onUnstage: undefined,
     onDiscard: undefined,
+    stageShortcut: 's',
+    stageAriaKeyshortcuts: 's',
+    discardShortcut: 'd',
+    discardAriaKeyshortcuts: 'd',
     discardAllSlot: (
       <button type="button" aria-label="discard all">
         slot
@@ -61,6 +65,10 @@ describe('ToolWell', () => {
 
     expect(await screen.findByText('Stage hunk')).toBeInTheDocument()
     expect(screen.getByTestId('tooltip-shortcut')).toHaveTextContent('s')
+    expect(screen.getByRole('button', { name: /^stage$/i })).toHaveAttribute(
+      'aria-keyshortcuts',
+      's'
+    )
   })
 
   test('staging buttons render as placeholders when no handlers provided', () => {

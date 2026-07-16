@@ -22,7 +22,7 @@ import type { AgentReplyStatus } from '@/bindings'
  */
 export type ReviewCommentCategory = 'question' | 'change' | 'bug' | 'suggestion'
 
-/** Ordered for the editor's Ctrl+H / Ctrl+L cycling and the category chips. */
+/** Ordered for the editor's registered previous/next cycling and category chips. */
 export const REVIEW_COMMENT_CATEGORIES: readonly ReviewCommentCategory[] = [
   'question',
   'change',

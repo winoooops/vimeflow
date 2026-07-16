@@ -3,6 +3,8 @@ import {
   DIALOG_SELECTOR,
   TERMINAL_CONTAINER_ID,
 } from '../../workspace/containerIds'
+import { DIFF_COMMANDS, type DiffCommandId } from '../../keymap/catalog'
+import { useKeybindings } from '../../keymap/useKeybindings'
 
 export interface UseKeyboardOptions {
   enabled: boolean
@@ -61,6 +63,8 @@ const isDiffScopeActive = (
 
 /** Focus-scoped keyboard shortcuts for the git diff viewer. */
 export const useKeyboard = (options: UseKeyboardOptions): void => {
+  const { matches } = useKeybindings()
+
   const {
     enabled,
     rootRef,
@@ -123,17 +127,13 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
           : target
 
       if (confirming) {
-        const key = event.key.toLowerCase()
+        const handler = matches(event, 'diff-confirm-accept')
+          ? onConfirm
+          : matches(event, 'diff-confirm-cancel')
+            ? onCancelConfirm
+            : null
 
-        const handler =
-          key === 'y' ? onConfirm : key === 'n' ? onCancelConfirm : null
-
-        if (
-          handler !== null &&
-          !event.ctrlKey &&
-          !event.metaKey &&
-          !event.altKey
-        ) {
+        if (handler !== null) {
           event.preventDefault()
           event.stopPropagation()
           handler()
@@ -156,70 +156,46 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
         return
       }
 
-      if (event.ctrlKey && !event.metaKey && !event.altKey) {
-        const key = event.key.toLowerCase()
-        const direction = key === 'd' ? 1 : key === 'u' ? -1 : 0
-
-        if (direction !== 0) {
-          event.preventDefault()
-          event.stopPropagation()
-          onScrollPage(direction)
-        }
-
-        return
+      const handlers: Partial<Record<DiffCommandId, () => void>> = {
+        'diff-line-next': () => onMoveLine(1),
+        'diff-line-previous': () => onMoveLine(-1),
+        'diff-scroll-page-down': () => onScrollPage(1),
+        'diff-scroll-page-up': () => onScrollPage(-1),
+        'diff-file-next': searchOpen ? onNextMatch : onNextFile,
+        'diff-file-previous': searchOpen ? onPreviousMatch : onPreviousFile,
+        'diff-search-open': onOpenSearch,
+        'diff-search-or-visual-cancel': searchOpen
+          ? onCloseSearch
+          : visualMode
+            ? onCancelVisualSelection
+            : undefined,
+        'diff-files-toggle': onToggleFilesList,
+        'diff-files-pin': onToggleFilesListPinned,
+        'diff-refresh': onRefreshDiff,
+        'diff-hunk-previous': onPreviousHunk,
+        'diff-hunk-next': onNextHunk,
+        'diff-comment-line': onComment,
+        'diff-comment-file': onFileComment,
+        'diff-comment-update': onUpdateComment,
+        'diff-file-comment-update': onUpdateFileComment,
+        'diff-comment-delete': onDeleteComment,
+        'diff-review-finish': onFinishReview,
+        'diff-review-request': onRequestReview,
+        'diff-hunk-stage': onStageHunk,
+        'diff-hunk-discard': onDiscardHunk,
+        'diff-file-discard': onDiscardFile,
+        'diff-view-toggle': onToggleView,
+        'diff-side-deletions': () => onMoveLineSide('deletions'),
+        'diff-side-additions': () => onMoveLineSide('additions'),
+        'diff-visual-start': onStartVisualSelection,
+        'diff-visual-yank': onYankSelection,
       }
 
-      if (event.metaKey || event.altKey || event.ctrlKey) {
-        return
-      }
+      const command = DIFF_COMMANDS.find(
+        ({ id }) => handlers[id] !== undefined && matches(event, id)
+      )
+      const handler = command === undefined ? undefined : handlers[command.id]
 
-      if (event.key === 'Escape') {
-        if (searchOpen) {
-          event.preventDefault()
-          event.stopPropagation()
-          onCloseSearch()
-
-          return
-        }
-
-        if (visualMode) {
-          event.preventDefault()
-          event.stopPropagation()
-          onCancelVisualSelection()
-
-          return
-        }
-      }
-
-      const handlers: Partial<Record<string, () => void>> = {
-        j: () => onMoveLine(1),
-        k: () => onMoveLine(-1),
-        n: searchOpen ? onNextMatch : onNextFile,
-        p: searchOpen ? onPreviousMatch : onPreviousFile,
-        '/': onOpenSearch,
-        e: onToggleFilesList,
-        E: onToggleFilesListPinned,
-        r: onRefreshDiff,
-        '[': onPreviousHunk,
-        ']': onNextHunk,
-        i: onComment,
-        I: onFileComment,
-        u: onUpdateComment,
-        U: onUpdateFileComment,
-        x: onDeleteComment,
-        Y: onFinishReview,
-        '@': onRequestReview,
-        s: onStageHunk,
-        d: onDiscardHunk,
-        D: onDiscardFile,
-        t: onToggleView,
-        h: () => onMoveLineSide('deletions'),
-        l: () => onMoveLineSide('additions'),
-        v: onStartVisualSelection,
-        y: onYankSelection,
-      }
-
-      const handler = handlers[event.key]
       if (handler) {
         event.preventDefault()
         event.stopPropagation()
@@ -268,5 +244,6 @@ export const useKeyboard = (options: UseKeyboardOptions): void => {
     onCancelVisualSelection,
     onConfirm,
     onCancelConfirm,
+    matches,
   ])
 }

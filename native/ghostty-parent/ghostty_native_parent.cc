@@ -16,7 +16,7 @@ using InputCallback = void (*)(void *, const unsigned char *, int);
 using ResizeCallback = void (*)(void *, int, int);
 using FocusCallback = void (*)(void *);
 using ShortcutCallback = void (*)(void *, const char *, const char *, bool,
-                                  bool, bool, bool, bool);
+                                  bool, bool, bool, bool, bool);
 using RenamePaneCallback = void (*)(void *);
 using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
                            FocusCallback, ShortcutCallback,
@@ -26,7 +26,7 @@ using CreateFn = void *(*)(void *, InputCallback, ResizeCallback,
 // plus styling and same-snapshot parent height for Swift's AppKit y-flip.
 using SetFrameFn = void (*)(
     void *, double, double, double, double, double, double);
-using SetShortcutDigitsFn = void (*)(void *, const char *);
+using SetKeybindingsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
 using SetForegroundColorFn = void (*)(void *, const char *);
 using SetFontFamilyFn = void (*)(void *, const char *);
@@ -45,7 +45,7 @@ struct BridgeApi {
   std::string loaded_path;
   CreateFn create = nullptr;
   SetFrameFn set_frame = nullptr;
-  SetShortcutDigitsFn set_shortcut_digits = nullptr;
+  SetKeybindingsFn set_keybindings = nullptr;
   SetBackgroundColorFn set_background_color = nullptr;
   SetForegroundColorFn set_foreground_color = nullptr;
   SetFontFamilyFn set_font_family = nullptr;
@@ -92,6 +92,7 @@ struct ShortcutPayload {
   bool alt = false;
   bool shift = false;
   bool repeat = false;
+  bool from_secondary = false;
 };
 
 BridgeApi bridge;
@@ -209,8 +210,8 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.create)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_frame",
                  reinterpret_cast<void **>(&bridge.set_frame)) &&
-      LoadSymbol(env, "vimeflow_ghostty_set_shortcut_digits",
-                 reinterpret_cast<void **>(&bridge.set_shortcut_digits)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_keybindings",
+                 reinterpret_cast<void **>(&bridge.set_keybindings)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_background_color",
                  reinterpret_cast<void **>(&bridge.set_background_color)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_foreground_color",
@@ -432,7 +433,8 @@ void OnFocus(void *context) {
 }
 
 void OnShortcut(void *context, const char *key, const char *code, bool control,
-                bool meta, bool alt, bool shift, bool repeat) {
+                bool meta, bool alt, bool shift, bool repeat,
+                bool from_secondary) {
   if (context == nullptr || key == nullptr || code == nullptr) {
     return;
   }
@@ -452,6 +454,7 @@ void OnShortcut(void *context, const char *key, const char *code, bool control,
   payload->alt = alt;
   payload->shift = shift;
   payload->repeat = repeat;
+  payload->from_secondary = from_secondary;
   if (napi_call_threadsafe_function(tsfn, payload.get(),
                                     napi_tsfn_nonblocking) == napi_ok) {
     payload.release();
@@ -526,7 +529,7 @@ void CallJsShortcut(napi_env env, napi_value callback, void *, void *data) {
   }
 
   napi_value global;
-  napi_value argv[7];
+  napi_value argv[8];
   if (napi_get_global(env, &global) == napi_ok &&
       napi_create_string_utf8(env, payload->key.data(), payload->key.size(),
                               &argv[0]) == napi_ok &&
@@ -536,9 +539,10 @@ void CallJsShortcut(napi_env env, napi_value callback, void *, void *data) {
       napi_get_boolean(env, payload->meta, &argv[3]) == napi_ok &&
       napi_get_boolean(env, payload->alt, &argv[4]) == napi_ok &&
       napi_get_boolean(env, payload->shift, &argv[5]) == napi_ok &&
-      napi_get_boolean(env, payload->repeat, &argv[6]) == napi_ok) {
+      napi_get_boolean(env, payload->repeat, &argv[6]) == napi_ok &&
+      napi_get_boolean(env, payload->from_secondary, &argv[7]) == napi_ok) {
     napi_value ignored;
-    napi_call_function(env, global, callback, 7, argv, &ignored);
+    napi_call_function(env, global, callback, 8, argv, &ignored);
   }
 }
 
@@ -764,12 +768,12 @@ napi_value SetFrame(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
-napi_value SetShortcutDigits(napi_env env, napi_callback_info info) {
+napi_value SetKeybindings(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
   if (argc < 2) {
-    return Throw(env, "setShortcutDigits(surface, digits) expected");
+    return Throw(env, "setKeybindings(surface, bindings) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -777,12 +781,12 @@ napi_value SetShortcutDigits(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  std::string digits;
-  if (!GetString(env, args[1], &digits)) {
+  std::string bindings;
+  if (!GetString(env, args[1], &bindings)) {
     return nullptr;
   }
 
-  bridge.set_shortcut_digits(surface->swift_surface, digits.c_str());
+  bridge.set_keybindings(surface->swift_surface, bindings.c_str());
 
   return nullptr;
 }
@@ -1077,8 +1081,8 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr},
       {"setFrame", nullptr, SetFrame, nullptr, nullptr, nullptr, napi_default,
        nullptr},
-      {"setShortcutDigits", nullptr, SetShortcutDigits, nullptr, nullptr,
-       nullptr, napi_default, nullptr},
+      {"setKeybindings", nullptr, SetKeybindings, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"setBackgroundColor", nullptr, SetBackgroundColor, nullptr, nullptr,
        nullptr, napi_default, nullptr},
       {"setForegroundColor", nullptr, SetForegroundColor, nullptr, nullptr,

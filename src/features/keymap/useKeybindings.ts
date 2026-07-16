@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { useSettings } from '../settings/hooks/useSettings'
 import { isMacPlatform } from '../../lib/formatShortcut'
 import { getCommand, type CommandId } from './catalog'
-import { exactlyOneSuper, formatChord, type Chord } from './chord'
+import { formatChord, type Chord } from './chord'
 import {
   chordsOverlap,
   contextsOverlap,
@@ -11,7 +11,11 @@ import {
   type Conflict,
 } from './conflicts'
 import { eventMatchesChord, type PlatformSuper } from './match'
-import { resolveBindings, type CustomKeybindings } from './resolve'
+import {
+  isValidBinding,
+  resolveBindings,
+  type CustomKeybindings,
+} from './resolve'
 
 export type SetBindingResult =
   | { ok: true }
@@ -54,10 +58,10 @@ export const useKeybindings = (): Keybindings => {
 
   const setUserBinding = useCallback(
     (id: CommandId, chord: Chord): SetBindingResult => {
-      if (!exactlyOneSuper(chord)) {
+      const me = getCommand(id)
+      if (!isValidBinding(me, chord)) {
         return { ok: false, reason: 'invalid-super' }
       }
-      const me = getCommand(id)
       if (!me.rebindable) {
         return { ok: false, reason: 'reserved' }
       }

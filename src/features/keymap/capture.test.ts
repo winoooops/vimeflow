@@ -39,11 +39,8 @@ describe('eventToChord', () => {
     })
   })
 
-  test('ignores non-mac meta because the runtime matcher uses Control for Mod', () => {
-    expect(eventToChord(keydown('KeyK', { metaKey: true }), false)).toEqual({
-      code: 'KeyK',
-      mods: new Set(),
-    })
+  test('rejects non-mac meta instead of capturing it as a bare chord', () => {
+    expect(eventToChord(keydown('KeyK', { metaKey: true }), false)).toBeNull()
   })
 
   test('returns null when the browser event does not expose a physical code', () => {

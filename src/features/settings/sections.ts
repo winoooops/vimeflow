@@ -61,111 +61,6 @@ export const settingsSubsectionId = (
   label: string
 ): SettingsSubsectionId => `${section}-${slugifySubsection(label)}`
 
-export const KEYMAP_GROUPS: KeymapGroup[] = [
-  {
-    zone: 'Global',
-    bindings: [
-      { id: 'palette', label: 'Open command palette', keys: [['Mod', ';']] },
-      {
-        id: 'new-session',
-        label: 'New terminal session',
-        keys: (isMac) => (isMac ? [['Mod', 'N']] : [['Mod', 'Shift', 'N']]),
-      },
-      {
-        id: 'session-nav',
-        label: 'Previous / next session',
-        keys: (isMac) =>
-          isMac
-            ? [
-                ['Mod', '['],
-                ['Mod', ']'],
-              ]
-            : [
-                ['Mod', 'Shift', '['],
-                ['Mod', 'Shift', ']'],
-              ],
-      },
-      {
-        id: 'sidebar',
-        label: 'Toggle sidebar',
-        keys: (isMac) => (isMac ? [['Mod', 'B']] : [['Mod', 'Shift', 'B']]),
-      },
-      {
-        id: 'sidebar-switch',
-        label: 'Sidebar: show sessions / files',
-        keys: [
-          ['Mod', 'Shift', 'S'],
-          ['Mod', 'Shift', 'F'],
-        ],
-      },
-      { id: 'editor', label: 'Focus editor', keys: [['Mod', 'E']] },
-      { id: 'diff', label: 'Focus diff', keys: [['Mod', 'G']] },
-      {
-        id: 'dock',
-        label: 'Show / hide editor & diff dock',
-        keys: [['Mod', '0']],
-      },
-      {
-        id: 'burner',
-        label: 'Toggle burner terminal',
-        keys: [['Ctrl', '`']],
-      },
-    ],
-  },
-  {
-    zone: 'Panes & Layout',
-    bindings: [
-      {
-        id: 'focus-number',
-        label: 'Focus pane by number',
-        keys: [
-          ['Mod', '1'],
-          ['Mod', '2'],
-          ['Mod', '3'],
-          ['Mod', '4'],
-        ],
-      },
-      {
-        id: 'focus-direction',
-        label: 'Focus pane left / down / up / right',
-        keys: [
-          ['Mod', 'Shift', '←'],
-          ['Mod', 'Shift', '↓'],
-          ['Mod', 'Shift', '↑'],
-          ['Mod', 'Shift', '→'],
-        ],
-      },
-      { id: 'cycle-layout', label: 'Cycle layout', keys: [['Mod', '\\']] },
-    ],
-  },
-  {
-    zone: 'Terminal',
-    bindings: [
-      {
-        id: 'copy',
-        label: 'Copy selection',
-        keys: (isMac) => (isMac ? [['Mod', 'C']] : [['Mod', 'Shift', 'C']]),
-      },
-      { id: 'paste', label: 'Paste', keys: [['Mod', 'Shift', 'V']] },
-      {
-        id: 'interrupt',
-        label: 'Interrupt (sent to the agent)',
-        keys: [['Ctrl', 'C']],
-      },
-    ],
-  },
-  {
-    zone: 'Diff (when focused)',
-    bindings: [
-      { id: 'diff-nav', label: 'Next / previous file', keys: ['j', 'k'] },
-      { id: 'diff-open', label: 'Open file', keys: ['Enter'] },
-      { id: 'diff-stage', label: 'Stage / discard', keys: ['Space', 'd'] },
-      { id: 'diff-hunk', label: 'Next / previous hunk', keys: ['→', '←'] },
-      { id: 'diff-back', label: 'Back to file list', keys: ['Esc'] },
-    ],
-  },
-]
-
 // cspell:disable
 export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
   {
@@ -196,6 +91,7 @@ const KEYMAP_TARGET_GROUPS = new Set([
   'Panes & Layout',
   'Terminal',
   'Browser',
+  'Diff (when focused)',
 ])
 
 export const SETTINGS_TARGETS: SettingsTarget[] = [
@@ -284,19 +180,6 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
       hint: `${cmd.group} shortcut`,
       subsection: cmd.group,
     })
-  ),
-  ...KEYMAP_GROUPS.filter(
-    (group) => group.zone === 'Diff (when focused)'
-  ).flatMap((group) =>
-    group.bindings.map(
-      (binding): SettingsTarget => ({
-        id: keymapStaticTargetId(binding.id),
-        section: 'keymap',
-        label: binding.label,
-        hint: `${group.zone} shortcut`,
-        subsection: group.zone,
-      })
-    )
   ),
   {
     id: SETTINGS_TARGET_IDS.agentsManageAliases,

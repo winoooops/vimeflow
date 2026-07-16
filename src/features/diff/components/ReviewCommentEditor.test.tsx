@@ -1,10 +1,31 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
+import type { ReactElement, ReactNode } from 'react'
+import type { AppSettings } from '../../../bindings/AppSettings'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 import {
   ReviewCommentEditor,
   moveTextareaCursorVertically,
 } from './ReviewCommentEditor'
+
+const render = (
+  ui: ReactElement,
+  customKeybindings: Record<string, string> = {}
+): ReturnType<typeof rtlRender> => {
+  const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+
+  const wrapper = ({ children }: { children: ReactNode }): ReactElement => (
+    <SettingsContext.Provider
+      value={{ settings, saveError: null, update: vi.fn() }}
+    >
+      {children}
+    </SettingsContext.Provider>
+  )
+
+  return rtlRender(ui, { wrapper })
+}
 
 describe('ReviewCommentEditor', () => {
   test('renders the "Local comment" header and the R-side line reference', () => {
@@ -208,6 +229,47 @@ describe('ReviewCommentEditor', () => {
     expect(textarea.selectionStart).toBe(0)
   })
 
+  test('uses customized comment editing bindings', () => {
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText={'one\ntwo'}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+      {
+        'diff-comment-insert-newline': 'Alt+Enter',
+        'diff-comment-cursor-up': 'Alt+ArrowUp',
+      }
+    )
+
+    const textarea = screen.getByRole('textbox')
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error('Expected textarea')
+    }
+
+    expect(textarea).toHaveAttribute(
+      'aria-keyshortcuts',
+      expect.stringContaining('Alt+Enter')
+    )
+
+    textarea.setSelectionRange(5, 5)
+    fireEvent.keyDown(textarea, {
+      key: 'Enter',
+      code: 'Enter',
+      altKey: true,
+    })
+    expect(textarea).toHaveValue('one\nt\nwo')
+
+    fireEvent.keyDown(textarea, {
+      key: 'ArrowUp',
+      code: 'ArrowUp',
+      altKey: true,
+    })
+    expect(textarea.selectionStart).toBe(4)
+  })
+
   test('Escape calls onCancel', async () => {
     const user = userEvent.setup()
     const handleCancel = vi.fn()
@@ -226,6 +288,45 @@ describe('ReviewCommentEditor', () => {
     await user.keyboard('{Escape}')
 
     expect(handleCancel).toHaveBeenCalledTimes(1)
+  })
+
+  test('uses customized submit and cancel bindings', () => {
+    const handleConfirm = vi.fn()
+    const handleCancel = vi.fn()
+
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText="comment"
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />,
+      {
+        'diff-comment-submit': 'Alt+Enter',
+        'diff-comment-cancel': 'Alt+Escape',
+      }
+    )
+
+    const textarea = screen.getByRole('textbox')
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
+    fireEvent.keyDown(textarea, { key: 'Escape', code: 'Escape' })
+    expect(handleConfirm).not.toHaveBeenCalled()
+    expect(handleCancel).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(textarea, {
+      key: 'Enter',
+      code: 'Enter',
+      altKey: true,
+    })
+
+    fireEvent.keyDown(textarea, {
+      key: 'Escape',
+      code: 'Escape',
+      altKey: true,
+    })
+    expect(handleConfirm).toHaveBeenCalledWith('comment', 'change')
+    expect(handleCancel).toHaveBeenCalledOnce()
   })
 
   test('Cancel button calls onCancel', async () => {
@@ -356,6 +457,43 @@ describe('ReviewCommentEditor', () => {
     expect(handleConfirm).toHaveBeenLastCalledWith('cycled', 'bug')
   })
 
+  test('uses customized category bindings and displays their shortcuts', () => {
+    const handleConfirm = vi.fn()
+
+    render(
+      <ReviewCommentEditor
+        lineNumber={1}
+        side="additions"
+        initialText="custom binding"
+        onConfirm={handleConfirm}
+        onCancel={vi.fn()}
+      />,
+      {
+        'diff-comment-category-previous': 'Alt+KeyP',
+        'diff-comment-category-next': 'Shift+KeyN',
+      }
+    )
+
+    const textarea = screen.getByRole('textbox')
+
+    fireEvent.keyDown(textarea, {
+      key: 'l',
+      code: 'KeyL',
+      ctrlKey: true,
+    })
+
+    fireEvent.keyDown(textarea, {
+      key: 'N',
+      code: 'KeyN',
+      shiftKey: true,
+    })
+
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
+
+    expect(handleConfirm).toHaveBeenCalledWith('custom binding', 'bug')
+    expect(screen.getByText('Alt+P / Shift+N')).toBeInTheDocument()
+  })
+
   test('initialCategory seeds the picker (used when editing)', async () => {
     const user = userEvent.setup()
     const handleConfirm = vi.fn()
@@ -434,10 +572,15 @@ describe('ReviewCommentEditor', () => {
     )
 
     const textarea = screen.getByPlaceholderText('Reply to the agent…')
-    fireEvent.keyDown(textarea, { key: 'l', ctrlKey: true })
-    fireEvent.keyDown(textarea, { key: 'h', ctrlKey: true })
+    expect(
+      fireEvent.keyDown(textarea, { key: 'l', code: 'KeyL', ctrlKey: true })
+    ).toBe(false)
+
+    expect(
+      fireEvent.keyDown(textarea, { key: 'h', code: 'KeyH', ctrlKey: true })
+    ).toBe(false)
     fireEvent.change(textarea, { target: { value: 'follow-up' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
 
     expect(onConfirm).toHaveBeenCalledWith('follow-up', 'change')
   })

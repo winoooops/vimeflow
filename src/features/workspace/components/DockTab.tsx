@@ -10,6 +10,8 @@ import {
 import { IconButton } from '@/components/IconButton'
 import { SegmentedControl } from '@/components/SegmentedControl'
 import { Tooltip } from '@/components/Tooltip'
+import { chordToShortcutInput } from '@/features/keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 export type DockTabType = 'editor' | 'diff'
@@ -39,14 +41,14 @@ const DOCK_TAB_OPTIONS = [
     label: 'Diff Viewer',
     icon: 'difference',
     tooltip: 'Diff Viewer',
-    shortcut: ['Mod', 'G'] as const,
+    commandId: 'focus-diff',
   },
   {
     value: 'editor',
     label: 'Editor',
     icon: 'code',
     tooltip: 'Editor',
-    shortcut: ['Mod', 'E'] as const,
+    commandId: 'focus-editor',
   },
 ] as const
 
@@ -65,6 +67,7 @@ export const DockTab = ({
   compactMenuLeadingContent = undefined,
   hasCompactMenuBadge = false,
 }: DockTabProps): ReactElement => {
+  const { bindingFor } = useKeybindings()
   const actionsMenuId = useId()
   const [actionsOpen, setActionsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -129,6 +132,7 @@ export const DockTab = ({
   }
 
   const menuAlignClass = menuAlign === 'left' ? 'left-0' : 'right-0'
+  const dockToggleShortcut = chordToShortcutInput(bindingFor('dock-toggle'))
 
   return (
     <div
@@ -149,7 +153,10 @@ export const DockTab = ({
         aria-label="Dock tab"
         variant="dock"
         value={tab}
-        options={DOCK_TAB_OPTIONS}
+        options={DOCK_TAB_OPTIONS.map((option) => ({
+          ...option,
+          shortcut: chordToShortcutInput(bindingFor(option.commandId)),
+        }))}
         onChange={onTabChange}
         buttonClassName={compactActions ? 'w-[30px] px-0' : 'gap-1.5'}
         nativeOverlayTooltips
@@ -209,7 +216,7 @@ export const DockTab = ({
                 {children}
                 <Tooltip
                   content="Collapse panel"
-                  shortcut={['Mod', '0']}
+                  shortcut={dockToggleShortcut}
                   placement="bottom"
                   nativeOverlay
                 >
@@ -232,7 +239,7 @@ export const DockTab = ({
           <div className="ml-1 flex shrink-0 items-center">
             <Tooltip
               content="Collapse panel"
-              shortcut={['Mod', '0']}
+              shortcut={dockToggleShortcut}
               placement="bottom"
               nativeOverlay
             >

@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 import {
   reviewCommentCategory,
   type ReviewComment,
@@ -8,8 +9,10 @@ import { AGENT_OUTCOME_META, REVIEW_CATEGORY_META } from '../reviewCategoryMeta'
 
 interface ReviewCommentRowProps {
   comment: ReviewComment
-  editShortcut?: 'u' | 'Shift+U'
-  deleteShortcut?: 'x' | null
+  editShortcut?: ShortcutInput
+  editAriaKeyshortcuts?: string | null
+  deleteShortcut?: ShortcutInput | null
+  deleteAriaKeyshortcuts?: string | null
   /** Dispatch just this comment to the agent now (VIM-297). Omitted → hidden;
    * read-only rows (dispatched anchors, agent/reviewer output) never show it. */
   onSendNow?: () => void
@@ -51,7 +54,9 @@ export const formatSentAgo = (dispatchedAt: number, now: number): string => {
 export const ReviewCommentRow = ({
   comment,
   editShortcut = 'u',
+  editAriaKeyshortcuts = 'u',
   deleteShortcut = 'x',
+  deleteAriaKeyshortcuts = 'x',
   targetLabel = undefined,
   onSendNow = undefined,
   onEdit,
@@ -141,8 +146,8 @@ export const ReviewCommentRow = ({
             icon="edit"
             label="Edit comment"
             size="sm"
-            shortcut={editShortcut === 'Shift+U' ? ['Shift', 'U'] : 'u'}
-            aria-keyshortcuts={editShortcut}
+            shortcut={editShortcut}
+            aria-keyshortcuts={editAriaKeyshortcuts ?? undefined}
             onClick={(): void => onEdit()}
           />
           <IconButton
@@ -151,7 +156,7 @@ export const ReviewCommentRow = ({
             variant="danger"
             size="sm"
             shortcut={deleteShortcut ?? undefined}
-            aria-keyshortcuts={deleteShortcut ?? undefined}
+            aria-keyshortcuts={deleteAriaKeyshortcuts ?? undefined}
             onClick={(): void => onDelete()}
           />
         </div>

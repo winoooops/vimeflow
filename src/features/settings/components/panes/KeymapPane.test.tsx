@@ -4,6 +4,7 @@ import {
   fireEvent,
   render as rtlRender,
   screen,
+  within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createElement, type ReactElement } from 'react'
@@ -64,7 +65,7 @@ describe('KeymapPane', () => {
     expect(screen.getByLabelText('Keymap preset')).toHaveValue('vimeflow')
   })
 
-  test('renders granular catalog rows + the Diff zone', () => {
+  test('renders granular catalog rows including the current Diff keymap', () => {
     render(<KeymapPane />)
 
     // Granular catalog labels (one per command — replacing the old grouped rows).
@@ -73,12 +74,35 @@ describe('KeymapPane', () => {
     expect(
       screen.getByText('Show / hide editor & diff dock')
     ).toBeInTheDocument()
+
+    expect(
+      screen.getByText('Show / hide agent activity panel')
+    ).toBeInTheDocument()
     expect(screen.getByText('Open settings')).toBeInTheDocument()
     expect(screen.getByText('Open command palette')).toBeInTheDocument()
     expect(screen.getByText('Command palette leader')).toBeInTheDocument()
     expect(screen.getByText('Focus browser address bar')).toBeInTheDocument()
-    // The bare-key Diff zone still renders from KEYMAP_GROUPS.
-    expect(screen.getByText('Next / previous file')).toBeInTheDocument()
+    expect(screen.getByText('Move to next line')).toBeInTheDocument()
+    expect(
+      within(
+        screen.getByTestId('settings-target-keymap-command-diff-line-next')
+      ).getByText('j')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Next file / search match')).toBeInTheDocument()
+    expect(screen.getByText('Previous hunk')).toBeInTheDocument()
+    expect(screen.getByText('Stage / unstage hunk')).toBeInTheDocument()
+    expect(screen.getByText('Request agent review')).toBeInTheDocument()
+    expect(
+      within(
+        screen.getByTestId('settings-target-keymap-command-diff-review-request')
+      ).getByText('Shift+2')
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByText('Close search / cancel visual selection')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Open file')).not.toBeInTheDocument()
+    expect(screen.queryByText('Back to file list')).not.toBeInTheDocument()
   })
 
   test('switching the preset to vim reveals the Vim ex-command rows', async () => {
@@ -124,16 +148,37 @@ describe('KeymapPane', () => {
     vi.unstubAllGlobals()
   })
 
+  test('uses the resolved palette binding in the footer', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'Linux x86_64',
+    })
+
+    renderWithSettings({ palette: 'Mod+Shift+KeyP' })
+
+    expect(
+      screen.getByText(
+        'More actions are available in the Ctrl+Shift+P command palette.'
+      )
+    ).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
   test('reflects a persisted override on a rebindable row', () => {
     vi.stubGlobal('navigator', {
       ...navigator,
       platform: 'MacIntel',
     })
 
-    // dock-toggle default is ⌘0; the override re-renders the row as ⌘K.
-    renderWithSettings({ 'dock-toggle': 'Mod+KeyK' })
+    // dock-toggle default is ⌘0; the override re-renders the row as ⌘O.
+    renderWithSettings({
+      'dock-toggle': 'Mod+KeyO',
+      'diff-line-next': 'Shift+ArrowDown',
+    })
 
-    expect(screen.getByText('⌘K')).toBeInTheDocument()
+    expect(screen.getByText('⌘O')).toBeInTheDocument()
+    expect(screen.getByText('⇧↓')).toBeInTheDocument()
 
     vi.unstubAllGlobals()
   })
@@ -155,8 +200,8 @@ describe('KeymapPane', () => {
       name: 'Capture Show / hide editor & diff dock binding',
     })
     expect(capture).toHaveAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
-    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
-    expect(screen.getByText('Ctrl+K')).toBeInTheDocument()
+    fireEvent.keyDown(capture, { key: 'o', code: 'KeyO', ctrlKey: true })
+    expect(screen.getByText('Ctrl+O')).toBeInTheDocument()
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -165,9 +210,87 @@ describe('KeymapPane', () => {
     )
 
     expect(update).toHaveBeenCalledWith({
-      customKeybindings: { 'dock-toggle': 'Mod+KeyK' },
+      customKeybindings: { 'dock-toggle': 'Mod+KeyO' },
     })
-    expect(screen.getByRole('status')).toHaveTextContent('Saved.')
+
+    const row = screen.getByTestId('settings-target-keymap-command-dock-toggle')
+    const status = within(row).getByRole('status')
+    const shortcut = within(row).getByText('Ctrl+0')
+
+    expect(status).toHaveTextContent('Saved.')
+    expect(within(row).getAllByText(/^(Saved\.|Ctrl\+0)$/)).toEqual([
+      status,
+      shortcut,
+    ])
+
+    vi.unstubAllGlobals()
+  })
+
+  test('saves and displays a Shift-only Diff binding', () => {
+    const { update } = renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Move to next line binding',
+      })
+    )
+
+    const capture = screen.getByRole('button', {
+      name: 'Capture Move to next line binding',
+    })
+    fireEvent.keyDown(capture, {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+      shiftKey: true,
+    })
+    expect(screen.getByText('Shift+↓')).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Move to next line binding',
+      })
+    )
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: { 'diff-line-next': 'Shift+ArrowDown' },
+    })
+  })
+
+  test('explains that a Diff binding can omit the primary modifier', () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      platform: 'MacIntel',
+    })
+    const { update } = renderWithSettings()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Move to next line binding',
+      })
+    )
+
+    fireEvent.keyDown(
+      screen.getByRole('button', {
+        name: 'Capture Move to next line binding',
+      }),
+      {
+        key: 'ArrowDown',
+        code: 'ArrowDown',
+        metaKey: true,
+        ctrlKey: true,
+      }
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Save Move to next line binding',
+      })
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Use at most one primary modifier.'
+    )
+    expect(update).not.toHaveBeenCalled()
 
     vi.unstubAllGlobals()
   })
@@ -188,14 +311,14 @@ describe('KeymapPane', () => {
     const capture = screen.getByRole('button', {
       name: 'Capture Show / hide editor & diff dock binding',
     })
-    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+    fireEvent.keyDown(capture, { key: 'o', code: 'KeyO', ctrlKey: true })
     fireEvent.keyDown(capture, {
       key: 'Shift',
       code: 'ShiftLeft',
       shiftKey: true,
     })
 
-    expect(screen.getByText('Ctrl+K')).toBeInTheDocument()
+    expect(screen.getByText('Ctrl+O')).toBeInTheDocument()
     expect(screen.queryByText('ShiftLeft')).not.toBeInTheDocument()
 
     vi.unstubAllGlobals()
@@ -289,7 +412,7 @@ describe('KeymapPane', () => {
     const capture = screen.getByRole('button', {
       name: 'Capture Show / hide editor & diff dock binding',
     })
-    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+    fireEvent.keyDown(capture, { key: 'o', code: 'KeyO', ctrlKey: true })
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -452,7 +575,7 @@ describe('KeymapPane', () => {
     const capture = screen.getByRole('button', {
       name: 'Capture Show / hide editor & diff dock binding',
     })
-    fireEvent.keyDown(capture, { key: 'k', code: 'KeyK', ctrlKey: true })
+    fireEvent.keyDown(capture, { key: 'o', code: 'KeyO', ctrlKey: true })
 
     const save = screen.getByRole('button', {
       name: 'Save Show / hide editor & diff dock binding',
@@ -461,7 +584,7 @@ describe('KeymapPane', () => {
     fireEvent.click(save)
 
     expect(update).toHaveBeenCalledWith({
-      customKeybindings: { 'dock-toggle': 'Mod+KeyK' },
+      customKeybindings: { 'dock-toggle': 'Mod+KeyO' },
     })
 
     vi.unstubAllGlobals()
@@ -471,7 +594,7 @@ describe('KeymapPane', () => {
     vi.useFakeTimers()
 
     const { update } = renderWithSettings({
-      'dock-toggle': 'Mod+KeyK',
+      'dock-toggle': 'Mod+KeyO',
       'focus-pane-1': 'Mod+KeyJ',
     })
 
@@ -550,7 +673,7 @@ describe('KeymapPane', () => {
       screen.getByRole('button', {
         name: 'Capture Show / hide editor & diff dock binding',
       }),
-      { key: 'k', code: 'KeyK', ctrlKey: true }
+      { key: 'o', code: 'KeyO', ctrlKey: true }
     )
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

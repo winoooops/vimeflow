@@ -6,7 +6,6 @@ export { useSettingsDialog } from './hooks/useSettingsDialog'
 
 export {
   DEFAULT_ALIASES,
-  KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
   SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,

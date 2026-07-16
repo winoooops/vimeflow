@@ -3,6 +3,7 @@ import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 
 export interface FilePillProps {
   // Basename + count are rendered on the lavender pill body. `fileName` is the
@@ -18,6 +19,10 @@ export interface FilePillProps {
   navEnabled: boolean
   onPrev: (() => void) | undefined
   onNext: (() => void) | undefined
+  previousShortcut: ShortcutInput
+  previousAriaKeyshortcuts: string
+  nextShortcut: ShortcutInput
+  nextAriaKeyshortcuts: string
 }
 
 // Lavender (primary) file-navigation group: a previous-file ghost arrow, the
@@ -39,6 +44,10 @@ export const FilePill = ({
   navEnabled,
   onPrev,
   onNext,
+  previousShortcut,
+  previousAriaKeyshortcuts,
+  nextShortcut,
+  nextAriaKeyshortcuts,
 }: FilePillProps): ReactElement => {
   // Show only the trailing path segment on the pill; keep the full path on the
   // accessible name + tooltip so users can disambiguate same-named files.
@@ -46,12 +55,13 @@ export const FilePill = ({
 
   return (
     <span className="inline-flex items-center gap-0.5">
-      <Tooltip content="Previous file" shortcut="p">
+      <Tooltip content="Previous file" shortcut={previousShortcut}>
         <IconButton
           icon="chevron_left"
           label="previous file"
           size="sm"
           disabled={!navEnabled}
+          aria-keyshortcuts={previousAriaKeyshortcuts}
           onClick={onPrev}
           showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={GHOST_ARROW_CLASSES}
@@ -82,12 +92,13 @@ export const FilePill = ({
           className="h-7 gap-2 rounded-md bg-primary/10 px-3 ring-1 ring-inset ring-primary/20"
         />
       </Tooltip>
-      <Tooltip content="Next file" shortcut="n">
+      <Tooltip content="Next file" shortcut={nextShortcut}>
         <IconButton
           icon="chevron_right"
           label="next file"
           size="sm"
           disabled={!navEnabled}
+          aria-keyshortcuts={nextAriaKeyshortcuts}
           onClick={onNext}
           showTooltip={TOOLTIP_SUPPRESSED} // explicit outer Tooltip owns the label
           className={GHOST_ARROW_CLASSES}

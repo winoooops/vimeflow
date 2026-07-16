@@ -28,9 +28,9 @@ const renderKeybindings = (
 
 describe('useKeybindings', () => {
   test('bindingFor reflects a stored override', () => {
-    const { result } = renderKeybindings({ 'dock-toggle': 'Mod+KeyK' })
+    const { result } = renderKeybindings({ 'dock-toggle': 'Mod+KeyO' })
     expect(result.current.bindingFor('dock-toggle')).toEqual({
-      code: 'KeyK',
+      code: 'KeyO',
       mods: new Set(['Mod']),
     })
   })
@@ -108,14 +108,14 @@ describe('useKeybindings', () => {
     }
   })
 
-  test("setUserBinding rejects shadowing the browser address shortcut as 'reserved'", () => {
+  test("setUserBinding rejects shadowing the browser address shortcut as 'conflict'", () => {
     const { result, update } = renderKeybindings()
     expect(
       result.current.setUserBinding('dock-toggle', {
         code: 'KeyL',
         mods: new Set(['Mod']),
       })
-    ).toEqual({ ok: false, reason: 'reserved' })
+    ).toEqual({ ok: false, reason: 'conflict' })
     expect(update).not.toHaveBeenCalled()
   })
 
@@ -145,18 +145,58 @@ describe('useKeybindings', () => {
     const { result, update } = renderKeybindings()
     expect(
       result.current.setUserBinding('dock-toggle', {
-        code: 'KeyK',
+        code: 'KeyO',
         mods: new Set(['Mod']),
       })
     ).toEqual({ ok: true })
 
     expect(update).toHaveBeenCalledWith({
-      customKeybindings: { 'dock-toggle': 'Mod+KeyK' },
+      customKeybindings: { 'dock-toggle': 'Mod+KeyO' },
     })
   })
 
+  test('setUserBinding persists a Shift-only Diff override', () => {
+    const { result, update } = renderKeybindings()
+    expect(
+      result.current.setUserBinding('diff-line-next', {
+        code: 'ArrowDown',
+        mods: new Set(['Shift']),
+      })
+    ).toEqual({ ok: true })
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: { 'diff-line-next': 'Shift+ArrowDown' },
+    })
+  })
+
+  test('setUserBinding persists an Alt-only Diff override', () => {
+    const { result, update } = renderKeybindings()
+
+    expect(
+      result.current.setUserBinding('diff-line-next', {
+        code: 'ArrowDown',
+        mods: new Set(['Alt']),
+      })
+    ).toEqual({ ok: true })
+
+    expect(update).toHaveBeenCalledWith({
+      customKeybindings: { 'diff-line-next': 'Alt+ArrowDown' },
+    })
+  })
+
+  test('setUserBinding rejects both primary modifiers for Diff', () => {
+    const { result, update } = renderKeybindings()
+    expect(
+      result.current.setUserBinding('diff-line-next', {
+        code: 'ArrowDown',
+        mods: new Set(['Mod', 'Ctrl']),
+      })
+    ).toEqual({ ok: false, reason: 'invalid-super' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
   test('resetBinding removes the override', () => {
-    const { result, update } = renderKeybindings({ 'dock-toggle': 'Mod+KeyK' })
+    const { result, update } = renderKeybindings({ 'dock-toggle': 'Mod+KeyO' })
     result.current.resetBinding('dock-toggle')
     expect(update).toHaveBeenCalledWith({ customKeybindings: {} })
   })

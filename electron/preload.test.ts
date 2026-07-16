@@ -19,7 +19,6 @@ import {
   BROWSER_PANE_URL_CHANGED,
 } from './browser-pane-channels'
 import {
-  COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   DIALOG_PICK_DIRECTORY,
   E2E_COMMAND_PALETTE_SHORTCUT,
@@ -135,40 +134,6 @@ describe('preload browserPane wiring', () => {
 
   test('raises the shared ipcRenderer listener cap during preload startup', () => {
     expect(preloadSetMaxListenersCalls).toEqual([[64]])
-  })
-
-  test('setCommandPaletteBinding sends the resolved binding to main', () => {
-    const setCommandPaletteBinding = preloadApi().setCommandPaletteBinding as (
-      binding: string
-    ) => void
-
-    setCommandPaletteBinding('Mod+KeyK')
-
-    expect(electronMock.ipcRenderer.send).toHaveBeenCalledWith(
-      COMMAND_PALETTE_BINDING,
-      'Mod+KeyK'
-    )
-  })
-
-  test('setCommandPaletteBindings sends split palette bindings to main', () => {
-    const setCommandPaletteBindings = preloadApi()
-      .setCommandPaletteBindings as (bindings: {
-      palette: string
-      leader: string
-    }) => void
-
-    setCommandPaletteBindings({
-      palette: 'Mod+KeyP',
-      leader: 'Mod+KeyK',
-    })
-
-    expect(electronMock.ipcRenderer.send).toHaveBeenCalledWith(
-      COMMAND_PALETTE_BINDING,
-      {
-        palette: 'Mod+KeyP',
-        leader: 'Mod+KeyK',
-      }
-    )
   })
 
   test('e2e dispatchCommandPaletteShortcut invokes the e2e shortcut channel', async () => {

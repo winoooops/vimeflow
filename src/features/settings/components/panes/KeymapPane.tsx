@@ -15,19 +15,18 @@ import {
 } from '../../../../lib/formatShortcut'
 import { useSettings } from '../../hooks/useSettings'
 import {
-  KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
   VIM_KEYMAP_GROUPS,
   keymapCommandTargetId,
   keymapStaticTargetId,
 } from '../../sections'
-import { CATALOG, type CommandId } from '../../../keymap/catalog'
+import { CATALOG, getCommand, type CommandId } from '../../../keymap/catalog'
 import {
   eventToChord,
   KEYMAP_CAPTURE_TARGET_ATTRIBUTE,
 } from '../../../keymap/capture'
 import type { Chord } from '../../../keymap/chord'
-import { chordToShortcutInput } from '../../../keymap/displayKey'
+import { chordToVisibleShortcutInput } from '../../../keymap/displayKey'
 import {
   useKeybindings,
   type SetBindingResult,
@@ -41,10 +40,15 @@ import type {
 import { Kbd } from '../Kbd'
 import { PaneTitle, Row, Select } from '../controls'
 
-// The catalog owns the modifier-based rows (Global / Panes & Layout / Terminal / Browser).
-// The bare-key Diff zone keeps rendering from KEYMAP_GROUPS (no platform-modifier
-// drift; vim-style lowercase display), as do the Vim ex-command rows. (§6.4)
-const GROUP_ORDER = ['Global', 'Panes & Layout', 'Terminal', 'Browser'] as const
+// Vim ex-commands are palette text commands, not keybindings, so they retain
+// their own static rows. Every keyboard binding renders from the catalog.
+const GROUP_ORDER = [
+  'Global',
+  'Panes & Layout',
+  'Terminal',
+  'Browser',
+  'Diff (when focused)',
+] as const
 type CatalogCommand = (typeof CATALOG)[number]
 type FeedbackTone = 'info' | 'danger'
 type TabDirection = 'forward' | 'backward'
@@ -127,7 +131,7 @@ const labelCell = (text: string): ReactElement => (
 )
 
 const shortcutLabel = (chord: Chord): string =>
-  formatShortcut(chordToShortcutInput(chord))
+  formatShortcut(chordToVisibleShortcutInput(chord))
 
 const iconButtonClass = (disabled = false): string =>
   `inline-flex h-7 w-7 items-center justify-center rounded-md border border-outline-variant/35 bg-surface-container-low/70 text-on-surface-muted transition-colors ${
@@ -137,10 +141,13 @@ const iconButtonClass = (disabled = false): string =>
   }`
 
 const resultMessage = (
-  reason: Exclude<SetBindingResult, { ok: true }>['reason']
+  reason: Exclude<SetBindingResult, { ok: true }>['reason'],
+  id: CommandId
 ): string => {
   if (reason === 'invalid-super') {
-    return 'Use exactly one primary modifier.'
+    return getCommand(id).context === 'diff'
+      ? 'Use at most one primary modifier.'
+      : 'Use exactly one primary modifier.'
   }
   if (reason === 'reserved') {
     return 'Shortcut is reserved.'
@@ -304,7 +311,11 @@ export const KeymapPane = ({
       return
     }
 
-    setFeedback({ id, tone: 'danger', text: resultMessage(result.reason) })
+    setFeedback({
+      id,
+      tone: 'danger',
+      text: resultMessage(result.reason, id),
+    })
   }
 
   const resetCommand = (id: CommandId): void => {
@@ -362,6 +373,19 @@ export const KeymapPane = ({
       >
         {labelCell(cmd.label)}
         <div className="flex shrink-0 items-center gap-2">
+          {rowFeedback && (
+            <span
+              role={rowFeedback.tone === 'danger' ? 'alert' : 'status'}
+              className={`min-w-[148px] text-right font-body text-xs ${
+                rowFeedback.tone === 'danger'
+                  ? 'text-error'
+                  : 'text-on-surface-muted'
+              }`}
+            >
+              {rowFeedback.text}
+            </span>
+          )}
+
           <span className="flex min-w-[72px] justify-end gap-1">
             <Kbd>{shortcutLabel(bindingFor(cmd.id))}</Kbd>
           </span>
@@ -416,19 +440,6 @@ export const KeymapPane = ({
                 </div>
               )}
             </>
-          )}
-
-          {rowFeedback && (
-            <span
-              role={rowFeedback.tone === 'danger' ? 'alert' : 'status'}
-              className={`min-w-[148px] text-right font-body text-xs ${
-                rowFeedback.tone === 'danger'
-                  ? 'text-error'
-                  : 'text-on-surface-muted'
-              }`}
-            >
-              {rowFeedback.text}
-            </span>
           )}
         </div>
       </div>
@@ -494,15 +505,11 @@ export const KeymapPane = ({
         )
       })}
 
-      {KEYMAP_GROUPS.filter(
-        (group) => group.zone === 'Diff (when focused)'
-      ).map(staticGroup)}
-
       {showVim && VIM_KEYMAP_GROUPS.map(staticGroup)}
 
       <p className="font-body text-xs text-on-surface-muted">
-        More actions are available in the {formatShortcut(['Mod', ';'])} command
-        palette.
+        More actions are available in the {shortcutLabel(bindingFor('palette'))}{' '}
+        command palette.
       </p>
     </>
   )

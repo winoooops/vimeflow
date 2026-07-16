@@ -1,7 +1,7 @@
 import { describe, expect, test, vi, afterEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement } from 'react'
+import { StrictMode, type ReactElement } from 'react'
 import type { AppSettings } from '../../bindings/AppSettings'
 import { SettingsProvider } from './SettingsProvider'
 import { useSettings } from './hooks/useSettings'
@@ -189,7 +189,7 @@ describe('SettingsProvider', () => {
     })
   })
 
-  test('syncs an in-memory snapshot to the main process only on update', async () => {
+  test('syncs the loaded snapshot and subsequent updates to the main process', async () => {
     const loaded = createLoadedSettings()
     const load = vi.fn().mockResolvedValue(loaded)
     const save = vi.fn().mockResolvedValue(undefined)
@@ -209,7 +209,11 @@ describe('SettingsProvider', () => {
       expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('close')
     })
 
-    expect(syncSnapshot).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(syncSnapshot).toHaveBeenCalledWith(loaded)
+    })
+
+    syncSnapshot.mockClear()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Update' }))
@@ -223,6 +227,67 @@ describe('SettingsProvider', () => {
         expect.objectContaining({ closeWithNoTabs: 'nothing' })
       )
     })
+  })
+
+  test('ignores a stale StrictMode load completion', async () => {
+    const older = createLoadedSettings()
+
+    const newer = {
+      ...older,
+      closeWithNoTabs: 'nothing' as const,
+      customKeybindings: {
+        'activity-panel-toggle': 'Mod+KeyK',
+      },
+    }
+
+    const loadResolvers: ((settings: AppSettings) => void)[] = []
+
+    const load = vi.fn(
+      () =>
+        new Promise<AppSettings>((resolve) => {
+          loadResolvers.push(resolve)
+        })
+    )
+    const syncSnapshot = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load,
+        save: vi.fn().mockResolvedValue(undefined),
+        openFile: vi.fn(),
+        syncSnapshot,
+      },
+    } as unknown as Window['vimeflow']
+
+    render(
+      <StrictMode>
+        <SettingsProvider>
+          <TestConsumer />
+        </SettingsProvider>
+      </StrictMode>
+    )
+
+    await waitFor(() => {
+      expect(loadResolvers).toHaveLength(2)
+    })
+
+    await act(async () => {
+      loadResolvers[1]?.(newer)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('nothing')
+      expect(syncSnapshot).toHaveBeenCalledWith(newer)
+    })
+
+    await act(async () => {
+      loadResolvers[0]?.(older)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId('closeWithNoTabs').textContent).toBe('nothing')
+    expect(syncSnapshot).not.toHaveBeenCalledWith(older)
   })
 
   test('applies settings broadcasts from another renderer', async () => {

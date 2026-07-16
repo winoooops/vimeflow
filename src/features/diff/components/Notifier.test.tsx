@@ -1,9 +1,14 @@
-import type { ReactNode } from 'react'
-import { render, screen } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
+import { render as rtlRender, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
+import type { AppSettings } from '../../../bindings/AppSettings'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 import type { DiffChipToolbarProps } from './toolbar'
 import { Notifier } from './Notifier'
 import type { RequestReviewScopeControl } from './RequestReviewPopover'
+import { getCommand } from '../../keymap/catalog'
+import { resolveDefault } from '../../keymap/resolve'
 
 vi.mock('@/components/Popover', () => ({
   Popover: ({
@@ -30,6 +35,7 @@ vi.mock('./FinishFeedbackPopover', () => ({
 }))
 
 const toolbarProps: DiffChipToolbarProps = {
+  bindingFor: (id) => resolveDefault(getCommand(id), false),
   diffMode: 'unstaged',
   diffStyle: 'split',
   onDiffStyleChange: vi.fn(),
@@ -54,9 +60,12 @@ const toolbarProps: DiffChipToolbarProps = {
 }
 
 const renderNotifier = (
-  overrides: Partial<Parameters<typeof Notifier>[0]> = {}
-): ReturnType<typeof render> =>
-  render(
+  overrides: Partial<Parameters<typeof Notifier>[0]> = {},
+  customKeybindings: Record<string, string> = {}
+): ReturnType<typeof rtlRender> => {
+  const settings: AppSettings = { ...DEFAULT_SETTINGS, customKeybindings }
+
+  return rtlRender(
     <Notifier
       toolbarProps={toolbarProps}
       finishFeedback={{
@@ -72,8 +81,18 @@ const renderNotifier = (
       onCancelKeyboardConfirm={vi.fn()}
       onConfirmKeyboardAction={vi.fn()}
       {...overrides}
-    />
+    />,
+    {
+      wrapper: ({ children }: { children: ReactNode }): ReactElement => (
+        <SettingsContext.Provider
+          value={{ settings, saveError: null, update: vi.fn() }}
+        >
+          {children}
+        </SettingsContext.Provider>
+      ),
+    }
   )
+}
 
 describe('Notifier', () => {
   test('renders toolbar status messages and preserved draft copy', () => {
@@ -126,7 +145,46 @@ describe('Notifier', () => {
     )
 
     expect(screen.getByTestId('popover')).toHaveTextContent('Discard hunk?')
-    expect(screen.getByRole('button', { name: 'Yes (y)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yes (Y)' })).toBeInTheDocument()
+  })
+
+  test('renders customized confirmation hints', () => {
+    const { rerender } = renderNotifier(
+      {},
+      {
+        'diff-confirm-accept': 'Alt+Enter',
+        'diff-confirm-cancel': 'Alt+Escape',
+      }
+    )
+
+    rerender(
+      <Notifier
+        toolbarProps={toolbarProps}
+        finishFeedback={{
+          open: false,
+          result: { kind: 'none' },
+          commentCount: 0,
+          fileCount: 0,
+          onCancel: vi.fn(),
+          onSend: vi.fn(),
+        }}
+        keyboardConfirm={{
+          title: 'Discard hunk?',
+          body: 'This cannot be undone.',
+          variant: 'danger',
+        }}
+        onCancelKeyboardConfirm={vi.fn()}
+        onConfirmKeyboardAction={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'No (Alt+Escape)' })
+    ).toHaveAttribute('aria-keyshortcuts', 'Alt+Escape')
+
+    expect(
+      screen.getByRole('button', { name: 'Yes (Alt+Enter)' })
+    ).toHaveAttribute('aria-keyshortcuts', 'Alt+Enter')
   })
 
   test('scopeControl on requestReview reaches RequestReviewPopover', () => {
@@ -174,7 +232,7 @@ describe('Notifier', () => {
 
     // The SegmentedControl group from RequestReviewPopover must be in the DOM
     expect(
-      screen.getByRole('group', { name: 'Review scope (f/a)' })
+      screen.getByRole('group', { name: 'Review scope' })
     ).toBeInTheDocument()
 
     expect(screen.getByRole('button', { name: 'All changes' })).toHaveAttribute(

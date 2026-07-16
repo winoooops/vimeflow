@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { chordsOverlap, contextsOverlap, detectConflicts } from './conflicts'
 import type { Chord } from './chord'
-import type { CommandId } from './catalog'
+import { CATALOG, type CommandId } from './catalog'
+import { resolveDefault } from './resolve'
 
 const c = (
   code: string,
@@ -67,6 +68,19 @@ describe('contextsOverlap', () => {
 })
 
 describe('detectConflicts', () => {
+  test('catalog defaults contain only declared modal overlaps', () => {
+    for (const [isMac, superKey] of [
+      [true, 'meta'],
+      [false, 'ctrl'],
+    ] as const) {
+      const resolved = new Map<CommandId, Chord>(
+        CATALOG.map((command) => [command.id, resolveDefault(command, isMac)])
+      )
+
+      expect(detectConflicts(resolved, superKey)).toHaveLength(0)
+    }
+  })
+
   test('reports two commands sharing a resolved key + overlapping context', () => {
     const resolved = new Map<CommandId, Chord>([
       ['focus-pane-1', c('Digit1', 'Mod')],

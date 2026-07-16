@@ -29,6 +29,9 @@ describe('parseChord', () => {
       'Mod+Shift+ArrowLeft',
       'Ctrl+Backquote',
       'Mod+Digit1',
+      'Mod+KanaMode',
+      'Mod+Hiragana',
+      'Mod+Eject',
     ]) {
       expect(formatChord(parseChord(token)!)).toBe(token)
     }
@@ -39,6 +42,9 @@ describe('parseChord', () => {
     expect(parseChord('Mod+')).toBeNull()
     expect(parseChord('+KeyC')).toBeNull()
     expect(parseChord('Hyper+KeyC')).toBeNull()
+    expect(parseChord('garbage')).toBeNull()
+    expect(parseChord('Mod+NotAKey')).toBeNull()
+    expect(parseChord('ShiftLeft')).toBeNull()
     expect(parseChord('Mod+Mod+KeyC')).toBeNull() // duplicate
     expect(parseChord('Mod+Ctrl+KeyC')).toBeNull() // both supers — unsatisfiable
   })

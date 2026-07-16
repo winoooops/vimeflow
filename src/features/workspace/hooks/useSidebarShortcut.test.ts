@@ -69,6 +69,7 @@ const makeProps = (
   overrides: Partial<UseSidebarShortcutParams> = {}
 ): UseSidebarShortcutParams => ({
   onToggle: vi.fn(),
+  onToggleActivityPanel: vi.fn(),
   matches: matchesFor(true),
   activeContainerId: TERMINAL_CONTAINER_ID,
   ...overrides,
@@ -113,6 +114,17 @@ describe('useSidebarShortcut', () => {
 
       fireFrom(target, { metaKey: true, altKey: true })
 
+      expect(props.onToggle).not.toHaveBeenCalled()
+    })
+
+    test('⌘R toggles the right activity panel only', () => {
+      const props = makeProps({ matches: matchesFor(true) })
+      const target = append(document.createElement('div'))
+      renderHook(() => useSidebarShortcut(props))
+
+      fireFrom(target, { key: 'r', code: 'KeyR', metaKey: true })
+
+      expect(props.onToggleActivityPanel).toHaveBeenCalledOnce()
       expect(props.onToggle).not.toHaveBeenCalled()
     })
   })
@@ -166,6 +178,21 @@ describe('useSidebarShortcut', () => {
     fireFrom(target, { ctrlKey: true, shiftKey: true })
 
     expect(props.onToggle).toHaveBeenCalledOnce()
+  })
+
+  test('does not toggle the activity panel through the compact sidebar dialog', () => {
+    const props = makeProps({ matches: matchesFor(true) })
+    const sidebarDialog = document.createElement('div')
+    sidebarDialog.setAttribute('role', 'dialog')
+    sidebarDialog.setAttribute('aria-label', 'Sidebar')
+    const target = document.createElement('button')
+    sidebarDialog.appendChild(target)
+    append(sidebarDialog)
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, { key: 'r', code: 'KeyR', metaKey: true })
+
+    expect(props.onToggleActivityPanel).not.toHaveBeenCalled()
   })
 
   test('meta: bails when dock is active and target is inside the dock', () => {
@@ -227,6 +254,41 @@ describe('useSidebarShortcut', () => {
     expect(props.onToggle).toHaveBeenCalledOnce()
   })
 
+  test('fires the activity toggle on its rebound registry combo', () => {
+    const props = makeProps({
+      matches: matchesFor(true, {
+        'activity-panel-toggle': 'Mod+Shift+KeyR',
+      }),
+    })
+    const target = append(document.createElement('div'))
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, {
+      key: 'R',
+      code: 'KeyR',
+      metaKey: true,
+      shiftKey: true,
+    })
+
+    expect(props.onToggleActivityPanel).toHaveBeenCalledOnce()
+    expect(props.onToggle).not.toHaveBeenCalled()
+  })
+
+  test('ignores held activity-toggle repeats', () => {
+    const props = makeProps({ matches: matchesFor(true) })
+    const target = append(document.createElement('div'))
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, {
+      key: 'r',
+      code: 'KeyR',
+      metaKey: true,
+      repeat: true,
+    })
+
+    expect(props.onToggleActivityPanel).not.toHaveBeenCalled()
+  })
+
   test('does not defer rebound meta combos to the dock unless the key is B', () => {
     const props = makeProps({
       matches: matchesFor(true, { 'sidebar-toggle': 'Mod+KeyK' }),
@@ -236,6 +298,21 @@ describe('useSidebarShortcut', () => {
     renderHook(() => useSidebarShortcut(props))
 
     fireFrom(target, { key: 'k', code: 'KeyK', metaKey: true })
+
+    expect(props.onToggle).toHaveBeenCalledOnce()
+  })
+
+  test('does not defer a rebound modified B combo to the dock', () => {
+    const props = makeProps({
+      matches: matchesFor(true, {
+        'sidebar-toggle': 'Mod+Shift+KeyB',
+      }),
+      activeContainerId: DOCK_CONTAINER_ID,
+    })
+    const target = appendContainerWithChild(DOCK_CONTAINER_ID)
+    renderHook(() => useSidebarShortcut(props))
+
+    fireFrom(target, { key: 'B', metaKey: true, shiftKey: true })
 
     expect(props.onToggle).toHaveBeenCalledOnce()
   })

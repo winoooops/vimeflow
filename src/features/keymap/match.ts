@@ -3,11 +3,19 @@ import type { Chord } from './chord'
 // The resolved 'Mod' — WorkspaceView already derives this as `preferModifier`.
 export type PlatformSuper = 'meta' | 'ctrl'
 
+export interface KeyChordInput {
+  code: string
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+}
+
 // Pure matcher (spec §6.1). Super modifiers are EXACT (required down, all others
 // up); Shift/Alt follow `policy`: a listed one must be down; an unlisted one is
 // forbidden-if-down under 'exact' and ignored under 'tolerant'.
 export const eventMatchesChord = (
-  event: KeyboardEvent,
+  event: KeyChordInput,
   chord: Chord,
   superKey: PlatformSuper,
   policy: 'exact' | 'tolerant' = 'exact'

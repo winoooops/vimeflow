@@ -3,7 +3,6 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
-  COMMAND_PALETTE_BINDING,
   COMMAND_PALETTE_TOGGLE,
   DIALOG_PICK_DIRECTORY,
   E2E_COMMAND_PALETTE_SHORTCUT,
@@ -70,11 +69,6 @@ const BACKEND_EVENT_MAX_LISTENERS = 64
 ipcRenderer.setMaxListeners(BACKEND_EVENT_MAX_LISTENERS)
 
 type CommandPaletteShortcutSource = 'palette' | 'leader'
-
-interface CommandPaletteBindingSync {
-  palette: string
-  leader: string
-}
 
 type InvokeEnvelope<T> =
   | { ok: true; result: T }
@@ -150,22 +144,11 @@ const setKeymapCaptureActive = (active: boolean): void => {
   ipcRenderer.send(KEYMAP_CAPTURE_ACTIVE, active)
 }
 
-const setCommandPaletteBinding = (binding: string): void => {
-  ipcRenderer.send(COMMAND_PALETTE_BINDING, binding)
-}
-
-const setCommandPaletteBindings = (
-  bindings: CommandPaletteBindingSync
-): void => {
-  ipcRenderer.send(COMMAND_PALETTE_BINDING, bindings)
-}
-
 const isNativeGhosttyPreloadEnabled =
   process.env.VITE_GHOSTTY_NATIVE_MACOS === '1' ||
   process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
 
-const isNativeGhosttyParentPreloadEnabled =
-  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+const isNativeGhosttyParentPreloadEnabled = isNativeGhosttyPreloadEnabled
 
 const ghosttyNativeBridge = isNativeGhosttyPreloadEnabled
   ? {
@@ -213,8 +196,6 @@ contextBridge.exposeInMainWorld('vimeflow', {
   listen,
   onCommandPaletteToggle,
   setKeymapCaptureActive,
-  setCommandPaletteBinding,
-  setCommandPaletteBindings,
   ...e2eBridge,
   browserPane: {
     createPane: (request: unknown): Promise<unknown> =>

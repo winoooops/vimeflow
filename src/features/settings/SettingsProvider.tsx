@@ -98,18 +98,26 @@ export const SettingsProvider = ({
   )
 
   useEffect(() => {
+    let cancelled = false
+
     const load = async (): Promise<void> => {
       const bridge =
         typeof window !== 'undefined' ? window.vimeflow?.settings : undefined
 
       if (!bridge) {
-        hasLoadedRef.current = true
+        if (!cancelled) {
+          hasLoadedRef.current = true
+        }
 
         return
       }
 
       try {
         const loaded = await bridge.load()
+        if (cancelled) {
+          return
+        }
+
         const base = latestBroadcastBeforeLoadRef.current ?? loaded
         latestBroadcastBeforeLoadRef.current = null
         hasLoadedRef.current = true
@@ -118,7 +126,12 @@ export const SettingsProvider = ({
         }
         setSettings(base)
         settingsRef.current = base
+        void syncSnapshotToMain(base)
       } catch {
+        if (cancelled) {
+          return
+        }
+
         const base = latestBroadcastBeforeLoadRef.current ?? DEFAULT_SETTINGS
         latestBroadcastBeforeLoadRef.current = null
         hasLoadedRef.current = true
@@ -128,7 +141,11 @@ export const SettingsProvider = ({
     }
 
     void load()
-  }, [applyPendingLoadPatch])
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [applyPendingLoadPatch, syncSnapshotToMain])
 
   useEffect(() => {
     const bridge =

@@ -1,6 +1,7 @@
 /* eslint-disable react/require-default-props -- forwardRef components: ESLint cannot see through forwardRef to find destructuring defaults */
 import { forwardRef, type ReactElement } from 'react'
 import { Tooltip } from '@/components/Tooltip'
+import type { ShortcutInput } from '@/lib/formatShortcut'
 
 export type SidebarToggleVariant = 'ghost' | 'inset'
 
@@ -17,8 +18,10 @@ export interface SidebarToggleProps {
    */
   variant?: SidebarToggleVariant
   'data-testid'?: string
-  /** Platform-appropriate shortcut hint shown as the tooltip chip (e.g. '⌘B' or 'Ctrl+⇧B'). Omit for controls with no shortcut (e.g. the activity panel). */
-  shortcutHint?: string
+  /** Platform-appropriate shortcut hint shown as the tooltip chip (e.g. ['Mod', 'B']). */
+  shortcutHint?: ShortcutInput
+  /** WAI-ARIA representation of the same shortcut. */
+  ariaKeyshortcuts?: string
   /** Mirror the glyph so the rail/fill sits on the RIGHT — for a right-docked panel. */
   mirrored?: boolean
   /** Override the default Show/Hide-sidebar tooltip + aria label (e.g. 'Expand activity panel'). */
@@ -50,6 +53,7 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
       variant = 'ghost',
       'data-testid': testId = 'sidebar-toggle',
       shortcutHint = undefined,
+      ariaKeyshortcuts = undefined,
       mirrored = false,
       label = undefined,
     },
@@ -70,6 +74,7 @@ export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
           onClick={onClick}
           aria-label={resolvedLabel}
           aria-expanded={!collapsed}
+          aria-keyshortcuts={ariaKeyshortcuts}
           style={{ width: size, height: size }}
           className={`vf-app-no-drag grid shrink-0 cursor-pointer place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-container ${VARIANT_CLASS[variant]}`}
         >

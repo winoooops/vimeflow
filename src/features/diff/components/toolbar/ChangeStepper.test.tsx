@@ -11,6 +11,10 @@ const renderStepper = (
     navEnabled: true,
     onPrev: vi.fn<() => void>(),
     onNext: vi.fn<() => void>(),
+    previousShortcut: '[',
+    previousAriaKeyshortcuts: '[',
+    nextShortcut: ']',
+    nextAriaKeyshortcuts: ']',
   }
 
   return render(<ChangeStepper {...baseProps} {...overrides} />)

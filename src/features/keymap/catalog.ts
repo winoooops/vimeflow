@@ -1,4 +1,4 @@
-import type { Chord } from './chord'
+import type { Chord, Mod } from './chord'
 
 export type BindingContext =
   | 'global'
@@ -8,16 +8,189 @@ export type BindingContext =
   | 'dock'
   | 'browser'
 
-const c = (
+const c = (code: string, ...mods: Mod[]): Chord => ({
+  code,
+  mods: new Set(mods),
+})
+
+const DIFF_GROUP = 'Diff (when focused)'
+type DiffMod = Exclude<Mod, 'Mod'>
+
+interface DiffCommandLiteral<Id extends string> {
+  readonly id: Id
+  readonly label: string
+  readonly group: typeof DIFF_GROUP
+  readonly context: 'diff'
+  readonly matchPolicy: 'exact'
+  readonly rebindable: true
+  readonly defaultCombo: Chord
+}
+
+const diffCommand = <Id extends string>(
+  id: Id,
+  label: string,
   code: string,
-  ...mods: ('Mod' | 'Ctrl' | 'Shift' | 'Alt')[]
-): Chord => ({ code, mods: new Set(mods) })
+  ...mods: DiffMod[]
+): DiffCommandLiteral<Id> => ({
+  id,
+  label,
+  group: DIFF_GROUP,
+  context: 'diff' as const,
+  matchPolicy: 'exact' as const,
+  rebindable: true as const,
+  defaultCombo: c(code, ...mods),
+})
+
+const DIFF_CATALOG_LITERAL = [
+  diffCommand('diff-line-next', 'Move to next line', 'KeyJ'),
+  diffCommand('diff-line-previous', 'Move to previous line', 'KeyK'),
+  diffCommand('diff-scroll-page-down', 'Scroll down half page', 'KeyD', 'Ctrl'),
+  diffCommand('diff-scroll-page-up', 'Scroll up half page', 'KeyU', 'Ctrl'),
+  diffCommand('diff-file-next', 'Next file / search match', 'KeyN'),
+  diffCommand('diff-file-previous', 'Previous file / search match', 'KeyP'),
+  diffCommand('diff-search-open', 'Open diff search', 'Slash'),
+  diffCommand(
+    'diff-search-or-visual-cancel',
+    'Close search / cancel visual selection',
+    'Escape'
+  ),
+  {
+    ...diffCommand('diff-search-commit-next', 'Commit search forward', 'Enter'),
+    intentionalShadowWith: ['diff-comment-submit'],
+  },
+  diffCommand(
+    'diff-search-commit-previous',
+    'Commit search backward',
+    'Enter',
+    'Shift'
+  ),
+  diffCommand('diff-files-toggle', 'Show / hide changed files', 'KeyE'),
+  diffCommand('diff-files-pin', 'Pin / unpin changed files', 'KeyE', 'Shift'),
+  diffCommand('diff-refresh', 'Refresh diff', 'KeyR'),
+  diffCommand('diff-hunk-previous', 'Previous hunk', 'BracketLeft'),
+  diffCommand('diff-hunk-next', 'Next hunk', 'BracketRight'),
+  diffCommand('diff-side-deletions', 'Move to deletions side', 'KeyH'),
+  diffCommand('diff-side-additions', 'Move to additions side', 'KeyL'),
+  diffCommand('diff-view-toggle', 'Toggle split / unified view', 'KeyT'),
+  diffCommand('diff-comment-line', 'Comment on selected line / range', 'KeyI'),
+  diffCommand('diff-comment-file', 'Comment on selected file', 'KeyI', 'Shift'),
+  diffCommand('diff-comment-update', 'Edit selected line comment', 'KeyU'),
+  diffCommand(
+    'diff-file-comment-update',
+    'Edit selected file comment',
+    'KeyU',
+    'Shift'
+  ),
+  diffCommand('diff-comment-delete', 'Delete selected line comment', 'KeyX'),
+  diffCommand(
+    'diff-comment-category-previous',
+    'Previous comment category',
+    'KeyH',
+    'Ctrl'
+  ),
+  diffCommand(
+    'diff-comment-category-next',
+    'Next comment category',
+    'KeyL',
+    'Ctrl'
+  ),
+  diffCommand(
+    'diff-comment-insert-newline',
+    'Insert comment newline',
+    'KeyJ',
+    'Ctrl'
+  ),
+  diffCommand(
+    'diff-comment-cursor-up',
+    'Move comment cursor up',
+    'KeyK',
+    'Ctrl'
+  ),
+  {
+    ...diffCommand('diff-comment-submit', 'Submit comment', 'Enter'),
+    intentionalShadowWith: ['diff-search-commit-next'],
+  },
+  {
+    ...diffCommand('diff-comment-cancel', 'Cancel comment', 'Escape'),
+    intentionalShadowWith: ['diff-search-or-visual-cancel'],
+  },
+  diffCommand('diff-visual-start', 'Start visual selection', 'KeyV'),
+  diffCommand('diff-visual-yank', 'Copy visual selection', 'KeyY'),
+  diffCommand('diff-review-finish', 'Finish feedback', 'KeyY', 'Shift'),
+  diffCommand('diff-review-request', 'Request agent review', 'Digit2', 'Shift'),
+  diffCommand('diff-request-review-scope-file', 'Review this file', 'KeyF'),
+  diffCommand(
+    'diff-request-review-scope-changelist',
+    'Review all changes',
+    'KeyA'
+  ),
+  diffCommand('diff-review-copy', 'Copy review payload', 'KeyC'),
+  {
+    ...diffCommand(
+      'diff-request-review-submit',
+      'Delegate review request',
+      'KeyY',
+      'Shift'
+    ),
+    intentionalShadowWith: [
+      'diff-review-finish',
+      'diff-feedback-send',
+      'diff-commit-review-submit',
+    ],
+  },
+  {
+    ...diffCommand(
+      'diff-feedback-send',
+      'Send finished feedback',
+      'KeyY',
+      'Shift'
+    ),
+    intentionalShadowWith: [
+      'diff-review-finish',
+      'diff-request-review-submit',
+      'diff-commit-review-submit',
+    ],
+  },
+  {
+    ...diffCommand(
+      'diff-commit-review-submit',
+      'Submit commit review',
+      'KeyY',
+      'Shift'
+    ),
+    intentionalShadowWith: [
+      'diff-review-finish',
+      'diff-request-review-submit',
+      'diff-feedback-send',
+    ],
+  },
+  {
+    ...diffCommand('diff-confirm-accept', 'Accept confirmation', 'KeyY'),
+    intentionalShadowWith: [
+      'diff-visual-yank',
+      'diff-search-commit-next',
+      'diff-comment-submit',
+    ],
+  },
+  {
+    ...diffCommand('diff-confirm-cancel', 'Cancel confirmation', 'KeyN'),
+    intentionalShadowWith: [
+      'diff-file-next',
+      'diff-search-or-visual-cancel',
+      'diff-comment-cancel',
+    ],
+  },
+  diffCommand('diff-hunk-stage', 'Stage / unstage hunk', 'KeyS'),
+  diffCommand('diff-hunk-discard', 'Discard hunk', 'KeyD'),
+  diffCommand('diff-file-discard', 'Discard file', 'KeyD', 'Shift'),
+] as const
 
 // PR1 migrated usePaneShortcuts (the focus-pane / cycle-layout commands) and
 // useDockToggleShortcut. PR2 migrates the remaining workspace hooks. PR3
 // migrates the command-palette direct toggle and leader prefix. Their
 // defaultCombo MUST equal today's hardcoded combos (resolve.test asserts this).
-// Terminal-owned rows remain display-only.
+// Terminal-owned rows remain display-only. Diff bindings are focus-scoped;
+// normal-mode handlers ignore text entry, while editor commands opt in.
 const CATALOG_LITERAL = [
   // ── Panes & Layout (MIGRATED — rebindable) ──
   {
@@ -165,6 +338,16 @@ const CATALOG_LITERAL = [
     matchPolicy: 'tolerant',
     rebindable: true,
     defaultCombo: c('Digit0', 'Mod'),
+  },
+  {
+    id: 'activity-panel-toggle',
+    label: 'Show / hide agent activity panel',
+    group: 'Global',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: (isMac: boolean): Chord =>
+      isMac ? c('KeyR', 'Mod') : c('KeyR', 'Mod', 'Shift'),
   },
   {
     id: 'palette',
@@ -323,20 +506,22 @@ const CATALOG_LITERAL = [
     defaultCombo: c('KeyC', 'Ctrl'),
   },
 
-  // ── Browser (display-only; browser chrome owns address-bar focus) ──
+  // ── Browser (focus-scoped) ──
   {
     id: 'browser-location',
     label: 'Focus browser address bar',
     group: 'Browser',
     context: 'browser',
     matchPolicy: 'exact',
-    rebindable: false,
-    preserveStoredOverrides: true,
+    rebindable: true,
     defaultCombo: c('KeyL', 'Mod'),
   },
+  ...DIFF_CATALOG_LITERAL,
 ] as const
 
 export type CommandId = (typeof CATALOG_LITERAL)[number]['id']
+
+export type DiffCommandId = (typeof DIFF_CATALOG_LITERAL)[number]['id']
 
 export interface CommandDescriptor {
   readonly id: CommandId
@@ -351,11 +536,21 @@ export interface CommandDescriptor {
   readonly intentionalShadowWith?: readonly CommandId[]
 }
 
+export interface DiffCommandDescriptor extends CommandDescriptor {
+  readonly id: DiffCommandId
+  readonly context: 'diff'
+  readonly defaultCombo: Chord
+  readonly rebindable: true
+}
+
 // Exported catalog is widened to CommandDescriptor so consumers see a uniform
 // array type, while CommandId is derived from the literal catalog above. This
 // breaks the circular dependency and lets intentionalShadowWith reject typos
 // at compile time.
 export const CATALOG: readonly CommandDescriptor[] = CATALOG_LITERAL
+
+export const DIFF_COMMANDS: readonly DiffCommandDescriptor[] =
+  DIFF_CATALOG_LITERAL
 
 const BY_ID = new Map<CommandId, CommandDescriptor>(
   CATALOG.map((cmd) => [cmd.id, cmd])

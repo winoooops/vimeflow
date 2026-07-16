@@ -8,6 +8,19 @@ import { mockSessions } from '../data/mockSessions'
 import type { LayoutId, Session } from '../../sessions/types'
 import type { TerminalPaneProps } from '../../terminal/components/TerminalPane'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import type { Keybindings } from '../../keymap/useKeybindings'
+
+vi.mock('../../keymap/useKeybindings', async () => {
+  const { getCommand } = await import('../../keymap/catalog')
+  const { resolveDefault } = await import('../../keymap/resolve')
+
+  const bindingFor: Keybindings['bindingFor'] = (id) =>
+    resolveDefault(getCommand(id), false)
+
+  return {
+    useKeybindings: (): Pick<Keybindings, 'bindingFor'> => ({ bindingFor }),
+  }
+})
 
 // Round 4 Finding 1: TerminalZone now requires a `service` prop so it can
 // forward it to every TerminalPane. The shared mock below is a no-op stub —

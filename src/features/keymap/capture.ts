@@ -26,7 +26,11 @@ export const eventToChord = (
   event: KeyboardEvent,
   isMac: boolean
 ): Chord | null => {
-  if (event.code === '' || MODIFIER_CODES.has(event.code)) {
+  if (
+    event.code === '' ||
+    MODIFIER_CODES.has(event.code) ||
+    (!isMac && event.metaKey)
+  ) {
     return null
   }
 

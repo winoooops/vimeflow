@@ -108,7 +108,7 @@ describe('nativeGhosttyClient', () => {
     ).resolves.toBe(false)
   })
 
-  test('keeps native secondary burners disabled for the legacy helper bridge', () => {
+  test('keeps native secondary burners disabled for an incomplete native bridge', () => {
     const api: NativeGhosttyApi = {
       update: vi.fn(() => Promise.resolve({})),
       data: vi.fn(() => Promise.resolve({})),

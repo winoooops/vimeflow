@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
   DEFAULT_ALIASES,
-  KEYMAP_GROUPS,
   SETTINGS_SECTIONS,
   SETTINGS_SUBSECTIONS,
   SettingsContent,
@@ -26,7 +25,6 @@ describe('settings feature barrel', () => {
   test('exports section constants', () => {
     expect(SETTINGS_SECTIONS.length).toBeGreaterThan(0)
     expect(SETTINGS_SUBSECTIONS.length).toBeGreaterThan(0)
-    expect(KEYMAP_GROUPS.length).toBeGreaterThan(0)
     expect(VIM_KEYMAP_GROUPS.length).toBeGreaterThan(0)
     expect(DEFAULT_ALIASES.length).toBeGreaterThan(0)
   })

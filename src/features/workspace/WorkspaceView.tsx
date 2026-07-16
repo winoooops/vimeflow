@@ -66,6 +66,7 @@ import {
 } from '@/features/command-palette/hooks/usePaneRenameChord'
 import { listen, renameAgentSession } from '@/lib/backend'
 import { registerCommandPaletteShortcutOpenerForE2e } from '@/lib/e2e-bridge'
+import { formatShortcut } from '@/lib/formatShortcut'
 import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
 import { cycleSession } from '@/features/sessions/utils/cycleSession'
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
@@ -87,8 +88,11 @@ import {
 import { useDockShortcuts } from './hooks/useDockShortcuts'
 import { useDockToggleShortcut } from './hooks/useDockToggleShortcut'
 import { useKeybindings } from '@/features/keymap/useKeybindings'
-import { formatChord } from '@/features/keymap/chord'
-import { chordToShortcutInput } from '@/features/keymap/displayKey'
+import {
+  chordToAriaShortcut,
+  chordToKeycapShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
 import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
@@ -424,11 +428,23 @@ const WorkspaceViewContent = (): ReactElement => {
     return detected.startsWith('mac') ? 'meta' : 'ctrl'
   }, [])
 
-  const sidebarShortcutHint = preferModifier === 'meta' ? '⌘B' : 'Ctrl+⇧B'
-  const newSessionShortcutHint = preferModifier === 'meta' ? '⌘N' : 'Ctrl+⇧N'
+  // One resolved registry read drives renderer behavior and visible hints;
+  // SettingsProvider publishes the same overrides to Electron/native surfaces.
+  const { bindingFor, matches } = useKeybindings()
+  const paletteBinding = bindingFor('palette')
+  const dockToggleBinding = bindingFor('dock-toggle')
+  const activityPanelToggleBinding = bindingFor('activity-panel-toggle')
+  const sidebarToggleBinding = bindingFor('sidebar-toggle')
+  const newSessionBinding = bindingFor('new-session')
+  const sidebarSessionsBinding = bindingFor('sidebar-sessions')
+  const sidebarFilesBinding = bindingFor('sidebar-files')
 
-  const newSessionAriaKeyshortcuts =
-    preferModifier === 'meta' ? 'Meta+N' : 'Control+Shift+N'
+  const sidebarShortcutHint = chordToShortcutInput(sidebarToggleBinding)
+
+  const newSessionShortcutHint = formatShortcut(
+    chordToShortcutInput(newSessionBinding)
+  )
+  const newSessionAriaKeyshortcuts = chordToAriaShortcut(newSessionBinding)
   const reserveWindowControls = preferModifier === 'meta'
 
   const windowControlsInset = reserveWindowControls
@@ -897,6 +913,10 @@ const WorkspaceViewContent = (): ReactElement => {
     },
     [activeSessionId, setSessionActivityPanelCollapsed]
   )
+
+  const handleToggleActivityPanel = useCallback((): void => {
+    handleActivityPanelCollapsed(!activityPanelCollapsed)
+  }, [activityPanelCollapsed, handleActivityPanelCollapsed])
 
   // Bridge: keep pane chrome in sync with agent detection for the active
   // pane. Live detections stamp the agent identity; an explicit
@@ -1978,8 +1998,7 @@ const WorkspaceViewContent = (): ReactElement => {
         })),
         setDockPosition,
         dockPosition,
-        toggleActivityPanel: (): void =>
-          handleActivityPanelCollapsed(!activityPanelCollapsed),
+        toggleActivityPanel: handleToggleActivityPanel,
         showSidebarTab: (tab: SidebarTab): void => {
           setActiveTab(tab)
           // Compact viewports gate sidebar visibility on the drawer flag.
@@ -1994,6 +2013,8 @@ const WorkspaceViewContent = (): ReactElement => {
           setTimeout(() => claimTerminal(), 0)
         },
         openFile: requestOpenFile,
+        keybindingShortcut: (id) =>
+          chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
       }),
     // sessionsSignature captures every field the closures read; activity-only
     // changes keep the signature stable so the memo (and downstream
@@ -2029,25 +2050,17 @@ const WorkspaceViewContent = (): ReactElement => {
       layoutRegistry,
       setDockPosition,
       dockPosition,
-      handleActivityPanelCollapsed,
-      activityPanelCollapsed,
+      handleToggleActivityPanel,
       setActiveTab,
       setSidebarCollapsed,
       isCompactViewport,
       setCompactSidebarOpen,
       claimTerminal,
       requestOpenFile,
+      bindingFor,
+      preferModifier,
     ]
   )
-
-  // Keybinding registry matcher — keeps the palette and migrated workspace
-  // shortcuts aligned with persisted overrides.
-  const { bindingFor, matches } = useKeybindings()
-  const paletteBinding = bindingFor('palette')
-  const paletteLeaderBinding = bindingFor('palette-leader')
-  const dockToggleBinding = bindingFor('dock-toggle')
-  const sidebarSessionsBinding = bindingFor('sidebar-sessions')
-  const sidebarFilesBinding = bindingFor('sidebar-files')
 
   const paletteShortcut = useMemo(
     () => chordToShortcutInput(paletteBinding),
@@ -2057,6 +2070,11 @@ const WorkspaceViewContent = (): ReactElement => {
   const dockShortcut = useMemo(
     () => chordToShortcutInput(dockToggleBinding),
     [dockToggleBinding]
+  )
+
+  const activityPanelShortcut = useMemo(
+    () => chordToShortcutInput(activityPanelToggleBinding),
+    [activityPanelToggleBinding]
   )
 
   const sidebarTabItems = useMemo(
@@ -2077,25 +2095,6 @@ const WorkspaceViewContent = (): ReactElement => {
     (event: KeyboardEvent): boolean => matches(event, 'palette-leader'),
     [matches]
   )
-
-  const paletteToken = formatChord(paletteBinding)
-  const leaderToken = formatChord(paletteLeaderBinding)
-
-  useEffect(() => {
-    const bindings = {
-      palette: paletteToken,
-      leader: leaderToken,
-    }
-    const bridge = window.vimeflow
-
-    if (bridge?.setCommandPaletteBindings) {
-      bridge.setCommandPaletteBindings(bindings)
-
-      return
-    }
-
-    bridge?.setCommandPaletteBinding?.(bindings.leader)
-  }, [paletteToken, leaderToken])
 
   const settingsDialog = useSettingsDialog()
 
@@ -2168,6 +2167,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
   useSidebarShortcut({
     onToggle: handleToggleSidebar,
+    onToggleActivityPanel: handleToggleActivityPanel,
     matches,
     activeContainerId,
   })
@@ -3104,6 +3104,7 @@ const WorkspaceViewContent = (): ReactElement => {
           variant="inset"
           data-testid="sidebar-toggle-fixed"
           shortcutHint={sidebarShortcutHint}
+          ariaKeyshortcuts={chordToAriaShortcut(sidebarToggleBinding)}
         />
       </div>
 
@@ -3451,10 +3452,10 @@ const WorkspaceViewContent = (): ReactElement => {
           <SidebarToggle
             collapsed={activityPanelCollapsed}
             mirrored
-            onClick={() => {
-              handleActivityPanelCollapsed(!activityPanelCollapsed)
-            }}
+            onClick={handleToggleActivityPanel}
             size={SIDEBAR_TOGGLE_SIZE}
+            shortcutHint={activityPanelShortcut}
+            ariaKeyshortcuts={chordToAriaShortcut(activityPanelToggleBinding)}
             label={
               activityPanelCollapsed
                 ? 'Expand activity panel'

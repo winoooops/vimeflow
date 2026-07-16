@@ -45,6 +45,10 @@ describe('behavior preservation — migrated defaults equal today’s hardcoded 
 
 describe('behavior preservation — platform-specific PR2 defaults equal today’s hardcoded combos', () => {
   const expectedByPlatform: Record<string, { mac: string; other: string }> = {
+    'activity-panel-toggle': {
+      mac: 'Mod+KeyR',
+      other: 'Mod+Shift+KeyR',
+    },
     'new-session': { mac: 'Mod+KeyN', other: 'Mod+Shift+KeyN' },
     'session-prev': {
       mac: 'Mod+BracketLeft',
@@ -74,7 +78,35 @@ describe('resolveBindings', () => {
     )
   })
 
-  test('stored overrides colliding with fixed browser shortcuts are reverted', () => {
+  test('a Shift-only Diff override wins', () => {
+    expect(
+      tokenOf({ 'diff-line-next': 'Shift+ArrowDown' }, 'diff-line-next')
+    ).toBe('Shift+ArrowDown')
+  })
+
+  test('confirmation commands may reuse state-exclusive submit and cancel bindings', () => {
+    const overrides: CustomKeybindings = {
+      'diff-confirm-accept': 'Enter',
+      'diff-confirm-cancel': 'Escape',
+    }
+
+    expect(tokenOf(overrides, 'diff-confirm-accept')).toBe('Enter')
+    expect(tokenOf(overrides, 'diff-confirm-cancel')).toBe('Escape')
+  })
+
+  test('an unusable hand-edited Diff code falls back to its default', () => {
+    expect(tokenOf({ 'diff-line-next': 'garbage' }, 'diff-line-next')).toBe(
+      'KeyJ'
+    )
+  })
+
+  test('a browser-location override wins', () => {
+    expect(
+      tokenOf({ 'browser-location': 'Mod+KeyK' }, 'browser-location')
+    ).toBe('Mod+KeyK')
+  })
+
+  test('stored overrides colliding with browser shortcuts are reverted', () => {
     expect(tokenOf({ 'focus-pane-2': 'Mod+KeyL' }, 'focus-pane-2')).toBe(
       'Mod+Digit2'
     )

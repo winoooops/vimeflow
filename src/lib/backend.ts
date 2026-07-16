@@ -18,11 +18,6 @@ export type UnlistenFn = () => void
 
 export type CommandPaletteShortcutSource = 'palette' | 'leader'
 
-export interface CommandPaletteBindingSync {
-  palette: string
-  leader: string
-}
-
 export interface SettingsBridge {
   load: () => Promise<AppSettings>
   save: (settings: AppSettings) => Promise<void>
@@ -50,8 +45,6 @@ export interface BackendApi {
     callback: (source?: CommandPaletteShortcutSource) => void
   ) => UnlistenFn
   setKeymapCaptureActive?: (active: boolean) => void
-  setCommandPaletteBinding?: (binding: string) => void
-  setCommandPaletteBindings?: (bindings: CommandPaletteBindingSync) => void
   e2e?: {
     dispatchCommandPaletteShortcut: () => Promise<boolean>
   }

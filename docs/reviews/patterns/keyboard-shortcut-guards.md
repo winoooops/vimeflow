@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-09
-ref_count: 12
+last_updated: 2026-07-15
+ref_count: 14
 ---
 
 # Keyboard Shortcut Guards
@@ -489,3 +489,34 @@ against three classes of false-fire:
   dispatcher with a synthesized shortcut input so source resolution, key-capture
   guards, focus, and deduplication stay identical to `before-input-event`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Browser shortcut forwarding stole page undo
+
+- **Source:** github-codex-connector | PR #698 round 1 | 2026-07-15
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/browser-pane.ts`
+- **Finding:** The embedded browser `before-input-event` path matched every
+  global workspace binding and forwarded it into the app renderer. That included
+  `single-pane-focus` on `Mod+Z` / `Ctrl+Z`, so text inputs inside a
+  `WebContentsView` lost the normal page undo shortcut before renderer text-entry
+  guards could inspect the original target.
+- **Fix:** Restricted browser shortcut forwarding to an explicit browser-safe
+  workspace command allowlist while preserving pane-index gating, and added a
+  regression test that leaves `Mod+Z` / `Ctrl+Z` in the page.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 39. Reply-mode comment shortcuts must still intercept no-op category keys
+
+- **Source:** github-claude | PR #698 round 2 | 2026-07-15
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/ReviewCommentEditor.tsx`
+- **Finding:** The keymap migration wrapped the whole category-cycle shortcut
+  branch in `mode !== 'reply'`, so reply-mode Ctrl+H/Ctrl+L no longer called
+  `preventDefault()`/`stopPropagation()`. On macOS textareas, an unprevented
+  Ctrl+H can invoke native backward-delete behavior even though category
+  cycling is intentionally a no-op in reply mode.
+- **Fix:** Match and intercept the category-cycle chords in every mode, but
+  call `cycleCategory()` only outside reply mode. Added a regression assertion
+  that reply-mode Ctrl+H/Ctrl+L return `false` from `fireEvent.keyDown`.
+  Heuristic: when a shortcut is a semantic no-op in one mode, preserve the
+  event-consumption contract separately from the state mutation.

@@ -5,7 +5,12 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from 'react'
-import { isMacPlatform } from '../../../lib/formatShortcut'
+import { formatShortcut } from '../../../lib/formatShortcut'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '../../keymap/displayKey'
+import { useKeybindings } from '../../keymap/useKeybindings'
 import { BROWSER_IDENTITY } from '../browserIdentity'
 
 export interface BrowserAddressBarProps {
@@ -38,8 +43,6 @@ const splitUrl = (url: string): UrlSegments | null => {
   }
 }
 
-const shortcutHint = (): string => (isMacPlatform() ? '⌘L' : 'Ctrl+L')
-
 const PILL_CLASS =
   'mx-auto flex h-[29px] w-[min(520px,100%)] min-w-0 items-center gap-[9px] rounded-full bg-surface-container-lowest/60 px-3'
 
@@ -52,7 +55,17 @@ export const BrowserAddressBar = ({
   onSubmit,
   onCancel,
 }: BrowserAddressBarProps): ReactElement => {
+  const { bindingFor } = useKeybindings()
   const inputRef = useRef<HTMLInputElement>(null)
+  const browserLocationBinding = bindingFor('browser-location')
+
+  const browserLocationHint = formatShortcut(
+    chordToShortcutInput(browserLocationBinding)
+  )
+
+  const browserLocationAriaShortcut = chordToAriaShortcut(
+    browserLocationBinding
+  )
 
   useEffect(() => {
     if (!isEditing) {
@@ -103,7 +116,8 @@ export const BrowserAddressBar = ({
     <button
       type="button"
       onClick={onBeginEdit}
-      aria-label={`address bar — ${committedUrl}; press Enter or ${shortcutHint()} to edit`}
+      aria-label={`address bar — ${committedUrl}; press Enter or ${browserLocationHint} to edit`}
+      aria-keyshortcuts={browserLocationAriaShortcut}
       className={PILL_CLASS}
       style={pillStyle}
     >
@@ -127,7 +141,7 @@ export const BrowserAddressBar = ({
         )}
       </span>
       <span className="shrink-0 rounded-[5px] border border-outline-variant/20 bg-wash-subtle px-[5px] py-[2px] font-mono text-[9px] text-syn-comment">
-        {shortcutHint()}
+        {browserLocationHint}
       </span>
     </button>
   )

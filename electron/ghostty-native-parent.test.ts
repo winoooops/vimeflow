@@ -1,5 +1,7 @@
 // cspell:ignore ghostty Ghostty GHOSTTY
 import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { BrowserWindow } from 'electron'
+import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
 import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
@@ -16,6 +18,10 @@ import {
   isGhosttyNativeParentEnabled,
   setupGhosttyNativeParent,
 } from './ghostty-native-parent'
+import {
+  DEFAULT_WORKSPACE_KEYBINDING_SNAPSHOT,
+  setWorkspaceKeybindingSnapshot,
+} from './workspace-keybindings'
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const nativeHandle = Buffer.alloc(8)
@@ -23,18 +29,22 @@ nativeHandle.writeBigUInt64LE(1n)
 
 const {
   existsSync,
+  browserWindows,
   browserWindowState,
   browserWindowOnce,
   isDestroyed,
+  isFocused,
   webContentsExecuteJavaScript,
   webContentsFocus,
   webContentsIsDestroyed,
   webContentsSend,
 } = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
+  browserWindows: new Map<number, object>(),
   browserWindowState: { id: 1 },
   browserWindowOnce: vi.fn(),
   isDestroyed: vi.fn(() => false),
+  isFocused: vi.fn(() => true),
   webContentsExecuteJavaScript: vi.fn(
     (script: string, gesture?: boolean): Promise<unknown> => {
       void script
@@ -55,18 +65,29 @@ vi.mock('node:fs', () => ({
 
 vi.mock('electron', () => ({
   BrowserWindow: {
-    fromWebContents: vi.fn(() => ({
-      id: browserWindowState.id,
-      getNativeWindowHandle: (): Buffer => nativeHandle,
-      isDestroyed,
-      once: browserWindowOnce,
-      webContents: {
-        executeJavaScript: webContentsExecuteJavaScript,
-        focus: webContentsFocus,
-        isDestroyed: webContentsIsDestroyed,
-        send: webContentsSend,
-      },
-    })),
+    fromWebContents: vi.fn(() => {
+      const existing = browserWindows.get(browserWindowState.id)
+      if (existing) {
+        return existing
+      }
+
+      const win = {
+        id: browserWindowState.id,
+        getNativeWindowHandle: (): Buffer => nativeHandle,
+        isDestroyed,
+        isFocused,
+        once: browserWindowOnce,
+        webContents: {
+          executeJavaScript: webContentsExecuteJavaScript,
+          focus: webContentsFocus,
+          isDestroyed: webContentsIsDestroyed,
+          send: webContentsSend,
+        },
+      }
+      browserWindows.set(browserWindowState.id, win)
+
+      return win
+    }),
   },
   ipcMain: {
     handle: vi.fn(
@@ -85,10 +106,13 @@ describe('ghostty native parent', () => {
     handlers.clear()
     existsSync.mockReset()
     existsSync.mockReturnValue(false)
+    browserWindows.clear()
     browserWindowState.id = 1
     browserWindowOnce.mockClear()
     isDestroyed.mockReset()
     isDestroyed.mockReturnValue(false)
+    isFocused.mockReset()
+    isFocused.mockReturnValue(true)
     webContentsExecuteJavaScript.mockReset()
     webContentsExecuteJavaScript.mockResolvedValue(false)
     webContentsFocus.mockClear()
@@ -97,10 +121,22 @@ describe('ghostty native parent', () => {
     webContentsSend.mockClear()
   })
 
-  test('enables on macOS when packaged or when the parent feature flag is set', () => {
+  test('visible-dialog selector ignores a dismissed mounted burner', () => {
+    expect(DIALOG_SELECTOR).toBe(
+      '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
+    )
+  })
+
+  test('enables on macOS when packaged or either native feature flag is set', () => {
     expect(
       isGhosttyNativeParentEnabled('darwin', {
         VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1',
+      })
+    ).toBe(true)
+
+    expect(
+      isGhosttyNativeParentEnabled('darwin', {
+        VITE_GHOSTTY_NATIVE_MACOS: '1',
       })
     ).toBe(true)
 
@@ -506,7 +542,7 @@ describe('ghostty native parent', () => {
       setBackgroundColor: vi.fn(),
       setForegroundColor: vi.fn(),
       setFontFamily: vi.fn(),
-      setShortcutDigits: vi.fn(),
+      setKeybindings: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -572,10 +608,14 @@ describe('ghostty native parent', () => {
       '#100f0f'
     )
 
-    expect(addon.setShortcutDigits).toHaveBeenNthCalledWith(
+    const replayedKeybindings = JSON.parse(
+      String(addon.setKeybindings.mock.calls[1]?.[1])
+    ) as { bindings: { id: string }[] }
+
+    expect(addon.setKeybindings).toHaveBeenNthCalledWith(
       2,
       secondSurface,
-      '23'
+      expect.any(String)
     )
 
     expect(addon.addSecondary).toHaveBeenNthCalledWith(
@@ -586,6 +626,12 @@ describe('ghostty native parent', () => {
       expect.any(Function),
       'top'
     )
+
+    expect(
+      replayedKeybindings.bindings
+        .filter(({ id }) => /^focus-pane-[1-9]$/.test(id))
+        .map(({ id }) => id)
+    ).toEqual(['focus-pane-2', 'focus-pane-3'])
 
     controller.dispose()
   })
@@ -1052,14 +1098,14 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('updates native shortcut digits only for real pane switches', () => {
+  test('projects and deduplicates pane-specific native keybindings', () => {
     const surface = {}
 
     const addon = {
       create: vi.fn(() => surface),
       setFrame: vi.fn(),
       setFontFamily: vi.fn(),
-      setShortcutDigits: vi.fn(),
+      setKeybindings: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -1094,7 +1140,38 @@ describe('ghostty native parent', () => {
       }
     )
 
-    expect(addon.setShortcutDigits).toHaveBeenLastCalledWith(surface, '23')
+    const initialKeybindings = JSON.parse(
+      String(addon.setKeybindings.mock.lastCall?.[1])
+    ) as { bindings: { id: string }[] }
+
+    expect(addon.setKeybindings).toHaveBeenLastCalledWith(
+      surface,
+      expect.any(String)
+    )
+
+    expect(
+      initialKeybindings.bindings
+        .filter(({ id }) => /^focus-pane-[1-9]$/.test(id))
+        .map(({ id }) => id)
+    ).toEqual(['focus-pane-2', 'focus-pane-3'])
+
+    expect(initialKeybindings.bindings.map(({ id }) => id)).toEqual(
+      DEFAULT_WORKSPACE_KEYBINDING_SNAPSHOT.bindings
+        .filter(({ context }) => context === 'global')
+        .filter(({ id }) => {
+          const paneMatch = /^focus-pane-([1-9])$/.exec(id)
+          if (paneMatch === null) {
+            return true
+          }
+
+          const targetPaneId = ['pane-1', 'pane-2', 'pane-3'].at(
+            Number(paneMatch[1]) - 1
+          )
+
+          return targetPaneId !== undefined && targetPaneId !== 'pane-1'
+        })
+        .map(({ id }) => id)
+    )
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },
@@ -1112,7 +1189,7 @@ describe('ghostty native parent', () => {
       }
     )
 
-    expect(addon.setShortcutDigits).toHaveBeenCalledTimes(1)
+    expect(addon.setKeybindings).toHaveBeenCalledTimes(1)
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
       { sender: {} },
@@ -1130,7 +1207,118 @@ describe('ghostty native parent', () => {
       }
     )
 
-    expect(addon.setShortcutDigits).toHaveBeenLastCalledWith(surface, '')
+    const inactiveKeybindings = JSON.parse(
+      String(addon.setKeybindings.mock.lastCall?.[1])
+    ) as { bindings: { id: string }[] }
+
+    expect(
+      inactiveKeybindings.bindings.filter(({ id }) =>
+        /^focus-pane-[1-9]$/.test(id)
+      )
+    ).toEqual([])
+
+    controller.dispose()
+  })
+
+  test('refreshes registry changes on live and newly created surfaces', () => {
+    const surfaces = [{ id: 'surface-1' }, { id: 'surface-2' }]
+    let createIndex = 0
+
+    const createSurface = (): object => {
+      const surface = surfaces.at(createIndex)
+      createIndex += 1
+      if (!surface) {
+        throw new Error('unexpected extra native surface')
+      }
+
+      return surface
+    }
+
+    const addon = {
+      create: vi.fn(createSurface),
+      setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
+      setKeybindings: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+    const update = handlers.get(GHOSTTY_NATIVE_UPDATE)
+    const sender = {}
+
+    update?.(
+      { sender },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    const win = BrowserWindow.fromWebContents(sender as never)
+    expect(win).not.toBeNull()
+    if (!win) {
+      throw new Error('expected owning BrowserWindow')
+    }
+
+    setWorkspaceKeybindingSnapshot(win, {
+      version: 1,
+      bindings: DEFAULT_WORKSPACE_KEYBINDING_SNAPSHOT.bindings.map((binding) =>
+        binding.id === 'activity-panel-toggle'
+          ? { ...binding, code: 'KeyK', token: 'Mod+K' }
+          : binding
+      ),
+    })
+    controller.refreshKeybindings(win)
+
+    const refreshedKeybindings = JSON.parse(
+      String(addon.setKeybindings.mock.lastCall?.[1])
+    ) as { bindings: { id: string; code: string }[] }
+
+    expect(
+      refreshedKeybindings.bindings.find(
+        ({ id }) => id === 'activity-panel-toggle'
+      )?.code
+    ).toBe('KeyK')
+
+    update?.(
+      { sender },
+      {
+        sessionId: 'pty-2',
+        paneId: 'pane-2',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 310, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    const newSurfaceKeybindings = JSON.parse(
+      String(addon.setKeybindings.mock.lastCall?.[1])
+    ) as { bindings: { id: string; code: string }[] }
+
+    expect(addon.create).toHaveBeenCalledTimes(2)
+    expect(
+      newSurfaceKeybindings.bindings.find(
+        ({ id }) => id === 'activity-panel-toggle'
+      )?.code
+    ).toBe('KeyK')
 
     controller.dispose()
   })
@@ -2022,7 +2210,8 @@ describe('ghostty native parent', () => {
         meta: boolean,
         alt: boolean,
         shift: boolean,
-        repeat: boolean
+        repeat: boolean,
+        fromSecondary?: boolean
       ) => void
     } = {}
     const surface = { id: 'surface-1' }
@@ -2038,8 +2227,11 @@ describe('ghostty native parent', () => {
       ),
       setFrame: vi.fn(),
       setFontFamily: vi.fn(),
+      addSecondary: vi.fn(),
+      setSecondaryVisible: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
+      focusSecondary: vi.fn(),
       destroy: vi.fn(),
     }
 
@@ -2096,6 +2288,10 @@ describe('ghostty native parent', () => {
     expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
       'data-workspace-overlay-id="pane-rename"'
     )
+
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
+      JSON.stringify(DIALOG_SELECTOR)
+    )
     expect(addon.focus).toHaveBeenCalledWith(surface)
 
     webContentsFocus.mockClear()
@@ -2130,6 +2326,21 @@ describe('ghostty native parent', () => {
     expect(webContentsFocus).toHaveBeenCalledOnce()
     expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
     expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('KeyB')
+    expect(addon.focus).toHaveBeenCalledWith(surface)
+
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+
+    callbacks.onShortcut?.('k', 'KeyK', false, true, false, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('KeyK')
     expect(addon.focus).toHaveBeenCalledWith(surface)
 
     webContentsFocus.mockClear()
@@ -2186,6 +2397,48 @@ describe('ghostty native parent', () => {
     expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain(
       '"repeat":true'
     )
+
+    handlers.get(GHOSTTY_NATIVE_SECONDARY_ATTACH)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        secondarySessionId: 'burner-pty',
+        placement: 'bottom',
+      }
+    )
+    webContentsFocus.mockClear()
+    webContentsExecuteJavaScript.mockClear()
+    addon.focus.mockClear()
+    addon.focusSecondary.mockClear()
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: false,
+    })
+
+    callbacks.onShortcut?.('b', 'KeyB', false, true, false, false, false, true)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(addon.focusSecondary).toHaveBeenCalledWith(surface)
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    addon.focus.mockClear()
+    addon.focusSecondary.mockClear()
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: false,
+    })
+    callbacks.onShortcut?.('b', 'KeyB', false, true, false, false, false, false)
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(addon.focus).toHaveBeenCalledWith(surface)
+    expect(addon.focusSecondary).not.toHaveBeenCalled()
 
     controller.dispose()
   })

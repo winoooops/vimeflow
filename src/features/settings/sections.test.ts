@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
+import { DIFF_COMMANDS } from '../keymap/catalog'
 import {
   DEFAULT_ALIASES,
-  KEYMAP_GROUPS,
   SETTINGS_TARGET_IDS,
   SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,
@@ -74,6 +74,16 @@ describe('SETTINGS_TARGETS', () => {
       ])
     )
   })
+
+  test('indexes every registered Diff command', () => {
+    const diffTargets = SETTINGS_TARGETS.filter(
+      (target) => target.subsection === 'Diff (when focused)'
+    )
+
+    expect(diffTargets.map((target) => target.label)).toEqual(
+      DIFF_COMMANDS.map((command) => command.label)
+    )
+  })
 })
 
 describe('SETTINGS_SUBSECTIONS', () => {
@@ -108,31 +118,6 @@ describe('SETTINGS_SUBSECTIONS', () => {
         }),
       ])
     )
-  })
-})
-
-describe('KEYMAP_GROUPS', () => {
-  test('contains the expected base bindings', () => {
-    const ids = KEYMAP_GROUPS.flatMap((g) => g.bindings).map((b) => b.id)
-
-    expect(ids).toContain('palette')
-    expect(ids).toContain('cycle-layout')
-  })
-
-  test('each group has a zone and at least one binding', () => {
-    KEYMAP_GROUPS.forEach((g) => {
-      expect(g.zone).toBeDefined()
-      expect(g.bindings.length).toBeGreaterThan(0)
-    })
-  })
-
-  test('each binding has id, label, and keys', () => {
-    KEYMAP_GROUPS.flatMap((g) => g.bindings).forEach((b) => {
-      expect(b.id).toBeDefined()
-      expect(b.label).toBeDefined()
-      const resolved = typeof b.keys === 'function' ? b.keys(false) : b.keys
-      expect(resolved.length).toBeGreaterThan(0)
-    })
   })
 })
 

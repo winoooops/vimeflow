@@ -45,6 +45,10 @@ import {
   commandPaletteToggleDispatcherForWindow,
   type CommandPaletteShortcutSource,
 } from './command-palette-shortcut'
+import {
+  getWorkspaceKeybindingSnapshot,
+  matchingWorkspaceKeybindings,
+} from './workspace-keybindings'
 import type {
   PersistedTab,
   WorkspaceLayoutWriteSignals,
@@ -399,64 +403,36 @@ const loadBrowserUrl = async (
   }
 }
 
-const hasPlatformShortcutModifier = (
-  input: BrowserPaneShortcutInput,
-  platform: NodeJS.Platform = process.platform
-): boolean => {
-  if (input.type !== 'keyDown' || input.isAutoRepeat) {
-    return false
-  }
-
-  return platform === 'darwin'
-    ? input.meta && !input.control
-    : input.control && !input.meta
-}
-
-export const isFocusAddressShortcut = (
-  input: BrowserPaneShortcutInput,
-  platform: NodeJS.Platform = process.platform
-): boolean =>
-  input.code === 'KeyL' &&
-  !input.alt &&
-  input.shift !== true &&
-  !input.isAutoRepeat &&
-  hasPlatformShortcutModifier(input, platform)
-
-const isBrowserPaneWorkspaceShortcutInput = (
-  input: BrowserPaneShortcutInput
-): boolean => {
-  if (!hasPlatformShortcutModifier(input)) {
-    return false
-  }
-
-  if (/^Digit[1-4]$/.test(input.code) || input.code === 'Backslash') {
-    return true
-  }
-
-  if (input.alt || input.shift) {
-    return false
-  }
-
-  const key = input.key.toLowerCase()
-
-  return key === 'e' || key === 'g'
-}
-
-const shouldRefocusBrowserAfterWorkspaceShortcut = (
-  input: BrowserPaneShortcutInput
-): boolean => /^Digit[1-4]$/.test(input.code) || input.code === 'Backslash'
+const BROWSER_WORKSPACE_SHORTCUT_IDS_TO_FORWARD = new Set<string>([
+  'activity-panel-toggle',
+  'burner-toggle',
+  'cycle-layout',
+  'dock-toggle',
+  'focus-diff',
+  'focus-editor',
+  'focus-pane-down',
+  'focus-pane-left',
+  'focus-pane-right',
+  'focus-pane-up',
+  'new-session',
+  'palette',
+  'palette-leader',
+  'session-next',
+  'session-prev',
+  'settings',
+  'settings-control',
+  'sidebar-files',
+  'sidebar-sessions',
+  'sidebar-toggle',
+])
 
 const shouldForwardBrowserWorkspaceShortcut = (
   record: BrowserPaneRecord,
-  input: BrowserPaneShortcutInput
+  commandId: string
 ): boolean => {
-  if (!isBrowserPaneWorkspaceShortcutInput(input)) {
-    return false
-  }
-
-  const digitMatch = /^Digit([1-4])$/.exec(input.code)
+  const digitMatch = /^focus-pane-([1-9])$/.exec(commandId)
   if (!digitMatch) {
-    return true
+    return BROWSER_WORKSPACE_SHORTCUT_IDS_TO_FORWARD.has(commandId)
   }
 
   const shortcutContext = record.shortcutContext
@@ -483,6 +459,7 @@ const browserPaneShortcutEventInit = (
   metaKey: input.meta,
   altKey: input.alt,
   shiftKey: input.shift === true,
+  repeat: input.isAutoRepeat === true,
   bubbles: true,
   cancelable: true,
 })
@@ -1837,29 +1814,38 @@ export class BrowserPaneController {
     }
 
     webContents.on('before-input-event', (event, input) => {
-      if (isFocusAddressShortcut(input)) {
-        event.preventDefault()
-        const win = BrowserWindow.fromId(record.windowId)
-        if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-          win.webContents.focus()
-          win.webContents.send(BROWSER_PANE_FOCUS_ADDRESS, {
-            sessionId: record.sessionId,
-            paneId: record.paneId,
-          })
-        }
-
+      if (input.type !== 'keyDown') {
         return
       }
 
       const win = BrowserWindow.fromId(record.windowId)
+      if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+        return
+      }
 
-      const source =
-        win && !win.isDestroyed()
-          ? commandPaletteShortcutSourceForInput(
-              input,
-              commandPaletteShortcutBindingsConfigForWindow(win)
-            )
-          : null
+      const snapshot = getWorkspaceKeybindingSnapshot(win)
+
+      const browserLocationMatch = matchingWorkspaceKeybindings(
+        snapshot,
+        input,
+        ['browser']
+      ).some(({ id }) => id === 'browser-location')
+
+      if (browserLocationMatch && !input.isAutoRepeat) {
+        event.preventDefault()
+        win.webContents.focus()
+        win.webContents.send(BROWSER_PANE_FOCUS_ADDRESS, {
+          sessionId: record.sessionId,
+          paneId: record.paneId,
+        })
+
+        return
+      }
+
+      const source = commandPaletteShortcutSourceForInput(
+        input,
+        commandPaletteShortcutBindingsConfigForWindow(win)
+      )
 
       if (source !== null) {
         event.preventDefault()
@@ -1868,7 +1854,11 @@ export class BrowserPaneController {
         return
       }
 
-      if (!shouldForwardBrowserWorkspaceShortcut(record, input)) {
+      const workspaceShortcut = matchingWorkspaceKeybindings(snapshot, input, [
+        'global',
+      ]).find(({ id }) => shouldForwardBrowserWorkspaceShortcut(record, id))
+
+      if (workspaceShortcut === undefined) {
         return
       }
 
@@ -1918,15 +1908,28 @@ export class BrowserPaneController {
                 node.getAttribute('data-pane-id') === ${JSON.stringify(record.paneId)} &&
                 node.closest('[data-browser-session-id]')?.getAttribute('data-browser-session-id') === ${JSON.stringify(record.sessionId)}
               )
-              resolve(activeBrowserPane)
+              const activeElement = document.activeElement
+              const proxyOwnsFocus = activeElement === target
+              const dockHasFocus =
+                activeElement instanceof Element &&
+                activeElement.closest('[data-container-id="dock"]') !== null
+              const dialogOpen = document.querySelector(
+                '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
+              ) !== null
+              resolve(
+                activeBrowserPane &&
+                proxyOwnsFocus &&
+                !dockHasFocus &&
+                !dialogOpen
+              )
             })
           })
         })()`,
         false
       )
       if (
-        shouldRefocusBrowserAfterWorkspaceShortcut(input) &&
         shouldRefocus === true &&
+        win.isFocused() &&
         this.panes.get(record.id) === record &&
         !this.activeWebContents(record)?.isDestroyed()
       ) {

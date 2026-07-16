@@ -1,6 +1,28 @@
 import { test, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
+import { SettingsContext } from '../../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 import { BrowserToolbar, type BrowserToolbarProps } from './BrowserToolbar'
+
+const SettingsWrapper = ({
+  children,
+}: {
+  children: ReactNode
+}): ReactElement => (
+  <SettingsContext.Provider
+    value={{
+      settings: DEFAULT_SETTINGS,
+      saveError: null,
+      update: vi.fn(),
+    }}
+  >
+    {children}
+  </SettingsContext.Provider>
+)
+
+const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
+  rtlRender(ui, { wrapper: SettingsWrapper })
 
 const baseProps: BrowserToolbarProps = {
   committedUrl: 'https://example.com/',

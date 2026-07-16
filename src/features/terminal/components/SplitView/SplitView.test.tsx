@@ -1,8 +1,17 @@
 // cspell:ignore vsplit hsplit vdiv hdiv
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import {
+  render as rtlRender,
+  screen,
+  within,
+  fireEvent,
+  type RenderResult,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createRef } from 'react'
+import { createRef, type ReactElement } from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { AppSettings } from '@/bindings/AppSettings'
+import { SettingsContext } from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import type { UseGitBranchReturn } from '../../../diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '../../../diff/hooks/useGitStatus'
 import type { BodyHandle, BodyProps } from '../TerminalPane/Body'
@@ -26,6 +35,26 @@ import {
   type PaneLayoutDefinition,
 } from '../../layout-registry'
 import { resolvePanePlacement } from '../../../sessions/utils/panePlacements'
+
+const renderWithKeybindings = (
+  ui: ReactElement,
+  customKeybindings: AppSettings['customKeybindings'] = {}
+): RenderResult =>
+  rtlRender(ui, {
+    wrapper: ({ children }) => (
+      <SettingsContext.Provider
+        value={{
+          settings: { ...DEFAULT_SETTINGS, customKeybindings },
+          saveError: null,
+          update: vi.fn(),
+        }}
+      >
+        {children}
+      </SettingsContext.Provider>
+    ),
+  })
+
+const render = (ui: ReactElement): RenderResult => renderWithKeybindings(ui)
 
 class MockResizeObserver {
   observe = vi.fn()
@@ -860,13 +889,14 @@ describe('SplitView - click-to-focus', () => {
     expect(screen.getAllByTestId('split-view-slot')).toHaveLength(2)
   })
 
-  test('renders visible pane shortcut hints instead of focus tooltips', async () => {
-    render(
+  test('renders resolved pane shortcut hints instead of focus tooltips', async () => {
+    renderWithKeybindings(
       <SplitView
         session={makeSession('vsplit', 2)}
         service={makeMockService()}
         isSessionVisible
-      />
+      />,
+      { 'focus-pane-2': 'Mod+KeyO' }
     )
 
     expect(screen.getAllByTestId('pane-shortcut-hint')).toHaveLength(2)
@@ -875,7 +905,7 @@ describe('SplitView - click-to-focus', () => {
     )
 
     expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
-      '2'
+      'O'
     )
 
     const user = userEvent.setup()
@@ -889,7 +919,7 @@ describe('SplitView - click-to-focus', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
-  test('passes visible pane shortcut hints to browser panes', () => {
+  test('passes resolved pane shortcut hints to browser panes', () => {
     const session = {
       ...makeSession('vsplit', 2),
       panes: [
@@ -903,17 +933,18 @@ describe('SplitView - click-to-focus', () => {
       ],
     } satisfies Session
 
-    render(
+    renderWithKeybindings(
       <SplitView
         session={session}
         service={makeMockService()}
         isSessionVisible
-      />
+      />,
+      { 'focus-pane-2': 'Mod+KeyO' }
     )
 
     expect(screen.getByTestId('browser-pane-mock')).toBeInTheDocument()
     expect(screen.getAllByTestId('pane-shortcut-hint')[1]).toHaveTextContent(
-      '2'
+      'O'
     )
   })
 

@@ -8,8 +8,10 @@ import {
 } from '../containerIds'
 
 export interface UseSidebarShortcutParams {
-  /** Flip the workspace-global sidebar-collapse flag. */
+  /** Flip the workspace-global left-sidebar collapse flag. */
   onToggle: () => void
+  /** Flip the active session's right activity-panel collapse flag. */
+  onToggleActivityPanel: () => void
   /** Registry matcher — true iff the event is the resolved command chord. */
   matches: (event: KeyboardEvent, id: CommandId) => boolean
   /** Active focus container — used to defer to the dock's ⌘B when the dock is focused. */
@@ -28,14 +30,17 @@ export interface UseSidebarShortcutParams {
 // match comes from the keybinding registry so persisted overrides take effect.
 export const useSidebarShortcut = ({
   onToggle,
+  onToggleActivityPanel,
   matches,
   activeContainerId,
 }: UseSidebarShortcutParams): void => {
   const onToggleRef = useRef(onToggle)
+  const onToggleActivityPanelRef = useRef(onToggleActivityPanel)
   const matchesRef = useRef(matches)
   const activeContainerIdRef = useRef(activeContainerId)
 
   onToggleRef.current = onToggle
+  onToggleActivityPanelRef.current = onToggleActivityPanel
   matchesRef.current = matches
   activeContainerIdRef.current = activeContainerId
 
@@ -45,7 +50,18 @@ export const useSidebarShortcut = ({
         return
       }
 
-      if (!matchesRef.current(event, 'sidebar-toggle')) {
+      const commandId = matchesRef.current(event, 'sidebar-toggle')
+        ? 'sidebar-toggle'
+        : matchesRef.current(event, 'activity-panel-toggle')
+          ? 'activity-panel-toggle'
+          : null
+
+      if (commandId === null) {
+        return
+      }
+
+      // A held Meta+R must not oscillate the activity panel.
+      if (commandId === 'activity-panel-toggle' && event.repeat) {
         return
       }
 
@@ -64,15 +80,21 @@ export const useSidebarShortcut = ({
       const inSidebarDialog = !!target.closest(
         '[role="dialog"][aria-label="Sidebar"]'
       )
-      if (openDialogs.length > 0 && !inSidebarDialog) {
+      if (
+        openDialogs.length > 0 &&
+        !(commandId === 'sidebar-toggle' && inSidebarDialog)
+      ) {
         return
       }
 
       // On macOS, defer to the dock's ⌘B (close dock) when the dock is focused.
       if (
+        commandId === 'sidebar-toggle' &&
         event.key.toLowerCase() === 'b' &&
         event.metaKey &&
         !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey &&
         activeContainerIdRef.current === DOCK_CONTAINER_ID &&
         target.closest(`[data-container-id="${DOCK_CONTAINER_ID}"]`)
       ) {
@@ -96,7 +118,11 @@ export const useSidebarShortcut = ({
 
       event.preventDefault()
       event.stopPropagation()
-      onToggleRef.current()
+      if (commandId === 'sidebar-toggle') {
+        onToggleRef.current()
+      } else {
+        onToggleActivityPanelRef.current()
+      }
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true })

@@ -15,6 +15,11 @@ import type {
 } from '@pierre/diffs'
 import { IconButton } from '@/components/IconButton'
 import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import type { Keybindings } from '@/features/keymap/useKeybindings'
+import {
   DRAFT_ID,
   type ReviewComment,
   type ReviewCommentCategory,
@@ -181,6 +186,7 @@ export const bindThreadCardActions = (
 })
 
 interface PanelBodyProps {
+  bindingFor: Keybindings['bindingFor']
   scrollBodyRef: RefObject<HTMLDivElement | null>
   diffError: Error | null
   diffLoading: boolean
@@ -211,6 +217,7 @@ interface PanelBodyProps {
 }
 
 export const PanelBody = ({
+  bindingFor,
   scrollBodyRef,
   diffError,
   diffLoading,
@@ -241,6 +248,9 @@ export const PanelBody = ({
     pierreInputs?.diffCacheKey ?? null
   )
   const effectiveRenderKey = `${renderKey}:${highlightCacheRevision}`
+  const commentShortcut = bindingFor('diff-comment-line')
+  const editShortcut = bindingFor('diff-comment-update')
+  const deleteShortcut = bindingFor('diff-comment-delete')
 
   return (
     <div
@@ -270,7 +280,8 @@ export const PanelBody = ({
                 icon="add"
                 label="Add comment on this line"
                 size="sm"
-                shortcut="i"
+                shortcut={chordToShortcutInput(commentShortcut)}
+                aria-keyshortcuts={chordToAriaShortcut(commentShortcut)}
                 className="h-5 w-5 translate-x-3/4 rounded-full bg-primary text-on-primary shadow-md hover:bg-primary/90"
                 onClick={(): void => {
                   const hovered = getHoveredLine()
@@ -336,6 +347,10 @@ export const PanelBody = ({
               return (
                 <ReviewCommentRow
                   comment={annotation.metadata}
+                  editShortcut={chordToShortcutInput(editShortcut)}
+                  editAriaKeyshortcuts={chordToAriaShortcut(editShortcut)}
+                  deleteShortcut={chordToShortcutInput(deleteShortcut)}
+                  deleteAriaKeyshortcuts={chordToAriaShortcut(deleteShortcut)}
                   targetLabel={annotationTargetLabel(annotation)}
                   onSendNow={
                     onSendComment === undefined

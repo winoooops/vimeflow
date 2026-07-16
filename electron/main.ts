@@ -21,7 +21,6 @@ import {
 } from './csp'
 import {
   installCommandPaletteShortcutOverride,
-  setCommandPaletteShortcutBinding,
   setCommandPaletteShortcutBindings,
   setKeymapCaptureActive,
 } from './command-palette-shortcut'
@@ -30,7 +29,6 @@ import { installNavigationGuard } from './navigation-guard'
 import {
   BACKEND_EVENT,
   BACKEND_INVOKE,
-  COMMAND_PALETTE_BINDING,
   E2E_COMMAND_PALETTE_SHORTCUT,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_CHANGED,
@@ -47,11 +45,6 @@ import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import { SettingsWindowController } from './settings-window'
 import {
-  isGhosttyNativeEnabled,
-  setupGhosttyNativeHelper,
-  type GhosttyNativeHelperController,
-} from './ghostty-native-helper'
-import {
   isGhosttyNativeParentEnabled,
   setupGhosttyNativeParent,
   type GhosttyNativeParentController,
@@ -65,6 +58,10 @@ import { WorkspaceLayoutWriter } from './workspace-layout-writer'
 import { WorkspaceTeardown } from './workspace-teardown'
 import { shouldQuitOnAllWindowsClosed } from './last-window-close'
 import type { PersistedTab } from './workspace-layout-types'
+import {
+  isWorkspaceKeybindingOverrides,
+  updateWorkspaceKeybindingsFromSettings,
+} from './workspace-keybindings'
 
 // Keep the GPU serving this window while it is occluded (covered by another
 // window) or unfocused. Chromium otherwise backgrounds the occluded window and
@@ -103,18 +100,6 @@ const E2E_RUNTIME_ARG = '--vimeflow-e2e'
 // Kept local to the main process so Electron startup never depends on a renderer
 // feature module that may later gain browser-only runtime imports.
 const SETTINGS_SCHEMA_VERSION = 1
-const COMMAND_PALETTE_BINDING_MAX_LENGTH = 64
-
-const isCommandPaletteBindingSync = (
-  value: unknown
-): value is { palette: string; leader: string } =>
-  typeof value === 'object' &&
-  value !== null &&
-  !Array.isArray(value) &&
-  'palette' in value &&
-  'leader' in value &&
-  typeof value.palette === 'string' &&
-  typeof value.leader === 'string'
 
 // E2E detection (env var OR CLI flag fallback). Hoisted above its first
 // caller (installContentSecurityPolicy at ~line 80) so the TDZ never
@@ -300,10 +285,7 @@ type InvokeEnvelope =
 
 let sidecar: Sidecar | null = null
 let browserPaneController: BrowserPaneController | null = null
-let ghosttyNativeController:
-  | GhosttyNativeHelperController
-  | GhosttyNativeParentController
-  | null = null
+let ghosttyNativeController: GhosttyNativeParentController | null = null
 // React DOM overlays in the main renderer can sit behind Ghostty's NSView;
 // this controller owns the separate native BrowserWindow used for those cases.
 let nativeOverlayController: NativeOverlayController | null = null
@@ -314,6 +296,32 @@ let settingsWindowController: SettingsWindowController | null = null
 let quitting = false
 let lastKnownOnLastWindowClosed: string | undefined
 
+const syncWorkspaceKeybindings = (settings: AppSettings): void => {
+  const win = workspaceWindow
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+    return
+  }
+
+  const snapshot = updateWorkspaceKeybindingsFromSettings(
+    win,
+    settings.customKeybindings
+  )
+  const palette = snapshot.bindings.find((entry) => entry.id === 'palette')
+
+  const leader = snapshot.bindings.find(
+    (entry) => entry.id === 'palette-leader'
+  )
+
+  if (palette && leader) {
+    setCommandPaletteShortcutBindings(win, {
+      palette: palette.token,
+      leader: leader.token,
+    })
+  }
+
+  ghosttyNativeController?.refreshKeybindings(win)
+}
+
 const RENDERER_DIAGNOSTIC_PREFIXES = [
   '[vimeflow:terminal-cwd]',
   '[vimeflow:git-branch]',
@@ -321,10 +329,6 @@ const RENDERER_DIAGNOSTIC_PREFIXES = [
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const isStringRecord = (value: unknown): value is Record<string, string> =>
-  isRecord(value) &&
-  Object.values(value).every((entry) => typeof entry === 'string')
 
 const isAppSettings = (value: unknown): value is AppSettings =>
   isRecord(value) &&
@@ -344,7 +348,7 @@ const isAppSettings = (value: unknown): value is AppSettings =>
   typeof value.reservoirSwell === 'string' &&
   typeof value.keymapPreset === 'string' &&
   typeof value.agentShimEnabled === 'boolean' &&
-  isStringRecord(value.customKeybindings)
+  isWorkspaceKeybindingOverrides(value.customKeybindings)
 
 const broadcastSettingsChanged = (
   settings: AppSettings,
@@ -546,15 +550,10 @@ const setupApp = async (): Promise<void> => {
     app.isPackaged
   )
 
-  const ghosttyNativeHelperEnabled = isGhosttyNativeEnabled(
-    process.platform,
-    process.env,
-    app.isPackaged
-  )
   if (ghosttyNativeParentEnabled) {
     // Preload checks process.env before exposing window.vimeflow.ghosttyNative.
-    // Set it here for packaged macOS so main, preload, and renderer agree on
-    // the shipped Ghostty runtime without requiring users to launch with env.
+    // Normalize packaged macOS and the deprecated helper flag so main,
+    // preload, and renderer agree on the parented Ghostty runtime.
     process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT = '1'
     ghosttyNativeController = setupGhosttyNativeParent({
       sidecar: spawnedSidecar,
@@ -562,11 +561,6 @@ const setupApp = async (): Promise<void> => {
       inputBlocked: (win) =>
         nativeOverlayController?.hasActiveInteractiveOverlaySurface(win) ===
         true,
-    })
-  } else if (ghosttyNativeHelperEnabled) {
-    ghosttyNativeController = setupGhosttyNativeHelper({
-      sidecar: spawnedSidecar,
-      packaged: app.isPackaged,
     })
   } else {
     ghosttyNativeController = null
@@ -663,29 +657,6 @@ const setupApp = async (): Promise<void> => {
     }
   })
 
-  ipcMain.on(COMMAND_PALETTE_BINDING, (ipcEvent, binding: unknown) => {
-    const win = BrowserWindow.fromWebContents(ipcEvent.sender)
-    if (win === null) {
-      return
-    }
-
-    if (typeof binding === 'string') {
-      if (binding.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH) {
-        setCommandPaletteShortcutBinding(win, binding)
-      }
-
-      return
-    }
-
-    if (
-      isCommandPaletteBindingSync(binding) &&
-      binding.palette.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH &&
-      binding.leader.length <= COMMAND_PALETTE_BINDING_MAX_LENGTH
-    ) {
-      setCommandPaletteShortcutBindings(win, binding)
-    }
-  })
-
   if (allowE2eBackendMethods) {
     ipcMain.handle(E2E_COMMAND_PALETTE_SHORTCUT, (ipcEvent): boolean => {
       const win = BrowserWindow.fromWebContents(ipcEvent.sender)
@@ -762,6 +733,7 @@ const setupApp = async (): Promise<void> => {
       }
 
       if (isAppSettings(settings)) {
+        syncWorkspaceKeybindings(settings)
         broadcastSettingsChanged(settings, ipcEvent.sender)
       }
     }

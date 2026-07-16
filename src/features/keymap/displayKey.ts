@@ -1,5 +1,5 @@
 import type { Chord, Mod } from './chord'
-import type { ShortcutInput } from '../../lib/formatShortcut'
+import { isMacPlatform } from '../../lib/formatShortcut'
 
 // event.code → the friendly key token formatShortcut understands. Letters and
 // digits are derived; symbols/arrows are mapped. Named keys (Enter, Space,
@@ -8,6 +8,11 @@ const CODE_DISPLAY: ReadonlyMap<string, string> = new Map([
   ['Backslash', '\\'],
   ['Semicolon', ';'],
   ['Backquote', '`'],
+  ['Slash', '/'],
+  ['Comma', ','],
+  ['Period', '.'],
+  ['Minus', '-'],
+  ['Equal', '='],
   ['BracketLeft', '['],
   ['BracketRight', ']'],
   ['ArrowLeft', '←'],
@@ -35,7 +40,80 @@ const codeToDisplay = (code: string): string => {
   return code
 }
 
-export const chordToShortcutInput = (chord: Chord): ShortcutInput => [
+export const chordToShortcutInput = (chord: Chord): readonly string[] => [
   ...MOD_DISPLAY_ORDER.filter((mod) => chord.mods.has(mod)),
   codeToDisplay(chord.code),
 ]
+
+const codeToVisibleShortcutKey = (chord: Chord): string => {
+  const letter = /^Key([A-Z])$/.exec(chord.code)
+  if (letter !== null && chord.mods.size === 0) {
+    return letter[1].toLowerCase()
+  }
+
+  return codeToDisplay(chord.code)
+}
+
+export const chordToVisibleShortcutInput = (
+  chord: Chord
+): readonly string[] => [
+  ...MOD_DISPLAY_ORDER.filter((mod) => chord.mods.has(mod)),
+  codeToVisibleShortcutKey(chord),
+]
+
+export const chordToKeycapShortcut = (
+  chord: Chord,
+  isMac = isMacPlatform()
+): string[] =>
+  chordToShortcutInput(chord).map((key) => {
+    if (key === 'Mod') {
+      return isMac ? '⌘' : 'Ctrl'
+    }
+    if (key === 'Ctrl') {
+      return isMac ? '⌃' : 'Ctrl'
+    }
+    if (key === 'Alt') {
+      return isMac ? '⌥' : 'Alt'
+    }
+    if (key === 'Shift') {
+      return '⇧'
+    }
+
+    return key
+  })
+
+const codeToAriaKey = (code: string, shifted: boolean): string => {
+  const letter = /^Key([A-Z])$/.exec(code)
+  if (letter !== null) {
+    return shifted ? letter[1] : letter[1].toLowerCase()
+  }
+
+  if (code.startsWith('Arrow')) {
+    return code
+  }
+
+  return codeToDisplay(code)
+}
+
+export const chordToAriaShortcut = (
+  chord: Chord,
+  isMac = isMacPlatform()
+): string => {
+  const modifiers = MOD_DISPLAY_ORDER.filter((mod) => chord.mods.has(mod)).map(
+    (mod) => {
+      if (mod === 'Mod') {
+        return isMac ? 'Meta' : 'Control'
+      }
+      if (mod === 'Ctrl') {
+        return 'Control'
+      }
+
+      return mod
+    }
+  )
+
+  return [
+    ...modifiers,
+    codeToAriaKey(chord.code, chord.mods.has('Shift')),
+  ].join('+')
+}

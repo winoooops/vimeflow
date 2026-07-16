@@ -1,6 +1,12 @@
 import { useEffect, type ReactElement } from 'react'
 import { Popover } from '@/components/Popover'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import {
+  chordToAriaShortcut,
+  chordToShortcutInput,
+} from '@/features/keymap/displayKey'
+import { useKeybindings } from '@/features/keymap/useKeybindings'
+import { formatShortcut } from '@/lib/formatShortcut'
 import type { PaneCandidate, ResolveResult } from '../services/activePanePicker'
 import type { ReviewScope } from '../hooks/useRequestReview'
 
@@ -34,10 +40,6 @@ interface RequestReviewPopoverProps {
   onCancel: () => void
 }
 
-const isCapitalY = (event: KeyboardEvent): boolean =>
-  event.key === 'Y' ||
-  (event.shiftKey && (event.key.toLowerCase() === 'y' || event.code === 'KeyY'))
-
 /**
  * The popover that opens from the diff toolbar's "Request review" button. It
  * asks how to hand the current file's diff to a coding agent:
@@ -59,24 +61,28 @@ export const RequestReviewPopover = ({
   onCopy,
   onCancel,
 }: RequestReviewPopoverProps): ReactElement => {
+  const { bindingFor, matches } = useKeybindings()
+  const copyShortcut = bindingFor('diff-review-copy')
+  const cancelShortcut = bindingFor('diff-confirm-cancel')
+  const submitShortcut = bindingFor('diff-request-review-submit')
+  const copyLabel = formatShortcut(chordToShortcutInput(copyShortcut))
+  const cancelLabel = formatShortcut(chordToShortcutInput(cancelShortcut))
+  const submitLabel = formatShortcut(chordToShortcutInput(submitShortcut))
+
   const copyButton = (
     <button
       type="button"
-      aria-keyshortcuts="c"
+      aria-keyshortcuts={chordToAriaShortcut(copyShortcut)}
       onClick={(): void => onCopy()}
       className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
     >
-      Copy (c)
+      Copy ({copyLabel})
     </button>
   )
 
   useEffect((): (() => void) => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.ctrlKey || event.metaKey || event.altKey) {
-        return
-      }
-
-      if (event.key === 'n') {
+      if (matches(event, 'diff-confirm-cancel')) {
         event.preventDefault()
         event.stopPropagation()
         onCancel()
@@ -84,7 +90,7 @@ export const RequestReviewPopover = ({
         return
       }
 
-      if (event.key === 'c') {
+      if (matches(event, 'diff-review-copy')) {
         event.preventDefault()
         event.stopPropagation()
         onCopy()
@@ -93,7 +99,7 @@ export const RequestReviewPopover = ({
       }
 
       if (
-        event.key === 'f' &&
+        matches(event, 'diff-request-review-scope-file') &&
         scopeControl !== undefined &&
         !scopeControl.fileDisabled
       ) {
@@ -105,7 +111,7 @@ export const RequestReviewPopover = ({
       }
 
       if (
-        event.key === 'a' &&
+        matches(event, 'diff-request-review-scope-changelist') &&
         scopeControl !== undefined &&
         !scopeControl.changelistDisabled
       ) {
@@ -116,7 +122,10 @@ export const RequestReviewPopover = ({
         return
       }
 
-      if (isCapitalY(event) && result.kind === 'one') {
+      if (
+        matches(event, 'diff-request-review-submit') &&
+        result.kind === 'one'
+      ) {
         event.preventDefault()
         event.stopPropagation()
         onSubmit(result.pane)
@@ -128,7 +137,7 @@ export const RequestReviewPopover = ({
     return (): void => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
     }
-  }, [onCancel, onCopy, onSubmit, result, scopeControl])
+  }, [matches, onCancel, onCopy, onSubmit, result, scopeControl])
 
   return (
     <Popover
@@ -146,7 +155,7 @@ export const RequestReviewPopover = ({
         <div className="flex items-center gap-2 px-4 pt-3">
           <span className="text-xs text-on-surface-variant">Scope</span>
           <SegmentedControl<ReviewScope>
-            aria-label="Review scope (f/a)"
+            aria-label="Review scope"
             value={scopeControl.scope}
             onChange={scopeControl.onScopeChange}
             options={[
@@ -182,11 +191,11 @@ export const RequestReviewPopover = ({
             {copyButton}
             <button
               type="button"
-              aria-keyshortcuts="n"
+              aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
               onClick={(): void => onCancel()}
               className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
-              Dismiss (n)
+              Dismiss ({cancelLabel})
             </button>
           </div>
         </div>
@@ -202,19 +211,19 @@ export const RequestReviewPopover = ({
             {copyButton}
             <button
               type="button"
-              aria-keyshortcuts="n"
+              aria-keyshortcuts={chordToAriaShortcut(cancelShortcut)}
               onClick={(): void => onCancel()}
               className={`rounded-md px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface ${popoverGhostActionFocusClass}`}
             >
-              Cancel (n)
+              Cancel ({cancelLabel})
             </button>
             <button
               type="button"
-              aria-keyshortcuts="Y"
+              aria-keyshortcuts={chordToAriaShortcut(submitShortcut)}
               onClick={(): void => onSubmit(result.pane)}
               className={`rounded-md bg-primary px-3 py-1 text-xs text-on-primary hover:bg-primary/80 ${popoverPrimaryActionFocusClass}`}
             >
-              Delegate (Y)
+              Delegate ({submitLabel})
             </button>
           </div>
         </div>
