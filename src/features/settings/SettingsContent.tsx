@@ -28,7 +28,6 @@ import { AgentsPane } from './components/panes/AgentsPane'
 import { AppearancePane } from './components/panes/AppearancePane'
 import { GeneralPane } from './components/panes/GeneralPane'
 import { KeymapPane } from './components/panes/KeymapPane'
-import { PlaceholderPane } from './components/panes/PlaceholderPane'
 import { TerminalSettingsPane } from './components/panes/TerminalSettingsPane'
 import { isKeymapCaptureTarget } from '../keymap/capture'
 
@@ -114,10 +113,6 @@ export const SettingsContent = (): ReactElement => {
       : query.trim() !== '' && searchResults.length > 0
         ? searchResults[0].key
         : null
-
-  const activeSection = AVAILABLE_SETTINGS_SECTIONS.find(
-    (s) => s.id === section
-  )
 
   const activeSidebarSubsection =
     activeSidebarSubsectionId === null
@@ -562,9 +557,6 @@ export const SettingsContent = (): ReactElement => {
           className="thin-scrollbar flex-1 overflow-auto px-7 py-5"
         >
           {hasSettingsPane(section) ? SETTINGS_PANES[section] : null}
-          {!hasSettingsPane(section) && activeSection ? (
-            <PlaceholderPane section={activeSection} />
-          ) : null}
         </div>
       </div>
     </div>

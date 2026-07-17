@@ -2,7 +2,7 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-07-15
+last_updated: 2026-07-17
 ref_count: 8
 ---
 
@@ -116,3 +116,18 @@ code and should be removed.
   shortcut dispatcher, so only the exported accessor was dead surface.
 - **Fix:** Removed the unused export while keeping `setKeymapCaptureActive` and
   the existing internal capture guard intact.
+
+### 11. Settings placeholder pane branch became unreachable after availability gating
+
+- **Source:** github-claude | PR #700 round 2 | 2026-07-17
+- **Severity:** LOW
+- **File:** `src/features/settings/SettingsContent.tsx`
+- **Finding:** `hasSettingsPane(section)` and `activeSection` were derived from
+  the same available-section source, while every UI path that updates
+  `section` also selects from available sections. The fallback
+  `PlaceholderPane` render branch could no longer be reached and implied
+  unavailable settings sections were still user-selectable.
+- **Fix:** Removed the unreachable `PlaceholderPane` import, active-section
+  lookup, and fallback render branch so the pane renderer reflects the
+  availability contract directly.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

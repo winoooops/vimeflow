@@ -44,15 +44,16 @@ const SETTINGS_SECTION_CATALOG: Omit<SettingsSection, 'available'>[] = [
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
 
-export const SETTINGS_SECTIONS: SettingsSection[] = SETTINGS_SECTION_CATALOG.map(
-  (section) => ({
+export const SETTINGS_SECTIONS: SettingsSection[] =
+  SETTINGS_SECTION_CATALOG.map((section) => ({
     ...section,
     ...(isAvailableSettingsSectionId(section.id) ? { available: true } : {}),
-  })
-)
+  }))
 
 export const AVAILABLE_SETTINGS_SECTIONS = SETTINGS_SECTIONS.filter(
-  (section): section is SettingsSection & {
+  (
+    section
+  ): section is SettingsSection & {
     id: AvailableSettingsSectionId
     available: true
   } => section.available === true
