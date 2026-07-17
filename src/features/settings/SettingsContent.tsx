@@ -9,7 +9,7 @@ import type {
   SettingsTargetId,
 } from './types'
 import {
-  SETTINGS_SECTIONS,
+  AVAILABLE_SETTINGS_SECTIONS,
   SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,
 } from './sections'
@@ -90,7 +90,7 @@ export const SettingsContent = (): ReactElement => {
   const searchModel = useMemo(
     () =>
       searchSettings({
-        sections: SETTINGS_SECTIONS,
+        sections: AVAILABLE_SETTINGS_SECTIONS,
         targets: SETTINGS_TARGETS,
         query,
       }),
@@ -108,7 +108,9 @@ export const SettingsContent = (): ReactElement => {
         ? searchResults[0].key
         : null
 
-  const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
+  const activeSection = AVAILABLE_SETTINGS_SECTIONS.find(
+    (s) => s.id === section
+  )
 
   const activeSidebarSubsection =
     activeSidebarSubsectionId === null
@@ -121,7 +123,7 @@ export const SettingsContent = (): ReactElement => {
 
   const sidebarNavigationEntries = useMemo(() => {
     const navigationSections =
-      query.trim() === '' ? SETTINGS_SECTIONS : filtered
+      query.trim() === '' ? AVAILABLE_SETTINGS_SECTIONS : filtered
 
     return navigationSections.flatMap(
       (candidate): SettingsNavigationEntry[] => {
@@ -220,7 +222,9 @@ export const SettingsContent = (): ReactElement => {
   }
 
   const handlePickTarget = (target: SettingsTarget): void => {
-    const owningSection = SETTINGS_SECTIONS.find((s) => s.id === target.section)
+    const owningSection = AVAILABLE_SETTINGS_SECTIONS.find(
+      (s) => s.id === target.section
+    )
     if (owningSection === undefined) {
       return
     }

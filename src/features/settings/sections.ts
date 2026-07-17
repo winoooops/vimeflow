@@ -10,12 +10,12 @@ import type {
 import { CATALOG, type CommandId } from '../keymap/catalog'
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { id: 'general', label: 'General', icon: 'settings' },
-  { id: 'appearance', label: 'Appearance', icon: 'palette' },
-  { id: 'keymap', label: 'Keymap', icon: 'keyboard' },
-  { id: 'agents', label: 'Coding Agents', icon: 'bolt' },
+  { id: 'general', label: 'General', icon: 'settings', available: true },
+  { id: 'appearance', label: 'Appearance', icon: 'palette', available: true },
+  { id: 'keymap', label: 'Keymap', icon: 'keyboard', available: true },
+  { id: 'agents', label: 'Coding Agents', icon: 'bolt', available: true },
   { id: 'editor', label: 'Editor', icon: 'code' },
-  { id: 'terminal', label: 'Terminal', icon: 'terminal' },
+  { id: 'terminal', label: 'Terminal', icon: 'terminal', available: true },
   { id: 'languages', label: 'Languages & Tools', icon: 'data_object' },
   { id: 'search', label: 'Search & Files', icon: 'search' },
   { id: 'window', label: 'Window & Layout', icon: 'grid_view' },
@@ -25,6 +25,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'ai', label: 'AI', icon: 'psychology' },
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
+
+export const AVAILABLE_SETTINGS_SECTIONS = SETTINGS_SECTIONS.filter(
+  (section) => section.available === true
+)
 
 export const SETTINGS_TARGET_IDS = {
   generalCloseWithNoTabs: 'general-close-with-no-tabs',

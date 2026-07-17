@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { useState, type ReactElement } from 'react'
 import { SettingsDialog } from './SettingsDialog'
 import {
+  AVAILABLE_SETTINGS_SECTIONS,
   SETTINGS_SECTIONS,
   SETTINGS_TARGET_IDS,
   keymapCommandTargetId,
@@ -134,9 +135,17 @@ describe('SettingsDialog', () => {
   test('renders the sidebar sections', () => {
     render(<SettingsDialog open onClose={vi.fn()} />)
 
-    SETTINGS_SECTIONS.forEach((s) => {
+    AVAILABLE_SETTINGS_SECTIONS.forEach((s) => {
       expect(screen.getByRole('option', { name: s.label })).toBeInTheDocument()
     })
+
+    SETTINGS_SECTIONS.filter((section) => section.available !== true).forEach(
+      (section) => {
+        expect(
+          screen.queryByRole('option', { name: section.label })
+        ).not.toBeInTheDocument()
+      }
+    )
   })
 
   test('defaults to the appearance pane', () => {
