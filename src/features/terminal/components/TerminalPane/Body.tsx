@@ -220,11 +220,6 @@ export interface BodyProps {
    * bundled and platform fallbacks so stale settings keep rendering.
    */
   terminalFontFamily?: string
-
-  /**
-   * Enables coding-agent-only clipboard image paste controls.
-   */
-  enableImagePaste?: boolean
 }
 
 export interface BodyHandle {
@@ -246,7 +241,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onFocusChange = undefined,
     deferFit = false,
     terminalFontFamily = '',
-    enableImagePaste = false,
   },
   ref
 ): ReactElement {
@@ -1070,7 +1064,6 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
   const clipboard = useTerminalClipboard({
     terminal,
-    enableImagePaste,
     // TODO: surface clipboard failures via a visible status/error channel.
     onCopyError: (): void => undefined,
     onPasteError: (): void => undefined,
@@ -1098,12 +1091,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
         onPaste={(): void => {
           void clipboard.paste()
         }}
-        onPasteImage={(): void => {
-          void clipboard.pasteImage()
-        }}
         canCopy={clipboard.hasSelection}
-        canPasteImage={clipboard.canPasteImage}
-        showPasteImage={enableImagePaste}
       />
     </div>
   )
