@@ -78,7 +78,6 @@ vi.mock('./Body', () => {
 
 const createService = (): ITerminalService => ({}) as ITerminalService
 const deferFit = false
-const enableImagePaste = false
 
 describe('TerminalBody', () => {
   beforeEach(() => {
@@ -97,7 +96,6 @@ describe('TerminalBody', () => {
         service={createService()}
         mode="attach"
         deferFit={deferFit}
-        enableImagePaste={enableImagePaste}
       />
     )
 
@@ -127,7 +125,6 @@ describe('TerminalBody', () => {
         shortcutContext={shortcutContext}
         mode="attach"
         deferFit={deferFit}
-        enableImagePaste={enableImagePaste}
       />
     )
 
@@ -146,7 +143,6 @@ describe('TerminalBody', () => {
         bottomCornerRadius={10}
         mode="attach"
         deferFit={deferFit}
-        enableImagePaste={enableImagePaste}
       />
     )
 
@@ -164,7 +160,6 @@ describe('TerminalBody', () => {
         terminalFontFamily="Iosevka"
         mode="attach"
         deferFit={deferFit}
-        enableImagePaste={enableImagePaste}
       />
     )
 
@@ -187,7 +182,6 @@ describe('TerminalBody', () => {
         service={createService()}
         mode="attach"
         deferFit={deferFit}
-        enableImagePaste={enableImagePaste}
       />
     )
 
@@ -214,7 +208,6 @@ describe('TerminalBody', () => {
         service={createService()}
         mode="attach"
         deferFit={deferFit}
-        enableImagePaste={enableImagePaste}
       />
     )
 

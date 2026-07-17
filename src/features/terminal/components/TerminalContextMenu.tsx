@@ -12,10 +12,7 @@ export interface TerminalContextMenuProps {
   onClose: () => void
   onCopy: () => void
   onPaste: () => void
-  onPasteImage: () => void
   canCopy: boolean
-  canPasteImage: boolean
-  showPasteImage: boolean
 }
 
 // Chips reflect the active platform's handled terminal clipboard shortcuts:
@@ -31,8 +28,6 @@ const COPY_SHORTCUT: ShortcutInput = IS_MAC
 const PASTE_SHORTCUT: ShortcutInput = IS_MAC
   ? ['Mod', 'V']
   : ['Ctrl', 'Shift', 'V']
-
-const PASTE_IMAGE_SHORTCUT: ShortcutInput | null = IS_MAC ? null : ['Ctrl', 'V']
 
 const TERMINAL_MENU_ROW_CLASSES =
   'flex min-h-7 w-40 items-center justify-between gap-6 px-2.5 py-1 ' +
@@ -52,10 +47,7 @@ export const TerminalContextMenu = ({
   onClose,
   onCopy,
   onPaste,
-  onPasteImage,
   canCopy,
-  canPasteImage,
-  showPasteImage,
 }: TerminalContextMenuProps): ReactElement | null => {
   if (position === null) {
     return null
@@ -99,24 +91,6 @@ export const TerminalContextMenu = ({
           {formatShortcut(PASTE_SHORTCUT)}
         </kbd>
       </Menu.Row>
-      {showPasteImage ? (
-        <Menu.Row
-          label="Paste Image"
-          disabled={!canPasteImage}
-          className={`${TERMINAL_MENU_ROW_CLASSES} ${TERMINAL_MENU_DISABLED_ROW_CLASSES}`}
-          onSelect={(): void => {
-            onPasteImage()
-            onClose()
-          }}
-        >
-          <span>Paste Image</span>
-          {PASTE_IMAGE_SHORTCUT === null ? null : (
-            <kbd className={TERMINAL_MENU_SHORTCUT_CLASSES} aria-hidden="true">
-              {formatShortcut(PASTE_IMAGE_SHORTCUT)}
-            </kbd>
-          )}
-        </Menu.Row>
-      ) : null}
     </Menu.Context>
   )
 }

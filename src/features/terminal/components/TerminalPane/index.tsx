@@ -314,7 +314,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const isAwaitingRestart = mode === 'awaiting-restart'
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
-    const enableImagePaste = pane.agentType !== 'generic'
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
     const terminalBodyBottomCornerRadius = isCollapsed
@@ -420,7 +419,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               mode={bodyMode}
               deferFit={deferFit}
               terminalFontFamily={terminalFontFamily}
-              enableImagePaste={enableImagePaste}
             />
           </div>
         )}

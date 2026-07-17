@@ -36,7 +36,6 @@ interface TerminalBodyProps {
   mode: BodyMode
   deferFit: boolean
   terminalFontFamily?: string
-  enableImagePaste: boolean
 }
 
 export interface TerminalBodyHandle {
@@ -64,7 +63,6 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       mode,
       deferFit,
       terminalFontFamily = undefined,
-      enableImagePaste,
     },
     ref
   ): ReactElement {
@@ -147,7 +145,6 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
         mode={mode}
         deferFit={deferFit}
         terminalFontFamily={terminalFontFamily}
-        enableImagePaste={enableImagePaste}
       />
     )
   }
