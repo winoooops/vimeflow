@@ -21,6 +21,7 @@ export interface SettingsSection {
   id: SettingsSectionId
   label: string
   icon: string
+  available?: boolean
 }
 
 export type SettingsTargetId = string

@@ -9,9 +9,11 @@ import type {
   SettingsTargetId,
 } from './types'
 import {
-  SETTINGS_SECTIONS,
+  AVAILABLE_SETTINGS_SECTION_IDS,
+  AVAILABLE_SETTINGS_SECTIONS,
   SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,
+  type AvailableSettingsSectionId,
 } from './sections'
 import {
   searchSettings,
@@ -26,17 +28,21 @@ import { AgentsPane } from './components/panes/AgentsPane'
 import { AppearancePane } from './components/panes/AppearancePane'
 import { GeneralPane } from './components/panes/GeneralPane'
 import { KeymapPane } from './components/panes/KeymapPane'
-import { PlaceholderPane } from './components/panes/PlaceholderPane'
 import { TerminalSettingsPane } from './components/panes/TerminalSettingsPane'
 import { isKeymapCaptureTarget } from '../keymap/capture'
 
-const REAL_PANES: readonly SettingsSectionId[] = [
-  'general',
-  'appearance',
-  'keymap',
-  'agents',
-  'terminal',
-]
+const SETTINGS_PANES = {
+  general: <GeneralPane />,
+  appearance: <AppearancePane />,
+  keymap: <KeymapPane />,
+  agents: <AgentsPane />,
+  terminal: <TerminalSettingsPane />,
+} satisfies Record<AvailableSettingsSectionId, ReactElement>
+
+const hasSettingsPane = (
+  id: SettingsSectionId
+): id is AvailableSettingsSectionId =>
+  (AVAILABLE_SETTINGS_SECTION_IDS as readonly SettingsSectionId[]).includes(id)
 
 const SETTINGS_SCROLL_STEP = 96
 
@@ -90,7 +96,7 @@ export const SettingsContent = (): ReactElement => {
   const searchModel = useMemo(
     () =>
       searchSettings({
-        sections: SETTINGS_SECTIONS,
+        sections: AVAILABLE_SETTINGS_SECTIONS,
         targets: SETTINGS_TARGETS,
         query,
       }),
@@ -108,8 +114,6 @@ export const SettingsContent = (): ReactElement => {
         ? searchResults[0].key
         : null
 
-  const activeSection = SETTINGS_SECTIONS.find((s) => s.id === section)
-
   const activeSidebarSubsection =
     activeSidebarSubsectionId === null
       ? undefined
@@ -121,7 +125,7 @@ export const SettingsContent = (): ReactElement => {
 
   const sidebarNavigationEntries = useMemo(() => {
     const navigationSections =
-      query.trim() === '' ? SETTINGS_SECTIONS : filtered
+      query.trim() === '' ? AVAILABLE_SETTINGS_SECTIONS : filtered
 
     return navigationSections.flatMap(
       (candidate): SettingsNavigationEntry[] => {
@@ -220,7 +224,9 @@ export const SettingsContent = (): ReactElement => {
   }
 
   const handlePickTarget = (target: SettingsTarget): void => {
-    const owningSection = SETTINGS_SECTIONS.find((s) => s.id === target.section)
+    const owningSection = AVAILABLE_SETTINGS_SECTIONS.find(
+      (s) => s.id === target.section
+    )
     if (owningSection === undefined) {
       return
     }
@@ -550,14 +556,7 @@ export const SettingsContent = (): ReactElement => {
           data-testid="settings-dialog-content"
           className="thin-scrollbar flex-1 overflow-auto px-7 py-5"
         >
-          {section === 'general' && <GeneralPane />}
-          {section === 'appearance' && <AppearancePane />}
-          {section === 'keymap' && <KeymapPane />}
-          {section === 'agents' && <AgentsPane />}
-          {section === 'terminal' && <TerminalSettingsPane />}
-          {!REAL_PANES.includes(section) && activeSection && (
-            <PlaceholderPane section={activeSection} />
-          )}
+          {hasSettingsPane(section) ? SETTINGS_PANES[section] : null}
         </div>
       </div>
     </div>

@@ -9,7 +9,25 @@ import type {
 } from './types'
 import { CATALOG, type CommandId } from '../keymap/catalog'
 
-export const SETTINGS_SECTIONS: SettingsSection[] = [
+export const AVAILABLE_SETTINGS_SECTION_IDS = [
+  'general',
+  'appearance',
+  'keymap',
+  'agents',
+  'terminal',
+] as const satisfies readonly SettingsSection['id'][]
+
+export type AvailableSettingsSectionId =
+  (typeof AVAILABLE_SETTINGS_SECTION_IDS)[number]
+
+const isAvailableSettingsSectionId = (
+  id: SettingsSection['id']
+): id is AvailableSettingsSectionId =>
+  (AVAILABLE_SETTINGS_SECTION_IDS as readonly SettingsSection['id'][]).includes(
+    id
+  )
+
+const SETTINGS_SECTION_CATALOG: Omit<SettingsSection, 'available'>[] = [
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'keymap', label: 'Keymap', icon: 'keyboard' },
@@ -25,6 +43,21 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'ai', label: 'AI', icon: 'psychology' },
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
+
+export const SETTINGS_SECTIONS: SettingsSection[] =
+  SETTINGS_SECTION_CATALOG.map((section) => ({
+    ...section,
+    ...(isAvailableSettingsSectionId(section.id) ? { available: true } : {}),
+  }))
+
+export const AVAILABLE_SETTINGS_SECTIONS = SETTINGS_SECTIONS.filter(
+  (
+    section
+  ): section is SettingsSection & {
+    id: AvailableSettingsSectionId
+    available: true
+  } => section.available === true
+)
 
 export const SETTINGS_TARGET_IDS = {
   generalCloseWithNoTabs: 'general-close-with-no-tabs',
