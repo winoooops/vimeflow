@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { DIFF_COMMANDS } from '../keymap/catalog'
 import {
+  AVAILABLE_SETTINGS_SECTION_IDS,
   AVAILABLE_SETTINGS_SECTIONS,
   DEFAULT_ALIASES,
   SETTINGS_TARGET_IDS,
@@ -42,6 +43,14 @@ describe('SETTINGS_SECTIONS', () => {
   })
 
   test('only renders sections with available options', () => {
+    expect(AVAILABLE_SETTINGS_SECTION_IDS).toEqual([
+      'general',
+      'appearance',
+      'keymap',
+      'agents',
+      'terminal',
+    ])
+
     expect(AVAILABLE_SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
       'general',
       'appearance',

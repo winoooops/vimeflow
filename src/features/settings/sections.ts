@@ -9,13 +9,31 @@ import type {
 } from './types'
 import { CATALOG, type CommandId } from '../keymap/catalog'
 
-export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { id: 'general', label: 'General', icon: 'settings', available: true },
-  { id: 'appearance', label: 'Appearance', icon: 'palette', available: true },
-  { id: 'keymap', label: 'Keymap', icon: 'keyboard', available: true },
-  { id: 'agents', label: 'Coding Agents', icon: 'bolt', available: true },
+export const AVAILABLE_SETTINGS_SECTION_IDS = [
+  'general',
+  'appearance',
+  'keymap',
+  'agents',
+  'terminal',
+] as const satisfies readonly SettingsSection['id'][]
+
+export type AvailableSettingsSectionId =
+  (typeof AVAILABLE_SETTINGS_SECTION_IDS)[number]
+
+const isAvailableSettingsSectionId = (
+  id: SettingsSection['id']
+): id is AvailableSettingsSectionId =>
+  (AVAILABLE_SETTINGS_SECTION_IDS as readonly SettingsSection['id'][]).includes(
+    id
+  )
+
+const SETTINGS_SECTION_CATALOG: Omit<SettingsSection, 'available'>[] = [
+  { id: 'general', label: 'General', icon: 'settings' },
+  { id: 'appearance', label: 'Appearance', icon: 'palette' },
+  { id: 'keymap', label: 'Keymap', icon: 'keyboard' },
+  { id: 'agents', label: 'Coding Agents', icon: 'bolt' },
   { id: 'editor', label: 'Editor', icon: 'code' },
-  { id: 'terminal', label: 'Terminal', icon: 'terminal', available: true },
+  { id: 'terminal', label: 'Terminal', icon: 'terminal' },
   { id: 'languages', label: 'Languages & Tools', icon: 'data_object' },
   { id: 'search', label: 'Search & Files', icon: 'search' },
   { id: 'window', label: 'Window & Layout', icon: 'grid_view' },
@@ -26,8 +44,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'network', label: 'Network', icon: 'lan' },
 ]
 
+export const SETTINGS_SECTIONS: SettingsSection[] = SETTINGS_SECTION_CATALOG.map(
+  (section) => ({
+    ...section,
+    ...(isAvailableSettingsSectionId(section.id) ? { available: true } : {}),
+  })
+)
+
 export const AVAILABLE_SETTINGS_SECTIONS = SETTINGS_SECTIONS.filter(
-  (section) => section.available === true
+  (section): section is SettingsSection & {
+    id: AvailableSettingsSectionId
+    available: true
+  } => section.available === true
 )
 
 export const SETTINGS_TARGET_IDS = {

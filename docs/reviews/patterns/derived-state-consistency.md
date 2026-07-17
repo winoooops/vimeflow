@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-11
-ref_count: 23
+last_updated: 2026-07-17
+ref_count: 24
 ---
 
 # Derived State Consistency
@@ -400,4 +400,20 @@ base data is technically "correct."
 - **Fix:** Derived a single `isFinishPopoverOpen` value and reused it for the
   Finish popover state plus both Request-review entry gates, so the shortcut
   and toolbar share the same exclusivity contract.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Settings section availability split from pane render eligibility
+
+- **Source:** github-claude | PR #700 round 1 | 2026-07-17
+- **Severity:** MEDIUM
+- **File:** `src/features/settings/sections.ts`, `src/features/settings/SettingsContent.tsx`
+- **Finding:** Settings navigation and search used `AVAILABLE_SETTINGS_SECTIONS`
+  while pane rendering maintained a separate `REAL_PANES` list with the same
+  section IDs. Future settings work could update one list without the other,
+  making a section appear navigable but render a placeholder, or hide a
+  finished pane from navigation.
+- **Fix:** Promoted available section IDs to the single exported availability
+  source, derived `SETTINGS_SECTIONS` and `AVAILABLE_SETTINGS_SECTIONS` from it,
+  and made `SettingsContent` type its pane registry against that same ID union.
+  Added focused coverage that available IDs and available sections stay aligned.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

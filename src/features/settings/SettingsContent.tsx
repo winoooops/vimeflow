@@ -9,9 +9,11 @@ import type {
   SettingsTargetId,
 } from './types'
 import {
+  AVAILABLE_SETTINGS_SECTION_IDS,
   AVAILABLE_SETTINGS_SECTIONS,
   SETTINGS_SUBSECTIONS,
   SETTINGS_TARGETS,
+  type AvailableSettingsSectionId,
 } from './sections'
 import {
   searchSettings,
@@ -30,13 +32,18 @@ import { PlaceholderPane } from './components/panes/PlaceholderPane'
 import { TerminalSettingsPane } from './components/panes/TerminalSettingsPane'
 import { isKeymapCaptureTarget } from '../keymap/capture'
 
-const REAL_PANES: readonly SettingsSectionId[] = [
-  'general',
-  'appearance',
-  'keymap',
-  'agents',
-  'terminal',
-]
+const SETTINGS_PANES = {
+  general: <GeneralPane />,
+  appearance: <AppearancePane />,
+  keymap: <KeymapPane />,
+  agents: <AgentsPane />,
+  terminal: <TerminalSettingsPane />,
+} satisfies Record<AvailableSettingsSectionId, ReactElement>
+
+const hasSettingsPane = (
+  id: SettingsSectionId
+): id is AvailableSettingsSectionId =>
+  (AVAILABLE_SETTINGS_SECTION_IDS as readonly SettingsSectionId[]).includes(id)
 
 const SETTINGS_SCROLL_STEP = 96
 
@@ -554,14 +561,10 @@ export const SettingsContent = (): ReactElement => {
           data-testid="settings-dialog-content"
           className="thin-scrollbar flex-1 overflow-auto px-7 py-5"
         >
-          {section === 'general' && <GeneralPane />}
-          {section === 'appearance' && <AppearancePane />}
-          {section === 'keymap' && <KeymapPane />}
-          {section === 'agents' && <AgentsPane />}
-          {section === 'terminal' && <TerminalSettingsPane />}
-          {!REAL_PANES.includes(section) && activeSection && (
+          {hasSettingsPane(section) ? SETTINGS_PANES[section] : null}
+          {!hasSettingsPane(section) && activeSection ? (
             <PlaceholderPane section={activeSection} />
-          )}
+          ) : null}
         </div>
       </div>
     </div>
