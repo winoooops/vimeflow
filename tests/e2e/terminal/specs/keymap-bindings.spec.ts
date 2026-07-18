@@ -645,40 +645,49 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
 describe('session switcher (Ctrl+Tab MRU)', () => {
   it('quick tap bounces to the previously active session', async () => {
+    // Consume each creation's activation explicitly so no activation is
+    // pending by tap time and the taps can assert exact session ids.
+    const initialId = await activeSessionLabel()
     await createNewSessionWithDefaults()
-    await createNewSessionWithDefaults()
+    let firstId: string | null = null
+    await browser.waitUntil(
+      async () => {
+        firstId = await activeSessionLabel()
 
-    // Creation runs a dialog exit animation plus an async activation; let both
-    // settle so the taps exercise the switcher rather than the creation race.
+        return firstId !== null && firstId !== initialId
+      },
+      { timeoutMsg: 'first created session was never activated' }
+    )
+
+    await createNewSessionWithDefaults()
+    let secondId: string | null = null
+    await browser.waitUntil(
+      async () => {
+        secondId = await activeSessionLabel()
+
+        return secondId !== null && secondId !== firstId
+      },
+      { timeoutMsg: 'second created session was never activated' }
+    )
+
+    // The create dialog's exit animation must finish before the chord fires;
+    // the switcher defers to open dialogs by design.
     await browser.waitUntil(
       async () => !(await hasElement('[role="dialog"]')),
       { timeoutMsg: 'new-session dialog did not settle before switching' }
     )
-    let settled = await activeSessionLabel()
-    await browser.waitUntil(
-      async () => {
-        const now = await activeSessionLabel()
-        const stable = now !== null && now === settled
-        settled = now
 
-        return stable
-      },
-      { timeoutMsg: 'active session did not settle before switching' }
-    )
-
-    const before = await activeSessionLabel()
     await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
     await fireKeyUp({ key: 'Control', code: 'ControlLeft' })
-
     await browser.waitUntil(
-      async () => (await activeSessionLabel()) !== before,
-      { timeoutMsg: 'active session did not change after Ctrl+Tab tap' }
+      async () => (await activeSessionLabel()) === firstId,
+      { timeoutMsg: 'first tap did not switch to the previous session' }
     )
 
     await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
     await fireKeyUp({ key: 'Control', code: 'ControlLeft' })
     await browser.waitUntil(
-      async () => (await activeSessionLabel()) === before,
+      async () => (await activeSessionLabel()) === secondId,
       { timeoutMsg: 'second tap did not bounce back' }
     )
   })
