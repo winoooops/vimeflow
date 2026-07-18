@@ -154,7 +154,7 @@ test('syncs active and custom themes changed by another renderer', () => {
   expect(document.documentElement.dataset.theme).toBe('shared-theme')
 })
 
-test('list exposes both themes for pickers', () => {
+test('list exposes all built-in themes for pickers', () => {
   expect(themeService.list().map((t) => t.id)).toEqual([
     'obsidian-lens',
     'flexoki',
@@ -162,5 +162,10 @@ test('list exposes both themes for pickers', () => {
     'gruvbox-light',
     'tokyo-night',
     'dracula',
+    'ayu',
+    'eldritch',
+    'kanagawa',
+    'nord',
+    'rose-pine',
   ])
 })

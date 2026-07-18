@@ -91,7 +91,7 @@ Commit messages for Codex-assisted changes must include the trailer `Co-Authored
 
 ## Design System
 
-"The Lens" — a multi-theme system. **Catppuccin** is the dark default, **Flexoki** is the light baseline, and Gruvbox Dark, Gruvbox Light, Tokyo Night, and Dracula also ship. No visible borders — use tonal depth and glassmorphism.
+"The Lens" — a multi-theme system. **Catppuccin** is the dark default, **Flexoki** is the light baseline, and Gruvbox Dark/Light, Tokyo Night, Dracula, Ayu, Eldritch, Kanagawa, Nord, and Rosé Pine also ship. No visible borders — use tonal depth and glassmorphism.
 
 Tooltips are unified: every hover label uses the shared `Tooltip` (`@/components/Tooltip`; contract in `docs/design/UNIFIED.md` §5.6). Flag native `title=` attributes on DOM elements and new hand-rolled floating surfaces — `@floating-ui/react` belongs only in `src/components/`.
 

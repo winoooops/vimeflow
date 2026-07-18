@@ -4,7 +4,7 @@
 
 This design system transforms the sterile developer environment into a sophisticated, editorial workspace. Our Creative North Star is **The Lens** — an aesthetic that treats the UI not as a flat grid of boxes, but as a series of illuminated, translucent layers stacked within a deep, nocturnal void.
 
-The Lens ships multiple runtime themes (§9). The default, **Catppuccin** (dark), leverages the Catppuccin Mocha palette to move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience; **Flexoki** provides the light baseline, with Gruvbox Dark/Light, Tokyo Night, and Dracula also available. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
+The Lens ships multiple runtime themes (§9). The default, **Catppuccin** (dark), leverages the Catppuccin Mocha palette to move away from traditional "Dark Mode" (which often feels heavy) toward an "Atmospheric Dark" experience; **Flexoki** provides the light baseline, with Gruvbox Dark/Light, Tokyo Night, Dracula, Ayu, Eldritch, Kanagawa, Nord, and Rosé Pine also available. We break the "template" look by favoring tonal depth over structural lines, utilizing expansive breathing room, and employing high-contrast typography scales that feel more like a premium technical journal than a standard IDE.
 
 The **workspace expression** of this system applies The Lens aesthetic to a terminal-first CLI agent management interface — the same depth, glass, and editorial precision, now serving a command-line-native workflow.
 
@@ -243,10 +243,10 @@ The context window indicator uses emoji that degrades as context fills:
 
 ## 9. Themes & Design Resources
 
-**Themes.** The Lens ships six runtime themes (`src/theme/themes/*.ts`), all exposing identical token keys so `bg-surface` etc. resolve per active theme:
+**Themes.** The Lens ships eleven runtime themes (`src/theme/themes/*.ts`), all exposing identical token keys so `bg-surface` etc. resolve per active theme:
 
 - **Catppuccin** (dark, default) — file/id `obsidian-lens` (legacy slug), `label: 'Catppuccin'`. Atmospheric dark on the Catppuccin Mocha palette; the hex tables above are its snapshot.
-- **Flexoki** (light baseline), **Gruvbox Dark**, **Gruvbox Light**, **Tokyo Night**, and **Dracula**.
+- **Flexoki** (light baseline), **Gruvbox Dark**, **Gruvbox Light**, **Tokyo Night**, **Dracula**, **Ayu**, **Eldritch**, **Kanagawa**, **Nord**, and **Rosé Pine**.
 
 Color SSoT is `src/theme/themes/*.ts` — see `UNIFIED.md` §9 for the runtime mechanism.
 

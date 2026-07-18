@@ -1,10 +1,15 @@
 // src/theme/service.ts
 import { toCssVars } from './cssVars'
+import { ayu } from './themes/ayu'
 import { dracula } from './themes/dracula'
+import { eldritch } from './themes/eldritch'
 import { flexoki } from './themes/flexoki'
 import { gruvboxDark } from './themes/gruvbox/gruvbox-dark'
 import { gruvboxLight } from './themes/gruvbox/gruvbox-light'
+import { kanagawa } from './themes/kanagawa'
+import { nord } from './themes/nord'
 import { obsidianLens } from './themes/obsidian-lens'
+import { rosePine } from './themes/rose-pine'
 import { tokyoNightTheme } from './themes/tokyo-night'
 import { deriveTheme } from './derive'
 import { parseStoredThemeScheme } from './json'
@@ -38,6 +43,26 @@ const themeModules = [
   {
     exportName: 'dracula',
     fallback: dracula,
+  },
+  {
+    exportName: 'ayu',
+    fallback: ayu,
+  },
+  {
+    exportName: 'eldritch',
+    fallback: eldritch,
+  },
+  {
+    exportName: 'kanagawa',
+    fallback: kanagawa,
+  },
+  {
+    exportName: 'nord',
+    fallback: nord,
+  },
+  {
+    exportName: 'rosePine',
+    fallback: rosePine,
   },
 ] as const
 
@@ -221,6 +246,11 @@ if (import.meta.hot) {
       './themes/gruvbox/gruvbox-light',
       './themes/tokyo-night',
       './themes/dracula',
+      './themes/ayu',
+      './themes/eldritch',
+      './themes/kanagawa',
+      './themes/nord',
+      './themes/rose-pine',
     ],
     (mods) => {
       builtInThemes = themeModules.map((themeModule, index) => {

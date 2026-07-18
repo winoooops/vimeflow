@@ -131,6 +131,11 @@ export type BuiltInThemeId =
   | 'gruvbox-light'
   | 'tokyo-night'
   | 'dracula'
+  | 'ayu'
+  | 'eldritch'
+  | 'kanagawa'
+  | 'nord'
+  | 'rose-pine'
 
 export type ThemeId = string
 

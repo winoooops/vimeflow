@@ -12,6 +12,11 @@ test(':set theme lists every registered theme and applies on execute', () => {
     'set-theme-gruvbox-light',
     'set-theme-tokyo-night',
     'set-theme-dracula',
+    'set-theme-ayu',
+    'set-theme-eldritch',
+    'set-theme-kanagawa',
+    'set-theme-nord',
+    'set-theme-rose-pine',
   ])
 
   findCommandById(defaultCommands, 'set-theme-flexoki')?.execute?.('')
