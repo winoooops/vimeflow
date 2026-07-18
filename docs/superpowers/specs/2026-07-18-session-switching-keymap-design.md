@@ -1,6 +1,6 @@
 # Session Switching Shortcuts — Design
 
-**Status:** Draft (codex rounds 1–2 applied; round-3 review pending).
+**Status:** Draft (codex rounds 1–3 applied; round-4 review pending).
 
 **Linear:** not yet filed (Sessions component project).
 
@@ -16,9 +16,14 @@ A Vimeflow **session** is the workspace unit — it owns a layout, panes, and a 
 directory. Sessions render in the **sidebar sessions view** (`SessionsView` → `List`,
 `src/features/sessions/components/List.tsx`); the former top tab strip is retired
 (`Tabs.tsx` survives only in tests, and a top-chrome regression test asserts no tab strip
-renders). The **visible session order** — the sessions the sidebar list shows, i.e.
-`getVisibleSessions(sessions, activeSessionId)` — is the canonical ordered surface this
-design builds on.
+renders). The sidebar shows **two groups**: open sessions, then closed "Recent" sessions.
+
+This design deliberately scopes to the **switchable set** —
+`getVisibleSessions(sessions, activeSessionId)`, i.e. open sessions plus the active
+session even if it is no longer open. Recent (closed) rows are **not** switcher or
+successor targets: activating one means _resuming_ it, a heavier action that stays with
+the sidebar and palette. The switchable set is therefore intentionally narrower than what
+the sidebar displays, and the spec never equates the two.
 
 Today's session switching is limited to sequential cycling (`session-prev` /
 `session-next` on `⌘[` / `⌘]`, Linux `Ctrl+Shift+[` / `]`), sidebar clicks, and palette
@@ -34,8 +39,8 @@ it (`KeymapPane.tsx` renders rows straight from `CATALOG`).
 
 1. MRU session switcher on `Ctrl+Tab` / `Ctrl+Shift+Tab` with VS Code hold-overlay
    semantics (release commits; quick tap bounces to the last session).
-2. Close the active session on `Mod+W` (macOS) / `Ctrl+Shift+W` (Linux) with behavior
-   identical to closing it from the sidebar (guard, successor selection, focus restore).
+2. Close the active session on `Mod+W` (macOS) / `Ctrl+Shift+W` (Linux) with the
+   sidebar's guard and focus behavior, successor drawn from the switchable set (§1).
 3. Both rebindable from Settings → Keymap, grouped under a new **Sessions** group, and
    functional — visible and focusable — from every input surface (app renderer, Ghostty
    native panes, browser `WebContentsView` panes).
@@ -88,9 +93,17 @@ enough: `useActiveSessionController` writes it optimistically and rolls it back 
 a failed activation would corrupt the order (e.g. `[A,C,B]` → optimistic `B` → rollback
 leaves `[A,B,C]`, not the original). Instead:
 
-- **Reorder point:** the controller's post-IPC **success** path — the single place every
-  user-triggered activation (sidebar click, palette, prev/next, switcher commit) funnels
-  through — moves the activated id to the front. A failed activation records nothing.
+- **Reorder point:** a single semantic **"activation committed"** notification exposed by
+  the controller and raised on _every_ branch that finalizes an activation — resolved
+  live-shell IPC **and** the immediate no-IPC branches (browser-only sessions,
+  dead-shell placeholders, which deliberately skip PTY IPC). Restore-time raw activation
+  (`setActiveSessionIdRaw`) is covered by the seed, not the notification. A failed
+  activation records nothing.
+- **Supersession:** the controller already sequences requests by id so an older rejection
+  cannot revert a newer selection; the committed notification reuses that sequencing — a
+  completion whose request has been superseded by a newer activation records nothing. An
+  older completion must never move ahead of the current selection; transient hops during
+  rapid cycling intentionally do not pollute the MRU.
 - **Rollback focus:** on failure the controller rolls `activeSessionId` back; it must
   also reclaim terminal focus for the restored session (today rollback restores state
   but not focus). Covered by a dedicated test (§10).
@@ -109,8 +122,8 @@ leaves `[A,B,C]`, not the original). Instead:
 
 ### Interaction contract
 
-1. `session-switch-next` keydown while closed → overlay opens listing the **visible
-   sessions** (§1) in MRU order, selection on index 1 (the previous session); with a
+1. `session-switch-next` keydown while closed → overlay opens listing the **switchable
+   set** (§1) in MRU order, selection on index 1 (the previous session); with a
    single session the overlay still opens with index 0 selected (harmless, matches VS
    Code). Zero sessions: the hook no-ops. `session-switch-prev` opens with the last entry
    selected.
@@ -211,7 +224,10 @@ both the sidebar and the new `useSessionCloseShortcut`, so keyboard close is
 behavior-identical to clicking the sidebar close button — guard, successor, focus. The
 shortcut targets the active session; no active session → no-op. (The shortcut's focus
 lands on the successor's pane via the same activation path, not on a sidebar button —
-the helper takes the focus-restore strategy as an input.)
+the helper takes the focus-restore strategy as an input.) The successor domain is the
+switchable set (§1), matching `pickNextVisibleSessionId` semantics — closing an
+active-but-no-longer-open session hands off to the next _open_ session, which may not be
+the visually adjacent sidebar row (Recent rows are never close-successor targets).
 
 **macOS conflict:** `electron/edit-menu.ts` uses `role: 'fileMenu'`, which implicitly
 registers Close `⌘W` → today `⌘W` closes the whole window, and a menu accelerator beats
@@ -276,6 +292,8 @@ switching story in v1.
 - **Activation IPC failure on switcher commit:** the controller rolls back state and
   reclaims focus (§4); nothing was recorded in the MRU; the overlay is already closed —
   the user observes the original session, unchanged order.
+- **Rapid cycling (B then C activated before B's IPC resolves):** supersession (§4)
+  drops B's late completion; the MRU head always reflects the current selection.
 - **Close guard cancellation:** the shared helper's `didRemove === false` sentinel stops
   successor activation — identical to cancelling from the sidebar.
 - **Non-US layouts:** unaffected — no digit-tier chords ship (§8), and `Tab`/`KeyW` are
@@ -287,9 +305,12 @@ switching story in v1.
   (`catalog.test.ts`, `resolve.test.ts`); explicit assertion that pane-digit rows remain
   `tolerant` (regression guard for §8.1).
 - **MRU unit tests:** success-only reorder (a rejected activation with a **nontrivial
-  permutation** — e.g. `[A,C,B]` — leaves the order untouched), prune-on-committed-removal
-  only, restore-time append, seeding; controller rollback reclaims terminal focus
-  (focused element asserted after rejection).
+  permutation** — e.g. `[A,C,B]` — leaves the order untouched), commit notification on
+  the no-IPC branches (browser-only session activation reorders), supersession (B/C
+  activations resolving in reverse order: the superseded completion records nothing),
+  prune-on-committed-removal only, restore-time append, seeding incl. a PTY-restored
+  active session seeding first; controller rollback reclaims terminal focus (focused
+  element asserted after rejection).
 - **Switcher hook/component:** open/advance (incl. autorepeat), keyup commit,
   modifier-absent fallback, Escape / outside-click / blur cancel, single-session,
   list mutation while open, statically-mounted listener (no open-effect race).
