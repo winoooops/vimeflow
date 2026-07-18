@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-18
-ref_count: 15
+ref_count: 16
 ---
 
 # Keyboard Shortcut Guards
@@ -547,4 +547,17 @@ against three classes of false-fire:
 - **Fix:** Restored the cross-platform `Mod+Shift+Arrow` defaults for all four
   directional pane commands so the default chord avoids Mission Control while
   remaining rebindable for users who prefer literal Control.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 42. Dormant e2e shortcut coverage documented reverted pane chords
+
+- **Source:** github-claude | PR #703 round 2 | 2026-07-18
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** A skipped e2e pane-focus smoke test still described and
+  simulated bare `Ctrl+Arrow` after the runtime default had been restored to
+  `Mod+Shift+Arrow`. Because the test is dormant, CI did not fail, but future
+  re-enabling or copy-paste would preserve false shortcut behavior.
+- **Fix:** Restored the skipped e2e block to `Cmd+Shift+Arrow` copy and
+  `shiftKey: true` with `...modInit()` for both directional key events.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
