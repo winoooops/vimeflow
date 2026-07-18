@@ -226,8 +226,12 @@ pub(super) fn recover_replies(
         )
     })?;
     let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
 
     for_each_bounded_line(BufReader::new(file), "Claude transcript recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
         let Ok(dto) = serde_json::from_str::<ClaudeTranscriptLineDto>(line) else {
             return;
         };
@@ -235,11 +239,10 @@ pub(super) fn recover_replies(
             return;
         }
         if let Some(event) = reply_event(&dto, session_id) {
-            if event
-                .nonce
-                .as_ref()
-                .is_some_and(|nonce| nonces.contains(nonce))
-            {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
                 recovered.push(event);
             }
         }
@@ -268,8 +271,12 @@ pub(super) fn recover_reviews(
         )
     })?;
     let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
 
     for_each_bounded_line(BufReader::new(file), "Claude review recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
         let Ok(dto) = serde_json::from_str::<ClaudeTranscriptLineDto>(line) else {
             return;
         };
@@ -277,11 +284,10 @@ pub(super) fn recover_reviews(
             return;
         }
         if let Some(event) = review_event(&dto, session_id) {
-            if event
-                .nonce
-                .as_ref()
-                .is_some_and(|nonce| nonces.contains(nonce))
-            {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
                 recovered.push(event);
             }
         }
@@ -1218,7 +1224,10 @@ mod tests {
                 "stop_reason": "end_turn"
             }
         });
-        std::fs::write(&transcript_path, format!("{incomplete}\n{complete}\n"))
+        std::fs::write(
+            &transcript_path,
+            format!("{incomplete}\n{complete}\n{complete}\n"),
+        )
             .expect("write transcript");
 
         let recovered = recover_replies(
@@ -1251,7 +1260,10 @@ mod tests {
                 "stop_reason": "end_turn"
             }
         });
-        std::fs::write(&transcript_path, format!("{incomplete}\n{complete}\n"))
+        std::fs::write(
+            &transcript_path,
+            format!("{incomplete}\n{complete}\n{complete}\n"),
+        )
             .expect("write transcript");
 
         let recovered = recover_reviews(

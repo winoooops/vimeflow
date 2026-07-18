@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-09
-ref_count: 2
+last_updated: 2026-07-18
+ref_count: 3
 ---
 
 # IPC Resource Bounds
@@ -154,4 +154,20 @@ not become repeated unhandled main-process failures.
 - **File:** `src/features/diff/hooks/useAgentReview.ts`
 - **Finding:** A single valid `agent-review` event could contain an unbounded findings array, and every delegated reviewer finding was rendered as a diff annotation without a reviewer-specific ceiling. A malfunctioning or prompt-injected reviewer could flood the diff UI with thousands of rows.
 - **Fix:** Added a per-event reviewer finding cap and collapse overflow into one review-level note that reports how many findings were omitted. Regression coverage asserts only the capped number of annotations is rendered and the overflow note is retained.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Transcript recovery must cap matches per requested nonce
+
+- **Source:** github-codex-connector | PR #702 round 1 | 2026-07-18
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** The transcript recovery scanners returned every completed reply
+  or review event whose nonce was in the requested set. If a transcript repeated
+  a matching completion for the same nonce, one pending frontend correlation
+  could still serialize many recovered events into the IPC response.
+- **Fix:** Track remaining requested nonces during recovery and remove a nonce
+  after its first recovered event, bounding each recovery response to at most
+  one event per requested nonce. Applied the same guard to Codex and Claude Code
+  reply/review recovery and extended regression tests with duplicate completed
+  rows.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

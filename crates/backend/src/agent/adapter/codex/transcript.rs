@@ -454,8 +454,12 @@ pub(super) fn recover_replies(
         )
     })?;
     let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
 
     for_each_bounded_line(BufReader::new(file), "Codex transcript recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
         let Ok(dto) = serde_json::from_str::<CodexLineDto>(line) else {
             return;
         };
@@ -467,11 +471,10 @@ pub(super) fn recover_replies(
             return;
         }
         if let Some(event) = reply_event(&payload, session_id) {
-            if event
-                .nonce
-                .as_ref()
-                .is_some_and(|nonce| nonces.contains(nonce))
-            {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
                 recovered.push(event);
             }
         }
@@ -500,8 +503,12 @@ pub(super) fn recover_reviews(
         )
     })?;
     let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
 
     for_each_bounded_line(BufReader::new(file), "Codex review recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
         let Ok(dto) = serde_json::from_str::<CodexLineDto>(line) else {
             return;
         };
@@ -513,11 +520,10 @@ pub(super) fn recover_reviews(
             return;
         }
         if let Some(event) = review_event(&payload, session_id) {
-            if event
-                .nonce
-                .as_ref()
-                .is_some_and(|nonce| nonces.contains(nonce))
-            {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
                 recovered.push(event);
             }
         }
@@ -1466,7 +1472,12 @@ mod tests {
         };
         std::fs::write(
             &transcript_path,
-            format!("{}\n{}\n", reply("wanted", "yes"), reply("other", "no")),
+            format!(
+                "{}\n{}\n{}\n",
+                reply("wanted", "yes"),
+                reply("wanted", "again"),
+                reply("other", "no")
+            ),
         )
         .expect("write transcript");
 
@@ -1497,7 +1508,8 @@ mod tests {
                 "last_agent_message": "done\n<<<VIMEFLOW_REVIEW\n{\"v\":1,\"nonce\":\"wanted\",\"reviewer\":\"Codex\",\"findings\":[{\"scope\":\"line\",\"path\":\"a.ts\",\"side\":\"additions\",\"line\":5,\"category\":\"bug\",\"text\":\"found\"}]}\nVIMEFLOW_REVIEW>>>"
             }
         });
-        std::fs::write(&transcript_path, format!("{review}\n")).expect("write transcript");
+        std::fs::write(&transcript_path, format!("{review}\n{review}\n"))
+            .expect("write transcript");
 
         let recovered = recover_reviews(
             &transcript_path,
