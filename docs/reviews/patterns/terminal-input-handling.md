@@ -3,7 +3,7 @@ id: terminal-input-handling
 category: terminal
 created: 2026-04-09
 last_updated: 2026-07-08
-ref_count: 5
+ref_count: 6
 ---
 
 # Terminal Input Handling

@@ -929,10 +929,9 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('vsplit active p0 plain Ctrl+Right (no Shift) passes through to terminal', () => {
+  test('vsplit active p0 plain Ctrl+Right passes through to terminal', () => {
     // Ctrl+Arrow is common terminal input (readline word movement, vim/tmux
-    // bindings). The directional pane shortcut requires Shift on Ctrl
-    // platforms so terminal programs keep the bare chord.
+    // bindings), so the pane shortcut keeps Shift in the default chord.
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
@@ -952,9 +951,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
   })
 
   test('Mac vsplit active p0 plain Cmd+Right (no Shift) passes through', () => {
-    // The Shift requirement applies on macOS too so the advertised chord
-    // matches the design doc: ⌘+Shift+Arrow focuses panes; bare ⌘+Arrow is
-    // left for editor line/document navigation.
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],

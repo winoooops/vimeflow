@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-15
-ref_count: 14
+last_updated: 2026-07-18
+ref_count: 16
 ---
 
 # Keyboard Shortcut Guards
@@ -520,3 +520,44 @@ against three classes of false-fire:
   that reply-mode Ctrl+H/Ctrl+L return `false` from `fireEvent.keyDown`.
   Heuristic: when a shortcut is a semantic no-op in one mode, preserve the
   event-consumption contract separately from the state mutation.
+
+### 40. Directional pane defaults stole terminal word navigation
+
+- **Source:** github-claude | PR #703 round 1 | 2026-07-18
+- **Severity:** HIGH
+- **File:** `src/features/keymap/catalog.ts`
+- **Finding:** Directional pane-focus defaults moved from `Mod+Shift+Arrow`
+  to literal `Ctrl+Arrow` while keeping tolerant matching. Bare Ctrl+Arrow is
+  common terminal input for readline word movement and terminal programs, so
+  the pane shortcut could consume expected terminal keystrokes.
+- **Fix:** Restored the pane directional defaults to `Mod+Shift+Arrow` and
+  updated regression coverage to assert bare `Ctrl+Arrow` passes through while
+  `Ctrl+Shift+Arrow` remains the claimed pane-navigation chord.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. Cross-platform pane defaults used macOS-reserved Ctrl+Arrow chords
+
+- **Source:** github-codex-connector | PR #703 round 1 | 2026-07-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/keymap/catalog.ts`
+- **Finding:** The vertical directional pane defaults were unconditional
+  `Ctrl+ArrowUp` and `Ctrl+ArrowDown`, which collide with default macOS Mission
+  Control and app-window overview shortcuts. Electron may never receive those
+  keydown events, leaving vertical pane navigation broken on stock macOS.
+- **Fix:** Restored the cross-platform `Mod+Shift+Arrow` defaults for all four
+  directional pane commands so the default chord avoids Mission Control while
+  remaining rebindable for users who prefer literal Control.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 42. Dormant e2e shortcut coverage documented reverted pane chords
+
+- **Source:** github-claude | PR #703 round 2 | 2026-07-18
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** A skipped e2e pane-focus smoke test still described and
+  simulated bare `Ctrl+Arrow` after the runtime default had been restored to
+  `Mod+Shift+Arrow`. Because the test is dormant, CI did not fail, but future
+  re-enabling or copy-paste would preserve false shortcut behavior.
+- **Fix:** Restored the skipped e2e block to `Cmd+Shift+Arrow` copy and
+  `shiftKey: true` with `...modInit()` for both directional key events.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
