@@ -3715,7 +3715,10 @@ describe('Panel', () => {
 
     test('submitting a file-level comment stores an explicit file-scope annotation', async (): Promise<void> => {
       const user = userEvent.setup()
-      const addAnnotation = vi.fn(() => 'ok' as const)
+
+      const addAnnotation = vi.fn<UseFeedbackBatchReturn['addAnnotation']>(
+        () => 'ok'
+      )
 
       const feedbackBatch: UseFeedbackBatchReturn = {
         batch: new Map(),
@@ -5961,7 +5964,17 @@ describe('Panel', () => {
 
     test('Finish with one running candidate dispatches via writePty and keeps the sent comment in the hunk', async (): Promise<void> => {
       const user = userEvent.setup()
-      const writePty = vi.fn().mockResolvedValue(undefined)
+      let pendingWasRegisteredBeforeWrite = false
+
+      const writePty = vi
+        .fn<(ptyId: string, data: string) => Promise<void>>()
+        .mockImplementation((ptyId, payload) => {
+          const nonce = /"nonce":"(\w+)"/.exec(payload)?.[1] ?? ''
+          pendingWasRegisteredBeforeWrite =
+            getPendingReview(ptyId, nonce) !== undefined
+
+          return Promise.resolve()
+        })
       const focusTerminal = vi.fn()
 
       const candidate: PaneCandidate = {
@@ -6022,14 +6035,15 @@ describe('Panel', () => {
       await user.keyboard('{Shift>}y{/Shift}')
 
       await waitFor(() => expect(writePty).toHaveBeenCalledTimes(1))
+      expect(pendingWasRegisteredBeforeWrite).toBe(true)
       await waitFor(() => expect(focusTerminal).toHaveBeenCalledOnce())
 
       const [, payload] = writePty.mock.calls[0]
       expect(typeof payload).toBe('string')
-      expect(payload as string).toContain('\x1b[200~')
+      expect(payload).toContain('\x1b[200~')
       // P1 fix: the dispatched reference is an ABSOLUTE path (repoRoot joined
       // with the repo-relative file path), so an agent in any cwd resolves it.
-      expect(payload as string).toContain('/repo/')
+      expect(payload).toContain('/repo/')
 
       await waitFor(() =>
         expect(
@@ -6047,7 +6061,7 @@ describe('Panel', () => {
       // The record is keyed by the minted nonce (VIM-297) — read it from the
       // dispatched payload, proving the stored record matches what the agent
       // will echo back.
-      const nonce = /"nonce":"(\w+)"/.exec(payload as string)?.[1] ?? ''
+      const nonce = /"nonce":"(\w+)"/.exec(payload)?.[1] ?? ''
       const pending = getPendingReview('pty-1', nonce)
       expect(pending?.ownerKey).toBe('sess:pane-1')
       expect(pending?.byHandle.get(1)?.filePath).toBe('src/foo.ts')
@@ -6210,7 +6224,7 @@ describe('Panel', () => {
       spy.mockRestore()
     })
 
-    test('thread reply dispatches alone, inserts post-write pre-stamped, and reopens (VIM-298)', async (): Promise<void> => {
+    test('thread reply inserts pre-stamped before dispatch and reopens (VIM-298)', async (): Promise<void> => {
       const user = userEvent.setup()
       const writePty = vi.fn().mockResolvedValue(undefined)
       const focusTerminal = vi.fn()
@@ -6349,8 +6363,12 @@ describe('Panel', () => {
       // Context line from the agent turn.
       expect(payload as string).toContain('Continuing our thread')
 
-      // Post-write addAnnotation is called with pre-stamped metadata.
+      // The local turn exists before PTY publication, so a fast agent reply
+      // cannot render ahead of the question it answers.
       expect(addAnnotation).toHaveBeenCalledOnce()
+      expect(addAnnotation.mock.invocationCallOrder[0]).toBeLessThan(
+        writePty.mock.invocationCallOrder[0]
+      )
 
       const addedAnnotation = addAnnotation.mock.calls[0][3]
       expect(addedAnnotation.metadata.dispatchedAt).toBeDefined()
@@ -6455,7 +6473,18 @@ describe('Panel', () => {
 
     test('thread reply: write failure leaves no inserted comment and keeps the editor open (VIM-298)', async (): Promise<void> => {
       const user = userEvent.setup()
-      const writePty = vi.fn().mockRejectedValue(new Error('pty closed'))
+      let nonceAtWrite = ''
+      let pendingWasRegisteredBeforeWrite = false
+
+      const writePty = vi
+        .fn<(ptyId: string, data: string) => Promise<void>>()
+        .mockImplementation((ptyId, payload) => {
+          nonceAtWrite = /"nonce":"(\w+)"/.exec(payload)?.[1] ?? ''
+          pendingWasRegisteredBeforeWrite =
+            getPendingReview(ptyId, nonceAtWrite) !== undefined
+
+          return Promise.reject(new Error('pty closed'))
+        })
 
       const candidate: PaneCandidate = {
         paneId: 'pane-1',
@@ -6467,7 +6496,10 @@ describe('Panel', () => {
         isFocused: true,
       }
 
-      const addAnnotation = vi.fn(() => 'ok' as const)
+      const addAnnotation = vi.fn<UseFeedbackBatchReturn['addAnnotation']>(
+        () => 'ok'
+      )
+      const removeAnnotation = vi.fn()
 
       const batchAnnotations: DiffLineAnnotation<ReviewComment>[] = [
         {
@@ -6505,7 +6537,7 @@ describe('Panel', () => {
         addAnnotation,
         addAnnotationForOwner: vi.fn(() => 'ok' as const),
         updateAnnotation: vi.fn(),
-        removeAnnotation: vi.fn(),
+        removeAnnotation,
         clearBatch: vi.fn(),
         clearPending: vi.fn(),
         markDispatched: vi.fn(),
@@ -6544,9 +6576,17 @@ describe('Panel', () => {
       await screen.findByRole('dialog', { name: 'Finish feedback' })
       await user.keyboard('{Shift>}y{/Shift}')
 
-      // Write rejected — no comment inserted.
+      // Write rejected — the optimistic local turn is rolled back.
       await waitFor(() => expect(writePty).toHaveBeenCalledOnce())
-      expect(addAnnotation).not.toHaveBeenCalled()
+      expect(pendingWasRegisteredBeforeWrite).toBe(true)
+      expect(getPendingReview('pty-1', nonceAtWrite)).toBeUndefined()
+      expect(addAnnotation).toHaveBeenCalledOnce()
+      expect(removeAnnotation).toHaveBeenCalledWith(
+        '/repo',
+        'src/foo.ts',
+        false,
+        addAnnotation.mock.calls[0][3].metadata.id
+      )
 
       // Notification is shown.
       expect(

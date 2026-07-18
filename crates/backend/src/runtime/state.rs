@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "e2e-test")]
@@ -269,12 +270,19 @@ impl BackendState {
     }
 
     pub fn kill_pty(&self, request: crate::terminal::types::KillPtyRequest) -> Result<(), String> {
-        crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)
+        let session_id = request.session_id.clone();
+        crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)?;
+        self.transcripts.forget_recovery_source(&session_id);
+        Ok(())
     }
 
     /// Reap all ephemeral (burner) PTYs. Returns the ids killed.
     pub fn kill_ephemeral_ptys(&self) -> Vec<String> {
-        crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty)
+        let killed = crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty);
+        for session_id in &killed {
+            self.transcripts.forget_recovery_source(session_id);
+        }
+        killed
     }
 
     pub fn list_sessions(&self) -> Result<crate::terminal::types::SessionList, String> {
@@ -478,6 +486,28 @@ impl BackendState {
             session_id,
         )
         .await
+    }
+
+    pub async fn recover_agent_replies(
+        &self,
+        session_id: String,
+        nonces: HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
+        let transcripts = self.transcripts.clone();
+        tokio::task::spawn_blocking(move || transcripts.recover_replies(&session_id, &nonces))
+            .await
+            .map_err(|e| format!("agent reply recovery task panicked: {e}"))?
+    }
+
+    pub async fn recover_agent_reviews(
+        &self,
+        session_id: String,
+        nonces: HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReviewEvent>, String> {
+        let transcripts = self.transcripts.clone();
+        tokio::task::spawn_blocking(move || transcripts.recover_reviews(&session_id, &nonces))
+            .await
+            .map_err(|e| format!("agent review recovery task panicked: {e}"))?
     }
 
     #[cfg(feature = "e2e-test")]

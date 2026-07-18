@@ -328,6 +328,80 @@ impl TranscriptTailService {
     }
 }
 
+/// Read a finite JSONL source with the same allocation bound as the live tail.
+/// Incomplete trailing lines and over-cap lines are ignored; scanning resumes
+/// after the next newline so a corrupt record cannot hide later valid events.
+pub(crate) fn for_each_bounded_line<R, F>(
+    mut reader: R,
+    provider_label: &str,
+    mut visit: F,
+) -> std::io::Result<()>
+where
+    R: Read,
+    F: FnMut(&str),
+{
+    let mut chunk = [0u8; READ_CHUNK_BYTES];
+    let mut partial = Vec::new();
+    let mut skip_until_newline = false;
+
+    loop {
+        let count = reader.read(&mut chunk)?;
+        if count == 0 {
+            return Ok(());
+        }
+
+        let mut input = &chunk[..count];
+        while !input.is_empty() {
+            match input.iter().position(|&byte| byte == b'\n') {
+                Some(position) => {
+                    let (head, rest) = input.split_at(position + 1);
+                    if skip_until_newline {
+                        skip_until_newline = false;
+                    } else if partial.len().saturating_add(head.len()) > MAX_PARTIAL_BYTES {
+                        log::warn!(
+                            "{}: recovery line exceeds {} bytes, skipping",
+                            provider_label,
+                            MAX_PARTIAL_BYTES,
+                        );
+                        partial.clear();
+                    } else {
+                        partial.extend_from_slice(head);
+                        match std::str::from_utf8(&partial) {
+                            Ok(line) => {
+                                let trimmed = line.trim_end_matches(['\r', '\n']);
+                                if !trimmed.trim().is_empty() {
+                                    visit(trimmed);
+                                }
+                            }
+                            Err(_) => {
+                                log::warn!("{}: non-UTF-8 recovery line, skipping", provider_label);
+                            }
+                        }
+                        partial.clear();
+                    }
+                    input = rest;
+                }
+                None => {
+                    if skip_until_newline {
+                        // Keep dropping the current over-cap line.
+                    } else if partial.len().saturating_add(input.len()) > MAX_PARTIAL_BYTES {
+                        log::warn!(
+                            "{}: recovery line exceeds {} bytes, skipping",
+                            provider_label,
+                            MAX_PARTIAL_BYTES,
+                        );
+                        partial.clear();
+                        skip_until_newline = true;
+                    } else {
+                        partial.extend_from_slice(input);
+                    }
+                    input = &[];
+                }
+            }
+        }
+    }
+}
+
 // --- Test support (module-level, `pub(crate)` so the per-provider decoder
 // tests in Tasks 2.3/2.4 can drive the same scripted reader). ---
 
@@ -469,6 +543,20 @@ impl TranscriptDecoder for RecordingDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_scan_discards_an_over_cap_line_and_resumes() {
+        let mut input = vec![b'x'; MAX_PARTIAL_BYTES + 1];
+        input.extend_from_slice(b"\n{\"ok\":true}\n");
+        let mut lines = Vec::new();
+
+        for_each_bounded_line(std::io::Cursor::new(input), "test recovery", |line| {
+            lines.push(line.to_string());
+        })
+        .expect("scan lines");
+
+        assert_eq!(lines, ["{\"ok\":true}"]);
+    }
 
     /// Drive the service over a scripted read sequence and return what the
     /// recording decoder saw: the decoded lines + the `on_caught_up` count.

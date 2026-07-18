@@ -26,7 +26,8 @@
 //! adapter struct implements both `AgentAdapter` and the split traits
 //! side by side.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::base::TranscriptHandle;
@@ -124,4 +125,26 @@ pub(crate) trait TranscriptStreamer: Send + Sync {
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String>;
+
+    /// Read completed replies for the requested correlation nonces without
+    /// starting or replacing the live transcript tailer.
+    fn recover_replies(
+        &self,
+        _session_id: &str,
+        _transcript_path: &Path,
+        _nonces: &HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
+        Ok(Vec::new())
+    }
+
+    /// Read completed delegated reviews for the requested correlation nonces
+    /// without starting or replacing the live transcript tailer.
+    fn recover_reviews(
+        &self,
+        _session_id: &str,
+        _transcript_path: &Path,
+        _nonces: &HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReviewEvent>, String> {
+        Ok(Vec::new())
+    }
 }

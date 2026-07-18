@@ -49,6 +49,7 @@ import {
   type DispatchEntry,
 } from './services/feedbackDispatch'
 import {
+  clearPendingReview,
   setPendingReview,
   type PendingReviewHandle,
 } from './services/pendingReviews'
@@ -894,17 +895,11 @@ export const Panel = ({
             return
           }
           if (feedbackDispatch) {
-            await dispatchFeedbackBatch(
-              pane.paneId,
-              pane.ptyId,
-              entries,
-              nonce,
-              feedbackDispatch.writePty
-            )
             // Record the pending review so an agent-reply for this pty can be
             // correlated back to these comments (VIM-249). Keyed by (pty,
             // nonce) so concurrent dispatches coexist (VIM-297). Only when
-            // there's an owner to attach onto.
+            // there's an owner to attach onto. Registration precedes the PTY
+            // write so an immediate agent-reply cannot outrun correlation.
             if (feedbackOwnerKey !== undefined && handles.size > 0) {
               setPendingReview({
                 ptyId: pane.ptyId,
@@ -914,6 +909,13 @@ export const Panel = ({
                 byHandle: handles,
               })
             }
+            await dispatchFeedbackBatch(
+              pane.paneId,
+              pane.ptyId,
+              entries,
+              nonce,
+              feedbackDispatch.writePty
+            )
           }
           // Keep the sent comments in the hunk as thread anchors instead of
           // wiping them (VIM-282); they are stamped dispatched so they are not
@@ -937,6 +939,7 @@ export const Panel = ({
             setTimeout(focusTerminal, 0)
           }
         } catch {
+          clearPendingReview(pane.ptyId, nonce)
           notifyInfo('Terminal session ended; feedback not sent.')
         } finally {
           sendingFeedbackRef.current = false
@@ -952,10 +955,9 @@ export const Panel = ({
     ]
   )
 
-  // VIM-298: dispatch a thread follow-up. The comment is never stored pending —
-  // it is built ephemerally for the payload and inserted post-write already
-  // stamped (dispatchedAt/dispatchedTo/threadId), so whole-batch Finish can
-  // never sweep it and a write failure leaves no local record.
+  // VIM-298: dispatch a thread follow-up. Insert the stamped self turn before
+  // publishing its nonce so a fast agent reply can never appear ahead of the
+  // question. A PTY write failure rolls both correlation and the turn back.
   const handleSendThreadReply = useCallback(
     (pane: PaneCandidate): void => {
       if (sendingFeedbackRef.current || replyDispatchThreadId === null) {
@@ -974,23 +976,24 @@ export const Panel = ({
       }
       sendingFeedbackRef.current = true
       void (async (): Promise<void> => {
+        const nonce = makeDispatchNonce()
+        // `group.turns` is guaranteed non-empty by buildThreadGroups (the
+        // constructor always pushes the first annotation before creating a group).
+        const [anchor] = group.turns
+        const previous = group.turns[group.turns.length - 1]
+
+        const comment: ReviewComment = {
+          id: nextFeedbackCommentId(),
+          text: draftText,
+          author: 'self',
+          createdAt: Date.now(),
+          threadId: group.threadId,
+          ...(anchor.metadata.target === undefined
+            ? {}
+            : { target: anchor.metadata.target }),
+        }
+
         try {
-          // `group.turns` is guaranteed non-empty by buildThreadGroups (the
-          // constructor always pushes the first annotation before creating a group).
-          const [anchor] = group.turns
-          const previous = group.turns[group.turns.length - 1]
-
-          const comment: ReviewComment = {
-            id: nextFeedbackCommentId(),
-            text: draftText,
-            author: 'self',
-            createdAt: Date.now(),
-            threadId: group.threadId,
-            ...(anchor.metadata.target === undefined
-              ? {}
-              : { target: anchor.metadata.target }),
-          }
-
           // Same repo-root resolution as buildFeedbackEntries: absolute prompt
           // path for the agent, repo-relative coordinates for the handle.
           const entryRepoRoot = repoRootRef.repoRootForCwd?.(group.cwd)
@@ -1004,27 +1007,26 @@ export const Panel = ({
             ? `${resolvedRepoRoot}/${group.filePath}`
             : group.filePath
 
-          const nonce = makeDispatchNonce()
-          await dispatchFeedbackBatch(
-            pane.paneId,
-            pane.ptyId,
-            [
-              {
-                filePath: promptPath,
-                staged: group.staged,
-                annotations: [
-                  {
-                    side: anchor.side,
-                    lineNumber: anchor.lineNumber,
-                    metadata: comment,
-                  },
-                ],
+          const insertResult = feedback.addAnnotation(
+            group.cwd,
+            group.filePath,
+            group.staged,
+            {
+              side: anchor.side,
+              lineNumber: anchor.lineNumber,
+              metadata: {
+                ...comment,
+                dispatchedAt: Date.now(),
+                dispatchedTo: pane.ptyId,
               },
-            ],
-            nonce,
-            feedbackDispatch.writePty,
-            followUpContextLine(previous.metadata)
+            }
           )
+          if (insertResult === 'cap-reached') {
+            setReplyDispatchThreadId(null)
+            notifyInfo('Feedback limit reached; reply not sent.')
+
+            return
+          }
 
           if (feedbackOwnerKey !== undefined) {
             setPendingReview({
@@ -1049,16 +1051,26 @@ export const Panel = ({
             })
           }
 
-          // Post-write insert, pre-stamped: never observable as pending.
-          feedback.addAnnotation(group.cwd, group.filePath, group.staged, {
-            side: anchor.side,
-            lineNumber: anchor.lineNumber,
-            metadata: {
-              ...comment,
-              dispatchedAt: Date.now(),
-              dispatchedTo: pane.ptyId,
-            },
-          })
+          await dispatchFeedbackBatch(
+            pane.paneId,
+            pane.ptyId,
+            [
+              {
+                filePath: promptPath,
+                staged: group.staged,
+                annotations: [
+                  {
+                    side: anchor.side,
+                    lineNumber: anchor.lineNumber,
+                    metadata: comment,
+                  },
+                ],
+              },
+            ],
+            nonce,
+            feedbackDispatch.writePty,
+            followUpContextLine(previous.metadata)
+          )
 
           // Reply implies reopen — only after a successful dispatch.
           if (group.resolved) {
@@ -1088,7 +1100,14 @@ export const Panel = ({
             setTimeout(focusTerminal, 0)
           }
         } catch {
-          // Write failed: keep the editor open with its text; nothing was inserted.
+          // Write failed: keep the editor open and remove the optimistic turn.
+          clearPendingReview(pane.ptyId, nonce)
+          feedback.removeAnnotation(
+            group.cwd,
+            group.filePath,
+            group.staged,
+            comment.id
+          )
           setReplyDispatchThreadId(null)
           notifyInfo('Terminal session ended; reply not sent.')
         } finally {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import {
   clearPendingReview,
   getPendingReview,
+  pendingNoncesForPty,
   prunePendingReviewOwners,
   setPendingReview,
   type PendingReview,
@@ -31,6 +32,7 @@ afterEach(() => {
   clearPendingReview('pty-1', 'abc')
   clearPendingReview('pty-1', 'xyz')
   clearPendingReview('pty-1', 'stale')
+  clearPendingReview('pty-2', 'stale')
 })
 
 describe('pendingReviews', () => {
@@ -66,6 +68,15 @@ describe('pendingReviews', () => {
 
   test('get for an unknown (ptyId, nonce) is undefined', () => {
     expect(getPendingReview('nope', 'abc')).toBeUndefined()
+  })
+
+  test('lists only pending nonces for the requested pty', () => {
+    setPendingReview(record('abc'))
+    setPendingReview(record('xyz'))
+    setPendingReview({ ...record('stale'), ptyId: 'pty-2' })
+
+    expect(pendingNoncesForPty('pty-1')).toEqual(['abc', 'xyz'])
+    expect(pendingNoncesForPty('pty-2')).toEqual(['stale'])
   })
 
   test('prunePendingReviewOwners removes records for closed owners', () => {

@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import type { DiffLineAnnotation } from '@pierre/diffs'
-import { listen } from '@/lib/backend'
+import { invoke, listen } from '@/lib/backend'
 import type { BackendApi } from '@/lib/backend'
-import type { AgentReviewEvent, AgentReviewFinding } from '@/bindings'
+import type {
+  AgentReplaySummaryEvent,
+  AgentReviewEvent,
+  AgentReviewFinding,
+} from '@/bindings'
 import { REVIEWER_FINDING_SOFT_CAP, useAgentReview } from './useAgentReview'
 import type { ReviewComment } from './useFeedbackBatch'
 import {
@@ -42,11 +46,20 @@ const listenImpl = (name: string, cb: Cb): Promise<() => void> => {
   })
 }
 
-vi.mock('@/lib/backend', () => ({ listen: vi.fn() }))
+vi.mock('@/lib/backend', () => ({ invoke: vi.fn(), listen: vi.fn() }))
 
 const emit = async (event: AgentReviewEvent): Promise<void> => {
   await Promise.resolve()
   for (const cb of listeners.get('agent-review') ?? []) {
+    cb(event)
+  }
+}
+
+const emitReplayBoundary = async (
+  event: AgentReplaySummaryEvent
+): Promise<void> => {
+  await Promise.resolve()
+  for (const cb of listeners.get('agent-replay-summary') ?? []) {
     cb(event)
   }
 }
@@ -93,11 +106,13 @@ const event = (o: Partial<AgentReviewEvent> = {}): AgentReviewEvent => ({
 let addAnnotationForOwner: Mock<AddForOwner>
 let ids = 0
 
-const mount = (): void => {
+const mount = (activePtyId: string | null = null): void => {
   renderHook(() =>
     useAgentReview({
+      activePtyId,
       addAnnotationForOwner,
       nextCommentId: () => `rev-${(ids += 1)}`,
+      notifyInfo: vi.fn(),
     })
   )
 }
@@ -110,6 +125,8 @@ beforeEach(() => {
     listen: vi.fn(),
   } as unknown as BackendApi
   addAnnotationForOwner = vi.fn<AddForOwner>(() => 'ok')
+  vi.mocked(invoke).mockReset()
+  vi.mocked(invoke).mockResolvedValue([])
   vi.mocked(listen).mockClear()
   vi.mocked(listen).mockImplementation(listenImpl as unknown as typeof listen)
 })
@@ -122,6 +139,69 @@ afterEach(() => {
 })
 
 describe('useAgentReview', () => {
+  test('recovers a completed review when returning to its pty', async () => {
+    setPendingReviewRequest(request({ ptyId: 'pty-1' }))
+    vi.mocked(invoke).mockResolvedValueOnce([
+      event({ findings: [finding({ text: 'Recovered finding.' })] }),
+    ])
+
+    const { rerender } = renderHook(
+      ({ activePtyId }: { activePtyId: string }) =>
+        useAgentReview({
+          activePtyId,
+          addAnnotationForOwner,
+          nextCommentId: () => `rev-${(ids += 1)}`,
+          notifyInfo: vi.fn(),
+        }),
+      { initialProps: { activePtyId: 'pty-2' } }
+    )
+
+    await Promise.resolve()
+    expect(invoke).not.toHaveBeenCalled()
+
+    rerender({ activePtyId: 'pty-1' })
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('recover_agent_reviews', {
+        sessionId: 'pty-1',
+        nonces: ['abc'],
+      })
+    )
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Recovered finding.'
+    )
+
+    await emit(event({ findings: [finding({ text: 'Recovered finding.' })] }))
+    expect(addAnnotationForOwner).toHaveBeenCalledOnce()
+  })
+
+  test('scans again after the watcher reaches the replay boundary', async () => {
+    setPendingReviewRequest(request({ ptyId: 'pty-1' }))
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        event({ findings: [finding({ text: 'Recovered at catch-up.' })] }),
+      ])
+    mount('pty-1')
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+    await emitReplayBoundary({
+      sessionId: 'pty-1',
+      numTurns: 1,
+      cwd: null,
+      toolCallTotal: 0,
+      toolCallByType: {},
+      recentToolCalls: [],
+    })
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Recovered at catch-up.'
+    )
+  })
+
   test('ignores an event with no pending request for the nonce', async () => {
     mount()
     await emit(event({ nonce: 'nope', findings: [finding()] }))

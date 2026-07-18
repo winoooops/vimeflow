@@ -1,6 +1,6 @@
 //! Transcript tailer registry used by the watcher runtime.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -247,6 +247,12 @@ struct TranscriptWatcher {
     handle: TranscriptHandle,
 }
 
+#[derive(Clone)]
+struct TranscriptRecoverySource {
+    transcript_path: PathBuf,
+    streamer: Arc<dyn TranscriptStreamer>,
+}
+
 /// Runtime-managed registry of in-flight transcript tailers, one per
 /// session. Constructed once as part of `BackendState` and passed to the
 /// watcher runtime and `TranscriptStreamer::tail` impls. `pub` supports
@@ -257,6 +263,10 @@ struct TranscriptWatcher {
 #[derive(Default, Clone)]
 pub struct TranscriptState {
     watchers: Arc<Mutex<HashMap<String, TranscriptWatcher>>>,
+    /// Last successfully tailed, already-validated source for each PTY. Kept
+    /// when a watcher stops so pane reactivation can perform a read-only,
+    /// nonce-scoped recovery scan without restarting the tailer.
+    recovery_sources: Arc<Mutex<HashMap<String, TranscriptRecoverySource>>>,
     /// Per-session "start gate" — held across `tail` so the
     /// notify callback and the 3s poll thread can't both pass the
     /// AlreadyRunning check, both spawn, and both emit duplicate
@@ -271,6 +281,7 @@ impl TranscriptState {
     pub fn new() -> Self {
         Self {
             watchers: Arc::new(Mutex::new(HashMap::new())),
+            recovery_sources: Arc::new(Mutex::new(HashMap::new())),
             start_gates: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -442,14 +453,24 @@ impl TranscriptState {
         {
             let mut watchers = self.watchers.lock().expect("failed to lock watchers");
             watchers.insert(
-                session_id,
+                session_id.clone(),
                 TranscriptWatcher {
-                    transcript_path,
+                    transcript_path: transcript_path.clone(),
                     cwd,
                     handle: new_handle,
                 },
             );
         }
+        self.recovery_sources
+            .lock()
+            .expect("failed to lock recovery_sources")
+            .insert(
+                session_id,
+                TranscriptRecoverySource {
+                    transcript_path,
+                    streamer,
+                },
+            );
 
         // Started / Replaced are both successful claims — the new
         // handle has established the entry. Mark the flag under the
@@ -468,6 +489,51 @@ impl TranscriptState {
     pub fn contains(&self, session_id: &str) -> bool {
         let watchers = self.watchers.lock().expect("failed to lock watchers");
         watchers.contains_key(session_id)
+    }
+
+    pub(crate) fn recover_replies(
+        &self,
+        session_id: &str,
+        nonces: &HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
+        self.recover(session_id, |streamer, path| {
+            streamer.recover_replies(session_id, path, nonces)
+        })
+    }
+
+    pub(crate) fn recover_reviews(
+        &self,
+        session_id: &str,
+        nonces: &HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReviewEvent>, String> {
+        self.recover(session_id, |streamer, path| {
+            streamer.recover_reviews(session_id, path, nonces)
+        })
+    }
+
+    fn recover<T>(
+        &self,
+        session_id: &str,
+        scan: impl Fn(&dyn TranscriptStreamer, &std::path::Path) -> Result<Vec<T>, String>,
+    ) -> Result<Vec<T>, String> {
+        let source = self
+            .recovery_sources
+            .lock()
+            .expect("failed to lock recovery_sources")
+            .get(session_id)
+            .cloned();
+        let Some(source) = source else {
+            return Ok(Vec::new());
+        };
+
+        scan(source.streamer.as_ref(), &source.transcript_path)
+    }
+
+    pub(crate) fn forget_recovery_source(&self, session_id: &str) {
+        self.recovery_sources
+            .lock()
+            .expect("failed to lock recovery_sources")
+            .remove(session_id);
     }
 
     /// Internal: return the per-session start gate's
@@ -676,6 +742,82 @@ mod tests {
     fn transcript_state_contains_empty() {
         let state = TranscriptState::new();
         assert!(!state.contains("any-session"));
+    }
+
+    #[test]
+    fn recovery_source_survives_stop_without_restarting_the_tailer() {
+        struct RecoveringStreamer {
+            tail_calls: Arc<AtomicUsize>,
+            recover_calls: Arc<AtomicUsize>,
+        }
+
+        impl TranscriptStreamer for RecoveringStreamer {
+            fn tail(
+                &self,
+                _events: Arc<dyn EventSink>,
+                _session_id: String,
+                _cwd: Option<PathBuf>,
+                _transcript_path: PathBuf,
+            ) -> Result<TranscriptHandle, String> {
+                self.tail_calls.fetch_add(1, Ordering::Relaxed);
+                let stop = Arc::new(AtomicBool::new(false));
+                Ok(TranscriptHandle::new(stop, std::thread::spawn(|| {})))
+            }
+
+            fn recover_replies(
+                &self,
+                _session_id: &str,
+                _transcript_path: &std::path::Path,
+                _nonces: &std::collections::HashSet<String>,
+            ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
+                self.recover_calls.fetch_add(1, Ordering::Relaxed);
+                Ok(Vec::new())
+            }
+        }
+
+        let tail_calls = Arc::new(AtomicUsize::new(0));
+        let recover_calls = Arc::new(AtomicUsize::new(0));
+        let streamer: Arc<dyn TranscriptStreamer> = Arc::new(RecoveringStreamer {
+            tail_calls: tail_calls.clone(),
+            recover_calls: recover_calls.clone(),
+        });
+        let sink = Arc::new(FakeEventSink::new());
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let transcript_path = tmp.path().join("transcript.jsonl");
+        std::fs::write(&transcript_path, "").expect("write transcript");
+        let state = TranscriptState::new();
+
+        state
+            .start_or_replace(
+                streamer,
+                sink,
+                "pty-1".to_string(),
+                transcript_path,
+                None,
+                None,
+                None,
+            )
+            .expect("start tailer");
+        state.stop("pty-1").expect("stop tailer");
+        state
+            .recover_replies(
+                "pty-1",
+                &std::collections::HashSet::from(["nonce-1".to_string()]),
+            )
+            .expect("recover replies");
+
+        assert_eq!(tail_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(recover_calls.load(Ordering::Relaxed), 1);
+        assert!(!state.contains("pty-1"));
+
+        state.forget_recovery_source("pty-1");
+        state
+            .recover_replies(
+                "pty-1",
+                &std::collections::HashSet::from(["nonce-1".to_string()]),
+            )
+            .expect("missing source returns empty");
+        assert_eq!(recover_calls.load(Ordering::Relaxed), 1);
     }
 
     /// PR #302 cycle 15 F1 — `SessionGate::lock` returns a

@@ -133,9 +133,9 @@ test('requestReview records the pending request and dispatches to the pane', asy
 
   const request = getPendingReviewRequest('nonce-1')
   expect(request?.ownerKey).toBe('owner')
+  expect(request?.ptyId).toBe('pty-9')
   expect(request?.diffSnapshot[0].path).toBe('src/a.ts')
 
-  // The pane is used for dispatch directly, not stored on the request.
   // dispatchReviewRequest receives requestFiles (ReviewRequestFile[]) built
   // from diffSnapshot — same shape when no promptPath enrichment.
   expect(dispatchReviewRequest).toHaveBeenCalledWith(
@@ -207,6 +207,7 @@ test('copyReviewRequest records a request and copies the prompt', async () => {
 
   const request = getPendingReviewRequest('nonce-1')
   expect(request?.ownerKey).toBe('owner')
+  expect(request?.ptyId).toBeUndefined()
   expect(formatReviewRequest).toHaveBeenCalledWith(
     [
       {
@@ -249,6 +250,7 @@ test('notifies when the pane dispatch throws', async () => {
   expect(notify).toHaveBeenCalledWith(
     'Terminal session ended; review request not sent.'
   )
+  expect(getPendingReviewRequest('nonce-1')).toBeUndefined()
 })
 
 // ─── Task 6: scope, async arm, keyed prefetch ──────────────────────────────

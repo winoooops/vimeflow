@@ -64,6 +64,23 @@ export const clearPendingReview = (ptyId: string, nonce: string): void => {
   store.delete(reviewKey(ptyId, nonce))
 }
 
+export const pendingNoncesForPty = (ptyId: string): string[] =>
+  [...store.values()]
+    .filter((review) => review.ptyId === ptyId)
+    .map((review) => review.nonce)
+
+const RECOVERY_NONCE_BATCH_SIZE = 50
+
+export const recoveryNonceBatches = (nonces: readonly string[]): string[][] =>
+  Array.from(
+    { length: Math.ceil(nonces.length / RECOVERY_NONCE_BATCH_SIZE) },
+    (_, index) =>
+      nonces.slice(
+        index * RECOVERY_NONCE_BATCH_SIZE,
+        (index + 1) * RECOVERY_NONCE_BATCH_SIZE
+      )
+  )
+
 export const prunePendingReviewOwners = (
   liveOwnerKeys: ReadonlySet<string>
 ): void => {

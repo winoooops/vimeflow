@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import type { DiffLineAnnotation } from '@pierre/diffs'
-import { listen } from '@/lib/backend'
+import { invoke, listen } from '@/lib/backend'
 import type { BackendApi } from '@/lib/backend'
-import type { AgentReplyEvent } from '@/bindings'
+import type { AgentReplyEvent, AgentReplaySummaryEvent } from '@/bindings'
 import { useAgentReply } from './useAgentReply'
 import type { ReviewComment } from './useFeedbackBatch'
 import {
@@ -48,12 +48,21 @@ const listenImpl = (name: string, cb: Cb): Promise<() => void> => {
   })
 }
 
-vi.mock('@/lib/backend', () => ({ listen: vi.fn() }))
+vi.mock('@/lib/backend', () => ({ invoke: vi.fn(), listen: vi.fn() }))
 
 const emit = async (event: AgentReplyEvent): Promise<void> => {
   // Let the async listen() promise resolve so the callback is registered.
   await Promise.resolve()
   for (const cb of listeners.get('agent-reply') ?? []) {
+    cb(event)
+  }
+}
+
+const emitReplayBoundary = async (
+  event: AgentReplaySummaryEvent
+): Promise<void> => {
+  await Promise.resolve()
+  for (const cb of listeners.get('agent-replay-summary') ?? []) {
     cb(event)
   }
 }
@@ -89,11 +98,13 @@ const event = (partial: Partial<AgentReplyEvent>): AgentReplyEvent => ({
 let addAnnotationForOwner: Mock<AddForOwner>
 let ids = 0
 
-const mount = (): void => {
+const mount = (activePtyId: string | null = null): void => {
   renderHook(() =>
     useAgentReply({
+      activePtyId,
       addAnnotationForOwner,
       nextCommentId: () => `agent-${(ids += 1)}`,
+      notifyInfo: vi.fn(),
     })
   )
 }
@@ -106,6 +117,8 @@ beforeEach(() => {
     listen: vi.fn(),
   } as unknown as BackendApi
   addAnnotationForOwner = vi.fn<AddForOwner>(() => 'ok')
+  vi.mocked(invoke).mockReset()
+  vi.mocked(invoke).mockResolvedValue([])
   vi.mocked(listen).mockClear()
   vi.mocked(listen).mockImplementation(listenImpl as unknown as typeof listen)
 })
@@ -113,6 +126,9 @@ beforeEach(() => {
 afterEach(() => {
   clearPendingReview('pty-1', 'abc')
   clearPendingReview('pty-1', 'xyz')
+  for (let index = 0; index < 51; index += 1) {
+    clearPendingReview('pty-1', `nonce-${index}`)
+  }
   clearFindingThreadRecord('pty-1', 'rev')
   clearReviewLevelNotes('owner-r')
   delete window.vimeflow
@@ -133,6 +149,139 @@ const findingRecord = (
 })
 
 describe('useAgentReply', () => {
+  test('recovers pending replies for the active pty through the live handler', async () => {
+    setPendingReview(pending(new Map([[1, handle()]])))
+    vi.mocked(invoke).mockResolvedValueOnce([
+      event({
+        replies: [
+          {
+            id: 1,
+            status: 'resolved',
+            target: 'comment',
+            text: 'Recovered after pane switch.',
+          },
+        ],
+      }),
+    ])
+
+    const { rerender } = renderHook(
+      ({ activePtyId }: { activePtyId: string }) =>
+        useAgentReply({
+          activePtyId,
+          addAnnotationForOwner,
+          nextCommentId: () => `agent-${(ids += 1)}`,
+          notifyInfo: vi.fn(),
+        }),
+      { initialProps: { activePtyId: 'pty-2' } }
+    )
+
+    await Promise.resolve()
+    expect(invoke).not.toHaveBeenCalled()
+
+    // Returning from pane B to the dispatching pane A triggers the scan.
+    rerender({ activePtyId: 'pty-1' })
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('recover_agent_replies', {
+        sessionId: 'pty-1',
+        nonces: ['abc'],
+      })
+    )
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Recovered after pane switch.'
+    )
+
+    // The recovery result consumes the same pending handle, so a concurrent
+    // live delivery of the same event cannot attach it twice.
+    await emit(
+      event({
+        replies: [
+          {
+            id: 1,
+            status: 'resolved',
+            target: 'comment',
+            text: 'Recovered after pane switch.',
+          },
+        ],
+      })
+    )
+    expect(addAnnotationForOwner).toHaveBeenCalledOnce()
+
+    // Further pane switches find no pending nonce and do not scan or re-attach.
+    rerender({ activePtyId: 'pty-2' })
+    rerender({ activePtyId: 'pty-1' })
+    await Promise.resolve()
+    expect(invoke).toHaveBeenCalledOnce()
+  })
+
+  test('does not scan a transcript when the active pty has no pending nonce', async () => {
+    mount('pty-1')
+    await Promise.resolve()
+
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  test('scans again after the watcher reaches the replay boundary', async () => {
+    setPendingReview(pending(new Map([[1, handle()]])))
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        event({
+          replies: [
+            {
+              id: 1,
+              status: 'resolved',
+              target: 'comment',
+              text: 'Recovered at catch-up.',
+            },
+          ],
+        }),
+      ])
+    mount('pty-1')
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+    await emitReplayBoundary({
+      sessionId: 'pty-1',
+      numTurns: 1,
+      cwd: null,
+      toolCallTotal: 0,
+      toolCallByType: {},
+      recentToolCalls: [],
+    })
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Recovered at catch-up.'
+    )
+  })
+
+  test('chunks recovery requests to the backend limit', async () => {
+    for (let index = 0; index < 51; index += 1) {
+      setPendingReview({
+        ...pending(new Map([[1, handle()]])),
+        nonce: `nonce-${index}`,
+      })
+    }
+
+    mount('pty-1')
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(invoke).mock.calls[0][1]).toMatchObject({
+      sessionId: 'pty-1',
+      nonces: expect.arrayContaining(['nonce-0', 'nonce-49']),
+    })
+
+    expect(
+      (vi.mocked(invoke).mock.calls[0][1] as { nonces: string[] }).nonces
+    ).toHaveLength(50)
+
+    expect(
+      (vi.mocked(invoke).mock.calls[1][1] as { nonces: string[] }).nonces
+    ).toHaveLength(1)
+  })
+
   test('attaches a matched reply to the dispatching owner by [#n]', async () => {
     setPendingReview(pending(new Map([[1, handle()]])))
     mount()

@@ -387,12 +387,50 @@ mod frame {
 }
 
 mod router {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
 
     use crate::runtime::BackendState;
+
+    const MAX_RECOVERY_NONCES: usize = 50;
+    const MAX_RECOVERY_NONCE_BYTES: usize = 128;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RecoveryParams {
+        session_id: String,
+        nonces: Vec<String>,
+    }
+
+    fn decode_recovery_params(params: Value) -> Result<(String, HashSet<String>), String> {
+        let request: RecoveryParams =
+            serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+        if request.session_id.trim().is_empty() {
+            return Err("sessionId must not be empty".to_string());
+        }
+        if request.nonces.is_empty() {
+            return Err("nonces must contain at least one entry".to_string());
+        }
+        if request.nonces.len() > MAX_RECOVERY_NONCES {
+            return Err(format!(
+                "nonces must contain at most {MAX_RECOVERY_NONCES} entries"
+            ));
+        }
+        if request
+            .nonces
+            .iter()
+            .any(|nonce| nonce.trim().is_empty() || nonce.len() > MAX_RECOVERY_NONCE_BYTES)
+        {
+            return Err(format!(
+                "each nonce must be non-empty and at most {MAX_RECOVERY_NONCE_BYTES} bytes"
+            ));
+        }
+
+        Ok((request.session_id, request.nonces.into_iter().collect()))
+    }
 
     fn encode_result<T: Serialize>(result: T) -> Result<Value, super::IpcError> {
         serde_json::to_value(result)
@@ -569,6 +607,16 @@ mod router {
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 state.stop_agent_watcher(p.session_id).await?;
                 Ok(Value::Null)
+            }
+            "recover_agent_replies" => {
+                let (session_id, nonces) = decode_recovery_params(params)?;
+                let res = state.recover_agent_replies(session_id, nonces).await?;
+                encode_result(res)
+            }
+            "recover_agent_reviews" => {
+                let (session_id, nonces) = decode_recovery_params(params)?;
+                let res = state.recover_agent_reviews(session_id, nonces).await?;
+                encode_result(res)
             }
             "list_dir" => {
                 #[derive(Deserialize)]
@@ -2112,6 +2160,70 @@ mod tests {
             .await
             .expect_err("err");
         assert!(err.message.starts_with("params:"), "got {err}");
+    }
+
+    #[tokio::test]
+    async fn dispatch_recover_agent_replies_accepts_bounded_camel_case_params() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let params = serde_json::json!({
+            "sessionId": "pty-1",
+            "nonces": ["nonce-1", "nonce-1"],
+        });
+
+        let value = super::router::dispatch(state, "recover_agent_replies", params)
+            .await
+            .expect("recover dispatch");
+        let replies: Vec<crate::agent::types::AgentReplyEvent> =
+            serde_json::from_value(value).expect("reply events");
+        assert!(replies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dispatch_recover_agent_reviews_accepts_bounded_camel_case_params() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let params = serde_json::json!({
+            "sessionId": "pty-1",
+            "nonces": ["nonce-1"],
+        });
+
+        let value = super::router::dispatch(state, "recover_agent_reviews", params)
+            .await
+            .expect("recover dispatch");
+        let reviews: Vec<crate::agent::types::AgentReviewEvent> =
+            serde_json::from_value(value).expect("review events");
+        assert!(reviews.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dispatch_recover_agent_replies_rejects_more_than_fifty_nonces() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let params = serde_json::json!({
+            "sessionId": "pty-1",
+            "nonces": (0..51).map(|i| format!("nonce-{i}")).collect::<Vec<_>>(),
+        });
+
+        let err = super::router::dispatch(state, "recover_agent_replies", params)
+            .await
+            .expect_err("oversized recovery request should reject");
+        assert!(err.message.contains("at most 50"), "got {err}");
+    }
+
+    #[tokio::test]
+    async fn dispatch_recover_agent_replies_rejects_empty_session_and_overlong_nonce() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let invalid = [
+            serde_json::json!({"sessionId": "", "nonces": ["nonce-1"]}),
+            serde_json::json!({
+                "sessionId": "pty-1",
+                "nonces": ["x".repeat(129)],
+            }),
+        ];
+
+        for params in invalid {
+            super::router::dispatch(state.clone(), "recover_agent_replies", params)
+                .await
+                .expect_err("invalid recovery identifiers should reject");
+        }
     }
 
     #[tokio::test]

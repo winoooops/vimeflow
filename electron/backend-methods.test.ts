@@ -21,6 +21,8 @@ describe('isAllowedBackendMethod', () => {
     'detect_agent_in_session',
     'start_agent_watcher',
     'stop_agent_watcher',
+    'recover_agent_replies',
+    'recover_agent_reviews',
     'list_dir',
     'read_file',
     'write_file',

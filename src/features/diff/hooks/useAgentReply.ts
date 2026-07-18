@@ -1,12 +1,18 @@
-import { useEffect } from 'react'
-import { listen } from '@/lib/backend'
+import { useCallback, useEffect } from 'react'
+import { invoke, listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
-import type { AgentReplyEvent, AgentReplyStatus } from '@/bindings'
+import type {
+  AgentReplyEvent,
+  AgentReplyStatus,
+  AgentReplaySummaryEvent,
+} from '@/bindings'
 import type { DiffLineAnnotation } from '@pierre/diffs'
 import type { ReviewComment } from './useFeedbackBatch'
 import {
   clearPendingReview,
   getPendingReview,
+  pendingNoncesForPty,
+  recoveryNonceBatches,
   setPendingReview,
   type PendingReviewHandle,
 } from '../services/pendingReviews'
@@ -20,6 +26,8 @@ import {
 const AGENT_REVIEW_LEVEL_LABEL = 'Agent'
 
 export interface UseAgentReplyOptions {
+  /** PTY currently visible in the workspace; returning to it triggers recovery. */
+  activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
   addAnnotationForOwner: (
     ownerKey: string,
@@ -30,6 +38,167 @@ export interface UseAgentReplyOptions {
   ) => 'ok' | 'cap-reached'
   /** Fresh unique id for each attached agent annotation. */
   nextCommentId: () => string
+  /** Surface transcript recovery failures without interrupting live delivery. */
+  notifyInfo: (message: string) => void
+}
+
+const handleAgentReply = (
+  event: AgentReplyEvent,
+  addAnnotationForOwner: UseAgentReplyOptions['addAnnotationForOwner'],
+  nextCommentId: UseAgentReplyOptions['nextCommentId']
+): void => {
+  const attachAgentNote = (
+    ownerKey: string,
+    handle: PendingReviewHandle,
+    text: string,
+    outcome?: AgentReplyStatus
+  ): 'ok' | 'cap-reached' =>
+    addAnnotationForOwner(
+      ownerKey,
+      handle.cwd,
+      handle.filePath,
+      handle.staged,
+      {
+        side: handle.side,
+        lineNumber: handle.lineNumber,
+        metadata: {
+          id: nextCommentId(),
+          text,
+          author: 'agent',
+          createdAt: Date.now(),
+          // Inherit the original comment's scope so a file-level reply stays
+          // file-scoped and a range reply keeps its span (VIM-249).
+          ...(handle.target === undefined ? {} : { target: handle.target }),
+          ...(handle.threadId === undefined
+            ? {}
+            : { threadId: handle.threadId }),
+          ...(outcome === undefined ? {} : { outcome }),
+        },
+      }
+    )
+
+  // A turn posted into a delegated finding's thread (VIM-304 PR-3). The
+  // record is never consumed — threads are multi-turn — so an exact
+  // duplicate turn is the replay no-op instead.
+  const handleFindingTurns = (record: FindingThreadRecord): void => {
+    // Malformed marker: degrade to one review-level note; the living thread
+    // record survives one garbled turn.
+    if (event.replies === null) {
+      addReviewLevelNote(record.ownerKey, {
+        commentId: nextCommentId(),
+        reviewer: AGENT_REVIEW_LEVEL_LABEL,
+        text: event.rawText,
+        nonce: record.nonce,
+      })
+
+      return
+    }
+
+    for (const reply of event.replies) {
+      if (reply.target !== 'finding') {
+        continue
+      }
+
+      const target = record.byOrdinal.get(reply.id)
+      if (target === undefined) {
+        continue
+      }
+
+      const turnKey = `${reply.id}\u0000${reply.status}\u0000${reply.text}`
+      if (record.seenReplies.has(turnKey)) {
+        continue
+      }
+
+      if (target.kind === 'anchored') {
+        const result = attachAgentNote(
+          record.ownerKey,
+          target.handle,
+          reply.text,
+          reply.status
+        )
+        if (result === 'ok') {
+          record.seenReplies.add(turnKey)
+        }
+        continue
+      }
+
+      addReviewLevelNote(record.ownerKey, {
+        commentId: nextCommentId(),
+        reviewer: AGENT_REVIEW_LEVEL_LABEL,
+        text: reply.text,
+        nonce: record.nonce,
+        outcome: reply.status,
+      })
+      record.seenReplies.add(turnKey)
+    }
+  }
+
+  if (event.nonce === null) {
+    return
+  }
+
+  // The nonce names the dispatch a turn answers: a review nonce resolves
+  // against the finding-thread record (same session + nonce gate), a
+  // feedback nonce against the pending [#n] handles below.
+  const record = getFindingThreadRecord(event.sessionId, event.nonce)
+  if (record !== undefined) {
+    handleFindingTurns(record)
+
+    return
+  }
+
+  // Session + nonce gate — both are part of the store key (VIM-297), so
+  // only a reply echoing a live dispatch's nonce on its own pty resolves.
+  const pending = getPendingReview(event.sessionId, event.nonce)
+  if (pending === undefined) {
+    return
+  }
+
+  const matched = (event.replies ?? []).filter((reply) =>
+    pending.byHandle.has(reply.id)
+  )
+
+  if (event.replies !== null && matched.length > 0) {
+    for (const reply of matched) {
+      const handle = pending.byHandle.get(reply.id)
+      if (handle === undefined) {
+        continue
+      }
+
+      const result = attachAgentNote(
+        pending.ownerKey,
+        handle,
+        reply.text,
+        reply.status
+      )
+      if (result === 'ok') {
+        pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
+      }
+    }
+
+    if (pending.byHandle.size === 0) {
+      clearPendingReview(event.sessionId, event.nonce)
+    } else {
+      setPendingReview(pending)
+    }
+
+    return
+  }
+
+  // Malformed marker (replies === null) OR every id unmatched → degrade: one
+  // plain-text note anchored to the lowest still-pending handle, then clear
+  // the record so the terminal degrade can't be replayed.
+  const lowestId = Math.min(...pending.byHandle.keys())
+  const anchor = pending.byHandle.get(lowestId)
+  if (anchor !== undefined) {
+    const result = attachAgentNote(pending.ownerKey, anchor, event.rawText)
+    if (result === 'cap-reached') {
+      setPendingReview(pending)
+
+      return
+    }
+  }
+  clearPendingReview(event.sessionId, event.nonce)
 }
 
 /**
@@ -45,190 +214,96 @@ export interface UseAgentReplyOptions {
  * it never throws.
  */
 export const useAgentReply = ({
+  activePtyId,
   addAnnotationForOwner,
   nextCommentId,
+  notifyInfo,
 }: UseAgentReplyOptions): void => {
+  const handleReply = useCallback(
+    (event: AgentReplyEvent): void =>
+      handleAgentReply(event, addAnnotationForOwner, nextCommentId),
+    [addAnnotationForOwner, nextCommentId]
+  )
+
+  const recoverPty = useCallback(
+    async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
+      const nonces = pendingNoncesForPty(ptyId)
+      if (nonces.length === 0) {
+        return
+      }
+
+      try {
+        for (const batch of recoveryNonceBatches(nonces)) {
+          const replies = await invoke<AgentReplyEvent[]>(
+            'recover_agent_replies',
+            {
+              sessionId: ptyId,
+              nonces: batch,
+            }
+          )
+          if (!isCancelled()) {
+            replies.forEach(handleReply)
+          }
+        }
+      } catch {
+        if (!isCancelled()) {
+          notifyInfo(
+            'Could not recover agent replies; live delivery is still active.'
+          )
+        }
+      }
+    },
+    [handleReply, notifyInfo]
+  )
+
   useEffect(() => {
     if (!isDesktop()) {
       return undefined
     }
 
     let cancelled = false
-    let unlisten: (() => void) | undefined
+    const unlisten: (() => void)[] = []
 
-    const attachAgentNote = (
-      ownerKey: string,
-      handle: PendingReviewHandle,
-      text: string,
-      outcome?: AgentReplyStatus
-    ): 'ok' | 'cap-reached' =>
-      addAnnotationForOwner(
-        ownerKey,
-        handle.cwd,
-        handle.filePath,
-        handle.staged,
-        {
-          side: handle.side,
-          lineNumber: handle.lineNumber,
-          metadata: {
-            id: nextCommentId(),
-            text,
-            author: 'agent',
-            createdAt: Date.now(),
-            // Inherit the original comment's scope so a file-level reply stays
-            // file-scoped and a range reply keeps its span (VIM-249).
-            ...(handle.target === undefined ? {} : { target: handle.target }),
-            ...(handle.threadId === undefined
-              ? {}
-              : { threadId: handle.threadId }),
-            ...(outcome === undefined ? {} : { outcome }),
-          },
-        }
-      )
-
-    // A turn posted into a delegated finding's thread (VIM-304 PR-3). The
-    // record is never consumed — threads are multi-turn — so an exact
-    // duplicate turn is the replay no-op instead.
-    const handleFindingTurns = (
-      record: FindingThreadRecord,
-      event: AgentReplyEvent
-    ): void => {
-      // Malformed marker: degrade to one review-level note; the living thread
-      // record survives one garbled turn.
-      if (event.replies === null) {
-        addReviewLevelNote(record.ownerKey, {
-          commentId: nextCommentId(),
-          reviewer: AGENT_REVIEW_LEVEL_LABEL,
-          text: event.rawText,
-          nonce: record.nonce,
-        })
-
-        return
-      }
-
-      for (const reply of event.replies) {
-        if (reply.target !== 'finding') {
-          continue
-        }
-
-        const target = record.byOrdinal.get(reply.id)
-        if (target === undefined) {
-          continue
-        }
-
-        const turnKey = `${reply.id}\u0000${reply.status}\u0000${reply.text}`
-        if (record.seenReplies.has(turnKey)) {
-          continue
-        }
-
-        if (target.kind === 'anchored') {
-          const result = attachAgentNote(
-            record.ownerKey,
-            target.handle,
-            reply.text,
-            reply.status
-          )
-          if (result === 'ok') {
-            record.seenReplies.add(turnKey)
-          }
-          continue
-        }
-
-        addReviewLevelNote(record.ownerKey, {
-          commentId: nextCommentId(),
-          reviewer: AGENT_REVIEW_LEVEL_LABEL,
-          text: reply.text,
-          nonce: record.nonce,
-          outcome: reply.status,
-        })
-        record.seenReplies.add(turnKey)
-      }
-    }
-
-    const handleReply = (event: AgentReplyEvent): void => {
-      if (event.nonce === null) {
-        return
-      }
-
-      // The nonce names the dispatch a turn answers: a review nonce resolves
-      // against the finding-thread record (same session + nonce gate), a
-      // feedback nonce against the pending [#n] handles below.
-      const record = getFindingThreadRecord(event.sessionId, event.nonce)
-      if (record !== undefined) {
-        handleFindingTurns(record, event)
-
-        return
-      }
-
-      // Session + nonce gate — both are part of the store key (VIM-297), so
-      // only a reply echoing a live dispatch's nonce on its own pty resolves.
-      const pending = getPendingReview(event.sessionId, event.nonce)
-      if (pending === undefined) {
-        return
-      }
-
-      const matched = (event.replies ?? []).filter((reply) =>
-        pending.byHandle.has(reply.id)
-      )
-
-      if (event.replies !== null && matched.length > 0) {
-        for (const reply of matched) {
-          const handle = pending.byHandle.get(reply.id)
-          if (handle === undefined) {
-            continue
-          }
-
-          const result = attachAgentNote(
-            pending.ownerKey,
-            handle,
-            reply.text,
-            reply.status
-          )
-          if (result === 'ok') {
-            pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
-          }
-        }
-
-        if (pending.byHandle.size === 0) {
-          clearPendingReview(event.sessionId, event.nonce)
-        } else {
-          setPendingReview(pending)
-        }
-
-        return
-      }
-
-      // Malformed marker (replies === null) OR every id unmatched → degrade: one
-      // plain-text note anchored to the lowest still-pending handle, then clear
-      // the record so the terminal degrade can't be replayed.
-      const lowestId = Math.min(...pending.byHandle.keys())
-      const anchor = pending.byHandle.get(lowestId)
-      if (anchor !== undefined) {
-        const result = attachAgentNote(pending.ownerKey, anchor, event.rawText)
-        if (result === 'cap-reached') {
-          setPendingReview(pending)
-
-          return
-        }
-      }
-      clearPendingReview(event.sessionId, event.nonce)
-    }
-
-    const subscribe = async (): Promise<void> => {
-      const fn = await listen<AgentReplyEvent>('agent-reply', handleReply)
-      // Mount → unmount before the listen promise resolved: unsubscribe now.
+    const addUnlisten = (fn: () => void): void => {
       if (cancelled) {
         fn()
       } else {
-        unlisten = fn
+        unlisten.push(fn)
       }
+    }
+
+    const subscribe = async (): Promise<void> => {
+      addUnlisten(await listen<AgentReplyEvent>('agent-reply', handleReply))
+      // The summary is the watcher's replay→live boundary. A final targeted
+      // scan here closes the window between the pane-activation scan and EOF.
+      addUnlisten(
+        await listen<AgentReplaySummaryEvent>(
+          'agent-replay-summary',
+          (event) => {
+            void recoverPty(event.sessionId, () => cancelled)
+          }
+        )
+      )
     }
 
     void subscribe()
 
     return (): void => {
       cancelled = true
-      unlisten?.()
+      unlisten.forEach((fn) => fn())
     }
-  }, [addAnnotationForOwner, nextCommentId])
+  }, [handleReply, recoverPty])
+
+  useEffect(() => {
+    if (!isDesktop() || activePtyId === null) {
+      return undefined
+    }
+
+    let cancelled = false
+    void recoverPty(activePtyId, () => cancelled)
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [activePtyId, recoverPty])
 }

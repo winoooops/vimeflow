@@ -159,6 +159,24 @@ impl TranscriptStreamer for CodexAdapter {
     ) -> Result<TranscriptHandle, String> {
         transcript::start_tailing(events, session_id, transcript_path, cwd)
     }
+
+    fn recover_replies(
+        &self,
+        session_id: &str,
+        transcript_path: &Path,
+        nonces: &std::collections::HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
+        transcript::recover_replies(transcript_path, session_id, nonces)
+    }
+
+    fn recover_reviews(
+        &self,
+        session_id: &str,
+        transcript_path: &Path,
+        nonces: &std::collections::HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReviewEvent>, String> {
+        transcript::recover_reviews(transcript_path, session_id, nonces)
+    }
 }
 
 // Step B': `AgentAdapter` is the transitional façade. Each method

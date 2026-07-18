@@ -4,6 +4,7 @@ import type { ChangedFile, FileDiff } from '../types'
 import type { PaneCandidate } from '../services/activePanePicker'
 import {
   buildDiffSnapshot,
+  clearPendingReviewRequest,
   setPendingReviewRequest,
 } from '../services/pendingReviewRequests'
 import {
@@ -178,7 +179,8 @@ export const useRequestReview = ({
   // event can be matched, routed, and placed. Returns dispatch inputs, or null.
   const arm = useCallback(
     async (
-      armScope: ReviewScope
+      armScope: ReviewScope,
+      ptyId?: string
     ): Promise<{
       nonce: string
       requestFiles: ReviewRequestFile[]
@@ -205,6 +207,7 @@ export const useRequestReview = ({
         const nonce = makeDispatchNonce()
         setPendingReviewRequest({
           nonce,
+          ...(ptyId === undefined ? {} : { ptyId }),
           ownerKey,
           cwd,
           diffSnapshot: files,
@@ -245,6 +248,7 @@ export const useRequestReview = ({
 
       setPendingReviewRequest({
         nonce,
+        ...(ptyId === undefined ? {} : { ptyId }),
         ownerKey,
         cwd,
         diffSnapshot: snapshot.files,
@@ -276,7 +280,7 @@ export const useRequestReview = ({
       }
 
       void (async (): Promise<void> => {
-        const armed = await arm(scope)
+        const armed = await arm(scope, pane.ptyId)
 
         if (armed === null) {
           return
@@ -294,6 +298,7 @@ export const useRequestReview = ({
             setTimeout(focusTerminal, 0)
           }
         } catch {
+          clearPendingReviewRequest(armed.nonce)
           notify('Terminal session ended; review request not sent.')
         }
       })()
