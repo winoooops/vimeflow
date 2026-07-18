@@ -1,7 +1,6 @@
 import type { ReactElement, ReactNode } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import { test, expect, vi } from 'vitest'
-import { AGENTS } from '../../../agents/registry'
 import { AgentStatusRail } from './AgentStatusRail'
 import { ctxTone } from '../utils/contextTone'
 
@@ -19,20 +18,10 @@ vi.mock('@/components/Tooltip', () => ({
   },
 }))
 
-test('renders glyph chip, context meter, and cache meter', () => {
-  render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={42}
-      cacheHitPercentage={75}
-    />
-  )
+test('renders context and cache meters without an agent glyph', () => {
+  render(<AgentStatusRail contextUsedPercentage={42} cacheHitPercentage={75} />)
 
-  const glyphChip = screen.getByTestId('agent-glyph-chip')
-  // eslint-disable-next-line testing-library/no-node-access -- claude renders an svg brand mark
-  const brandMark = glyphChip.querySelector('svg')
-
-  expect(brandMark).toBeInTheDocument()
+  expect(screen.queryByTestId('agent-glyph-chip')).not.toBeInTheDocument()
   expect(screen.getByRole('meter', { name: 'CTX' })).toHaveAttribute(
     'aria-valuenow',
     '42'
@@ -46,13 +35,7 @@ test('renders glyph chip, context meter, and cache meter', () => {
 
 test('routes collapsed context and cache labels through the native overlay', () => {
   tooltipPropsSpy.mockClear()
-  render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={42}
-      cacheHitPercentage={75}
-    />
-  )
+  render(<AgentStatusRail contextUsedPercentage={42} cacheHitPercentage={75} />)
 
   expect(tooltipPropsSpy).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -74,11 +57,7 @@ test('routes collapsed context and cache labels through the native overlay', () 
 // states — no more tiered token swaps.
 test('context meter color follows the shared ctxTone sweep', () => {
   const { rerender } = render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={92}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={92} cacheHitPercentage={null} />
   )
 
   expect(
@@ -86,11 +65,7 @@ test('context meter color follows the shared ctxTone sweep', () => {
   ).toHaveStyle({ color: ctxTone(92).base })
 
   rerender(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={40}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={40} cacheHitPercentage={null} />
   )
 
   expect(
@@ -100,11 +75,7 @@ test('context meter color follows the shared ctxTone sweep', () => {
 
 test('hides context meter when contextUsedPercentage is null', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={null}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={null} cacheHitPercentage={null} />
   )
 
   expect(screen.queryByRole('meter', { name: 'CTX' })).not.toBeInTheDocument()
@@ -112,11 +83,7 @@ test('hides context meter when contextUsedPercentage is null', () => {
 
 test('hides cache meter when cacheHitPercentage is null', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={50}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={50} cacheHitPercentage={null} />
   )
 
   expect(screen.queryByRole('meter', { name: 'CACHE' })).not.toBeInTheDocument()
@@ -124,11 +91,7 @@ test('hides cache meter when cacheHitPercentage is null', () => {
 
 test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   const { rerender } = render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={null}
-      cacheHitPercentage={85}
-    />
+    <AgentStatusRail contextUsedPercentage={null} cacheHitPercentage={85} />
   )
 
   expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
@@ -137,11 +100,7 @@ test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   rerender(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={null}
-      cacheHitPercentage={55}
-    />
+    <AgentStatusRail contextUsedPercentage={null} cacheHitPercentage={55} />
   )
 
   expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
@@ -150,11 +109,7 @@ test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
   )
 
   rerender(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={null}
-      cacheHitPercentage={20}
-    />
+    <AgentStatusRail contextUsedPercentage={null} cacheHitPercentage={20} />
   )
 
   expect(screen.getByTestId('cache-ring-arc')).toHaveAttribute(
@@ -164,13 +119,7 @@ test('cache ring tone is mint at >=70%, lavender 40-70%, coral <40%', () => {
 })
 
 test('renders the cache rate as a ring, not the liquid bar', () => {
-  render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={42}
-      cacheHitPercentage={75}
-    />
-  )
+  render(<AgentStatusRail contextUsedPercentage={42} cacheHitPercentage={75} />)
 
   const cacheMeter = screen.getByRole('meter', { name: 'CACHE' })
 
@@ -182,11 +131,7 @@ test('renders the cache rate as a ring, not the liquid bar', () => {
 
 test('drops the visible CACHE caption from the rail ring', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={null}
-      cacheHitPercentage={75}
-    />
+    <AgentStatusRail contextUsedPercentage={null} cacheHitPercentage={75} />
   )
 
   // The label now lives only in the tooltip + accessible name, not on the ring.
@@ -197,11 +142,7 @@ test('drops the visible CACHE caption from the rail ring', () => {
 
 test('rail is 44px wide', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={50}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={50} cacheHitPercentage={null} />
   )
 
   expect(screen.getByTestId('agent-status-rail')).toHaveStyle({ width: '44px' })
@@ -209,11 +150,7 @@ test('rail is 44px wide', () => {
 
 test('rail sits on the canvas surface token', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={50}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={50} cacheHitPercentage={null} />
   )
 
   const rail = screen.getByTestId('agent-status-rail')
@@ -225,7 +162,6 @@ test('rail sits on the canvas surface token', () => {
 test('adds macOS drag coverage with a no-drag clearance for the floating toggle', () => {
   render(
     <AgentStatusRail
-      agent={AGENTS.claude}
       contextUsedPercentage={50}
       cacheHitPercentage={null}
       reserveWindowControls
@@ -243,11 +179,7 @@ test('adds macOS drag coverage with a no-drag clearance for the floating toggle'
 
 test('omits the drag clearance when native controls are not reserved', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={50}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={50} cacheHitPercentage={null} />
   )
 
   expect(
@@ -257,11 +189,7 @@ test('omits the drag clearance when native controls are not reserved', () => {
 
 test('does not add rail drag coverage when native controls are not reserved', () => {
   render(
-    <AgentStatusRail
-      agent={AGENTS.claude}
-      contextUsedPercentage={50}
-      cacheHitPercentage={null}
-    />
+    <AgentStatusRail contextUsedPercentage={50} cacheHitPercentage={null} />
   )
 
   expect(screen.getByTestId('agent-status-rail')).not.toHaveClass(

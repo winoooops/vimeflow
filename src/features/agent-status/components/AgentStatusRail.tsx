@@ -1,12 +1,9 @@
 import type { ReactElement } from 'react'
-import type { Agent } from '../../../agents/registry'
-import { AgentGlyph } from '@/components/AgentGlyph'
 import { RailMeter } from './RailMeter'
 import { CacheRing } from './CacheRing'
 import { ctxTone } from '../utils/contextTone'
 
 export interface AgentStatusRailProps {
-  agent: Agent
   contextUsedPercentage: number | null
   cacheHitPercentage: number | null
   reserveWindowControls?: boolean
@@ -40,7 +37,6 @@ const cacheTone = (rate: number): string => {
 }
 
 export const AgentStatusRail = ({
-  agent,
   contextUsedPercentage,
   cacheHitPercentage,
   reserveWindowControls = false,
@@ -68,18 +64,6 @@ export const AgentStatusRail = ({
           style={{ top: 7, right: 8, width: 28, height: 28 }}
         />
       )}
-
-      <div
-        data-testid="agent-glyph-chip"
-        className="mb-3 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border font-mono text-[12px] font-bold"
-        style={{
-          background: agent.accentDim,
-          color: agent.accent,
-          borderColor: agent.accentSoft,
-        }}
-      >
-        <AgentGlyph agent={agent} size={14} />
-      </div>
 
       {ctxPct !== null && (
         <div className="vf-app-no-drag">
