@@ -4,7 +4,7 @@ import type { Session, SessionCloseResult } from '../types'
 import { Card } from './Card'
 import { Group } from './Group'
 import { isOpenSession } from '../utils/sessionStatus'
-import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
+import { closeSessionWithSuccessor } from '../utils/closeSessionWithSuccessor'
 import { mediateReorder } from '../utils/mediateReorder'
 
 export interface ListProps {
@@ -46,57 +46,26 @@ export const List = ({
     [onReorderSessions]
   )
 
-  // Mirror SessionTabs.handleClose using the shared visible-order helper.
-  // useSessionManager.removeSession uses `flushSync` internally to apply
-  // its own setActiveSessionId mid-call, so we must remove first and
-  // override the selection afterward. Routing through the shared helper
-  // (instead of computing next-id from `activeGroup` only) covers the
-  // exited-active case: when the active session is completed/errored
-  // (so it lives in `recentGroup`, not `activeGroup`), the helper still
-  // produces the visually adjacent tab in the strip — matching what the
-  // tab strip's own close button does for the same scenario.
-  //
-  // Early-return when `onRemoveSession` is undefined so this wrapper
-  // stays a true no-op. Otherwise the trailing onSessionClick(nextId)
-  // would silently switch the active session without removing the
-  // intended one — a latent bug for callers that omit the prop.
-  // Returning false is the only cancellation sentinel; void means
-  // close/navigation may proceed.
-  //
-  // Focus restoration: removing the focused remove button drops DOM
-  // focus to <body>; queueMicrotask defers until React commits the
-  // re-render, then lands focus on the new active row's overlay
-  // activation button. Mirrors SessionTabs.handleClose §4.4.3 behavior
-  // for keyboard users who navigate via group-focus-within.
+  // Delegates to the shared close-with-successor helper (mirrors SessionTabs.handleClose).
+  // Guarding on `onRemoveSession` keeps this a true no-op for callers that omit the prop.
+  // Microtask defers focus until React commits the removal's re-render.
   const handleRemoveSession = useCallback(
     (id: string): void => {
       if (!onRemoveSession) {
         return
       }
 
-      const nextId =
-        id === activeSessionId
-          ? pickNextVisibleSessionId(sessions, id, activeSessionId)
-          : undefined
-      const didRemove = onRemoveSession(id)
-      if (didRemove === false) {
-        return
-      }
-
-      if (nextId !== undefined) {
-        onSessionClick(nextId)
-        queueMicrotask(() => {
-          // Mirror SessionTabs' `getElementById('session-tab-...')`
-          // pattern: the overlay button carries
-          // `id="sidebar-activate-${session.id}"`, so id-based lookup
-          // is both consistent across the two strips AND avoids the
-          // CSS-attribute-selector escaping path entirely. A session
-          // id containing `"` or `]` would otherwise corrupt the
-          // selector and either silently fail (`querySelector` →
-          // null) or throw `SyntaxError`.
-          document.getElementById(`sidebar-activate-${nextId}`)?.focus()
-        })
-      }
+      closeSessionWithSuccessor(id, {
+        sessions,
+        activeSessionId,
+        removeSession: onRemoveSession,
+        activateSession: onSessionClick,
+        focusSuccessor: (nextId) => {
+          queueMicrotask(() => {
+            document.getElementById(`sidebar-activate-${nextId}`)?.focus()
+          })
+        },
+      })
     },
     [activeSessionId, onRemoveSession, onSessionClick, sessions]
   )
