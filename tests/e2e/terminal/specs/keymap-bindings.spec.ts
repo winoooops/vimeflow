@@ -648,6 +648,24 @@ describe('session switcher (Ctrl+Tab MRU)', () => {
     await createNewSessionWithDefaults()
     await createNewSessionWithDefaults()
 
+    // Creation runs a dialog exit animation plus an async activation; let both
+    // settle so the taps exercise the switcher rather than the creation race.
+    await browser.waitUntil(
+      async () => !(await hasElement('[role="dialog"]')),
+      { timeoutMsg: 'new-session dialog did not settle before switching' }
+    )
+    let settled = await activeSessionLabel()
+    await browser.waitUntil(
+      async () => {
+        const now = await activeSessionLabel()
+        const stable = now !== null && now === settled
+        settled = now
+
+        return stable
+      },
+      { timeoutMsg: 'active session did not settle before switching' }
+    )
+
     const before = await activeSessionLabel()
     await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
     await fireKeyUp({ key: 'Control', code: 'ControlLeft' })
