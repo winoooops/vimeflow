@@ -3480,7 +3480,6 @@ const WorkspaceViewContent = (): ReactElement => {
         >
           {activityPanelCollapsed ? (
             <AgentStatusRail
-              agent={activityPanelAgent}
               contextUsedPercentage={
                 agentStatus.contextWindow?.usedPercentage ?? null
               }
