@@ -1,5 +1,6 @@
 import { act, renderHook, type RenderHookResult } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { SESSION_SWITCHER_DIALOG_TEST_ID } from '@/features/sessions/components/SessionSwitcher'
 import type { CommandId } from '../../keymap/catalog'
 import type { Chord, Mod } from '../../keymap/chord'
 import {
@@ -76,11 +77,46 @@ const setup = (
   return { ...rendered, onCommit, onCancel }
 }
 
+const appended: HTMLElement[] = []
+
+const append = (el: HTMLElement): HTMLElement => {
+  document.body.appendChild(el)
+  appended.push(el)
+
+  return el
+}
+
 afterEach(() => {
+  appended.forEach((el) => el.remove())
+  appended.length = 0
   vi.restoreAllMocks()
 })
 
 describe('useSessionSwitcher', () => {
+  test('a foreign open dialog blocks the chord from opening', () => {
+    const dialog = append(document.createElement('div'))
+    dialog.setAttribute('role', 'dialog')
+
+    const { result } = setup(['A', 'B'])
+
+    act(() => void document.dispatchEvent(ctrlTab()))
+    expect(result.current.open).toBe(false)
+  })
+
+  test('its own exiting dialog does not block a rapid second tap', () => {
+    const exiting = append(document.createElement('div'))
+    exiting.setAttribute('role', 'dialog')
+    exiting.setAttribute('data-testid', SESSION_SWITCHER_DIALOG_TEST_ID)
+
+    const { result, onCommit } = setup(['A', 'B', 'C'])
+
+    act(() => void document.dispatchEvent(ctrlTab()))
+    expect(result.current.open).toBe(true)
+
+    act(() => void document.dispatchEvent(ctrlKeyUp()))
+    expect(onCommit).toHaveBeenCalledWith('B')
+  })
+
   test('quick tap commits the previous session (MRU index 1)', () => {
     const { result, onCommit } = setup(['A', 'B', 'C'])
 

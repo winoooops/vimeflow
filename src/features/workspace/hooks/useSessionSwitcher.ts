@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { SESSION_SWITCHER_DIALOG_TEST_ID } from '@/features/sessions/components/SessionSwitcher'
 import { isKeymapCaptureTarget } from '../../keymap/capture'
 import type { CommandId } from '../../keymap/catalog'
 import type { Chord } from '../../keymap/chord'
 import { DIALOG_SELECTOR, TERMINAL_CONTAINER_ID } from '../containerIds'
+
+const OWN_DIALOG_SELECTOR = `[data-testid="${SESSION_SWITCHER_DIALOG_TEST_ID}"]`
+
+// Defer to open dialogs except the switcher's own overlay, which lingers in
+// the DOM through its exit animation and must not swallow a rapid second tap.
+const hasForeignDialog = (): boolean =>
+  Array.from(document.querySelectorAll(DIALOG_SELECTOR)).some(
+    (dialog) => !dialog.matches(OWN_DIALOG_SELECTOR)
+  )
 
 export interface UseSessionSwitcherParams {
   orderedIds: readonly string[]
@@ -112,7 +122,7 @@ export const useSessionSwitcher = ({
         if (isKeymapCaptureTarget(event.target)) {
           return
         }
-        if (document.querySelector(DIALOG_SELECTOR)) {
+        if (hasForeignDialog()) {
           return
         }
 

@@ -8,6 +8,9 @@ import { Dialog } from '@/components/Dialog'
 const NATIVE_ACTION_COMMIT_INDEX = 'session-switcher:commit-index'
 const NATIVE_ACTION_CANCEL = 'session-switcher:cancel'
 
+// Stable dialog marker so the owning hook can ignore its own exiting overlay.
+export const SESSION_SWITCHER_DIALOG_TEST_ID = 'session-switcher-dialog'
+
 export interface SessionSwitcherEntry {
   id: string
   title: string
@@ -84,6 +87,7 @@ export const SessionSwitcher = ({
       placement="top"
       size="sm"
       aria-label="Session switcher"
+      testId={SESSION_SWITCHER_DIALOG_TEST_ID}
       nativeOverlay
       nativeOverlayPayload={nativeOverlayPayload}
       nativeOverlayActions={nativeOverlayActions}
