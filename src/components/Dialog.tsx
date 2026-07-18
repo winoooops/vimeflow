@@ -26,6 +26,7 @@ export type {
   NativeOverlayActionHandler,
   NativeOverlayCommandPaletteDialogPayload,
   NativeOverlayNewSessionDialogPayload,
+  NativeOverlaySessionSwitcherDialogPayload,
 } from '@/components/base/floating/nativeOverlay'
 
 type DialogPlacement = 'center' | 'top'
