@@ -13,17 +13,17 @@ const tokenOf = (
   isMac = true
 ): string => formatChord(resolveBindings(overrides, isMac, 'meta').get(id)!)
 
-describe('behavior preservation — migrated defaults equal today’s hardcoded combos', () => {
+describe('workspace keybinding defaults', () => {
   const expected: Record<string, string> = {
     'focus-pane-1': 'Mod+Digit1',
     'focus-pane-2': 'Mod+Digit2',
     'focus-pane-3': 'Mod+Digit3',
     'focus-pane-4': 'Mod+Digit4',
     'cycle-layout': 'Mod+Backslash',
-    'focus-pane-left': 'Mod+Shift+ArrowLeft',
-    'focus-pane-down': 'Mod+Shift+ArrowDown',
-    'focus-pane-up': 'Mod+Shift+ArrowUp',
-    'focus-pane-right': 'Mod+Shift+ArrowRight',
+    'focus-pane-left': 'Ctrl+ArrowLeft',
+    'focus-pane-down': 'Ctrl+ArrowDown',
+    'focus-pane-up': 'Ctrl+ArrowUp',
+    'focus-pane-right': 'Ctrl+ArrowRight',
     'dock-toggle': 'Mod+Digit0',
     palette: 'Mod+Semicolon',
     'palette-leader': 'Mod+Semicolon',
@@ -43,7 +43,7 @@ describe('behavior preservation — migrated defaults equal today’s hardcoded 
   }
 })
 
-describe('behavior preservation — platform-specific PR2 defaults equal today’s hardcoded combos', () => {
+describe('platform-specific workspace keybinding defaults', () => {
   const expectedByPlatform: Record<string, { mac: string; other: string }> = {
     'activity-panel-toggle': {
       mac: 'Mod+KeyR',

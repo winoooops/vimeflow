@@ -581,7 +581,7 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
   // Covered in usePaneShortcuts tests; xterm/WebDriver focus makes this
   // keyboard path too unstable for the Linux smoke suite.
-  it.skip('Cmd+Shift+Arrow moves focus between two panes', async () => {
+  it.skip('Ctrl+Arrow moves focus between two panes', async () => {
     // Ensure a 2-pane vsplit, then fill the empty slot with a second shell.
     await runExCommand(':vsplit')
     await waitForLayout('vsplit')
@@ -604,11 +604,10 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
         fireTerminalZoneKey({
           key: 'ArrowRight',
           code: 'ArrowRight',
-          shiftKey: true,
-          ...modInit(),
+          ctrlKey: true,
         }),
       1,
-      'Cmd+Shift+Right did not focus the second (right) pane before left-nav check'
+      'Ctrl+Right did not focus the second (right) pane before left-nav check'
     )
 
     await focusUntil(
@@ -616,11 +615,10 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
         fireTerminalZoneKey({
           key: 'ArrowLeft',
           code: 'ArrowLeft',
-          shiftKey: true,
-          ...modInit(),
+          ctrlKey: true,
         }),
       0,
-      'Cmd+Shift+Left did not focus the first (left) pane'
+      'Ctrl+Left did not focus the first (left) pane'
     )
   })
 })

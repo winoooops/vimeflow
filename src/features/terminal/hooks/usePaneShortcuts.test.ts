@@ -907,8 +907,8 @@ describe('usePaneShortcuts container reclaim extensions', () => {
   })
 })
 
-describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
-  test('vsplit active p0 Ctrl+Shift+Right focuses p1 and prevents default', () => {
+describe('directional focus (Ctrl+Arrow)', () => {
+  test('vsplit active p0 Ctrl+Right focuses p1 and prevents default', () => {
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
@@ -920,7 +920,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     const event = fire('ArrowRight', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowRight',
     })
 
@@ -929,10 +928,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('vsplit active p0 plain Ctrl+Right (no Shift) passes through to terminal', () => {
-    // Ctrl+Arrow is common terminal input (readline word movement, vim/tmux
-    // bindings). The directional pane shortcut requires Shift on Ctrl
-    // platforms so terminal programs keep the bare chord.
+  test('macOS uses literal Ctrl+Right instead of Cmd+Right', () => {
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
@@ -940,6 +936,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
       setSessionActivePane,
       setSessionLayout: vi.fn(),
       isTerminalContainerActive: true,
+      matches: metaMatches,
     })
 
     const event = fire('ArrowRight', {
@@ -947,14 +944,11 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
       code: 'ArrowRight',
     })
 
-    expect(setSessionActivePane).not.toHaveBeenCalled()
-    expect(event.preventDefaultSpy).not.toHaveBeenCalled()
+    expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
+    expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
   test('Mac vsplit active p0 plain Cmd+Right (no Shift) passes through', () => {
-    // The Shift requirement applies on macOS too so the advertised chord
-    // matches the design doc: ⌘+Shift+Arrow focuses panes; bare ⌘+Arrow is
-    // left for editor line/document navigation.
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'vsplit', ['p0', 'p1'])],
@@ -990,7 +984,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     const event = fire('ArrowRight', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowRight',
     })
 
@@ -1000,7 +993,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     document.body.removeChild(dialog)
   })
 
-  test('single active p0 Ctrl+Shift+Right at edge claims the shortcut', () => {
+  test('single active p0 Ctrl+Right at edge claims the shortcut', () => {
     // No neighbor exists, but the chord is recognized as an app-level pane-
     // navigation shortcut after the container/dialog guards pass, so we
     // prevent it from falling through to xterm and reaching the PTY.
@@ -1015,7 +1008,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     const event = fire('ArrowRight', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowRight',
     })
 
@@ -1023,7 +1015,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(event.preventDefaultSpy).toHaveBeenCalled()
   })
 
-  test('hsplit active p0 Ctrl+Shift+Down focuses p1', () => {
+  test('hsplit active p0 Ctrl+Down focuses p1', () => {
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'hsplit', ['p0', 'p1'])],
@@ -1035,7 +1027,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     fire('ArrowDown', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowDown',
     })
 
@@ -1043,7 +1034,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p1')
   })
 
-  test('quad active p0 Ctrl+Shift+Down focuses p2', () => {
+  test('quad active p0 Ctrl+Down focuses p2', () => {
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
@@ -1055,7 +1046,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     fire('ArrowDown', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowDown',
     })
 
@@ -1063,7 +1053,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p2')
   })
 
-  test('quad active p0 Ctrl+Shift+Right focuses p1', () => {
+  test('quad active p0 Ctrl+Right focuses p1', () => {
     const setSessionActivePane = vi.fn()
     renderPane({
       sessions: [makeSession('s1', 'quad', ['p0', 'p1', 'p2', 'p3'])],
@@ -1075,7 +1065,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     fire('ArrowRight', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowRight',
     })
 
@@ -1099,7 +1088,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     fire('ArrowLeft', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowLeft',
     })
 
@@ -1107,7 +1095,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     expect(setSessionActivePane).toHaveBeenCalledWith('s1', 'p0')
   })
 
-  test('Ctrl+Shift+Arrow passes through when terminal container is not active', () => {
+  test('Ctrl+Arrow passes through when terminal container is not active', () => {
     const setSessionActivePane = vi.fn()
     const dockElement = document.createElement('div')
     dockElement.setAttribute('data-container-id', 'dock')
@@ -1125,7 +1113,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     const event = fire('ArrowRight', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowRight',
     })
 
@@ -1135,7 +1122,7 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
     document.body.removeChild(dockElement)
   })
 
-  test('Ctrl+Shift+Arrow passes through when container-active guard is omitted', () => {
+  test('Ctrl+Arrow passes through when container-active guard is omitted', () => {
     // The directional handler defaults to safe: if no caller vouches that the
     // terminal container owns focus, the shortcut must not claim the key.
     const setSessionActivePane = vi.fn()
@@ -1148,7 +1135,6 @@ describe('directional focus (Ctrl/Cmd+Shift+Arrow)', () => {
 
     const event = fire('ArrowRight', {
       ctrlKey: true,
-      shiftKey: true,
       code: 'ArrowRight',
     })
 
