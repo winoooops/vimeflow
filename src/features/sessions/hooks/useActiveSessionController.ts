@@ -8,6 +8,8 @@ import { focusBrowserPane } from '../../browser/browserBridge'
 export interface UseActiveSessionControllerOptions {
   service: ITerminalService
   sessionsRef: { current: Session[] }
+  onActivationCommitted?: (id: string) => void
+  onActivationRolledBack?: (id: string | null) => void
 }
 
 export interface ActiveSessionController {
@@ -22,6 +24,8 @@ export interface ActiveSessionController {
 export const useActiveSessionController = ({
   service,
   sessionsRef,
+  onActivationCommitted = undefined,
+  onActivationRolledBack = undefined,
 }: UseActiveSessionControllerOptions): ActiveSessionController => {
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(
     null
@@ -32,19 +36,61 @@ export const useActiveSessionController = ({
     activeSessionIdRef.current = activeSessionId
   }, [activeSessionId])
 
-  const activeRequestIdRef = useRef(0)
+  const generationRef = useRef(0)
+  const inFlightRef = useRef<{ id: string; generation: number } | null>(null)
+  const pendingIdRef = useRef<string | null>(null)
+  const lastCommittedIdRef = useRef<string | null>(null)
+  const committedCallbackRef = useRef(onActivationCommitted)
+  const rolledBackCallbackRef = useRef(onActivationRolledBack)
+  committedCallbackRef.current = onActivationCommitted
+  rolledBackCallbackRef.current = onActivationRolledBack
 
-  const setActiveSessionId = useCallback(
+  const dispatchRef = useRef<(id: string) => void>(() => undefined)
+
+  const settleSuccess = useCallback((id: string, generation: number): void => {
+    inFlightRef.current = null
+    if (generation === generationRef.current) {
+      lastCommittedIdRef.current = id
+      committedCallbackRef.current?.(id)
+    }
+    const next = pendingIdRef.current
+    pendingIdRef.current = null
+    if (next !== null) {
+      dispatchRef.current(next)
+    }
+  }, [])
+
+  const settleFailure = useCallback((generation: number): void => {
+    inFlightRef.current = null
+    const next = pendingIdRef.current
+    pendingIdRef.current = null
+
+    if (generation === generationRef.current && next === null) {
+      const restored = lastCommittedIdRef.current
+      activeSessionIdRef.current = restored
+      setActiveSessionIdState(restored)
+      rolledBackCallbackRef.current?.(restored)
+      if (restored !== null) {
+        committedCallbackRef.current?.(restored)
+      }
+
+      return
+    }
+
+    if (next !== null) {
+      dispatchRef.current(next)
+    }
+  }, [])
+
+  const dispatch = useCallback(
     (id: string): void => {
-      // F5 (claude MEDIUM): look up the session BEFORE mutating ref+state.
-      // F11 (claude MEDIUM): use the non-throwing `findActivePane` and
-      // resolve the ptyId BEFORE the mutations. The previous code called
-      // `getActivePane(session).ptyId` AFTER the ref+state writes — if
-      // 5b's multi-pane edits transiently produced a no-active-pane state,
-      // the throw would leave React pointing at the new id while Rust's
-      // active stayed on the old one (no IPC fired, no rollback reached).
       const session = sessionsRef.current.find((s) => s.id === id)
+      const generation = generationRef.current
       if (!session) {
+        // Vanished while queued: settle as failure so a pending target still dispatches.
+        inFlightRef.current = { id, generation }
+        settleFailure(generation)
+
         return
       }
 
@@ -65,29 +111,19 @@ export const useActiveSessionController = ({
           ? activePane
           : session.panes.find(isLiveShell)
 
-      // Bump the request id BEFORE branching so a prior in-flight shell
-      // rollback (older myReq) can no longer revert this selection.
-      const myReq = ++activeRequestIdRef.current
-      const prev = activeSessionIdRef.current
-      activeSessionIdRef.current = id
-      setActiveSessionIdState(id)
+      inFlightRef.current = { id, generation }
 
       if (liveShell) {
-        // eslint-disable-next-line promise/prefer-await-to-then
-        service.setActiveSession(liveShell.ptyId).catch((err) => {
-          if (myReq === activeRequestIdRef.current) {
+        service
+          .setActiveSession(liveShell.ptyId)
+          // eslint-disable-next-line promise/prefer-await-to-then
+          .then(() => settleSuccess(id, generation))
+          // eslint-disable-next-line promise/prefer-await-to-then
+          .catch((err: unknown) => {
             // eslint-disable-next-line no-console
-            console.warn('setActiveSession IPC failed; reverting', err)
-            activeSessionIdRef.current = prev
-            setActiveSessionIdState(prev)
-          } else {
-            // eslint-disable-next-line no-console
-            console.warn(
-              'setActiveSession IPC failed but newer request superseded; not reverting',
-              err
-            )
-          }
-        })
+            console.warn('setActiveSession IPC failed', err)
+            settleFailure(generation)
+          })
 
         return
       }
@@ -99,12 +135,39 @@ export const useActiveSessionController = ({
       if (activePane && !isShellPane(activePane)) {
         void focusBrowserPane({ sessionId: session.id, paneId: activePane.id })
       }
+
+      settleSuccess(id, generation)
     },
-    [service, sessionsRef]
+    [service, sessionsRef, settleFailure, settleSuccess]
+  )
+  dispatchRef.current = dispatch
+
+  const setActiveSessionId = useCallback(
+    (id: string): void => {
+      // F5 (claude MEDIUM): look up the session BEFORE mutating ref+state.
+      const session = sessionsRef.current.find((s) => s.id === id)
+      if (!session) {
+        return
+      }
+
+      activeSessionIdRef.current = id
+      setActiveSessionIdState(id)
+
+      if (inFlightRef.current !== null) {
+        pendingIdRef.current = id
+
+        return
+      }
+
+      dispatch(id)
+    },
+    [dispatch, sessionsRef]
   )
 
   const setActiveSessionIdRaw = useCallback((id: string | null): void => {
-    activeRequestIdRef.current += 1
+    generationRef.current += 1
+    pendingIdRef.current = null
+    lastCommittedIdRef.current = id
     activeSessionIdRef.current = id
     setActiveSessionIdState(id)
   }, [])
