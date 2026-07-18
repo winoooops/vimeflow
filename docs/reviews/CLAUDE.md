@@ -57,7 +57,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 9        | 3    | 2026-07-13   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 88       | 42   | 2026-07-09   |
-| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 5    | 2026-07-08   |
+| [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 6    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
@@ -83,7 +83,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 40       | 19   | 2026-07-13   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 19       | 8    | 2026-07-11   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
-| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 39       | 14   | 2026-07-15   |
+| [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 41       | 15   | 2026-07-18   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 27       | 17   | 2026-07-05   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |

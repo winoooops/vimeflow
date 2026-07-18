@@ -281,7 +281,7 @@ const CATALOG_LITERAL = [
     context: 'global',
     matchPolicy: 'tolerant',
     rebindable: true,
-    defaultCombo: c('ArrowLeft', 'Ctrl'),
+    defaultCombo: c('ArrowLeft', 'Mod', 'Shift'),
   },
   {
     id: 'focus-pane-down',
@@ -290,7 +290,7 @@ const CATALOG_LITERAL = [
     context: 'global',
     matchPolicy: 'tolerant',
     rebindable: true,
-    defaultCombo: c('ArrowDown', 'Ctrl'),
+    defaultCombo: c('ArrowDown', 'Mod', 'Shift'),
   },
   {
     id: 'focus-pane-up',
@@ -299,7 +299,7 @@ const CATALOG_LITERAL = [
     context: 'global',
     matchPolicy: 'tolerant',
     rebindable: true,
-    defaultCombo: c('ArrowUp', 'Ctrl'),
+    defaultCombo: c('ArrowUp', 'Mod', 'Shift'),
   },
   {
     id: 'focus-pane-right',
@@ -308,7 +308,7 @@ const CATALOG_LITERAL = [
     context: 'global',
     matchPolicy: 'tolerant',
     rebindable: true,
-    defaultCombo: c('ArrowRight', 'Ctrl'),
+    defaultCombo: c('ArrowRight', 'Mod', 'Shift'),
   },
   {
     id: 'cycle-layout',
