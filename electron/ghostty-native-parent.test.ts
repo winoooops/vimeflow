@@ -2613,6 +2613,76 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('an open dialog reported by the dispatch state suppresses ghostty refocus', async () => {
+    const callbacks: {
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean,
+        repeat: boolean
+      ) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, _resize, _focus, shortcut, _renamePane) => {
+          void _renamePane
+          callbacks.onShortcut = shortcut
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: false,
+      dialogOpen: true,
+    })
+    callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, false)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
   test('opens command palette directly from native Ghostty shortcut', () => {
     const callbacks: {
       onShortcut?: (
