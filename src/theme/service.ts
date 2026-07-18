@@ -82,6 +82,50 @@ let storageSyncInitialized = false
 
 const listeners = new Set<Listener>()
 
+const renameCollidingCustomSchemes = (
+  schemes: readonly ThemeScheme[]
+): {
+  schemes: readonly ThemeScheme[]
+  migratedIds: ReadonlyMap<ThemeId, ThemeId>
+} => {
+  const builtInIds = new Set(builtInThemes.map((theme) => theme.id))
+
+  const occupiedIds = new Set([
+    ...builtInIds,
+    ...schemes
+      .filter((scheme) => !builtInIds.has(scheme.id))
+      .map((scheme) => scheme.id),
+  ])
+  const migratedIds = new Map<ThemeId, ThemeId>()
+
+  const nextSchemes = schemes.map((scheme) => {
+    if (!builtInIds.has(scheme.id)) {
+      return scheme
+    }
+
+    const baseId = `${scheme.id}-custom`
+    let nextId = baseId
+    let index = 2
+
+    while (occupiedIds.has(nextId)) {
+      nextId = `${baseId}-${index}`
+      index += 1
+    }
+
+    occupiedIds.add(nextId)
+    if (!migratedIds.has(scheme.id)) {
+      migratedIds.set(scheme.id, nextId)
+    }
+
+    return {
+      ...scheme,
+      id: nextId,
+    }
+  })
+
+  return { schemes: nextSchemes, migratedIds }
+}
+
 const rebuildThemes = (): void => {
   const customThemes = customSchemes.map(deriveTheme)
   const builtInIds = new Set(builtInThemes.map((theme) => theme.id))
@@ -106,7 +150,8 @@ const loadCustomThemes = (): void => {
 
   try {
     const parsed: unknown = JSON.parse(stored)
-    customSchemes = Array.isArray(parsed)
+
+    const parsedSchemes = Array.isArray(parsed)
       ? parsed.flatMap((theme) => {
           try {
             return [parseStoredThemeScheme(theme)]
@@ -115,6 +160,26 @@ const loadCustomThemes = (): void => {
           }
         })
       : []
+    const migration = renameCollidingCustomSchemes(parsedSchemes)
+    customSchemes = migration.schemes
+
+    if (migration.migratedIds.size > 0) {
+      window.localStorage.setItem(
+        CUSTOM_THEMES_STORAGE_KEY,
+        JSON.stringify(customSchemes)
+      )
+
+      const storedThemeId = window.localStorage.getItem(THEME_STORAGE_KEY)
+
+      const migratedActiveId =
+        storedThemeId === null
+          ? undefined
+          : migration.migratedIds.get(storedThemeId)
+
+      if (migratedActiveId !== undefined) {
+        window.localStorage.setItem(THEME_STORAGE_KEY, migratedActiveId)
+      }
+    }
   } catch {
     customSchemes = []
   }

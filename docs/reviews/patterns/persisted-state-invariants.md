@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-07-13
-ref_count: 10
+last_updated: 2026-07-18
+ref_count: 11
 ---
 
 # Persisted State Invariants
@@ -225,4 +225,13 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
   custom theme and surface an explicit error, while preserving edit mode's
   intentional custom-theme replacement path. Added regression coverage for both
   imported JSON and manually edited create JSON.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. New built-in theme ids can shadow persisted custom schemes
+
+- **Source:** github-codex-connector | PR #705 round 1 | 2026-07-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/service.ts`
+- **Finding:** Adding Ayu, Eldritch, Kanagawa, Nord, and Rose Pine to the built-in theme ids made previously persisted custom schemes with those ids collide with the built-in set. `rebuildThemes` filtered those custom definitions out, so an upgrade could silently hide a user's imported scheme and apply the new built-in for the same saved active id.
+- **Fix:** Added a load-time custom-theme migration that renames persisted built-in collisions to a unique `-custom` id, rewrites the custom-theme storage, and retargets the persisted active theme when it pointed at the migrated custom scheme. Added regression coverage for the active `ayu` collision case.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
