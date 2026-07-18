@@ -72,6 +72,7 @@ interface HarnessProps {
   unsavedChangesDialogOpen?: boolean
   newSessionDialogOpen?: boolean
   burnerTerminalOpen?: boolean
+  sessionSwitcherOpen?: boolean
   paneRenameOpen?: boolean
   dragOverlayOpen?: boolean
   dockDragOverlayOpen?: boolean
@@ -85,6 +86,7 @@ const Harness = ({
   unsavedChangesDialogOpen = false,
   newSessionDialogOpen = false,
   burnerTerminalOpen = false,
+  sessionSwitcherOpen = false,
   paneRenameOpen = false,
   dragOverlayOpen = false,
   dockDragOverlayOpen = false,
@@ -98,6 +100,7 @@ const Harness = ({
       unsavedChangesDialogOpen={unsavedChangesDialogOpen}
       newSessionDialogOpen={newSessionDialogOpen}
       burnerTerminalOpen={burnerTerminalOpen}
+      sessionSwitcherOpen={sessionSwitcherOpen}
       paneRenameOpen={paneRenameOpen}
       dragOverlayOpen={dragOverlayOpen}
       dockDragOverlayOpen={dockDragOverlayOpen}
@@ -168,6 +171,24 @@ describe('WorkspaceOverlayRegistrations', () => {
 
     await waitFor(() =>
       expect(nativeSurfaceStatus()).toHaveTextContent(/^new-session-dialog$/u)
+    )
+
+    rerender(<Harness />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+    )
+  })
+
+  test('registers the session switcher overlay', async () => {
+    const { rerender } = render(<Harness />)
+
+    expect(nativeSurfaceStatus()).toHaveTextContent('clear')
+
+    rerender(<Harness sessionSwitcherOpen />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent(/^session-switcher$/u)
     )
 
     rerender(<Harness />)

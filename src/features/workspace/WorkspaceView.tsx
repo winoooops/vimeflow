@@ -70,6 +70,7 @@ import { formatShortcut } from '@/lib/formatShortcut'
 import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
 import { cycleSession } from '@/features/sessions/utils/cycleSession'
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
+import { SessionSwitcher } from '@/features/sessions/components/SessionSwitcher'
 import {
   clampSize,
   useResizable,
@@ -97,6 +98,8 @@ import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
 import { useSessionNavShortcut } from './hooks/useSessionNavShortcut'
+import { useSessionSwitcher } from './hooks/useSessionSwitcher'
+import { useSessionCloseShortcut } from './hooks/useSessionCloseShortcut'
 import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
@@ -128,7 +131,11 @@ import {
   isLiveStatus,
   isOpenSession,
 } from '@/features/sessions/utils/sessionStatus'
-import { pickNextVisibleSessionId } from '@/features/sessions/utils/pickNextVisibleSessionId'
+import {
+  getVisibleSessions,
+  pickNextVisibleSessionId,
+} from '@/features/sessions/utils/pickNextVisibleSessionId'
+import { closeSessionWithSuccessor } from '@/features/sessions/utils/closeSessionWithSuccessor'
 import {
   AGENTS,
   agentTypeToRegistryKey,
@@ -364,9 +371,13 @@ const WorkspaceViewContent = (): ReactElement => {
   // owned by a dialog, including terminal spawn failures.
   const [fileError, setFileError] = useState<string | null>(null)
 
+  // Forwarder ref; assigned to claimTerminal once it exists below.
+  const activationRollbackFocusRef = useRef<() => void>(() => undefined)
+
   const {
     sessions,
     activeSessionId,
+    mruSessionIds,
     customPaneLayouts,
     layoutRegistry,
     setCustomPaneLayouts,
@@ -397,6 +408,7 @@ const WorkspaceViewContent = (): ReactElement => {
     dropAllForPty,
   } = useSessionManager(terminalService, {
     onTerminalSpawnError: setFileError,
+    onActivationRolledBack: () => activationRollbackFocusRef.current(),
   })
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -1551,6 +1563,7 @@ const WorkspaceViewContent = (): ReactElement => {
     setActiveContainerId(TERMINAL_CONTAINER_ID)
     requestFocus('terminal')
   }, [requestFocus])
+  activationRollbackFocusRef.current = claimTerminal
 
   const closeDock = useCallback((): void => {
     setIsDockOpen(false)
@@ -2234,6 +2247,69 @@ const WorkspaceViewContent = (): ReactElement => {
   useSessionNavShortcut({
     onPrevSession: handlePrevSession,
     onNextSession: handleNextSession,
+    matches,
+  })
+
+  // Ctrl+Tab MRU switcher: switchable set in MRU order, never-activated
+  // sessions appended so every open session stays reachable.
+  const switchableSessions = useMemo(
+    () => getVisibleSessions(sessions, activeSessionId),
+    [activeSessionId, sessions]
+  )
+
+  const switcherOrderedIds = useMemo(() => {
+    const switchable = new Set(switchableSessions.map((s) => s.id))
+    const inMru = mruSessionIds.filter((id) => switchable.has(id))
+
+    const missing = switchableSessions
+      .map((s) => s.id)
+      .filter((id) => !inMru.includes(id))
+
+    return [...inMru, ...missing]
+  }, [mruSessionIds, switchableSessions])
+
+  const switcherEntries = useMemo(
+    () =>
+      switcherOrderedIds.flatMap((id) => {
+        const session = sessions.find((s) => s.id === id)
+
+        return session
+          ? [
+              {
+                id,
+                title: session.name,
+                agentGlyph: null,
+                isActive: id === activeSessionId,
+              },
+            ]
+          : []
+      }),
+    [activeSessionId, sessions, switcherOrderedIds]
+  )
+
+  const sessionSwitcher = useSessionSwitcher({
+    orderedIds: switcherOrderedIds,
+    matches,
+    bindingFor,
+    onCommit: handleSetActiveSessionId,
+    onCancel: claimTerminal,
+  })
+
+  const handleCloseActiveSession = useCallback((): void => {
+    if (activeSessionId === null) {
+      return
+    }
+
+    closeSessionWithSuccessor(activeSessionId, {
+      sessions,
+      activeSessionId,
+      removeSession: handleRemoveSession,
+      activateSession: handleSetActiveSessionId,
+    })
+  }, [activeSessionId, handleRemoveSession, handleSetActiveSessionId, sessions])
+
+  useSessionCloseShortcut({
+    onCloseActiveSession: handleCloseActiveSession,
     matches,
   })
 
@@ -3065,6 +3141,7 @@ const WorkspaceViewContent = (): ReactElement => {
         unsavedChangesDialogOpen={showUnsavedDialog}
         newSessionDialogOpen={newSessionDialog.open}
         burnerTerminalOpen={hasVisibleBurner}
+        sessionSwitcherOpen={sessionSwitcher.open}
         paneRenameOpen={paneRenameNode !== null}
         layoutCreatorOpen={layoutCreatorOpen}
         dragOverlayOpen={isDragging}
@@ -3563,6 +3640,15 @@ const WorkspaceViewContent = (): ReactElement => {
 
       {paneRenameNode}
       {burnerTerminalNode}
+
+      {/* Session Switcher — Ctrl+Tab MRU hold-overlay */}
+      <SessionSwitcher
+        open={sessionSwitcher.open}
+        entries={switcherEntries}
+        selectedIndex={sessionSwitcher.selectedIndex}
+        onCommitIndex={sessionSwitcher.commitIndex}
+        onCancel={sessionSwitcher.cancel}
+      />
 
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette
