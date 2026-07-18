@@ -1,7 +1,18 @@
 # Session Switching Shortcuts — Design
 
+> **2026-07-18 implementation addendum:** packaged-app e2e surfaced two
+> settlement-window races in the switcher. (1) The overlay's _displayed_ order is
+> the switchable set in MRU order with the currently active session hoisted to
+> the front — identical once settlement completes (the active id is then
+> MRU[0]), and correct during the optimistic window while an activation's IPC
+> has not yet committed (`orderSwitcherSessionIds`). (2) §5's "dialog defer
+> except its own overlay" explicitly includes the switcher's own dialog while it
+> plays its exit animation — the closed-state guard excludes it by test id so a
+> rapid re-open is not swallowed; foreign dialogs still defer. The §4
+> committed-MRU contract is untouched by both.
+
 **Status:** Accepted (codex APPROVE on round 7, 2026-07-18; rounds 1–6 findings applied.
-Implementation pending on `feat/session-switching-keymap`).
+Implemented on `feat/session-switching-keymap`).
 
 **Linear:** not yet filed (Sessions component project).
 
