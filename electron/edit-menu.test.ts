@@ -38,7 +38,7 @@ describe('application edit menu', () => {
     const template = createApplicationMenuTemplate('darwin')
 
     expect(template[0]).toEqual({ role: 'appMenu' })
-    expect(template[1]).toEqual({ role: 'fileMenu' })
+    expect(template[1]).toMatchObject({ label: 'File' })
     expect(template[2]).toEqual({ role: 'editMenu' })
     expect(template).toContainEqual({ role: 'windowMenu' })
     expect(template).toContainEqual({ role: 'help' })
@@ -67,7 +67,7 @@ describe('application edit menu', () => {
       .calls[0][0] as MenuItemConstructorOptions[]
     expect(template.map((item) => item.role ?? item.label)).toEqual([
       'appMenu',
-      'fileMenu',
+      'File',
       'editMenu',
       'View',
       'windowMenu',
@@ -85,5 +85,20 @@ describe('application edit menu', () => {
 
     expect(menuMock.buildFromTemplate).not.toHaveBeenCalled()
     expect(menuMock.setApplicationMenu).not.toHaveBeenCalled()
+  })
+
+  test('mac file menu ships without a close accelerator', () => {
+    const template = createApplicationMenuTemplate('darwin')
+
+    const fileEntry = template.find(
+      (item) => item.label === 'File' || item.role === 'fileMenu'
+    )
+
+    expect(fileEntry).toBeDefined()
+    expect(fileEntry?.role).toBeUndefined()
+    const submenu = fileEntry?.submenu as MenuItemConstructorOptions[]
+    const accelerators = submenu.map((item) => item.accelerator)
+    expect(accelerators).not.toContain('CmdOrCtrl+W')
+    expect(submenu.every((item) => item.role !== 'close')).toBe(true)
   })
 })
