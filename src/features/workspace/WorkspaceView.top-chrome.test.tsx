@@ -174,6 +174,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     mockSessionManager = {
       sessions,
       activeSessionId,
+      mruSessionIds: [],
       setActiveSessionId: vi.fn(),
       createSession: vi.fn(),
       createBrowserSession: vi.fn(),
