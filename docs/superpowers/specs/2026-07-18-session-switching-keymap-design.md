@@ -1,6 +1,6 @@
 # Session Switching Shortcuts — Design
 
-**Status:** Draft (codex rounds 1–5 applied; round-6 review pending).
+**Status:** Draft (codex rounds 1–6 applied; round-7 review pending).
 
 **Linear:** not yet filed (Sessions component project).
 
@@ -96,9 +96,9 @@ leaves `[A,B,C]`, not the original). Instead:
 - **Reorder point:** a single semantic **"activation committed"** notification exposed by
   the controller and raised on _every_ branch that finalizes an activation — resolved
   live-shell IPC **and** the immediate no-IPC branches (browser-only sessions,
-  dead-shell placeholders, which deliberately skip PTY IPC). Restore-time raw activation
-  (`setActiveSessionIdRaw`) is covered by the seed, not the notification. A failed
-  activation records nothing.
+  dead-shell placeholders, which deliberately skip PTY IPC). Raw activation writes
+  (`setActiveSessionIdRaw`) never raise the notification — they are covered by the seed
+  and the raw-write barrier below. A failed activation records nothing.
 - **Serialized settlement (total commit order).** Today the controller launches
   activation IPC without awaiting it, so settlements can arrive in any order and no
   per-completion rule can reconcile them (review rounds 4–5 each found a diverging
@@ -119,6 +119,13 @@ leaves `[A,B,C]`, not the original). Instead:
   - **Failure with nothing pending:** roll the UI back to `lastCommittedId`, reclaim
     focus, and raise the committed notification for the restored id. UI, backend,
     baseline, and MRU head converge on the last id the backend actually accepted.
+- **Raw writes are queue barriers.** `setActiveSessionIdRaw` is not restore-only:
+  removing the final session writes raw `null` in production. A raw write bumps the
+  queue **generation**: the pending target is dropped, any in-flight settlement is
+  invalidated (a settlement from an older generation applies **nothing** — no baseline
+  update, no notification, no rollback), and `lastCommittedId` becomes the raw value. A
+  `null` baseline never raises a committed notification. Nothing can resurrect a removed
+  session in the baseline, UI, or MRU.
 - **Membership reconciliation:** an effect observing the committed `sessions` array
   drops ids that left it (prunes only after a removal actually commits — a failed
   removal never touches the MRU) and appends never-seen ids at the back (restore-time
@@ -308,6 +315,9 @@ switching story in v1.
   holds C until B settles; each settlement applies in order, so the MRU head always
   reflects the final selection and UI/backend never diverge. Requests coalesced away
   before dispatch (B→C→D faster than settlement) are never sent and record nothing.
+- **Closing the last session while an activation is in flight:** the raw `null` write is
+  a queue barrier (§4) — the in-flight settlement is generation-invalidated and any
+  pending target dropped; the removed session cannot reappear in baseline or MRU.
 - **Close guard cancellation:** the shared helper's `didRemove === false` sentinel stops
   successor activation — identical to cancelling from the sidebar.
 - **Non-US layouts:** unaffected — no digit-tier chords ship (§8), and `Tab`/`KeyW` are
@@ -324,7 +334,9 @@ switching story in v1.
   second request never dispatches before the first settles; rapid B→C→D coalesces to D),
   the settlement matrix (`B✓C✓` final C; `B✓C✗` all channels land on B; `B✗C✓` final C
   with no intermediate rollback flash; `B✗C✗` all land on A), restore-time raw
-  activation seeds `lastCommittedId`,
+  activation seeds `lastCommittedId`, raw-write barrier (raw `null` during an in-flight
+  activation — with and without a pending target — drops the pending dispatch, the
+  invalidated settlement applies nothing, and no notification fires for `null`),
   prune-on-committed-removal only, restore-time append, seeding incl. a PTY-restored
   active session seeding first; controller rollback reclaims terminal focus (focused
   element asserted after rejection).
@@ -347,21 +359,21 @@ switching story in v1.
 
 ## 11. Touch List
 
-| Area                                                                      | Change                                                                       |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `src/features/keymap/catalog.ts`                                          | +3 commands, Sessions group moves (pane digits untouched)                    |
-| `src/features/settings/components/panes/KeymapPane.tsx`                   | `GROUP_ORDER` + `'Sessions'`                                                 |
-| `src/features/settings/sections.ts`                                       | `KEYMAP_TARGET_GROUPS` + `'Sessions'` (+ target-index tests)                 |
-| `src/features/sessions/hooks/` (new)                                      | MRU state (controller-success reorder + membership reconciliation)           |
-| `src/features/sessions/hooks/useActiveSessionController.ts`               | serialized settlement queue; committed notification; baseline; focus reclaim |
-| new `src/features/sessions/components/SessionSwitcher*`                   | overlay component + owning hook                                              |
-| `src/features/sessions/` (shared close helper)                            | hoisted `List.tsx` close wrapper (guard, successor, focus strategy)          |
-| `src/features/sessions/components/List.tsx`                               | consume the shared close helper                                              |
-| `src/features/workspace/WorkspaceView.tsx`                                | mount switcher, focus-restore (`claimTerminal`) + close-shortcut wiring      |
-| `src/features/workspace/overlays/WorkspaceOverlayRegistrations.tsx`       | switcher overlay-stack registration                                          |
-| `src/components/base/floating/nativeOverlay.ts` + `NativeOverlayHost.tsx` | session-switcher native-overlay payload/renderer                             |
-| `electron/native-overlay.ts`                                              | payload schema/validator + bounds for the new discriminant                   |
-| `electron/edit-menu.ts`                                                   | explicit File submenu, accelerator-less Close (macOS)                        |
-| `electron/browser-pane.ts`                                                | forward-set += `session-switch-next/prev`, `session-close`                   |
-| `electron/ghostty-native-parent.ts`                                       | `shouldRefocus` switcher bit (verify snapshot auto-propagation)              |
-| tests + `tests/e2e/terminal/specs/keymap-bindings.spec.ts`                | per §10                                                                      |
+| Area                                                                      | Change                                                                                           |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `src/features/keymap/catalog.ts`                                          | +3 commands, Sessions group moves (pane digits untouched)                                        |
+| `src/features/settings/components/panes/KeymapPane.tsx`                   | `GROUP_ORDER` + `'Sessions'`                                                                     |
+| `src/features/settings/sections.ts`                                       | `KEYMAP_TARGET_GROUPS` + `'Sessions'` (+ target-index tests)                                     |
+| `src/features/sessions/hooks/` (new)                                      | MRU state (controller-success reorder + membership reconciliation)                               |
+| `src/features/sessions/hooks/useActiveSessionController.ts`               | serialized settlement queue + raw-write barrier; committed notification; baseline; focus reclaim |
+| new `src/features/sessions/components/SessionSwitcher*`                   | overlay component + owning hook                                                                  |
+| `src/features/sessions/` (shared close helper)                            | hoisted `List.tsx` close wrapper (guard, successor, focus strategy)                              |
+| `src/features/sessions/components/List.tsx`                               | consume the shared close helper                                                                  |
+| `src/features/workspace/WorkspaceView.tsx`                                | mount switcher, focus-restore (`claimTerminal`) + close-shortcut wiring                          |
+| `src/features/workspace/overlays/WorkspaceOverlayRegistrations.tsx`       | switcher overlay-stack registration                                                              |
+| `src/components/base/floating/nativeOverlay.ts` + `NativeOverlayHost.tsx` | session-switcher native-overlay payload/renderer                                                 |
+| `electron/native-overlay.ts`                                              | payload schema/validator + bounds for the new discriminant                                       |
+| `electron/edit-menu.ts`                                                   | explicit File submenu, accelerator-less Close (macOS)                                            |
+| `electron/browser-pane.ts`                                                | forward-set += `session-switch-next/prev`, `session-close`                                       |
+| `electron/ghostty-native-parent.ts`                                       | `shouldRefocus` switcher bit (verify snapshot auto-propagation)                                  |
+| tests + `tests/e2e/terminal/specs/keymap-bindings.spec.ts`                | per §10                                                                                          |
