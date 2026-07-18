@@ -1,9 +1,14 @@
 import { expect, test } from 'vitest'
+import { ayu } from './ayu'
 import { dracula } from './dracula'
+import { eldritch } from './eldritch'
 import { flexoki } from './flexoki'
 import { gruvboxDark } from './gruvbox/gruvbox-dark'
 import { gruvboxLight } from './gruvbox/gruvbox-light'
+import { kanagawa } from './kanagawa'
+import { nord } from './nord'
 import { obsidianLens } from './obsidian-lens'
+import { rosePine } from './rose-pine'
 import { tokyoNightTheme } from './tokyo-night'
 
 const themes = [
@@ -13,6 +18,11 @@ const themes = [
   gruvboxLight,
   tokyoNightTheme,
   dracula,
+  ayu,
+  eldritch,
+  kanagawa,
+  nord,
+  rosePine,
 ] as const
 
 const hexToRgb = (hex: string): [number, number, number] => {

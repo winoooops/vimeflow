@@ -24,6 +24,16 @@ export { tokyoNightTheme } from './themes/tokyo-night'
 
 export { dracula } from './themes/dracula'
 
+export { ayu } from './themes/ayu'
+
+export { eldritch } from './themes/eldritch'
+
+export { kanagawa } from './themes/kanagawa'
+
+export { nord } from './themes/nord'
+
+export { rosePine } from './themes/rose-pine'
+
 export type {
   AgentAccent,
   BuiltInThemeId,
