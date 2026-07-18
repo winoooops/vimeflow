@@ -285,6 +285,27 @@ const newSessionRequest: NativeOverlayRequest = {
   },
 }
 
+const sessionSwitcherRequest: NativeOverlayRequest = {
+  surfaceId: 'dialog-session-switcher',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'session-switcher',
+    ariaLabel: 'Session switcher',
+    selectedIndex: 1,
+    items: [
+      { id: 'a', title: 'api server', isActive: true },
+      { id: 'b', title: 'docs', agentGlyph: 'C', isActive: false },
+    ],
+    actions: {
+      commitIndex: 'session-switcher:commit-index',
+      cancel: 'session-switcher:cancel',
+    },
+  },
+}
+
 let cleanupHostBridgeEvents: (() => void) | null = null
 
 const installNativeOverlayHostBridge = (): {
@@ -777,6 +798,30 @@ describe('NativeOverlayHost', () => {
       surfaceId: 'dialog-2',
       actionId: 'new-session:create',
       closeOnSelect: true,
+    })
+  })
+
+  test('renders session switcher dialog requests and dispatches the commit action', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(sessionSwitcherRequest)
+
+    const listbox = await screen.findByRole('listbox', {
+      name: 'Session switcher',
+    })
+    const options = within(listbox).getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(options[1]).toHaveAttribute('aria-selected', 'true')
+    expect(options[0]).toHaveAttribute('aria-selected', 'false')
+
+    await user.click(screen.getByRole('option', { name: /docs/ }))
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-session-switcher',
+      actionId: 'session-switcher:commit-index',
+      closeOnSelect: false,
+      index: 1,
     })
   })
 

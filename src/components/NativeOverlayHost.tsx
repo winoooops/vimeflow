@@ -103,7 +103,9 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
   ((value as { payload?: { dialog?: unknown } }).payload?.dialog ===
     'command-palette' ||
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
-      'new-session')
+      'new-session' ||
+    (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+      'session-switcher')
 
 const isCopyActionResult = (
   value: unknown
@@ -1253,6 +1255,55 @@ export const NativeOverlayHost = ({
             request={request as NativeOverlayNewSessionRequest}
             close={close}
           />
+        )
+      }
+
+      if (request.payload.dialog === 'session-switcher') {
+        const payload = request.payload
+
+        const dispatchSessionSwitcherAction = (
+          actionId: string,
+          options: { index?: number } = {}
+        ): void => {
+          void nativeOverlayHostBridge()?.action({
+            surfaceId: request.surfaceId,
+            actionId,
+            closeOnSelect: false,
+            ...options,
+          })
+        }
+
+        return (
+          <ul
+            role="listbox"
+            aria-label={payload.ariaLabel}
+            className="flex flex-col gap-1 p-2"
+          >
+            {payload.items.map((item, index) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === payload.selectedIndex}
+                  className={
+                    index === payload.selectedIndex
+                      ? 'flex w-full items-center gap-2 rounded-md bg-surface-container-high px-3 py-2 text-left font-body text-sm text-on-surface'
+                      : 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left font-body text-sm text-on-surface-muted'
+                  }
+                  onClick={() =>
+                    dispatchSessionSwitcherAction(payload.actions.commitIndex, {
+                      index,
+                    })
+                  }
+                >
+                  <span className="flex-1 truncate">{item.title}</span>
+                  {item.isActive ? (
+                    <span className="text-xs text-primary">active</span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
         )
       }
 

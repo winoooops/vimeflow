@@ -195,9 +195,31 @@ interface NativeOverlayNewSessionDialogPayload {
   actions: NativeOverlayNewSessionActions
 }
 
+interface NativeOverlaySessionSwitcherItem {
+  id: string
+  title: string
+  agentGlyph?: string
+  isActive: boolean
+}
+
+interface NativeOverlaySessionSwitcherActions {
+  commitIndex: string
+  cancel: string
+}
+
+interface NativeOverlaySessionSwitcherDialogPayload {
+  kind: 'dialog'
+  dialog: 'session-switcher'
+  ariaLabel: string
+  selectedIndex: number
+  items: NativeOverlaySessionSwitcherItem[]
+  actions: NativeOverlaySessionSwitcherActions
+}
+
 type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
+  | NativeOverlaySessionSwitcherDialogPayload
 
 type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
@@ -313,6 +335,7 @@ const MAX_NEW_SESSION_COMMANDS = 64
 const MAX_NEW_SESSION_AREA_ROWS = 16
 const MAX_NEW_SESSION_AREA_COLUMNS = 16
 const MAX_THEME_VARIABLES = 512
+const MAX_SESSION_SWITCHER_ITEMS = 500
 
 const OVERLAY_CURSOR_RESET_SCRIPT = `
 (() => {
@@ -636,10 +659,41 @@ const isNewSessionDialogPayload = (
   ) &&
   isNewSessionActions(value.actions)
 
+const isSessionSwitcherItem = (
+  value: unknown
+): value is NativeOverlaySessionSwitcherItem =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isString(value.title) &&
+  (value.agentGlyph === undefined || typeof value.agentGlyph === 'string') &&
+  typeof value.isActive === 'boolean'
+
+const isSessionSwitcherActions = (
+  value: unknown
+): value is NativeOverlaySessionSwitcherActions =>
+  isRecord(value) && isString(value.commitIndex) && isString(value.cancel)
+
+const isSessionSwitcherDialogPayload = (
+  value: unknown
+): value is NativeOverlaySessionSwitcherDialogPayload =>
+  isRecord(value) &&
+  value.dialog === 'session-switcher' &&
+  isString(value.ariaLabel) &&
+  isFiniteNumber(value.selectedIndex) &&
+  value.selectedIndex >= 0 &&
+  isBoundedArray(
+    value.items,
+    MAX_SESSION_SWITCHER_ITEMS,
+    isSessionSwitcherItem
+  ) &&
+  isSessionSwitcherActions(value.actions)
+
 const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
   isRecord(value) &&
   value.kind === 'dialog' &&
-  (isCommandPaletteDialogPayload(value) || isNewSessionDialogPayload(value))
+  (isCommandPaletteDialogPayload(value) ||
+    isNewSessionDialogPayload(value) ||
+    isSessionSwitcherDialogPayload(value))
 
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
   isRecord(value) &&
