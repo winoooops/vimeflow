@@ -59,6 +59,8 @@ export interface PendingReviewRequest {
    * pasted into any agent (the nonce is unguessable — no session check needed).
    */
   nonce: string
+  /** Present only when Vimeflow delegated the request to a known PTY. */
+  ptyId?: string
   /** The feedback owner (sessionId:paneId) at dispatch — findings route here. */
   ownerKey: string
   cwd: string
@@ -87,6 +89,11 @@ export const getPendingReviewRequest = (
 export const clearPendingReviewRequest = (nonce: string): void => {
   store.delete(nonce)
 }
+
+export const pendingReviewRequestNoncesForPty = (ptyId: string): string[] =>
+  [...store.values()]
+    .filter((request) => request.ptyId === ptyId)
+    .map((request) => request.nonce)
 
 /**
  * Findings that cannot be anchored (path not in the reviewed diff) and

@@ -69,7 +69,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 6        | 3    | 2026-07-09   |
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 11       | 2    | 2026-07-09   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 12       | 3    | 2026-07-18   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |

@@ -4,7 +4,7 @@
 //! Emits `agent-tool-call` backend events for each tool call start/completion
 //! and `agent-turn` events as real user prompts are observed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
@@ -17,18 +17,20 @@ use serde_json::Value;
 use super::test_runners::emitter::TestRunEmitter;
 use super::test_runners::matcher::{match_command, MatchedCommand};
 use super::transcript_dto::{ClaudeToolResultDto, ClaudeToolUseDto, ClaudeTranscriptLineDto};
-use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
+use crate::agent::adapter::base::{
+    for_each_bounded_line, TranscriptDecoder, TranscriptHandle, TranscriptTailService,
+};
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_session_title,
     emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change, record_lifecycle,
     record_tool_call, ReplayActivity,
 };
-use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
+use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
 use crate::agent::sanitize_title;
 use crate::agent::types::{
-    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentSessionTitleEvent, AgentToolCallEvent,
-    AgentTurnEvent, TitleSource, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentReviewEvent, AgentSessionTitleEvent,
+    AgentToolCallEvent, AgentTurnEvent, TitleSource, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -209,6 +211,96 @@ pub fn start_tailing(
     });
 
     Ok(TranscriptHandle::new(stop_flag, join_handle))
+}
+
+pub(super) fn recover_replies(
+    transcript_path: &Path,
+    session_id: &str,
+    nonces: &HashSet<String>,
+) -> Result<Vec<AgentReplyEvent>, String> {
+    let file = File::open(transcript_path).map_err(|e| {
+        format!(
+            "Failed to open Claude transcript for recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+    let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
+
+    for_each_bounded_line(BufReader::new(file), "Claude transcript recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
+        let Ok(dto) = serde_json::from_str::<ClaudeTranscriptLineDto>(line) else {
+            return;
+        };
+        if dto.line_type.as_deref() != Some("assistant") {
+            return;
+        }
+        if let Some(event) = reply_event(&dto, session_id) {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
+                recovered.push(event);
+            }
+        }
+    })
+    .map_err(|e| {
+        format!(
+            "Failed to read Claude transcript for recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+
+    Ok(recovered)
+}
+
+pub(super) fn recover_reviews(
+    transcript_path: &Path,
+    session_id: &str,
+    nonces: &HashSet<String>,
+) -> Result<Vec<AgentReviewEvent>, String> {
+    let file = File::open(transcript_path).map_err(|e| {
+        format!(
+            "Failed to open Claude transcript for review recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+    let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
+
+    for_each_bounded_line(BufReader::new(file), "Claude review recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
+        let Ok(dto) = serde_json::from_str::<ClaudeTranscriptLineDto>(line) else {
+            return;
+        };
+        if dto.line_type.as_deref() != Some("assistant") {
+            return;
+        }
+        if let Some(event) = review_event(&dto, session_id) {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
+                recovered.push(event);
+            }
+        }
+    })
+    .map_err(|e| {
+        format!(
+            "Failed to read Claude transcript for review recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+
+    Ok(recovered)
 }
 
 /// Per-session Claude Code decoder: owns the in-flight tool-call map, turn
@@ -574,49 +666,32 @@ fn emit_reply_if_present(
         return;
     }
 
+    let Some(event) = reply_event(dto, session_id) else {
+        return;
+    };
+
+    if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-reply event: {}", e);
+    }
+}
+
+fn reply_event(dto: &ClaudeTranscriptLineDto, session_id: &str) -> Option<AgentReplyEvent> {
     let ended = matches!(
         dto.message.as_ref().and_then(|m| m.stop_reason.as_deref()),
         Some("end_turn" | "stop_sequence" | "max_tokens")
     );
     if !ended {
-        return;
+        return None;
     }
 
-    let Some(blocks) = message_content_items(dto) else {
-        return;
-    };
-
-    // The completed reply prose is the assistant's `text` content blocks.
+    let blocks = message_content_items(dto)?;
     let reply_text = blocks
         .iter()
         .filter(|block| text_block_type(block) == Some("text"))
         .filter_map(text_block_text)
         .collect::<Vec<_>>()
         .join("\n");
-
-    let Some(outcome) = extract_agent_reply(&reply_text) else {
-        return;
-    };
-
-    let (raw_text, nonce, replies) = match outcome {
-        AgentReplyOutcome::Structured {
-            raw,
-            nonce,
-            replies,
-        } => (raw, Some(nonce), Some(replies)),
-        AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
-    };
-
-    let event = AgentReplyEvent {
-        session_id: session_id.to_string(),
-        nonce,
-        raw_text,
-        replies,
-    };
-
-    if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
-        log::warn!("Failed to emit agent-reply event: {}", e);
-    }
+    extract_agent_reply(&reply_text).map(|outcome| map_agent_reply_outcome(session_id, outcome))
 }
 
 /// If a completed assistant turn's `text` carries the VIM-304 review sentinel
@@ -632,18 +707,25 @@ fn emit_review_if_present(
         return;
     }
 
+    let Some(event) = review_event(dto, session_id) else {
+        return;
+    };
+
+    if let Err(e) = crate::agent::events::emit_agent_review(events.as_ref(), &event) {
+        log::warn!("Failed to emit agent-review event: {}", e);
+    }
+}
+
+fn review_event(dto: &ClaudeTranscriptLineDto, session_id: &str) -> Option<AgentReviewEvent> {
     let ended = matches!(
         dto.message.as_ref().and_then(|m| m.stop_reason.as_deref()),
         Some("end_turn" | "stop_sequence" | "max_tokens")
     );
     if !ended {
-        return;
+        return None;
     }
 
-    let Some(blocks) = message_content_items(dto) else {
-        return;
-    };
-
+    let blocks = message_content_items(dto)?;
     let reply_text = blocks
         .iter()
         .filter(|block| text_block_type(block) == Some("text"))
@@ -651,14 +733,8 @@ fn emit_review_if_present(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let Some(outcome) = crate::agent::review::extract_agent_review(&reply_text) else {
-        return;
-    };
-
-    let event = crate::agent::review::map_review_outcome(session_id, outcome);
-    if let Err(e) = crate::agent::events::emit_agent_review(events.as_ref(), &event) {
-        log::warn!("Failed to emit agent-review event: {}", e);
-    }
+    crate::agent::review::extract_agent_review(&reply_text)
+        .map(|outcome| crate::agent::review::map_review_outcome(session_id, outcome))
 }
 
 /// Extract tool_use entries from an assistant message.
@@ -1128,6 +1204,78 @@ fn cap_with_head_and_tail(content: &str) -> String {
 mod tests {
     use super::*;
     use crate::runtime::FakeEventSink;
+
+    #[test]
+    fn recover_replies_requires_a_completed_assistant_turn() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let transcript_path = tmp.path().join("claude.jsonl");
+        let reply_text = "done\n<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"wanted\",\"replies\":[{\"id\":1,\"status\":\"reply\",\"text\":\"yes\"}]}\nVIMEFLOW_REPLY>>>";
+        let incomplete = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": reply_text}],
+                "stop_reason": "tool_use"
+            }
+        });
+        let complete = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": reply_text}],
+                "stop_reason": "end_turn"
+            }
+        });
+        std::fs::write(
+            &transcript_path,
+            format!("{incomplete}\n{complete}\n{complete}\n"),
+        )
+            .expect("write transcript");
+
+        let recovered = recover_replies(
+            &transcript_path,
+            "pty-1",
+            &std::collections::HashSet::from(["wanted".to_string()]),
+        )
+        .expect("recover replies");
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].nonce.as_deref(), Some("wanted"));
+    }
+
+    #[test]
+    fn recover_reviews_requires_a_completed_assistant_turn() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let transcript_path = tmp.path().join("claude.jsonl");
+        let review_text = "done\n<<<VIMEFLOW_REVIEW\n{\"v\":1,\"nonce\":\"wanted\",\"reviewer\":\"Claude\",\"findings\":[{\"scope\":\"file\",\"path\":\"a.ts\",\"category\":\"bug\",\"text\":\"found\"}]}\nVIMEFLOW_REVIEW>>>";
+        let incomplete = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": review_text}],
+                "stop_reason": "tool_use"
+            }
+        });
+        let complete = serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": review_text}],
+                "stop_reason": "end_turn"
+            }
+        });
+        std::fs::write(
+            &transcript_path,
+            format!("{incomplete}\n{complete}\n{complete}\n"),
+        )
+            .expect("write transcript");
+
+        let recovered = recover_reviews(
+            &transcript_path,
+            "pty-1",
+            &std::collections::HashSet::from(["wanted".to_string()]),
+        )
+        .expect("recover reviews");
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].nonce.as_deref(), Some("wanted"));
+    }
 
     fn lifecycle_phases(sink: &FakeEventSink) -> Vec<String> {
         sink.recorded()

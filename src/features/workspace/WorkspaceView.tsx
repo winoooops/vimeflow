@@ -2298,15 +2298,19 @@ const WorkspaceViewContent = (): ReactElement => {
   // where every feedback owner is reachable so a reply attaches onto the owner
   // that dispatched it — even after the user switches panes.
   useAgentReply({
+    activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReplyCommentId,
+    notifyInfo,
   })
 
   // Capture delegated review findings (VIM-304): the same single subscription
   // point, placing reviewer findings onto the owner that requested the review.
   useAgentReview({
+    activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReviewCommentId,
+    notifyInfo,
   })
 
   useLayoutEffect(() => {

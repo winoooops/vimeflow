@@ -1,0 +1,827 @@
+<!doctype html>
+<!-- cspell:words idempotency nonce nonces Vimeflow -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Bilingual technical note for VIM-342 nonce-scoped hunk reply recovery and its boundary with VIM-346 persistence."
+    />
+    <title>
+      VIM-342 Technical Note · Nonce-Scoped Reply and Review Recovery
+    </title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07121f;
+        --surface: #0c1b2c;
+        --surface-strong: #10253a;
+        --surface-soft: rgba(74, 163, 184, 0.07);
+        --text: #dce8f2;
+        --muted: #94aabd;
+        --faint: #6d879b;
+        --accent: #4aa3b8;
+        --accent-soft: rgba(74, 163, 184, 0.18);
+        --line: rgba(148, 170, 189, 0.16);
+        --shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+        --sans:
+          Inter, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui,
+          sans-serif;
+        --mono:
+          'SFMono-Regular', 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
+          monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--sans);
+        background-color: var(--bg);
+        background-image:
+          linear-gradient(rgba(74, 163, 184, 0.045) 1px, transparent 1px),
+          linear-gradient(
+            90deg,
+            rgba(74, 163, 184, 0.045) 1px,
+            transparent 1px
+          ),
+          radial-gradient(
+            circle at 12% 0%,
+            rgba(74, 163, 184, 0.14),
+            transparent 28rem
+          );
+        background-size:
+          24px 24px,
+          24px 24px,
+          auto;
+      }
+      a {
+        color: #84c4d2;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+      code,
+      .mono {
+        font-family: var(--mono);
+      }
+      code {
+        padding: 0.12rem 0.36rem;
+        border: 1px solid var(--line);
+        border-radius: 0.35rem;
+        background: rgba(3, 10, 18, 0.54);
+        color: #b9dce4;
+        font-size: 0.9em;
+      }
+      .page {
+        width: min(1180px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 40px 0 72px;
+      }
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        background: rgba(12, 27, 44, 0.94);
+        box-shadow: var(--shadow);
+      }
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 42px;
+        border-top: 4px solid var(--accent);
+      }
+      .hero::after {
+        position: absolute;
+        right: -42px;
+        bottom: -72px;
+        width: 280px;
+        height: 280px;
+        border: 1px solid var(--accent-soft);
+        border-radius: 50%;
+        content: '';
+      }
+      .eyebrow,
+      .label,
+      th {
+        color: var(--accent);
+        font: 700 12px/1.3 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .eyebrow {
+        margin: 0 0 16px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        max-width: 900px;
+        margin-bottom: 18px;
+        font-size: clamp(36px, 6vw, 64px);
+        line-height: 1.02;
+        letter-spacing: -0.045em;
+      }
+      h1 span {
+        display: block;
+        margin-top: 10px;
+        color: var(--accent);
+        font-size: 0.53em;
+        letter-spacing: -0.025em;
+      }
+      h2 {
+        margin-bottom: 12px;
+        font-size: clamp(25px, 3vw, 34px);
+        line-height: 1.12;
+        letter-spacing: -0.025em;
+      }
+      h3 {
+        margin-bottom: 8px;
+        font-size: 18px;
+        line-height: 1.3;
+      }
+      p,
+      li,
+      td {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.72;
+      }
+      .lede {
+        max-width: 900px;
+        margin-bottom: 0;
+        color: var(--text);
+        font-size: 18px;
+      }
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 26px;
+      }
+      .chip {
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        background: rgba(74, 163, 184, 0.08);
+        color: #bdd7df;
+        font: 600 12px/1.2 var(--mono);
+      }
+      .section {
+        margin-top: 24px;
+        padding: 32px;
+      }
+      .section-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr);
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 24px;
+      }
+      .section-head p {
+        margin-bottom: 0;
+      }
+      .bilingual {
+        display: grid;
+        grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+        gap: 18px;
+      }
+      .language-panel,
+      .scope-card,
+      .flow-step,
+      .review-card,
+      .invariant {
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+      }
+      .language-panel,
+      .scope-card,
+      .review-card,
+      .invariant {
+        padding: 20px;
+      }
+      .language-panel.cn {
+        background: rgba(16, 37, 58, 0.78);
+      }
+      .language-panel p:last-child,
+      .scope-card p:last-child,
+      .review-card p:last-child,
+      .invariant p:last-child {
+        margin-bottom: 0;
+      }
+      .decision {
+        border-top: 4px solid var(--accent);
+        background: var(--surface-strong);
+      }
+      .decision strong {
+        color: var(--text);
+      }
+      .scope-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+        gap: 18px;
+      }
+      .scope-card.now {
+        border-top: 4px solid var(--accent);
+        background: var(--surface-strong);
+      }
+      ul {
+        margin: 10px 0 0 18px;
+        padding: 0;
+      }
+      li + li {
+        margin-top: 7px;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns:
+          minmax(0, 1.3fr) 34px minmax(0, 0.92fr)
+          34px minmax(0, 0.78fr);
+        gap: 10px;
+        align-items: stretch;
+      }
+      .flow-step {
+        min-height: 170px;
+        padding: 20px;
+      }
+      .flow-step.primary {
+        border-top: 4px solid var(--accent);
+        background: var(--surface-strong);
+      }
+      .flow-step .number {
+        display: block;
+        margin-bottom: 20px;
+        color: var(--accent);
+        font: 700 30px/1 var(--mono);
+      }
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: var(--accent);
+        font: 700 24px/1 var(--mono);
+      }
+      .continuation {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+      }
+      .continuation .flow-step {
+        min-height: 145px;
+      }
+      .invariant-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.55fr);
+        gap: 18px;
+      }
+      .invariant strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--text);
+        font-size: 18px;
+      }
+      .formula {
+        display: grid;
+        place-items: center;
+        min-height: 100%;
+        padding: 22px;
+        border: 1px solid var(--accent-soft);
+        background: #081625;
+        color: #b9dce4;
+        text-align: center;
+        font: 700 16px/1.7 var(--mono);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 14px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        font-size: 11px;
+      }
+      .status {
+        display: inline-block;
+        padding: 4px 8px;
+        border: 1px solid var(--accent-soft);
+        background: rgba(74, 163, 184, 0.1);
+        color: #b9dce4;
+        font: 700 11px/1.2 var(--mono);
+        white-space: nowrap;
+      }
+      .review-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+        gap: 18px;
+      }
+      .review-card.kept {
+        border-top: 4px solid var(--accent);
+        background: var(--surface-strong);
+      }
+      .checklist {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 18px;
+        margin: 0;
+        list-style: none;
+      }
+      .checklist li {
+        position: relative;
+        margin: 0;
+        padding-left: 27px;
+      }
+      .checklist li::before {
+        position: absolute;
+        top: 0.16rem;
+        left: 0;
+        color: var(--accent);
+        font: 700 15px/1 var(--mono);
+        content: '□';
+      }
+      .footer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 24px;
+        padding: 18px 4px 0;
+        border-top: 1px solid var(--line);
+        color: var(--faint);
+        font: 500 12px/1.6 var(--mono);
+      }
+      @media (max-width: 900px) {
+        .section-head,
+        .bilingual,
+        .scope-grid,
+        .invariant-grid,
+        .review-grid {
+          grid-template-columns: 1fr;
+        }
+        .flow {
+          grid-template-columns: 1fr;
+        }
+        .arrow {
+          min-height: 28px;
+          transform: rotate(90deg);
+        }
+        .continuation {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 640px) {
+        .page {
+          width: min(100% - 22px, 1180px);
+          padding-top: 12px;
+        }
+        .hero,
+        .section {
+          padding: 22px;
+        }
+        .checklist {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media print {
+        :root {
+          color-scheme: light;
+          --bg: #ffffff;
+          --surface: #f3f7f9;
+          --surface-strong: #eaf2f5;
+          --surface-soft: #f3f7f9;
+          --text: #142533;
+          --muted: #425d70;
+          --faint: #6a7f8d;
+          --line: rgba(20, 37, 51, 0.16);
+        }
+        body {
+          background: #ffffff;
+        }
+        .hero,
+        .section {
+          break-inside: avoid;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">VIM-342 · Reviewed Architecture · 2026-07-18</p>
+        <h1>
+          Nonce-Scoped Reply and Review Recovery
+          <span lang="zh-CN">基于 Nonce 的 Reply 与 Review 定向恢复</span>
+        </h1>
+        <p class="lede">
+          Recover one missed structured reply or delegated review when its pane
+          becomes active again—without weakening transcript replay protection,
+          starting inactive watchers, or adding persistence to the pane-switch
+          fix.
+          <span lang="zh-CN"
+            >当 pane 再次激活时，只恢复对应的结构化回复或 review；不削弱
+            transcript replay 防护，不启动 inactive
+            watcher，也不把持久化重构塞进 pane-switch 修复。</span
+          >
+        </p>
+        <div class="hero-meta" aria-label="Technical note tags">
+          <span class="chip">(ptyId, nonce)</span>
+          <span class="chip">read-only recovery</span>
+          <span class="chip">synchronous consume</span>
+          <span class="chip">replay_done preserved</span>
+        </div>
+      </header>
+      <section class="section" aria-labelledby="decision-title">
+        <div class="section-head">
+          <div>
+            <p class="label">01 · Core decision / 核心决策</p>
+            <h2 id="decision-title">
+              Recover requested data; never replay the event stream.
+            </h2>
+          </div>
+          <p lang="zh-CN">只读取仍在等待的 nonce，不重新广播历史事件。</p>
+        </div>
+        <div class="bilingual">
+          <article class="language-panel decision" lang="en">
+            <h3>Keep the flood guard</h3>
+            <p>
+              <strong
+                >Codex and Claude keep their current
+                <code>if !replay_done { return; }</code> behavior.</strong
+              >
+              General transcript replay still suppresses historical
+              <code>agent-reply</code> or <code>agent-review</code> output.
+            </p>
+          </article>
+          <article class="language-panel cn" lang="zh-CN">
+            <h3>保留 replay 防洪机制</h3>
+            <p>
+              <strong
+                >Codex 与 Claude 继续保留现有的
+                <code>replay_done</code> guard。</strong
+              >普通 transcript replay 仍然不能发出历史
+              <code>agent-reply</code> 或 <code>agent-review</code>。
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="section" aria-labelledby="scope-title">
+        <div class="section-head">
+          <div>
+            <p class="label">02 · Issue boundary / 工单边界</p>
+            <h2 id="scope-title">Two problems, two issues.</h2>
+          </div>
+          <p>VIM-342 is not blocked by the persistence project.</p>
+        </div>
+        <div class="scope-grid">
+          <article class="scope-card now">
+            <span class="status">VIM-342 · NOW</span>
+            <h3>Pane-switch recovery / Pane 切换恢复</h3>
+            <ul>
+              <li>
+                Use the existing in-memory <code>PendingReview</code> and
+                <code>PendingReviewRequest</code>.
+              </li>
+              <li>Query only pending nonces for the returning PTY.</li>
+              <li>
+                Return matching Codex/Claude replies or reviews without emitting
+                events.
+              </li>
+              <li>Consume through the existing synchronous handler.</li>
+            </ul>
+            <p lang="zh-CN">
+              复用现有内存 pending record，只查询当前 PTY 仍在等待的
+              nonce，并通过同步 handler 完成一次挂载。
+            </p>
+          </article>
+          <article class="scope-card">
+            <span class="status">VIM-346 · LATER</span>
+            <h3>Restart persistence / 跨重启持久化</h3>
+            <ul>
+              <li><code>review-state.json</code></li>
+              <li>Comments, replies, drafts</li>
+              <li>Linked-worktree identity</li>
+              <li>Crash/relaunch hydration</li>
+            </ul>
+            <p lang="zh-CN">
+              应用退出、重启、linked worktree 切换后的恢复由 VIM-346 独立负责。
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="section" aria-labelledby="flow-title">
+        <div class="section-head">
+          <div>
+            <p class="label">03 · Real flow / 实际流程</p>
+            <h2 id="flow-title">Your pane A → pane B example</h2>
+          </div>
+          <p lang="zh-CN">
+            用户离开 pane A 时，agent 仍可写 transcript，但 watcher 已停止。
+          </p>
+        </div>
+        <div class="flow" aria-label="Dispatch and recovery flow">
+          <article class="flow-step primary">
+            <span class="number">01</span>
+            <h3>Pane A dispatches</h3>
+            <p>
+              Register <code>(pty-A, nonce-X)</code> before the PTY write. The
+              record captures pane A's <code>ownerKey</code> and
+              <code>[#n]</code> handles.
+            </p>
+            <p lang="zh-CN">
+              先登记 pending correlation，再写入 PTY，避免快速 reply 抢跑。
+            </p>
+          </article>
+          <div class="arrow" aria-hidden="true">→</div>
+          <article class="flow-step">
+            <span class="number">02</span>
+            <h3>User switches to pane B</h3>
+            <p>
+              Pane A's transcript tail stops. The pending record stays because
+              pane A still exists.
+            </p>
+            <p lang="zh-CN">
+              watcher 停止，但 pane A 未被删除，所以 pending record 仍在。
+            </p>
+          </article>
+          <div class="arrow" aria-hidden="true">→</div>
+          <article class="flow-step">
+            <span class="number">03</span>
+            <h3>Agent A finishes</h3>
+            <p>
+              <code>VIMEFLOW_REPLY</code> or <code>VIMEFLOW_REVIEW</code> lands
+              in the transcript while no live tail is listening.
+            </p>
+            <p lang="zh-CN">结构化结果已经写入 transcript，但没有实时事件。</p>
+          </article>
+        </div>
+        <div class="continuation">
+          <article class="flow-step">
+            <span class="number">04</span>
+            <h3>Return to pane A</h3>
+            <p>
+              List pending nonces for <code>pty-A</code>. Do nothing when the
+              list is empty.
+            </p>
+            <p lang="zh-CN">只读取 pane A 对应 PTY 的 pending nonce。</p>
+          </article>
+          <article class="flow-step primary">
+            <span class="number">05</span>
+            <h3>Targeted read</h3>
+            <p>
+              <code>recover_agent_replies</code> or
+              <code>recover_agent_reviews</code> scans the validated transcript
+              source and returns X only.
+            </p>
+            <p lang="zh-CN">不接收前端 transcript path，不广播历史 B、C、D。</p>
+          </article>
+          <article class="flow-step">
+            <span class="number">06</span>
+            <h3>Synchronous attach</h3>
+            <p>
+              The existing handler routes to pane A's captured owner, attaches
+              the reply, and consumes the handle.
+            </p>
+            <p lang="zh-CN">
+              挂载成功后删除 handle；后来的重复结果自然 no-op。
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="section" aria-labelledby="once-title">
+        <div class="section-head">
+          <div>
+            <p class="label">04 · Delivery semantics / 投递语义</p>
+            <h2 id="once-title">
+              The event is not “only once.” The effect is.
+            </h2>
+          </div>
+          <p lang="zh-CN">
+            实时事件与恢复结果可以竞争，但 UI 结果只能生效一次。
+          </p>
+        </div>
+        <div class="invariant-grid">
+          <article class="invariant">
+            <strong>Why duplicates are safe / 为什么重复投递安全</strong>
+            <p>
+              The live listener and targeted recovery may both observe the same
+              reply. Both call the same synchronous <code>handleReply</code>.
+              JavaScript runs them sequentially: the first deletes the matched
+              handle; the second no longer finds a pending target.
+            </p>
+            <p lang="zh-CN">
+              live listener 与 recovery 可能同时拿到同一条回复，但 JavaScript
+              会顺序执行。第一个调用消费 handle，第二个调用找不到 pending
+              target，因此不会重复挂载。
+            </p>
+          </article>
+          <div class="formula" aria-label="Idempotency formula">
+            delivery ≥ 1<br />
+            effect = 1<br />
+            key = (ptyId, nonce)
+          </div>
+        </div>
+      </section>
+      <section class="section" aria-labelledby="review-title">
+        <div class="section-head">
+          <div>
+            <p class="label">05 · Claude review / Claude 审查</p>
+            <h2 id="review-title">What changed after <code>claude -p</code></h2>
+          </div>
+          <p>The review reduced scope and removed a race-prone dependency.</p>
+        </div>
+        <div class="review-grid">
+          <article class="review-card kept">
+            <span class="status">KEPT / 保留</span>
+            <h3>Nonce-scoped recovery</h3>
+            <ul>
+              <li>Read-only validated transcript source.</li>
+              <li>Codex and Claude provider-specific extraction.</li>
+              <li>No <code>EventSink</code> broadcast.</li>
+              <li>No inactive watcher restart.</li>
+            </ul>
+          </article>
+          <article class="review-card">
+            <span class="status">MOVED TO VIM-346</span>
+            <h3>Durable review storage</h3>
+            <ul>
+              <li>Four-state delivery machine</li>
+              <li>Async outcome persistence</li>
+              <li>Git common-directory identity</li>
+              <li>Restart hydration</li>
+            </ul>
+          </article>
+        </div>
+        <table aria-label="Claude review changes">
+          <thead>
+            <tr>
+              <th>Before review</th>
+              <th>After review</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>VIM-342 depended on <code>review-state.json</code>.</td>
+              <td>VIM-342 uses the existing in-memory pending store.</td>
+              <td>Pane switching does not destroy the owner record.</td>
+            </tr>
+            <tr>
+              <td>Reply ingestion awaited durable writes.</td>
+              <td>Reply ingestion remains synchronous.</td>
+              <td>
+                An await could let live and recovered copies both pass the
+                pending gate.
+              </td>
+            </tr>
+            <tr>
+              <td>Persistence was a prerequisite.</td>
+              <td>VIM-346 is related but independent.</td>
+              <td>Restart durability is a different lifecycle requirement.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="section" aria-labelledby="survival-title">
+        <div class="section-head">
+          <div>
+            <p class="label">06 · What survives / 能否保留</p>
+            <h2 id="survival-title">Behavior matrix</h2>
+          </div>
+          <p lang="zh-CN">VIM-342 只保证当前进程内的 pane 切换。</p>
+        </div>
+        <table aria-label="Persistence behavior matrix">
+          <thead>
+            <tr>
+              <th>Scenario / 场景</th>
+              <th>After VIM-342</th>
+              <th>Owner / 归属</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                Switch pane A → B → A<br /><span lang="zh-CN"
+                  >同一 workspace 内切 pane</span
+                >
+              </td>
+              <td><span class="status">YES</span></td>
+              <td>VIM-342</td>
+            </tr>
+            <tr>
+              <td>
+                Live event and reply/review recovery both arrive<br /><span
+                  lang="zh-CN"
+                  >实时与恢复重复到达</span
+                >
+              </td>
+              <td><span class="status">ONE EFFECT</span></td>
+              <td>VIM-342</td>
+            </tr>
+            <tr>
+              <td>
+                Close/remove the owning pane or session<br /><span lang="zh-CN"
+                  >关闭对应 pane/session</span
+                >
+              </td>
+              <td>Not retained / 不保留</td>
+              <td>VIM-346 if required</td>
+            </tr>
+            <tr>
+              <td>
+                Exit and restart Vimeflow<br /><span lang="zh-CN"
+                  >退出并重启应用</span
+                >
+              </td>
+              <td>Not yet / 暂不支持</td>
+              <td>VIM-346</td>
+            </tr>
+            <tr>
+              <td>
+                Open from another linked worktree<br /><span lang="zh-CN"
+                  >切换 linked worktree</span
+                >
+              </td>
+              <td>Not yet / 暂不支持</td>
+              <td>VIM-346</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="section" aria-labelledby="acceptance-title">
+        <div class="section-head">
+          <div>
+            <p class="label">07 · Review checklist / 验收清单</p>
+            <h2 id="acceptance-title">
+              What to verify before implementation approval
+            </h2>
+          </div>
+          <p lang="zh-CN">这些条件全部通过后，VIM-342 才算完成。</p>
+        </div>
+        <ul class="checklist">
+          <li>
+            Pane A reply or review returns to pane A, never pane B.<br /><span
+              lang="zh-CN"
+              >回复只回到原始 pane A。</span
+            >
+          </li>
+          <li>
+            Repeated switching creates no duplicate.<br /><span lang="zh-CN"
+              >反复切换不会重复挂载。</span
+            >
+          </li>
+          <li>
+            Historical nonces are not requested.<br /><span lang="zh-CN"
+              >未 pending 的历史 nonce 不会被查询。</span
+            >
+          </li>
+          <li>
+            Normal replay still emits no historical reply.<br /><span
+              lang="zh-CN"
+              >普通 replay 仍保持防洪。</span
+            >
+          </li>
+          <li>
+            Recovery never starts a watcher.<br /><span lang="zh-CN"
+              >恢复流程不会启动 watcher。</span
+            >
+          </li>
+          <li>
+            Fast reply cannot beat pending registration.<br /><span lang="zh-CN"
+              >快速回复不能抢在 pending 登记之前。</span
+            >
+          </li>
+        </ul>
+      </section>
+      <footer class="footer">
+        <span>Vimeflow · VIM-342 reviewed technical note</span>
+        <span>
+          <a
+            href="../superpowers/plans/2026-07-17-vim-342-durable-hunk-reply-recovery.md"
+            >Implementation plan</a
+          >
+          ·
+          <a
+            href="https://linear.app/vimeflow/issue/VIM-342/fixdiff-do-not-lose-structured-hunk-replies-when-switching-panes"
+            >VIM-342</a
+          >
+          ·
+          <a
+            href="https://linear.app/vimeflow/issue/VIM-346/persist-diff-review-threads-across-worktree-changes-and-restarts"
+            >VIM-346</a
+          >
+        </span>
+      </footer>
+    </main>
+  </body>
+</html>

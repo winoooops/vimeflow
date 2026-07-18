@@ -1,6 +1,6 @@
 //! Transcript tailer for Codex rollout JSONL files.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
@@ -10,7 +10,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
+use crate::agent::adapter::base::{
+    for_each_bounded_line, TranscriptDecoder, TranscriptHandle, TranscriptTailService,
+};
 use crate::agent::adapter::claude_code::test_runners::build::{maybe_build_snapshot, BuildArgs};
 use crate::agent::adapter::claude_code::test_runners::emitter::TestRunEmitter;
 use crate::agent::adapter::claude_code::test_runners::matcher::{match_command, MatchedCommand};
@@ -22,11 +24,11 @@ use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
     emit_agent_turn, emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
 };
-use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
-use crate::agent::types::AgentReplyEvent;
+use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
 use crate::agent::types::{
     AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
+use crate::agent::types::{AgentReplyEvent, AgentReviewEvent};
 use crate::runtime::EventSink;
 
 use super::transcript_dto::{
@@ -439,6 +441,104 @@ pub(super) fn start_tailing(
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
+pub(super) fn recover_replies(
+    transcript_path: &Path,
+    session_id: &str,
+    nonces: &HashSet<String>,
+) -> Result<Vec<AgentReplyEvent>, String> {
+    let file = File::open(transcript_path).map_err(|e| {
+        format!(
+            "Failed to open Codex rollout transcript for recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+    let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
+
+    for_each_bounded_line(BufReader::new(file), "Codex transcript recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
+        let Ok(dto) = serde_json::from_str::<CodexLineDto>(line) else {
+            return;
+        };
+        if !matches!(dto.record_type(), CodexRecordType::EventMsg) {
+            return;
+        }
+        let payload = serde_json::from_value::<CodexPayloadDto>(dto.payload).unwrap_or_default();
+        if !matches!(payload.payload_type(), CodexPayloadType::TaskComplete) {
+            return;
+        }
+        if let Some(event) = reply_event(&payload, session_id) {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
+                recovered.push(event);
+            }
+        }
+    })
+    .map_err(|e| {
+        format!(
+            "Failed to read Codex rollout transcript for recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+
+    Ok(recovered)
+}
+
+pub(super) fn recover_reviews(
+    transcript_path: &Path,
+    session_id: &str,
+    nonces: &HashSet<String>,
+) -> Result<Vec<AgentReviewEvent>, String> {
+    let file = File::open(transcript_path).map_err(|e| {
+        format!(
+            "Failed to open Codex rollout transcript for review recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+    let mut recovered = Vec::new();
+    let mut pending_nonces = nonces.clone();
+
+    for_each_bounded_line(BufReader::new(file), "Codex review recovery", |line| {
+        if pending_nonces.is_empty() {
+            return;
+        }
+        let Ok(dto) = serde_json::from_str::<CodexLineDto>(line) else {
+            return;
+        };
+        if !matches!(dto.record_type(), CodexRecordType::EventMsg) {
+            return;
+        }
+        let payload = serde_json::from_value::<CodexPayloadDto>(dto.payload).unwrap_or_default();
+        if !matches!(payload.payload_type(), CodexPayloadType::TaskComplete) {
+            return;
+        }
+        if let Some(event) = review_event(&payload, session_id) {
+            let Some(nonce) = event.nonce.as_ref() else {
+                return;
+            };
+            if pending_nonces.remove(nonce) {
+                recovered.push(event);
+            }
+        }
+    })
+    .map_err(|e| {
+        format!(
+            "Failed to read Codex rollout transcript for review recovery: {}: {}",
+            transcript_path.display(),
+            e
+        )
+    })?;
+
+    Ok(recovered)
+}
+
 /// Per-session Codex decoder: owns the in-flight tool-call map (each entry
 /// carrying its `CompletionMode`), turn count, last-seen cwd, and the
 /// replay-aware emitter, and turns each complete rollout line into `agent-*`
@@ -812,15 +912,10 @@ fn emit_review_if_present(
         return;
     }
 
-    let Some(outcome) = payload
-        .last_agent_message
-        .as_deref()
-        .and_then(crate::agent::review::extract_agent_review)
-    else {
+    let Some(event) = review_event(payload, session_id) else {
         return;
     };
 
-    let event = crate::agent::review::map_review_outcome(session_id, outcome);
     if let Err(e) = crate::agent::events::emit_agent_review(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-review event: {}", e);
     }
@@ -838,35 +933,29 @@ fn emit_reply_if_present(
         return;
     }
 
-    let Some(outcome) = payload
-        .last_agent_message
-        .as_deref()
-        .and_then(extract_agent_reply)
-    else {
+    let Some(event) = reply_event(payload, session_id) else {
         return;
-    };
-
-    let (raw_text, nonce, replies) = match outcome {
-        AgentReplyOutcome::Structured {
-            raw,
-            nonce,
-            replies,
-        } => (raw, Some(nonce), Some(replies)),
-        // Malformed carries a best-effort nonce (Some when the block parsed as an
-        // object) so the frontend can still nonce-gate the degrade.
-        AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
-    };
-
-    let event = AgentReplyEvent {
-        session_id: session_id.to_string(),
-        nonce,
-        raw_text,
-        replies,
     };
 
     if let Err(e) = emit_agent_reply(events.as_ref(), &event) {
         log::warn!("Failed to emit agent-reply event: {}", e);
     }
+}
+
+fn reply_event(payload: &CodexPayloadDto, session_id: &str) -> Option<AgentReplyEvent> {
+    payload
+        .last_agent_message
+        .as_deref()
+        .and_then(extract_agent_reply)
+        .map(|outcome| map_agent_reply_outcome(session_id, outcome))
+}
+
+fn review_event(payload: &CodexPayloadDto, session_id: &str) -> Option<AgentReviewEvent> {
+    payload
+        .last_agent_message
+        .as_deref()
+        .and_then(crate::agent::review::extract_agent_review)
+        .map(|outcome| crate::agent::review::map_review_outcome(session_id, outcome))
 }
 
 fn process_user_message(
@@ -1365,6 +1454,77 @@ mod tests {
     use super::*;
     use crate::runtime::FakeEventSink;
     use serde_json::json;
+
+    #[test]
+    fn recover_replies_returns_only_requested_completed_nonces() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let transcript_path = tmp.path().join("rollout.jsonl");
+        let reply = |nonce: &str, text: &str| {
+            json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_complete",
+                    "last_agent_message": format!(
+                        "done\n<<<VIMEFLOW_REPLY\n{{\"v\":1,\"nonce\":\"{nonce}\",\"replies\":[{{\"id\":1,\"status\":\"resolved\",\"text\":\"{text}\"}}]}}\nVIMEFLOW_REPLY>>>"
+                    )
+                }
+            })
+        };
+        std::fs::write(
+            &transcript_path,
+            format!(
+                "{}\n{}\n{}\n",
+                reply("wanted", "yes"),
+                reply("wanted", "again"),
+                reply("other", "no")
+            ),
+        )
+        .expect("write transcript");
+
+        let recovered = recover_replies(
+            &transcript_path,
+            "pty-1",
+            &std::collections::HashSet::from(["wanted".to_string()]),
+        )
+        .expect("recover replies");
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].session_id, "pty-1");
+        assert_eq!(recovered[0].nonce.as_deref(), Some("wanted"));
+        assert_eq!(
+            recovered[0].replies.as_ref().expect("replies")[0].text,
+            "yes"
+        );
+    }
+
+    #[test]
+    fn recover_reviews_returns_requested_completed_review() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let transcript_path = tmp.path().join("rollout.jsonl");
+        let review = json!({
+            "type": "event_msg",
+            "payload": {
+                "type": "task_complete",
+                "last_agent_message": "done\n<<<VIMEFLOW_REVIEW\n{\"v\":1,\"nonce\":\"wanted\",\"reviewer\":\"Codex\",\"findings\":[{\"scope\":\"line\",\"path\":\"a.ts\",\"side\":\"additions\",\"line\":5,\"category\":\"bug\",\"text\":\"found\"}]}\nVIMEFLOW_REVIEW>>>"
+            }
+        });
+        std::fs::write(&transcript_path, format!("{review}\n{review}\n"))
+            .expect("write transcript");
+
+        let recovered = recover_reviews(
+            &transcript_path,
+            "pty-1",
+            &std::collections::HashSet::from(["wanted".to_string()]),
+        )
+        .expect("recover reviews");
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].nonce.as_deref(), Some("wanted"));
+        assert_eq!(
+            recovered[0].findings.as_ref().expect("findings")[0].text,
+            "found"
+        );
+    }
 
     fn lifecycle_phases(sink: &FakeEventSink) -> Vec<String> {
         sink.recorded()

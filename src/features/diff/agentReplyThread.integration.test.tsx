@@ -30,7 +30,7 @@ const listenImpl = (name: string, cb: Cb): Promise<() => void> => {
   return Promise.resolve(() => undefined)
 }
 
-vi.mock('@/lib/backend', () => ({ listen: vi.fn() }))
+vi.mock('@/lib/backend', () => ({ invoke: vi.fn(), listen: vi.fn() }))
 
 const OWNER = 'sess:pane-1'
 const CWD = '/repo'
@@ -41,8 +41,10 @@ const FILE = 'src/foo.ts'
 const Harness = (): ReactElement => {
   const store = useFeedbackBatchStore(OWNER, CWD)
   useAgentReply({
+    activePtyId: null,
     addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
     nextCommentId: () => 'agent-reply-1',
+    notifyInfo: vi.fn(),
   })
 
   const comments = store.feedbackBatch.annotationsForFile(CWD, FILE, false)
@@ -77,8 +79,10 @@ const ThreadHarness = (): ReactElement => {
     return (): string => `agent-${++n}`
   })
   useAgentReply({
+    activePtyId: null,
     addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
     nextCommentId,
+    notifyInfo: vi.fn(),
   })
 
   const annotations = store.feedbackBatch.annotationsForFile(CWD, FILE, false)

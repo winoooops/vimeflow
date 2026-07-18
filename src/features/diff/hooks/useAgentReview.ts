@@ -1,7 +1,11 @@
-import { useEffect } from 'react'
-import { listen } from '@/lib/backend'
+import { useCallback, useEffect } from 'react'
+import { invoke, listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
-import type { AgentReviewEvent, AgentReviewFinding } from '@/bindings'
+import type {
+  AgentReplaySummaryEvent,
+  AgentReviewEvent,
+  AgentReviewFinding,
+} from '@/bindings'
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
 import {
   FILE_COMMENT_LINE_NUMBER,
@@ -12,15 +16,19 @@ import {
   addReviewLevelNote,
   clearPendingReviewRequest,
   getPendingReviewRequest,
+  pendingReviewRequestNoncesForPty,
   setFindingThreadRecord,
   type FindingThreadTarget,
   type HunkRange,
   type ReviewedFile,
 } from '../services/pendingReviewRequests'
+import { recoveryNonceBatches } from '../services/pendingReviews'
 
 export const REVIEWER_FINDING_SOFT_CAP = 50
 
 export interface UseAgentReviewOptions {
+  /** PTY currently visible in the workspace; returning to it triggers recovery. */
+  activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
   addAnnotationForOwner: (
     ownerKey: string,
@@ -31,6 +39,8 @@ export interface UseAgentReviewOptions {
   ) => 'ok' | 'cap-reached'
   /** Fresh unique id for each attached reviewer annotation. */
   nextCommentId: () => string
+  /** Surface transcript recovery failures without interrupting live delivery. */
+  notifyInfo: (message: string) => void
 }
 
 const lineInRanges = (line: number, ranges: HunkRange[]): boolean =>
@@ -109,73 +119,68 @@ const resolveFindingEntry = (
  * request is cleared after processing so a replay is a no-op. It never throws.
  */
 export const useAgentReview = ({
+  activePtyId,
   addAnnotationForOwner,
   nextCommentId,
+  notifyInfo,
 }: UseAgentReviewOptions): void => {
-  useEffect(() => {
-    if (!isDesktop()) {
-      return undefined
-    }
+  const handleReview = useCallback(
+    (event: AgentReviewEvent): void => {
+      const reviewerAnnotation = (
+        finding: AgentReviewFinding,
+        reviewer: string,
+        downgradeToFile: boolean
+      ): DiffLineAnnotation<ReviewComment> => {
+        const id = nextCommentId()
 
-    let cancelled = false
-    let unlisten: (() => void) | undefined
-
-    const reviewerAnnotation = (
-      finding: AgentReviewFinding,
-      reviewer: string,
-      downgradeToFile: boolean
-    ): DiffLineAnnotation<ReviewComment> => {
-      const id = nextCommentId()
-
-      const metadata: ReviewComment = {
-        id,
-        threadId: id,
-        text: finding.text,
-        author: 'reviewer',
-        reviewer,
-        category: finding.category as ReviewCommentCategory,
-        createdAt: Date.now(),
-      }
-
-      // Native file scope, or a line/range whose anchor fell out of the diff.
-      if (finding.scope === 'file' || downgradeToFile) {
-        return {
-          side: 'additions',
-          lineNumber: FILE_COMMENT_LINE_NUMBER,
-          metadata: { ...metadata, target: { scope: 'file' } },
+        const metadata: ReviewComment = {
+          id,
+          threadId: id,
+          text: finding.text,
+          author: 'reviewer',
+          reviewer,
+          category: finding.category as ReviewCommentCategory,
+          createdAt: Date.now(),
         }
-      }
 
-      const side = (finding.side ?? 'additions') as AnnotationSide
+        // Native file scope, or a line/range whose anchor fell out of the diff.
+        if (finding.scope === 'file' || downgradeToFile) {
+          return {
+            side: 'additions',
+            lineNumber: FILE_COMMENT_LINE_NUMBER,
+            metadata: { ...metadata, target: { scope: 'file' } },
+          }
+        }
 
-      if (
-        finding.scope === 'range' &&
-        finding.startLine !== null &&
-        finding.endLine !== null
-      ) {
+        const side = (finding.side ?? 'additions') as AnnotationSide
+
+        if (
+          finding.scope === 'range' &&
+          finding.startLine !== null &&
+          finding.endLine !== null
+        ) {
+          return {
+            side,
+            lineNumber: finding.startLine,
+            metadata: {
+              ...metadata,
+              target: {
+                scope: 'range',
+                side,
+                startLine: finding.startLine,
+                endLine: finding.endLine,
+              },
+            },
+          }
+        }
+
         return {
           side,
-          lineNumber: finding.startLine,
-          metadata: {
-            ...metadata,
-            target: {
-              scope: 'range',
-              side,
-              startLine: finding.startLine,
-              endLine: finding.endLine,
-            },
-          },
+          lineNumber: finding.line ?? FILE_COMMENT_LINE_NUMBER,
+          metadata,
         }
       }
 
-      return {
-        side,
-        lineNumber: finding.line ?? FILE_COMMENT_LINE_NUMBER,
-        metadata,
-      }
-    }
-
-    const handleReview = (event: AgentReviewEvent): void => {
       const request = getPendingReviewRequest(event.nonce ?? '')
       // The nonce is the whole gate: we only act on a review whose nonce matches
       // one we minted. It's random + unguessable, so this holds equally for a
@@ -279,22 +284,89 @@ export const useAgentReview = ({
         })
       }
       clearPendingReviewRequest(event.nonce)
+    },
+    [addAnnotationForOwner, nextCommentId]
+  )
+
+  const recoverPty = useCallback(
+    async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
+      const nonces = pendingReviewRequestNoncesForPty(ptyId)
+      if (nonces.length === 0) {
+        return
+      }
+
+      try {
+        for (const batch of recoveryNonceBatches(nonces)) {
+          const reviews = await invoke<AgentReviewEvent[]>(
+            'recover_agent_reviews',
+            {
+              sessionId: ptyId,
+              nonces: batch,
+            }
+          )
+          if (!isCancelled()) {
+            reviews.forEach(handleReview)
+          }
+        }
+      } catch {
+        if (!isCancelled()) {
+          notifyInfo(
+            'Could not recover agent reviews; live delivery is still active.'
+          )
+        }
+      }
+    },
+    [handleReview, notifyInfo]
+  )
+
+  useEffect(() => {
+    if (!isDesktop()) {
+      return undefined
     }
 
-    const subscribe = async (): Promise<void> => {
-      const fn = await listen<AgentReviewEvent>('agent-review', handleReview)
+    let cancelled = false
+    const unlisten: (() => void)[] = []
+
+    const addUnlisten = (fn: () => void): void => {
       if (cancelled) {
         fn()
       } else {
-        unlisten = fn
+        unlisten.push(fn)
       }
+    }
+
+    const subscribe = async (): Promise<void> => {
+      addUnlisten(await listen<AgentReviewEvent>('agent-review', handleReview))
+      // The summary is the watcher's replay→live boundary. A final targeted
+      // scan here closes the window between the pane-activation scan and EOF.
+      addUnlisten(
+        await listen<AgentReplaySummaryEvent>(
+          'agent-replay-summary',
+          (event) => {
+            void recoverPty(event.sessionId, () => cancelled)
+          }
+        )
+      )
     }
 
     void subscribe()
 
     return (): void => {
       cancelled = true
-      unlisten?.()
+      unlisten.forEach((fn) => fn())
     }
-  }, [addAnnotationForOwner, nextCommentId])
+  }, [handleReview, recoverPty])
+
+  useEffect(() => {
+    if (!isDesktop() || activePtyId === null) {
+      return undefined
+    }
+
+    let cancelled = false
+    void recoverPty(activePtyId, () => cancelled)
+
+    return (): void => {
+      cancelled = true
+    }
+  }, [activePtyId, recoverPty])
 }

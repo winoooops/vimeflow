@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use std::borrow::Cow;
 
-use crate::agent::types::{AgentReply, AgentReplyStatus, AgentReplyTarget};
+use crate::agent::types::{AgentReply, AgentReplyEvent, AgentReplyStatus, AgentReplyTarget};
 
 const OPEN: &str = "<<<VIMEFLOW_REPLY";
 const CLOSE: &str = "VIMEFLOW_REPLY>>>";
@@ -26,6 +26,27 @@ pub(crate) enum AgentReplyOutcome {
         nonce: String,
         replies: Vec<AgentReply>,
     },
+}
+
+pub(crate) fn map_agent_reply_outcome(
+    session_id: &str,
+    outcome: AgentReplyOutcome,
+) -> AgentReplyEvent {
+    let (raw_text, nonce, replies) = match outcome {
+        AgentReplyOutcome::Structured {
+            raw,
+            nonce,
+            replies,
+        } => (raw, Some(nonce), Some(replies)),
+        AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
+    };
+
+    AgentReplyEvent {
+        session_id: session_id.to_string(),
+        nonce,
+        raw_text,
+        replies,
+    }
 }
 
 #[derive(Deserialize)]
