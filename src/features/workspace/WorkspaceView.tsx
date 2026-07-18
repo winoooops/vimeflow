@@ -136,6 +136,7 @@ import {
   pickNextVisibleSessionId,
 } from '@/features/sessions/utils/pickNextVisibleSessionId'
 import { closeSessionWithSuccessor } from '@/features/sessions/utils/closeSessionWithSuccessor'
+import { orderSwitcherSessionIds } from './utils/orderSwitcherSessionIds'
 import {
   AGENTS,
   agentTypeToRegistryKey,
@@ -2257,16 +2258,15 @@ const WorkspaceViewContent = (): ReactElement => {
     [activeSessionId, sessions]
   )
 
-  const switcherOrderedIds = useMemo(() => {
-    const switchable = new Set(switchableSessions.map((s) => s.id))
-    const inMru = mruSessionIds.filter((id) => switchable.has(id))
-
-    const missing = switchableSessions
-      .map((s) => s.id)
-      .filter((id) => !inMru.includes(id))
-
-    return [...inMru, ...missing]
-  }, [mruSessionIds, switchableSessions])
+  const switcherOrderedIds = useMemo(
+    () =>
+      orderSwitcherSessionIds(
+        mruSessionIds,
+        switchableSessions.map((s) => s.id),
+        activeSessionId
+      ),
+    [activeSessionId, mruSessionIds, switchableSessions]
+  )
 
   const switcherEntries = useMemo(
     () =>
