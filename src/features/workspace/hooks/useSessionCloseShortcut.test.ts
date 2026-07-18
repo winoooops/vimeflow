@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 import { getCommand, type CommandId } from '../../keymap/catalog'
 import { eventMatchesChord, type PlatformSuper } from '../../keymap/match'
 import { resolveBindings, type CustomKeybindings } from '../../keymap/resolve'
@@ -102,6 +103,19 @@ describe('useSessionCloseShortcut', () => {
     fireKeyW({ metaKey: true, repeat: true })
 
     expect(props.onCloseActiveSession).not.toHaveBeenCalled()
+  })
+
+  test('ignores keydown from inside a keymap capture target', () => {
+    const captureButton = append(document.createElement('button'))
+    captureButton.setAttribute(KEYMAP_CAPTURE_TARGET_ATTRIBUTE, 'true')
+
+    const props = makeProps({ matches: matchesFor(true) })
+    renderHook(() => useSessionCloseShortcut(props))
+
+    const prevented = fireKeyW({ metaKey: true }, captureButton)
+
+    expect(props.onCloseActiveSession).not.toHaveBeenCalled()
+    expect(prevented).toBe(false)
   })
 
   test('bails while a modal dialog is open', () => {
