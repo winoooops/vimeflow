@@ -1,6 +1,6 @@
 # Session Switching Shortcuts — Design
 
-**Status:** Draft (codex round-1 findings applied; round-2 review pending).
+**Status:** Draft (codex rounds 1–2 applied; round-3 review pending).
 
 **Linear:** not yet filed (Sessions component project).
 
@@ -13,15 +13,20 @@
 ## 1. Context & Problem
 
 A Vimeflow **session** is the workspace unit — it owns a layout, panes, and a working
-directory, and renders in the tab strip (`src/features/sessions/components/Tabs.tsx`).
-Today's session switching is limited to sequential cycling (`session-prev` / `session-next`
-on `⌘[` / `⌘]`, Linux `Ctrl+Shift+[` / `]`), tab clicks, and palette commands.
+directory. Sessions render in the **sidebar sessions view** (`SessionsView` → `List`,
+`src/features/sessions/components/List.tsx`); the former top tab strip is retired
+(`Tabs.tsx` survives only in tests, and a top-chrome regression test asserts no tab strip
+renders). The **visible session order** — the sessions the sidebar list shows, i.e.
+`getVisibleSessions(sessions, activeSessionId)` — is the canonical ordered surface this
+design builds on.
 
-Compared to VS Code / Zed there is no **MRU switching** (Ctrl+Tab) and no **close
-shortcut**. The approved direction (Approach A) is additive: keep `Mod+1..9` on pane focus
-(which mirrors VS Code's editor-group digits) and add the missing session layer. Every new
-shortcut is a catalog command so the Settings → Keymap pane can rebind it
-(`KeymapPane.tsx` renders rows straight from `CATALOG`).
+Today's session switching is limited to sequential cycling (`session-prev` /
+`session-next` on `⌘[` / `⌘]`, Linux `Ctrl+Shift+[` / `]`), sidebar clicks, and palette
+commands. Compared to VS Code / Zed there is no **MRU switching** (Ctrl+Tab) and no
+**close shortcut**. The approved direction (Approach A) is additive: keep `Mod+1..9` on
+pane focus (which mirrors VS Code's editor-group digits) and add the missing session
+layer. Every new shortcut is a catalog command so the Settings → Keymap pane can rebind
+it (`KeymapPane.tsx` renders rows straight from `CATALOG`).
 
 ## 2. Goals & Non-Goals
 
@@ -29,8 +34,8 @@ shortcut is a catalog command so the Settings → Keymap pane can rebind it
 
 1. MRU session switcher on `Ctrl+Tab` / `Ctrl+Shift+Tab` with VS Code hold-overlay
    semantics (release commits; quick tap bounces to the last session).
-2. Close the active session on `Mod+W` (macOS) / `Ctrl+Shift+W` (Linux) through the
-   existing guarded close flow.
+2. Close the active session on `Mod+W` (macOS) / `Ctrl+Shift+W` (Linux) with behavior
+   identical to closing it from the sidebar (guard, successor selection, focus restore).
 3. Both rebindable from Settings → Keymap, grouped under a new **Sessions** group, and
    functional — visible and focusable — from every input surface (app renderer, Ghostty
    native panes, browser `WebContentsView` panes).
@@ -41,7 +46,7 @@ shortcut is a catalog command so the Settings → Keymap pane can rebind it
   why no viable default chord tier exists is preserved in §8.
 - Fuzzy session picker (the command palette already reaches sessions by name).
 - MRU persistence across relaunch (v1 is in-memory).
-- Tab reordering shortcuts.
+- Session reordering shortcuts.
 - Keyup transport through the native input bridges (§5 defines fallbacks instead).
 - Dynamic macOS menu accelerator rebuilds on rebind (the mac File menu stops advertising
   an accelerator instead — §6).
@@ -53,11 +58,11 @@ All entries: `context: 'global'`, `matchPolicy: 'exact'`, `rebindable: true`, gr
 which also guarantees any bound chord has a hold-able modifier, so the switcher's
 release-to-commit phase always exists (no modifier-less degradation case).
 
-| Command id            | Default (macOS)   | Default (Linux)  | Action                                     |
-| --------------------- | ----------------- | ---------------- | ------------------------------------------ |
-| `session-switch-next` | `⌃⇥` (`Ctrl+Tab`) | `Ctrl+Tab`       | Open MRU switcher / advance selection      |
-| `session-switch-prev` | `⌃⇧⇥`             | `Ctrl+Shift+Tab` | Open MRU switcher / move selection back    |
-| `session-close`       | `⌘W`              | `Ctrl+Shift+W`   | Close active session (guarded flow intact) |
+| Command id            | Default (macOS)   | Default (Linux)  | Action                                    |
+| --------------------- | ----------------- | ---------------- | ----------------------------------------- |
+| `session-switch-next` | `⌃⇥` (`Ctrl+Tab`) | `Ctrl+Tab`       | Open MRU switcher / advance selection     |
+| `session-switch-prev` | `⌃⇧⇥`             | `Ctrl+Shift+Tab` | Open MRU switcher / move selection back   |
+| `session-close`       | `⌘W`              | `Ctrl+Shift+W`   | Close active session (sidebar-equivalent) |
 
 Chord literals: `c('Tab', 'Ctrl')`, `c('Tab', 'Ctrl', 'Shift')`, and `session-close` as a
 platform function `(isMac) => isMac ? c('KeyW', 'Mod') : c('KeyW', 'Mod', 'Shift')` — the
@@ -70,30 +75,33 @@ the `focus-pane-*` arrows. `Tab` carries no meaning for a PTY under these modifi
 CodeMirror's Tab handling is modifier-less — no focus-scoped owner competes.
 
 **Group migration:** `new-session`, `session-prev`, and `session-next` move from group
-`'Global'` to `'Sessions'`. Grouping is cosmetic — persisted overrides key off the command
-id — but the settings pane must list the new group: add `'Sessions'` to `GROUP_ORDER` in
-`KeymapPane.tsx` (after `'Global'`). Resulting Sessions group: 6 rows.
+`'Global'` to `'Sessions'`. Grouping is cosmetic for dispatch — persisted overrides key
+off the command id — but **two** settings allowlists must learn the group (§7).
 
 ## 4. MRU Model
 
-A recency list of session ids, most-recent-first. **Derived by reconciliation, not by
-instrumenting activation call sites** — activation is not a single path
-(`useActiveSessionController` writes optimistically and rolls back on IPC failure; restore
-uses the raw setter; removal has failure returns before state actually changes), so the
-MRU folds over _committed_ state instead:
+A recency list of session ids, most-recent-first.
 
-- **Owner:** a small reconciliation effect colocated with `useSessionManager` state,
-  observing committed `activeSessionId` and `sessions`.
-- **On committed `activeSessionId` change to a non-null id:** move that id to the front.
-  The optimistic-write + rollback sequence is self-healing under this rule: optimistic B
-  moves B to front, rollback to A moves A back to front — the pre-failure order returns.
-- **On `sessions` change:** drop ids no longer present (prunes only after a removal
-  actually commits — a failed removal never touches the MRU); append ids never seen
-  before at the back (covers restore-time additions that were never activated).
-- **Seed:** first reconciliation pass yields visible tab-strip order with the restored
-  active session at front.
-- **Storage:** in-memory only (state/ref in the hook). No backend or settings
-  persistence.
+**Reorder records only successful activations.** Observing `activeSessionId` is not
+enough: `useActiveSessionController` writes it optimistically and rolls it back in
+`catch`, and an observer cannot tell optimistic, committed, and rollback values apart —
+a failed activation would corrupt the order (e.g. `[A,C,B]` → optimistic `B` → rollback
+leaves `[A,B,C]`, not the original). Instead:
+
+- **Reorder point:** the controller's post-IPC **success** path — the single place every
+  user-triggered activation (sidebar click, palette, prev/next, switcher commit) funnels
+  through — moves the activated id to the front. A failed activation records nothing.
+- **Rollback focus:** on failure the controller rolls `activeSessionId` back; it must
+  also reclaim terminal focus for the restored session (today rollback restores state
+  but not focus). Covered by a dedicated test (§10).
+- **Membership reconciliation:** an effect observing the committed `sessions` array
+  drops ids that left it (prunes only after a removal actually commits — a failed
+  removal never touches the MRU) and appends never-seen ids at the back (restore-time
+  additions that were never activated).
+- **Seed:** first pass yields the visible session order with the restored active session
+  at front.
+- **Storage:** in-memory only (state/ref colocated with `useSessionManager` state). No
+  backend or settings persistence.
 - **Read surface:** the switcher receives `mruSessionIds` plus the session summaries it
   needs (id, title, agent) via existing session context — no new IPC.
 
@@ -101,8 +109,8 @@ MRU folds over _committed_ state instead:
 
 ### Interaction contract
 
-1. `session-switch-next` keydown while closed → overlay opens listing the sessions of the
-   visible tab strip in MRU order, selection on index 1 (the previous session); with a
+1. `session-switch-next` keydown while closed → overlay opens listing the **visible
+   sessions** (§1) in MRU order, selection on index 1 (the previous session); with a
    single session the overlay still opens with index 0 selected (harmless, matches VS
    Code). Zero sessions: the hook no-ops. `session-switch-prev` opens with the last entry
    selected.
@@ -110,9 +118,9 @@ MRU folds over _committed_ state instead:
    included (`event.repeat` advances; do **not** early-return on repeat like the nav hooks
    do) — move the selection with wraparound.
 3. **Commit on modifier release:** when the modifiers of the _resolved_ opening chord are
-   all released, commit `setActiveSessionId(selectedId)` once, close, and restore focus
-   (contract below). A quick tap therefore lands on MRU[1] — the "bounce to last session"
-   idiom.
+   all released, commit the activation once (through the controller path, §4), close, and
+   restore focus (contract below). A quick tap therefore lands on MRU[1] — the "bounce to
+   last session" idiom.
 4. `Escape` cancels — no activation, MRU untouched, focus restored.
 5. `Enter` or clicking an entry commits that entry immediately; pointer-down outside the
    overlay cancels.
@@ -144,12 +152,18 @@ not add keyup transport. Instead:
 A plain DOM modal would render **behind** native surfaces, even while receiving keys:
 
 - **Browser panes:** `WebContentsView` occlusion is driven by explicit overlay-stack
-  registrations (`OverlayStackProvider`, `WorkspaceOverlayRegistrations.tsx`) — the
-  switcher registers there like the palette and dialogs do.
+  registrations (`src/features/workspace/overlays/OverlayStackProvider.tsx`,
+  `WorkspaceOverlayRegistrations.tsx`) — the switcher registers there like the palette
+  and dialogs do.
 - **Ghostty native panes (packaged macOS):** existing global dialogs render through the
-  dedicated native-overlay window (`nativeOverlay.ts`, `NativeOverlayHost.tsx`), whose
-  payload currently supports the command palette and new-session dialogs — extend it with
-  a session-switcher payload/renderer following the same pattern.
+  dedicated native-overlay window. That path has **two halves**, and both must learn the
+  new payload: the renderer payload/host
+  (`src/components/base/floating/nativeOverlay.ts`, `NativeOverlayHost.tsx`) **and** the
+  Electron main-process schema/validator (`electron/native-overlay.ts`), which currently
+  accepts only the `command-palette` and `new-session` dialog discriminants and rejects
+  anything else as `invalid-payload` — a renderer-only extension would silently fall back
+  to the DOM overlay that Ghostty occludes. Extend both, with payload-validation and
+  bounds tests.
 - The overlay carries the dialog marker `DIALOG_SELECTOR` matches, so sibling
   capture-phase hooks (`useSessionNavShortcut` etc.) defer without per-hook changes.
 - The Ghostty forwarding proxy's `shouldRefocus` return must report "do not refocus"
@@ -183,11 +197,21 @@ theme tokens and the existing modal/glass conventions, consistent with
 
 ## 6. `session-close` and the macOS Menu
 
-`session-close` invokes the **same guarded close callback `WorkspaceView` supplies to
-`Tabs`** (`handleRemoveSession`) — the path that checks unsaved editor buffers and shows
-the confirmation dialog before delegating to the session manager. It does **not** call
-the manager's raw `removeSession` (which is unguarded and returns `void`). No active
-session → no-op.
+The sidebar `List` already wraps removal with the complete keyboard-safe behavior
+(`List.tsx` `handleRemoveSession`): pick the visible successor via
+`pickNextVisibleSessionId` **before** removing, call the guarded close callback
+(`WorkspaceView` supplies it; it checks unsaved editor buffers and can cancel via the
+`didRemove === false` sentinel), then activate the successor and restore focus. The
+manager's raw `removeSession` has none of these guards, and `WorkspaceView`'s bare
+callback alone would leave successor selection to the manager's full-array fallback —
+which can pick a non-visible session.
+
+**Design:** hoist the `List` wrapper into a shared helper (sessions feature) consumed by
+both the sidebar and the new `useSessionCloseShortcut`, so keyboard close is
+behavior-identical to clicking the sidebar close button — guard, successor, focus. The
+shortcut targets the active session; no active session → no-op. (The shortcut's focus
+lands on the successor's pane via the same activation path, not on a sidebar button —
+the helper takes the focus-restore strategy as an input.)
 
 **macOS conflict:** `electron/edit-menu.ts` uses `role: 'fileMenu'`, which implicitly
 registers Close `⌘W` → today `⌘W` closes the whole window, and a menu accelerator beats
@@ -202,11 +226,16 @@ keeps reaching the PTY as delete-word-backward — which is exactly why the Linu
 
 ## 7. Settings Integration
 
-Nothing bespoke: `KeymapPane` renders every catalog row per group with rebind UI for
-`rebindable` commands. Work is limited to the `'Sessions'` entry in `GROUP_ORDER` and the
-group moves from §3. Resulting Sessions group (6 rows): `new-session`, `session-prev`,
-`session-next`, `session-switch-next`, `session-switch-prev`, `session-close`. Conflict
-detection on rebind is the existing `conflicts.ts` machinery — no changes.
+Two allowlists gate a catalog group's presence in Settings, and both need `'Sessions'`:
+
+1. `GROUP_ORDER` in `KeymapPane.tsx` — renders the group's rows (after `'Global'`).
+2. `KEYMAP_TARGET_GROUPS` in `src/features/settings/sections.ts` — generates the
+   searchable/navigable settings targets (`SETTINGS_TARGETS` filters the catalog by this
+   set); without it the new commands render but are undiscoverable via settings search.
+
+Resulting Sessions group (6 rows): `new-session`, `session-prev`, `session-next`,
+`session-switch-next`, `session-switch-prev`, `session-close`. Rebind UI and conflict
+detection are the existing machinery — no changes.
 
 ## 8. Deferred: Digit Jump to Session N (and why)
 
@@ -230,7 +259,7 @@ viable default tier; recorded here so it is not re-derived:
 
 Digit jump returns only if one of these changes: a runtime-precedence dispatcher, a
 per-platform tier that is genuinely free (none found), or relaxing the layout-tolerance
-contract. MRU switching, `session-prev/next`, tab clicks, and the palette cover the
+contract. MRU switching, `session-prev/next`, sidebar clicks, and the palette cover the
 switching story in v1.
 
 ## 9. Edge Cases
@@ -244,8 +273,11 @@ switching story in v1.
 - **Overlay open + session self-exits:** reconcile + clamp (contract §5.7).
 - **Missed keyup:** modifier-absent fallback, pointer-down-outside cancel, window-blur
   cancel (§5); no path leaves a stuck overlay past the next input event.
-- **Activation IPC failure mid-switch:** `useActiveSessionController` rolls back; the MRU
-  reconciliation self-heals (§4); the overlay is already closed — no special handling.
+- **Activation IPC failure on switcher commit:** the controller rolls back state and
+  reclaims focus (§4); nothing was recorded in the MRU; the overlay is already closed —
+  the user observes the original session, unchanged order.
+- **Close guard cancellation:** the shared helper's `didRemove === false` sentinel stops
+  successor activation — identical to cancelling from the sidebar.
 - **Non-US layouts:** unaffected — no digit-tier chords ship (§8), and `Tab`/`KeyW` are
   physical `event.code` matches.
 
@@ -254,17 +286,22 @@ switching story in v1.
 - **Catalog:** new entries, group membership, one-super invariant, exact policies
   (`catalog.test.ts`, `resolve.test.ts`); explicit assertion that pane-digit rows remain
   `tolerant` (regression guard for §8.1).
-- **MRU reconciliation unit tests:** committed-activation reorder, optimistic-rollback
-  self-heal, prune-on-committed-removal only, restore-time append, seeding.
+- **MRU unit tests:** success-only reorder (a rejected activation with a **nontrivial
+  permutation** — e.g. `[A,C,B]` — leaves the order untouched), prune-on-committed-removal
+  only, restore-time append, seeding; controller rollback reclaims terminal focus
+  (focused element asserted after rejection).
 - **Switcher hook/component:** open/advance (incl. autorepeat), keyup commit,
   modifier-absent fallback, Escape / outside-click / blur cancel, single-session,
   list mutation while open, statically-mounted listener (no open-effect race).
-- **Close hook:** invokes the guarded `WorkspaceView` callback (not raw
-  `removeSession`); unsaved-buffer confirmation still appears; guard matrix mirrors
-  `useSessionNavShortcut.test.ts`.
-- **Overlay stacking:** overlay-stack registration test (browser occlusion) and
-  native-overlay payload test for the new switcher renderer.
-- **Settings:** Sessions group renders with all 6 rows.
+- **Close:** shared helper used by both sidebar `List` and the shortcut (successor
+  choice, guard sentinel, focus restore asserted once, in the helper's tests); shortcut
+  guard matrix mirrors `useSessionNavShortcut.test.ts`.
+- **Overlay stacking:** overlay-stack registration test (browser occlusion);
+  native-overlay payload tests on **both** halves — renderer payload/renderer and
+  `electron/native-overlay.ts` validation (new discriminant accepted, unknown still
+  rejected, bounds behavior).
+- **Settings:** Sessions group renders (KeymapPane) **and** its targets appear in the
+  settings search index (`sections.ts` target tests).
 - **Electron/e2e:** `keymap-bindings.spec.ts` — Ctrl+Tab commit-on-release to last
   session, Mod+W confirm flow, press/hold/release originating from browser and Ghostty
   panes where the runner allows; browser-pane forwarding test for the new ids; mac menu
@@ -272,16 +309,21 @@ switching story in v1.
 
 ## 11. Touch List
 
-| Area                                                                      | Change                                                                 |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `src/features/keymap/catalog.ts`                                          | +3 commands, Sessions group moves (pane digits untouched)              |
-| `src/features/settings/components/panes/KeymapPane.tsx`                   | `GROUP_ORDER` + `'Sessions'`                                           |
-| `src/features/sessions/hooks/` (new)                                      | MRU reconciliation hook                                                |
-| new `src/features/sessions/components/SessionSwitcher*`                   | overlay component + owning hook                                        |
-| `src/features/workspace/WorkspaceView.tsx`                                | mount switcher, focus-restore (`claimTerminal`) + guarded-close wiring |
-| `src/features/workspace/WorkspaceOverlayRegistrations.tsx`                | switcher overlay-stack registration                                    |
-| `src/components/base/floating/nativeOverlay.ts` + `NativeOverlayHost.tsx` | session-switcher native-overlay payload/renderer                       |
-| `electron/edit-menu.ts`                                                   | explicit File submenu, accelerator-less Close (macOS)                  |
-| `electron/browser-pane.ts`                                                | forward-set += `session-switch-next/prev`, `session-close`             |
-| `electron/ghostty-native-parent.ts`                                       | `shouldRefocus` switcher bit (verify snapshot auto-propagation)        |
-| tests + `tests/e2e/terminal/specs/keymap-bindings.spec.ts`                | per §10                                                                |
+| Area                                                                      | Change                                                                  |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `src/features/keymap/catalog.ts`                                          | +3 commands, Sessions group moves (pane digits untouched)               |
+| `src/features/settings/components/panes/KeymapPane.tsx`                   | `GROUP_ORDER` + `'Sessions'`                                            |
+| `src/features/settings/sections.ts`                                       | `KEYMAP_TARGET_GROUPS` + `'Sessions'` (+ target-index tests)            |
+| `src/features/sessions/hooks/` (new)                                      | MRU state (controller-success reorder + membership reconciliation)      |
+| `src/features/sessions/hooks/useActiveSessionController.ts`               | success-path MRU hook-in; rollback focus reclaim                        |
+| new `src/features/sessions/components/SessionSwitcher*`                   | overlay component + owning hook                                         |
+| `src/features/sessions/` (shared close helper)                            | hoisted `List.tsx` close wrapper (guard, successor, focus strategy)     |
+| `src/features/sessions/components/List.tsx`                               | consume the shared close helper                                         |
+| `src/features/workspace/WorkspaceView.tsx`                                | mount switcher, focus-restore (`claimTerminal`) + close-shortcut wiring |
+| `src/features/workspace/overlays/WorkspaceOverlayRegistrations.tsx`       | switcher overlay-stack registration                                     |
+| `src/components/base/floating/nativeOverlay.ts` + `NativeOverlayHost.tsx` | session-switcher native-overlay payload/renderer                        |
+| `electron/native-overlay.ts`                                              | payload schema/validator + bounds for the new discriminant              |
+| `electron/edit-menu.ts`                                                   | explicit File submenu, accelerator-less Close (macOS)                   |
+| `electron/browser-pane.ts`                                                | forward-set += `session-switch-next/prev`, `session-close`              |
+| `electron/ghostty-native-parent.ts`                                       | `shouldRefocus` switcher bit (verify snapshot auto-propagation)         |
+| tests + `tests/e2e/terminal/specs/keymap-bindings.spec.ts`                | per §10                                                                 |
