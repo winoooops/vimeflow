@@ -1,6 +1,7 @@
 # Session Switching Shortcuts — Design
 
-**Status:** Draft (codex rounds 1–6 applied; round-7 review pending).
+**Status:** Accepted (codex APPROVE on round 7, 2026-07-18; rounds 1–6 findings applied.
+Implementation pending on `feat/session-switching-keymap`).
 
 **Linear:** not yet filed (Sessions component project).
 
@@ -336,7 +337,9 @@ switching story in v1.
   with no intermediate rollback flash; `B✗C✗` all land on A), restore-time raw
   activation seeds `lastCommittedId`, raw-write barrier (raw `null` during an in-flight
   activation — with and without a pending target — drops the pending dispatch, the
-  invalidated settlement applies nothing, and no notification fires for `null`),
+  invalidated settlement applies nothing, and no notification fires for `null`; a
+  post-barrier request still waits for the physically unresolved stale IPC before
+  dispatching — one in flight always),
   prune-on-committed-removal only, restore-time append, seeding incl. a PTY-restored
   active session seeding first; controller rollback reclaims terminal focus (focused
   element asserted after rejection).
