@@ -786,7 +786,7 @@ const scrollSelectedOptionIntoView = (node: HTMLButtonElement | null): void => {
 
 const SWITCHER_ROW_BASE_CLASSES =
   'flex w-full items-center gap-[11px] rounded-[9px] px-[10px] py-2 ' +
-  'text-left transition-colors'
+  'text-left outline-none transition-colors'
 
 const switcherRowClasses = (selected: boolean): string =>
   selected

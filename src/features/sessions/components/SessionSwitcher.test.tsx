@@ -129,6 +129,22 @@ describe('SessionSwitcher', () => {
     )
   })
 
+  test('row buttons suppress the browser focus outline', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={0}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    for (const option of screen.getAllByRole('option')) {
+      expect(option).toHaveClass('outline-none')
+    }
+  })
+
   test('header shows the open count and the MRU ordering hint', () => {
     render(
       <SessionSwitcher
