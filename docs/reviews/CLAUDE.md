@@ -58,10 +58,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 9        | 3    | 2026-07-13   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 88       | 42   | 2026-07-09   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 6    | 2026-07-08   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 96       | 92   | 2026-07-19   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 94       | 85   | 2026-07-09   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 86   | 2026-07-19   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 1    | 2026-07-18   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
@@ -85,9 +85,9 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 42       | 16   | 2026-07-18   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 28       | 18   | 2026-07-18   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 28       | 19   | 2026-07-19   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 24       | 13   | 2026-07-18   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 25       | 14   | 2026-07-19   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 23       | 12   | 2026-07-15   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |

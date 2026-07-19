@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-09
-ref_count: 85
+last_updated: 2026-07-19
+ref_count: 86
 ---
 
 # Async Race Conditions
@@ -1039,4 +1039,19 @@ prevent showing previous data.
   pending edits to the latest alias array before sending the next IPC save.
   Added a regression test that keeps the first save pending and verifies only
   the latest edit is sent after it resolves.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 95. Agent replies could arrive before owner correlation hydrated
+
+- **Source:** github-codex-connector | PR #706 round 1 | 2026-07-19
+- **Severity:** P1 / HIGH
+- **File:** `src/features/diff/hooks/useAgentReply.ts`
+- **Finding:** Live `agent-reply` events could arrive after the active owner's
+  review state hydrated but before an inactive owner's pending correlation
+  record was restored. The unmatched reply was dropped, and Kimi/OpenCode have
+  no transcript recovery implementation to recover it later.
+- **Fix:** Made `handleAgentReply` report whether it found correlation state,
+  queued unmatched nonce-bearing events, and replayed them when pending review
+  or finding-thread state revisions changed. Added hook regressions for both
+  comment replies and finding-thread replies that arrive before hydration.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

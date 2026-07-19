@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-07-18
-ref_count: 13
+last_updated: 2026-07-19
+ref_count: 14
 ---
 
 # Persisted State Invariants
@@ -282,4 +282,19 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **Fix:** Return the current primary identity with stable fallback aliases,
   load from each in order, and atomically move an owner's state to the primary
   identity on save. Added lifecycle and migration regression coverage.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Review-state saves must retain stable repository aliases
+
+- **Source:** github-codex-connector | PR #706 round 1 | 2026-07-19
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/review_state.rs`
+- **Finding:** Saving under the preferred repository identity removed the root
+  commit and common-directory aliases. A routine `git remote set-url origin`
+  could then change the preferred remote identity and make persisted review
+  comments and drafts unreachable even though the repository history was the
+  same.
+- **Fix:** Mirrored saved owner state under the current repository identity and
+  every validated lifecycle alias, while deletes still remove the owner from all
+  identities. Added backend regressions for alias mirroring and alias deletion.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

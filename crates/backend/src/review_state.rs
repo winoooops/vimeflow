@@ -92,13 +92,23 @@ impl ReviewStateCache {
                     records
                         .entry(repository_id.to_string())
                         .or_default()
-                        .insert(owner_key.to_string(), value);
+                        .insert(owner_key.to_string(), value.clone());
+                    for alias in repository_aliases {
+                        if alias != repository_id {
+                            records
+                                .entry(alias.to_string())
+                                .or_default()
+                                .insert(owner_key.to_string(), value.clone());
+                        }
+                    }
                 }
-                None => remove_record(records, repository_id, owner_key),
-            }
-            for alias in repository_aliases {
-                if alias != repository_id {
-                    remove_record(records, alias, owner_key);
+                None => {
+                    remove_record(records, repository_id, owner_key);
+                    for alias in repository_aliases {
+                        if alias != repository_id {
+                            remove_record(records, alias, owner_key);
+                        }
+                    }
                 }
             }
             Ok(())
@@ -329,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn save_migrates_owner_state_from_repository_aliases() {
+    fn save_mirrors_owner_state_to_repository_aliases() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("review-state.json");
         let cache = ReviewStateCache::new(path);
@@ -350,11 +360,42 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(cache.load("old-repository-id", "session-a:p0"), None);
+        assert_eq!(
+            cache.load("old-repository-id", "session-a:p0"),
+            Some(json!({ "version": 1, "draft": { "text": "new" } }))
+        );
         assert_eq!(
             cache.load("new-repository-id", "session-a:p0"),
             Some(json!({ "version": 1, "draft": { "text": "new" } }))
         );
+    }
+
+    #[test]
+    fn delete_removes_owner_state_from_repository_aliases() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("review-state.json");
+        let cache = ReviewStateCache::new(path);
+
+        cache
+            .save_with_aliases(
+                "remote-id",
+                &["root-id".to_string(), "common-dir-id".to_string()],
+                "session-a:p0",
+                Some(json!({ "version": 1, "draft": { "text": "new" } })),
+            )
+            .unwrap();
+        cache
+            .save_with_aliases(
+                "remote-id",
+                &["root-id".to_string(), "common-dir-id".to_string()],
+                "session-a:p0",
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(cache.load("remote-id", "session-a:p0"), None);
+        assert_eq!(cache.load("root-id", "session-a:p0"), None);
+        assert_eq!(cache.load("common-dir-id", "session-a:p0"), None);
     }
 
     #[test]

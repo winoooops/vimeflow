@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { invoke, listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import type {
@@ -11,16 +11,20 @@ import type { ReviewComment } from './useFeedbackBatch'
 import {
   clearPendingReview,
   getPendingReview,
+  pendingReviewsRevision,
   pendingNoncesForPty,
   recoveryNonceBatches,
   setPendingReview,
+  subscribePendingReviews,
   type PendingReviewHandle,
 } from '../services/pendingReviews'
 import {
   addReviewLevelNote,
   findingThreadNoncesForPty,
   getFindingThreadRecord,
+  reviewRequestStateRevision,
   setFindingThreadRecord,
+  subscribeReviewLevelNotes,
   type FindingThreadRecord,
 } from '../services/pendingReviewRequests'
 
@@ -51,7 +55,7 @@ const handleAgentReply = (
   event: AgentReplyEvent,
   addAnnotationForOwner: UseAgentReplyOptions['addAnnotationForOwner'],
   nextCommentId: UseAgentReplyOptions['nextCommentId']
-): void => {
+): boolean => {
   const attachAgentNote = (
     ownerKey: string,
     handle: PendingReviewHandle,
@@ -151,7 +155,7 @@ const handleAgentReply = (
   }
 
   if (event.nonce === null) {
-    return
+    return true
   }
 
   // The nonce names the dispatch a turn answers: a review nonce resolves
@@ -161,14 +165,14 @@ const handleAgentReply = (
   if (record !== undefined) {
     handleFindingTurns(record)
 
-    return
+    return true
   }
 
   // Session + nonce gate — both are part of the store key (VIM-297), so
   // only a reply echoing a live dispatch's nonce on its own pty resolves.
   const pending = getPendingReview(event.sessionId, event.nonce)
   if (pending === undefined) {
-    return
+    return false
   }
 
   const matched = (event.replies ?? []).filter((reply) =>
@@ -202,7 +206,7 @@ const handleAgentReply = (
       setPendingReview(pending)
     }
 
-    return
+    return true
   }
 
   if (
@@ -212,7 +216,7 @@ const handleAgentReply = (
       (reply) => pending.consumedHandles?.has(reply.id) === true
     )
   ) {
-    return
+    return true
   }
 
   // Malformed marker (replies === null) OR every id unmatched → degrade: one
@@ -225,10 +229,12 @@ const handleAgentReply = (
     if (result === 'cap-reached') {
       setPendingReview(pending)
 
-      return
+      return true
     }
   }
   clearPendingReview(event.sessionId, event.nonce)
+
+  return true
 }
 
 /**
@@ -253,21 +259,40 @@ export const useAgentReply = ({
   const enabledRef = useRef(enabled)
   const queuedRepliesRef = useRef<AgentReplyEvent[]>([])
   enabledRef.current = enabled
+  const pendingReviewRevision = useSyncExternalStore(
+    subscribePendingReviews,
+    pendingReviewsRevision,
+    pendingReviewsRevision
+  )
+  const findingThreadRevision = useSyncExternalStore(
+    subscribeReviewLevelNotes,
+    reviewRequestStateRevision,
+    reviewRequestStateRevision
+  )
+
+  const queueReply = useCallback((event: AgentReplyEvent): void => {
+    if (event.nonce === null) {
+      return
+    }
+    if (queuedRepliesRef.current.length >= MAX_BUFFERED_AGENT_REPLIES) {
+      queuedRepliesRef.current.shift()
+    }
+    queuedRepliesRef.current.push(event)
+  }, [])
 
   const handleReply = useCallback(
     (event: AgentReplyEvent): void => {
       if (!enabledRef.current) {
-        if (queuedRepliesRef.current.length >= MAX_BUFFERED_AGENT_REPLIES) {
-          queuedRepliesRef.current.shift()
-        }
-        queuedRepliesRef.current.push(event)
+        queueReply(event)
 
         return
       }
 
-      handleAgentReply(event, addAnnotationForOwner, nextCommentId)
+      if (!handleAgentReply(event, addAnnotationForOwner, nextCommentId)) {
+        queueReply(event)
+      }
     },
-    [addAnnotationForOwner, nextCommentId]
+    [addAnnotationForOwner, nextCommentId, queueReply]
   )
 
   useEffect(() => {
@@ -277,7 +302,7 @@ export const useAgentReply = ({
 
     const queued = queuedRepliesRef.current.splice(0)
     queued.forEach(handleReply)
-  }, [enabled, handleReply])
+  }, [enabled, findingThreadRevision, handleReply, pendingReviewRevision])
 
   const recoverPty = useCallback(
     async (ptyId: string, isCancelled: () => boolean): Promise<void> => {

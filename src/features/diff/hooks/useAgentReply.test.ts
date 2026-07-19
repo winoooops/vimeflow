@@ -502,6 +502,41 @@ describe('useAgentReply', () => {
     await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
   })
 
+  test('replays a live reply after its owner correlation hydrates', async () => {
+    mount()
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    setPendingReview(pending(new Map([[1, handle()]])))
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe('A')
+  })
+
+  test('replays a finding-thread reply after its owner correlation hydrates', async () => {
+    mount()
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [
+          { id: 1, status: 'resolved', target: 'finding', text: 'Fixed it.' },
+        ],
+      })
+    )
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    setFindingThreadRecord(findingRecord())
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Fixed it.'
+    )
+  })
+
   test('a file-scope reply inherits the file target (not a line-0 annotation)', async () => {
     setPendingReview(
       pending(

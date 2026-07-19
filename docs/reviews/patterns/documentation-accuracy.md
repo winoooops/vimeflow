@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-05
-ref_count: 91
+last_updated: 2026-07-19
+ref_count: 92
 ---
 
 # Documentation Accuracy
@@ -897,3 +897,16 @@ Stale documentation misleads future contributors and review agents.
   file sequentially, and updated the knowledge-base index counts and dates to
   match the rewritten headings.
 - **Commit:** same commit as this entry
+
+### 96. Review-pattern entry contradicted the shipped file-comment layout
+
+- **Source:** github-claude | PR #706 round 1 | 2026-07-19
+- **Severity:** LOW
+- **File:** `docs/reviews/patterns/ui-visual-regression.md`
+- **Finding:** The UI visual regression entry claimed the diff panel restored a
+  bounded file-comment section and nested overflow container, but the shipped
+  code intentionally removed those classes so file-level review threads expand
+  in the dock scroll container.
+- **Fix:** Reworded the entry to match the implemented layout contract: no
+  nested `max-h-56` or `overflow-y-auto` clamp on the file-level comment stack.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
