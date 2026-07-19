@@ -790,7 +790,7 @@ const SWITCHER_ROW_BASE_CLASSES =
 
 const switcherRowClasses = (selected: boolean): string =>
   selected
-    ? `${SWITCHER_ROW_BASE_CLASSES} bg-gradient-to-b from-primary/[0.17] to-primary/[0.12] ring-1 ring-inset ring-primary/25`
+    ? `${SWITCHER_ROW_BASE_CLASSES} bg-gradient-to-b from-primary/[0.17] to-primary/[0.12]`
     : `${SWITCHER_ROW_BASE_CLASSES} hover:bg-on-surface/[0.04]`
 
 const switcherGlyphClasses = (selected: boolean): string =>
