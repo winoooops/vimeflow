@@ -26,6 +26,11 @@ export interface SessionSwitcherProps {
   onCancel: () => void
 }
 
+// Callback ref: fires when the selected option attaches, keeping it visible.
+const scrollSelectedOptionIntoView = (node: HTMLButtonElement | null): void => {
+  node?.scrollIntoView({ block: 'nearest' })
+}
+
 export const SessionSwitcher = ({
   open,
   entries,
@@ -88,17 +93,28 @@ export const SessionSwitcher = ({
       size="sm"
       aria-label="Session switcher"
       testId={SESSION_SWITCHER_DIALOG_TEST_ID}
+      // eslint-disable-next-line react/jsx-boolean-value
+      restoreFocus={false}
       nativeOverlay
       nativeOverlayPayload={nativeOverlayPayload}
       nativeOverlayActions={nativeOverlayActions}
     >
-      <ul role="listbox" aria-label="Session switcher">
+      <ul
+        role="listbox"
+        aria-label="Session switcher"
+        className="max-h-[min(480px,60vh)] overflow-y-auto"
+      >
         {entries.map((entry, index) => (
           <li key={entry.id}>
             <button
               type="button"
               role="option"
               aria-selected={index === selectedIndex}
+              ref={
+                index === selectedIndex
+                  ? scrollSelectedOptionIntoView
+                  : undefined
+              }
               className={
                 index === selectedIndex
                   ? 'flex w-full items-center gap-2 rounded-md bg-surface-container-high px-3 py-2 text-left font-body text-sm text-on-surface'

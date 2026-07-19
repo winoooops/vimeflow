@@ -28,6 +28,7 @@ import type {
   NativeOverlayNewSessionCommandOption,
   NativeOverlayNewSessionDialogPayload,
   NativeOverlayRequest,
+  NativeOverlaySessionSwitcherDialogPayload,
   NativeOverlayTooltipRequest,
 } from '@/components/base/floating/nativeOverlay'
 import type { Placement } from '@/components/base/floating/glassSurface'
@@ -68,6 +69,10 @@ type NativeOverlayNewSessionRequest = NativeOverlayDialogRequest & {
 
 type NativeOverlayCommandPaletteRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlayCommandPaletteDialogPayload
+}
+
+type NativeOverlaySessionSwitcherRequest = NativeOverlayDialogRequest & {
+  payload: NativeOverlaySessionSwitcherDialogPayload
 }
 
 const COPY_FEEDBACK_MS = 1300
@@ -219,6 +224,11 @@ const OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES =
   'inline-flex min-w-[18px] h-[18px] px-[5px] items-center justify-center ' +
   'rounded-[4px] border font-mono text-[10px] font-semibold ' +
   'bg-surface-container-highest/60 text-on-surface-variant border-outline-variant/60'
+
+const OVERLAY_SESSION_SWITCHER_PANEL_CLASSES =
+  'w-full max-w-sm mx-4 max-h-[min(480px,60vh)] overflow-y-auto ' +
+  'bg-surface-container-high/95 glass-panel rounded-2xl ' +
+  'border border-outline-variant/30 shadow-2xl'
 
 const OVERLAY_NEW_SESSION_PANEL_CLASSES =
   'w-[min(560px,calc(100vw-32px))] max-h-[min(680px,calc(100vh-48px))] ' +
@@ -766,6 +776,84 @@ const commandButtonClass = (selected: boolean): string =>
       : 'border-outline-variant/40 bg-surface-container-lowest/40 text-on-surface-variant hover:bg-surface-container-high/60'
   }`
 
+// Callback ref: fires when the selected option attaches, keeping it visible.
+const scrollSelectedOptionIntoView = (node: HTMLButtonElement | null): void => {
+  node?.scrollIntoView({ block: 'nearest' })
+}
+
+const NativeOverlaySessionSwitcher = ({
+  request,
+  close,
+}: {
+  request: NativeOverlaySessionSwitcherRequest
+  close: () => void
+}): ReactElement => {
+  const payload = request.payload
+
+  const dispatchAction = (
+    actionId: string,
+    options: { index?: number } = {}
+  ): void => {
+    void nativeOverlayHostBridge()?.action({
+      surfaceId: request.surfaceId,
+      actionId,
+      closeOnSelect: false,
+      ...options,
+    })
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={payload.ariaLabel}
+      className={OVERLAY_DIALOG_BACKDROP_CLASSES}
+      onMouseDown={(event): void => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault()
+          close()
+        }
+      }}
+    >
+      <div className={OVERLAY_SESSION_SWITCHER_PANEL_CLASSES}>
+        <ul
+          role="listbox"
+          aria-label={payload.ariaLabel}
+          className="flex flex-col gap-1 p-2"
+        >
+          {payload.items.map((item, index) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={index === payload.selectedIndex}
+                ref={
+                  index === payload.selectedIndex
+                    ? scrollSelectedOptionIntoView
+                    : undefined
+                }
+                className={
+                  index === payload.selectedIndex
+                    ? 'flex w-full items-center gap-2 rounded-md bg-surface-container-high px-3 py-2 text-left font-body text-sm text-on-surface'
+                    : 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left font-body text-sm text-on-surface-muted'
+                }
+                onClick={() =>
+                  dispatchAction(payload.actions.commitIndex, { index })
+                }
+              >
+                <span className="flex-1 truncate">{item.title}</span>
+                {item.isActive ? (
+                  <span className="text-xs text-primary">active</span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 const NativeOverlayNewSession = ({
   request,
   close,
@@ -1259,51 +1347,11 @@ export const NativeOverlayHost = ({
       }
 
       if (request.payload.dialog === 'session-switcher') {
-        const payload = request.payload
-
-        const dispatchSessionSwitcherAction = (
-          actionId: string,
-          options: { index?: number } = {}
-        ): void => {
-          void nativeOverlayHostBridge()?.action({
-            surfaceId: request.surfaceId,
-            actionId,
-            closeOnSelect: false,
-            ...options,
-          })
-        }
-
         return (
-          <ul
-            role="listbox"
-            aria-label={payload.ariaLabel}
-            className="flex flex-col gap-1 p-2"
-          >
-            {payload.items.map((item, index) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={index === payload.selectedIndex}
-                  className={
-                    index === payload.selectedIndex
-                      ? 'flex w-full items-center gap-2 rounded-md bg-surface-container-high px-3 py-2 text-left font-body text-sm text-on-surface'
-                      : 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left font-body text-sm text-on-surface-muted'
-                  }
-                  onClick={() =>
-                    dispatchSessionSwitcherAction(payload.actions.commitIndex, {
-                      index,
-                    })
-                  }
-                >
-                  <span className="flex-1 truncate">{item.title}</span>
-                  {item.isActive ? (
-                    <span className="text-xs text-primary">active</span>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <NativeOverlaySessionSwitcher
+            request={request as NativeOverlaySessionSwitcherRequest}
+            close={close}
+          />
         )
       }
 

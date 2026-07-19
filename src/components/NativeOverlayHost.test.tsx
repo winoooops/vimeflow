@@ -825,6 +825,43 @@ describe('NativeOverlayHost', () => {
     })
   })
 
+  test('renders the session switcher inside a modal dialog shell that closes on outside mousedown', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(sessionSwitcherRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Session switcher',
+    })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(
+      within(dialog).getByRole('listbox', { name: 'Session switcher' })
+    ).toBeInTheDocument()
+
+    fireEvent.mouseDown(dialog)
+    await waitFor(() => {
+      expect(bridge.close).toHaveBeenCalledWith({
+        surfaceId: 'dialog-session-switcher',
+        reason: 'outside',
+      })
+    })
+  })
+
+  test('scrolls the selected session switcher option into view', async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    try {
+      bridge.emitRender(sessionSwitcherRequest)
+      await screen.findByRole('listbox', { name: 'Session switcher' })
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
+  })
+
   test('scrolls the selected command palette row into view', async () => {
     const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
     const bridge = installNativeOverlayHostBridge()

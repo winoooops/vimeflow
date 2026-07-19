@@ -76,4 +76,80 @@ describe('SessionSwitcher', () => {
 
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
+
+  test('close does not steal focus back from the activated surface', () => {
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+
+    const { rerender } = render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={1}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const claimed = document.createElement('button')
+    document.body.appendChild(claimed)
+    claimed.focus()
+
+    rerender(
+      <SessionSwitcher
+        // eslint-disable-next-line react/jsx-boolean-value
+        open={false}
+        entries={entries}
+        selectedIndex={1}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(claimed).toHaveFocus()
+    outside.remove()
+    claimed.remove()
+  })
+
+  test('bounds the list height so long MRU lists scroll', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={0}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('listbox')).toHaveClass('overflow-y-auto')
+  })
+
+  test('scrolls the selected option into view as the selection moves', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+
+    const { rerender } = render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={0}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={1}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    scrollIntoView.mockRestore()
+  })
 })
