@@ -2,8 +2,8 @@
 id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
-last_updated: 2026-07-13
-ref_count: 10
+last_updated: 2026-07-19
+ref_count: 15
 ---
 
 # Persisted State Invariants
@@ -225,4 +225,93 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
   custom theme and surface an explicit error, while preserving edit mode's
   intentional custom-theme replacement path. Added regression coverage for both
   imported JSON and manually edited create JSON.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. New built-in theme ids can shadow persisted custom schemes
+
+- **Source:** github-codex-connector | PR #705 round 1 | 2026-07-18
+- **Severity:** P2 / MEDIUM
+- **File:** `src/theme/service.ts`
+- **Finding:** Adding Ayu, Eldritch, Kanagawa, Nord, and Rose Pine to the built-in theme ids made previously persisted custom schemes with those ids collide with the built-in set. `rebuildThemes` filtered those custom definitions out, so an upgrade could silently hide a user's imported scheme and apply the new built-in for the same saved active id.
+- **Fix:** Added a load-time custom-theme migration that renames persisted built-in collisions to a unique `-custom` id, rewrites the custom-theme storage, and retargets the persisted active theme when it pointed at the migrated custom scheme. Added regression coverage for the active `ayu` collision case.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Review-state saves must preserve hydration and last-write-wins ordering
+
+- **Source:** local-codex | VIM-346 local review | 2026-07-18
+- **Severity:** HIGH
+- **File:** `src/features/diff/hooks/useFeedbackBatch.ts`
+- **Finding:** The initial durable review-state integration could treat a failed
+  load as safe-to-write, replace agent output received during hydration, skip
+  background-owner saves, restore stale state during worktree transitions, and
+  resurrect a draft when an older in-flight write completed after the user
+  reverted it. Its renderer-only debounce also was not part of Electron's
+  close-time durability handshake.
+- **Fix:** Gate writes on successful hydration, buffer agent events until the
+  correlation snapshot is ready, persist every known owner, snapshot and flush
+  the captured old context before loading a new cwd, track the latest desired
+  snapshot independently of completed writes, and drain review writes before
+  the final workspace-shape acknowledgment. Added focused regressions for each
+  ordering boundary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Review-state read failures must fail closed
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** CRITICAL
+- **File:** `crates/backend/src/review_state.rs`
+- **Finding:** A non-`NotFound` error while reading the review-state file was
+  converted into an empty writable store. A later save could then replace an
+  unreadable but valid file with only the newest record, silently discarding
+  the remaining persisted review state.
+- **Fix:** Keep the fallback store read-only after unexpected read errors so
+  later saves fail instead of overwriting the original file. Added a Unix
+  regression test that makes the file unreadable and verifies its bytes remain
+  unchanged after a rejected save.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Persisted repository identities need lifecycle aliases
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** HIGH
+- **File:** `crates/backend/src/git/mod.rs`, `crates/backend/src/runtime/state.rs`
+- **Finding:** Review state used one repository identity selected from the best
+  currently available Git metadata. The identity changed when an unborn
+  repository gained its first commit or when a remote was added, making state
+  saved under the previous identity unreachable after restart.
+- **Fix:** Return the current primary identity with stable fallback aliases,
+  load from each in order, and atomically move an owner's state to the primary
+  identity on save. Added lifecycle and migration regression coverage.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 25. Review-state saves must retain stable repository aliases
+
+- **Source:** github-codex-connector | PR #706 round 1 | 2026-07-19
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/review_state.rs`
+- **Finding:** Saving under the preferred repository identity removed the root
+  commit and common-directory aliases. A routine `git remote set-url origin`
+  could then change the preferred remote identity and make persisted review
+  comments and drafts unreachable even though the repository history was the
+  same.
+- **Fix:** Mirrored saved owner state under the current repository identity and
+  every validated lifecycle alias, while deletes still remove the owner from all
+  identities. Added backend regressions for alias mirroring and alias deletion.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Review-state readiness must not gate unrelated workflows globally
+
+- **Source:** github-codex-connector | PR #706 round 2 | 2026-07-19
+- **Severity:** P1 / HIGH
+- **File:** `src/features/workspace/components/DockPanel.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Review-state hydration failure replaced the whole diff panel,
+  blocking unrelated diff, stage, and discard workflows. The same active-owner
+  hydration state also disabled the global agent reply/review listeners, so a
+  failed active pane could stall live events for unrelated owners whose durable
+  correlation state was already ready.
+- **Fix:** Keep the diff panel mounted while review comments are loading or
+  unavailable, and pause only review-comment data/actions behind a scoped
+  status. Expose per-owner review-state readiness from the feedback store and
+  use it when routing live reply/review events and recovery scans, so only the
+  event's target owner is buffered.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

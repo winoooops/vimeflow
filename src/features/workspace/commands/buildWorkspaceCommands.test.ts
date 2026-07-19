@@ -74,6 +74,11 @@ describe('buildWorkspaceCommands - happy paths', () => {
       'theme-gruvbox-light',
       'theme-tokyo-night',
       'theme-dracula',
+      'theme-ayu',
+      'theme-eldritch',
+      'theme-kanagawa',
+      'theme-nord',
+      'theme-rose-pine',
     ])
 
     expect(

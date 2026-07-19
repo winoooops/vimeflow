@@ -193,16 +193,11 @@ const UNBOUND_FEEDBACK_OWNER_KEY = 'workspace:unbound-feedback'
 const makeFeedbackOwnerKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
 
-// Unique id for each attached agent-reply annotation (VIM-249).
-let agentReplyCommentSeq = 0
-
 const nextAgentReplyCommentId = (): string =>
-  `agent-reply-${(agentReplyCommentSeq += 1)}`
-
-let agentReviewCommentSeq = 0
+  `agent-reply-${crypto.randomUUID()}`
 
 const nextAgentReviewCommentId = (): string =>
-  `agent-review-${(agentReviewCommentSeq += 1)}`
+  `agent-review-${crypto.randomUUID()}`
 
 const sameSelectedDiffFile = (
   left: SelectedDiffFile | null,
@@ -2362,7 +2357,14 @@ const WorkspaceViewContent = (): ReactElement => {
     feedbackDraft,
     summaries: feedbackSummaries,
     pruneOwners: pruneFeedbackOwners,
-  } = useFeedbackBatchStore(activeFeedbackOwnerKey, activeCwd)
+    isOwnerReviewStateReady,
+    hydrating: reviewStateHydrating,
+    hydrationFailed: reviewStateHydrationFailed,
+  } = useFeedbackBatchStore(
+    activeFeedbackOwnerKey,
+    activeCwd,
+    activePtyBackedPanePtyId
+  )
 
   useLayoutEffect(() => {
     pruneFeedbackOwners(livePaneKeys)
@@ -2374,6 +2376,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // where every feedback owner is reachable so a reply attaches onto the owner
   // that dispatched it — even after the user switches panes.
   useAgentReply({
+    isOwnerReviewStateReady,
     activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReplyCommentId,
@@ -2383,6 +2386,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // Capture delegated review findings (VIM-304): the same single subscription
   // point, placing reviewer findings onto the owner that requested the review.
   useAgentReview({
+    isOwnerReviewStateReady,
     activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReviewCommentId,
@@ -3092,6 +3096,8 @@ const WorkspaceViewContent = (): ReactElement => {
       }}
       feedbackBatch={feedbackBatch}
       feedbackDraft={feedbackDraft}
+      reviewStateLoading={reviewStateHydrating}
+      reviewStateUnavailable={reviewStateHydrationFailed}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
       pendingFeedbackReviews={pendingFeedbackReviews}
@@ -3557,7 +3563,6 @@ const WorkspaceViewContent = (): ReactElement => {
         >
           {activityPanelCollapsed ? (
             <AgentStatusRail
-              agent={activityPanelAgent}
               contextUsedPercentage={
                 agentStatus.contextWindow?.usedPercentage ?? null
               }

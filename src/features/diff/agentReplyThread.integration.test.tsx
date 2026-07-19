@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { useState, type ReactElement } from 'react'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, waitFor } from '@testing-library/react'
 import { listen } from '@/lib/backend'
 import type { BackendApi } from '@/lib/backend'
 import type { AgentReplyEvent } from '@/bindings'
@@ -36,11 +36,17 @@ const OWNER = 'sess:pane-1'
 const CWD = '/repo'
 const FILE = 'src/foo.ts'
 
+// Captured so tests can seed the store from OUTSIDE the component (the store
+// exists only inside the harness). Reset in beforeEach.
+let capturedStore: ReturnType<typeof useFeedbackBatchStore> | null = null
+
 // Renders the dispatching owner's committed comments for the file, so the agent
 // reply is asserted through the real ReviewCommentRow (VIM-256 rendering).
 const Harness = (): ReactElement => {
   const store = useFeedbackBatchStore(OWNER, CWD)
+  capturedStore = store
   useAgentReply({
+    enabled: !store.hydrating && !store.hydrationFailed,
     activePtyId: null,
     addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
     nextCommentId: () => 'agent-reply-1',
@@ -63,10 +69,6 @@ const Harness = (): ReactElement => {
   )
 }
 
-// Captured so tests can seed the store from OUTSIDE the component (the store
-// exists only inside the harness). Reset in beforeEach.
-let capturedStore: ReturnType<typeof useFeedbackBatchStore> | null = null
-
 const ThreadHarness = (): ReactElement => {
   const store = useFeedbackBatchStore(OWNER, CWD)
   capturedStore = store
@@ -79,6 +81,7 @@ const ThreadHarness = (): ReactElement => {
     return (): string => `agent-${++n}`
   })
   useAgentReply({
+    enabled: !store.hydrating && !store.hydrationFailed,
     activePtyId: null,
     addAnnotationForOwner: store.feedbackBatch.addAnnotationForOwner,
     nextCommentId,
@@ -140,6 +143,10 @@ afterEach(() => {
 
 describe('inline agent Q&A thread (integration)', () => {
   test('an agent reply renders in the thread under the dispatched comment', async () => {
+    render(<Harness />)
+
+    await waitFor(() => expect(capturedStore?.hydrating).toBe(false))
+
     setPendingReview({
       ptyId: 'pty-1',
       ownerKey: OWNER,
@@ -159,8 +166,6 @@ describe('inline agent Q&A thread (integration)', () => {
         ],
       ]),
     })
-
-    render(<Harness />)
 
     // No agent reply yet.
     expect(screen.queryByText('Replied')).not.toBeInTheDocument()
@@ -184,6 +189,8 @@ describe('inline agent Q&A thread (integration)', () => {
 describe('multi-turn thread loop (VIM-298 integration)', () => {
   test('comment → reply → follow-up → second reply renders one 4-turn card', async () => {
     render(<ThreadHarness />)
+
+    await waitFor(() => expect(capturedStore?.hydrating).toBe(false))
 
     // Seed the dispatched root — mirroring what Panel.handleSendFeedback inserts
     // (post-dispatch, pre-stamped fields: dispatchedAt, dispatchedTo, threadId).
@@ -346,6 +353,8 @@ describe('multi-turn thread loop (VIM-298 integration)', () => {
 
   test('a late agent reply after local resolve appends without clearing resolution', async () => {
     render(<ThreadHarness />)
+
+    await waitFor(() => expect(capturedStore?.hydrating).toBe(false))
 
     // Seed a dispatched root WITH resolvedAt set (locally resolved).
     act(() => {

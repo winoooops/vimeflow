@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { invoke, listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import type {
@@ -17,7 +17,9 @@ import {
   clearPendingReviewRequest,
   getPendingReviewRequest,
   pendingReviewRequestNoncesForPty,
+  reviewRequestStateRevision,
   setFindingThreadRecord,
+  subscribeReviewLevelNotes,
   type FindingThreadTarget,
   type HunkRange,
   type ReviewedFile,
@@ -25,8 +27,14 @@ import {
 import { recoveryNonceBatches } from '../services/pendingReviews'
 
 export const REVIEWER_FINDING_SOFT_CAP = 50
+const MAX_BUFFERED_AGENT_REVIEWS = 200
+const ownerReviewStateAlwaysReady = (): boolean => true
 
 export interface UseAgentReviewOptions {
+  /** Buffer live events until durable correlation state has hydrated. */
+  enabled?: boolean
+  /** Whether the event's target owner has durable correlation state available. */
+  isOwnerReviewStateReady?: (ownerKey: string) => boolean
   /** PTY currently visible in the workspace; returning to it triggers recovery. */
   activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
@@ -119,13 +127,25 @@ const resolveFindingEntry = (
  * request is cleared after processing so a replay is a no-op. It never throws.
  */
 export const useAgentReview = ({
+  enabled = true,
+  isOwnerReviewStateReady = ownerReviewStateAlwaysReady,
   activePtyId,
   addAnnotationForOwner,
   nextCommentId,
   notifyInfo,
 }: UseAgentReviewOptions): void => {
-  const handleReview = useCallback(
-    (event: AgentReviewEvent): void => {
+  const enabledRef = useRef(enabled)
+  const queuedReviewsRef = useRef<AgentReviewEvent[]>([])
+  enabledRef.current = enabled
+
+  const requestStateRevision = useSyncExternalStore(
+    subscribeReviewLevelNotes,
+    reviewRequestStateRevision,
+    reviewRequestStateRevision
+  )
+
+  const applyReview = useCallback(
+    (event: AgentReviewEvent): boolean => {
       const reviewerAnnotation = (
         finding: AgentReviewFinding,
         reviewer: string,
@@ -181,13 +201,20 @@ export const useAgentReview = ({
         }
       }
 
-      const request = getPendingReviewRequest(event.nonce ?? '')
+      if (event.nonce === null) {
+        return true
+      }
+
+      const request = getPendingReviewRequest(event.nonce)
       // The nonce is the whole gate: we only act on a review whose nonce matches
       // one we minted. It's random + unguessable, so this holds equally for a
       // review we delegated to a pane and one you copied and pasted into any
       // agent — no session check, and the copy path needs no pty id.
-      if (request === undefined || event.nonce === null) {
-        return
+      if (request === undefined) {
+        return false
+      }
+      if (!isOwnerReviewStateReady(request.ownerKey)) {
+        return false
       }
 
       const reviewer = event.reviewer ?? 'Reviewer'
@@ -203,7 +230,7 @@ export const useAgentReview = ({
         })
         clearPendingReviewRequest(event.nonce)
 
-        return
+        return true
       }
 
       const findingsToPlace = event.findings.slice(0, REVIEWER_FINDING_SOFT_CAP)
@@ -284,13 +311,57 @@ export const useAgentReview = ({
         })
       }
       clearPendingReviewRequest(event.nonce)
+
+      return true
     },
-    [addAnnotationForOwner, nextCommentId]
+    [addAnnotationForOwner, isOwnerReviewStateReady, nextCommentId]
   )
+
+  const queueReview = useCallback((event: AgentReviewEvent): void => {
+    if (event.nonce === null) {
+      return
+    }
+
+    const queued = queuedReviewsRef.current.filter(
+      (candidate) => candidate.nonce !== event.nonce
+    )
+    queuedReviewsRef.current = [
+      ...queued.slice(-(MAX_BUFFERED_AGENT_REVIEWS - 1)),
+      event,
+    ]
+  }, [])
+
+  const handleReview = useCallback(
+    (event: AgentReviewEvent): void => {
+      if (!enabledRef.current) {
+        queueReview(event)
+
+        return
+      }
+
+      if (!applyReview(event)) {
+        queueReview(event)
+      }
+    },
+    [applyReview, queueReview]
+  )
+
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
+    const queued = queuedReviewsRef.current
+    queuedReviewsRef.current = []
+    queued.forEach(handleReview)
+  }, [enabled, handleReview, requestStateRevision])
 
   const recoverPty = useCallback(
     async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
-      const nonces = pendingReviewRequestNoncesForPty(ptyId)
+      const nonces = pendingReviewRequestNoncesForPty(
+        ptyId,
+        isOwnerReviewStateReady
+      )
       if (nonces.length === 0) {
         return
       }
@@ -316,7 +387,7 @@ export const useAgentReview = ({
         }
       }
     },
-    [handleReview, notifyInfo]
+    [handleReview, isOwnerReviewStateReady, notifyInfo]
   )
 
   useEffect(() => {
@@ -358,7 +429,7 @@ export const useAgentReview = ({
   }, [handleReview, recoverPty])
 
   useEffect(() => {
-    if (!isDesktop() || activePtyId === null) {
+    if (!isDesktop() || !enabled || activePtyId === null) {
       return undefined
     }
 
@@ -368,5 +439,5 @@ export const useAgentReview = ({
     return (): void => {
       cancelled = true
     }
-  }, [activePtyId, recoverPty])
+  }, [activePtyId, enabled, recoverPty])
 }

@@ -5,6 +5,7 @@ import {
   clearFindingThreadRecord,
   clearPendingReviewRequest,
   clearReviewLevelNotes,
+  findingThreadNoncesForPty,
   getFindingThreadRecord,
   getPendingReviewRequest,
   prunePendingReviewRequestOwners,
@@ -123,6 +124,13 @@ describe('findingThreadRecords', () => {
     clearFindingThreadRecord('pty-1', 'abc')
 
     expect(getFindingThreadRecord('pty-1', 'abc')).toBeUndefined()
+  })
+
+  test('lists nonces for targeted reply recovery', () => {
+    setFindingThreadRecord(threadRecord())
+
+    expect(findingThreadNoncesForPty('pty-1')).toEqual(['abc'])
+    expect(findingThreadNoncesForPty('other')).toEqual([])
   })
 
   test('prunePendingReviewRequestOwners removes records for closed owners', () => {

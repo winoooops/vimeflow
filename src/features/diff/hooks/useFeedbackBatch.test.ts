@@ -740,6 +740,25 @@ describe('useFeedbackBatchStore', () => {
     ])
   })
 
+  test('summaries include unfinished thread replies', () => {
+    const { result } = renderHook(() =>
+      useFeedbackBatchStore('session-a:p0', '/repo-a')
+    )
+
+    act(() => {
+      result.current.feedbackDraft.setThreadDraft?.('thread-1', 'reply draft')
+    })
+
+    expect(result.current.summaries).toEqual([
+      {
+        ownerKey: 'session-a:p0',
+        fileCount: 0,
+        commentCount: 0,
+        draftCount: 1,
+      },
+    ])
+  })
+
   test('clearBatch clears the current owner draft', () => {
     const { result } = renderHook(() =>
       useFeedbackBatchStore('session-a:p0', '/repo-a')

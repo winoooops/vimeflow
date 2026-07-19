@@ -146,6 +146,9 @@ fn positive_u32(n: Option<i64>) -> Option<u32> {
 fn validate_finding(f: FindingDto) -> Option<AgentReviewFinding> {
     let scope = match f.scope.as_deref()? {
         "line" => ReviewFindingScope::Line,
+        "range" if f.start_line.is_none() && f.end_line.is_none() && f.line.is_some() => {
+            ReviewFindingScope::Line
+        }
         "range" => ReviewFindingScope::Range,
         "file" => ReviewFindingScope::File,
         _ => return None,
@@ -241,6 +244,20 @@ mod tests {
                 assert_eq!(findings[0].scope, ReviewFindingScope::Range);
                 assert_eq!(findings[0].start_line, Some(88));
                 assert_eq!(findings[0].end_line, Some(94));
+            }
+            other => panic!("expected Structured, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn range_with_only_line_degrades_to_line_finding() {
+        let t = block(
+            r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[{"scope":"range","path":"a.ts","side":"additions","line":42,"category":"bug","text":"x"}]}"#,
+        );
+        match extract_agent_review(&t) {
+            Some(AgentReviewOutcome::Structured { findings, .. }) => {
+                assert_eq!(findings[0].scope, ReviewFindingScope::Line);
+                assert_eq!(findings[0].line, Some(42));
             }
             other => panic!("expected Structured, got {other:?}"),
         }

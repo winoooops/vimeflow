@@ -320,9 +320,24 @@ test('formatReviewRequest names the scope, coordinate convention, and block (VIM
   expect(payload).toContain('> ─ src/auth.ts')
   expect(payload).toContain('> ─ src/db.ts')
   expect(payload).toContain('"additions" uses new-file lines')
+  expect(payload).toContain(
+    '"range" uses side + startLine + endLine; "file" uses neither'
+  )
   expect(payload).toContain('<<<VIMEFLOW_REVIEW')
   expect(payload).toContain('"nonce":"r3v13w"')
   expect(payload).toContain('VIMEFLOW_REVIEW>>>')
+
+  expect(payload).toContain(
+    'If the user later asks you to address these findings'
+  )
+
+  expect(payload).toContain(
+    '{"v":1,"nonce":"r3v13w","replies":[{"target":"finding","id":1,"status":"resolved","text":"..."}]}'
+  )
+
+  expect(payload).toContain(
+    'Follow-up example (do not emit this block in the current review reply)'
+  )
 })
 
 test('formatReviewRequest can include absolute prompt paths while preserving JSON paths', () => {

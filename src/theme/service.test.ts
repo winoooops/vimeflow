@@ -1,7 +1,11 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { ThemeDefinition } from './types'
 import { themeToScheme } from './derive'
-import { THEME_STORAGE_KEY, themeService } from './service'
+import {
+  CUSTOM_THEMES_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  themeService,
+} from './service'
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -38,7 +42,7 @@ test('does not allow custom themes to replace built-in definitions', () => {
 
 test('restores persisted custom themes during init', () => {
   window.localStorage.setItem(
-    'vimeflow:custom-themes',
+    CUSTOM_THEMES_STORAGE_KEY,
     JSON.stringify([
       {
         ...themeService.current(),
@@ -52,6 +56,31 @@ test('restores persisted custom themes during init', () => {
   themeService.init()
 
   expect(themeService.current().id).toBe('restored-theme')
+})
+
+test('migrates persisted custom themes that now collide with built-ins', () => {
+  window.localStorage.setItem(
+    CUSTOM_THEMES_STORAGE_KEY,
+    JSON.stringify([
+      {
+        ...themeToScheme(themeService.current()),
+        id: 'ayu',
+        label: 'My Ayu',
+      },
+    ])
+  )
+  window.localStorage.setItem(THEME_STORAGE_KEY, 'ayu')
+
+  themeService.init()
+
+  expect(themeService.current().id).toBe('ayu-custom')
+  expect(themeService.current().label).toBe('My Ayu')
+  expect(themeService.list().map((theme) => theme.id)).toContain('ayu')
+  expect(themeService.list().map((theme) => theme.id)).toContain('ayu-custom')
+  expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('ayu-custom')
+  expect(window.localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY)).toContain(
+    '"id":"ayu-custom"'
+  )
 })
 
 test('apply writes CSS vars, data-theme, and color-scheme', () => {
@@ -129,13 +158,13 @@ test('syncs active and custom themes changed by another renderer', () => {
   }
 
   window.localStorage.setItem(
-    'vimeflow:custom-themes',
+    CUSTOM_THEMES_STORAGE_KEY,
     JSON.stringify([customScheme])
   )
 
   window.dispatchEvent(
     new StorageEvent('storage', {
-      key: 'vimeflow:custom-themes',
+      key: CUSTOM_THEMES_STORAGE_KEY,
       newValue: JSON.stringify([customScheme]),
       storageArea: window.localStorage,
     })
@@ -154,7 +183,7 @@ test('syncs active and custom themes changed by another renderer', () => {
   expect(document.documentElement.dataset.theme).toBe('shared-theme')
 })
 
-test('list exposes both themes for pickers', () => {
+test('list exposes all built-in themes for pickers', () => {
   expect(themeService.list().map((t) => t.id)).toEqual([
     'obsidian-lens',
     'flexoki',
@@ -162,5 +191,10 @@ test('list exposes both themes for pickers', () => {
     'gruvbox-light',
     'tokyo-night',
     'dracula',
+    'ayu',
+    'eldritch',
+    'kanagawa',
+    'nord',
+    'rose-pine',
   ])
 })

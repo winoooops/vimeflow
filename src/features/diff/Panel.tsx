@@ -105,6 +105,7 @@ const isDiffNativeFocusTarget = (target: Element): boolean =>
 // after this delay — longer than the hover-leave delay since there's no pointer
 // motion to signal intent. Wire to Settings later.
 const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
+const EMPTY_REVIEW_ANNOTATIONS: DiffLineAnnotation<ReviewComment>[] = []
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -185,6 +186,8 @@ interface PanelBaseProps {
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
+  /** Durable review state is not ready; keep diff workflows active but pause review edits. */
+  reviewStateStatus?: 'loading' | 'unavailable'
   /** The active feedback owner (sessionId:paneId) — recorded at dispatch so an
    * agent reply routes back to this review even after a pane switch (VIM-249). */
   feedbackOwnerKey?: string
@@ -192,13 +195,9 @@ interface PanelBaseProps {
 
 export type PanelProps = PanelBaseProps & PanelSelectionControl
 
-// Monotonic id source. A module counter keeps comment ids stable + unique
-// without reaching for Date.now()/Math.random() in render.
-
-let feedbackCommentSeq = 0
-
+// Persisted ids stay unique across renderer restarts.
 const nextFeedbackCommentId = (): string =>
-  `feedback-comment-${(feedbackCommentSeq += 1)}`
+  `feedback-comment-${crypto.randomUUID()}`
 
 type KeyboardConfirmAction = 'stage-hunk' | 'discard-hunk' | 'discard-file'
 
@@ -279,6 +278,7 @@ export const Panel = ({
   feedbackDraft = undefined,
   feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
+  reviewStateStatus = undefined,
   feedbackOwnerKey = undefined,
 }: PanelProps): ReactElement => {
   const { bindingFor, matches } = useKeybindings()
@@ -638,6 +638,7 @@ export const Panel = ({
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
   const hasParentFeedbackBatch = feedbackBatch !== undefined
   const feedback: UseFeedbackBatchReturn = feedbackBatch ?? localFeedback
+  const reviewControlsPaused = reviewStateStatus !== undefined
   const localRepoRootRef = useRef('') as FeedbackRepoRootRef
   const repoRootRef = feedbackRepoRootRef ?? localRepoRootRef
 
@@ -669,10 +670,16 @@ export const Panel = ({
   }, [response, repoRootRef])
 
   // Real annotations for the currently selected file.
-  const annotationsForSelectedFile = feedback.annotationsForFile(
-    cwd,
-    selectedFilePath ?? '',
-    selectedFileStaged
+  const annotationsForSelectedFile = useMemo(
+    (): DiffLineAnnotation<ReviewComment>[] =>
+      reviewControlsPaused
+        ? EMPTY_REVIEW_ANNOTATIONS
+        : feedback.annotationsForFile(
+            cwd,
+            selectedFilePath ?? '',
+            selectedFileStaged
+          ),
+    [cwd, feedback, reviewControlsPaused, selectedFilePath, selectedFileStaged]
   )
 
   const realAnnotations = useMemo(
@@ -683,7 +690,7 @@ export const Panel = ({
 
   const fileCommentsForSelectedFile = useMemo(
     (): DiffLineAnnotation<ReviewComment>[] =>
-      selectedFileEntry === undefined
+      selectedFileEntry === undefined || reviewControlsPaused
         ? []
         : feedback
             .annotationsForFile(
@@ -692,7 +699,7 @@ export const Panel = ({
               selectedFileEntry.staged
             )
             .filter(isFileLevelReviewAnnotation),
-    [cwd, feedback, selectedFileEntry]
+    [cwd, feedback, reviewControlsPaused, selectedFileEntry]
   )
 
   const {
@@ -768,11 +775,34 @@ export const Panel = ({
   const [sendNowCommentId, setSendNowCommentId] = useState<string | null>(null)
 
   // Thread reply drafts (VIM-298), keyed by threadId so starting a reply on
-  // one thread never discards another thread's typed text. Panel-owned so a
-  // MultiFileDiff remount cannot erase them; an entry is cleared ONLY by that
-  // thread's explicit cancel or its successful dispatch.
-  const [replyDrafts, setReplyDrafts] = useState<ReadonlyMap<string, string>>(
-    new Map()
+  // one thread never discards another thread's typed text. Workspace-owned when
+  // available so remounts/restarts cannot erase them; an entry is cleared ONLY
+  // by that thread's explicit cancel or its successful dispatch.
+  const [localReplyDrafts, setLocalReplyDrafts] = useState<
+    ReadonlyMap<string, string>
+  >(new Map())
+  const replyDrafts = feedbackDraft?.threadDrafts ?? localReplyDrafts
+
+  const setReplyDraft = useCallback(
+    (threadId: string, text: string | null): void => {
+      if (feedbackDraft?.setThreadDraft !== undefined) {
+        feedbackDraft.setThreadDraft(threadId, text)
+
+        return
+      }
+
+      setLocalReplyDrafts((previous) => {
+        const next = new Map(previous)
+        if (text === null) {
+          next.delete(threadId)
+        } else {
+          next.set(threadId, text)
+        }
+
+        return next
+      })
+    },
+    [feedbackDraft]
   )
   // Thread whose reply editor is currently open; null = none.
   const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null)
@@ -1084,12 +1114,7 @@ export const Panel = ({
           }
 
           // Clear ONLY this thread's draft (successful dispatch).
-          setReplyDrafts((prev) => {
-            const next = new Map(prev)
-            next.delete(group.threadId)
-
-            return next
-          })
+          setReplyDraft(group.threadId, null)
 
           setReplyingThreadId((current) =>
             current === group.threadId ? null : current
@@ -1118,6 +1143,7 @@ export const Panel = ({
     [
       replyDispatchThreadId,
       replyDrafts,
+      setReplyDraft,
       threadGroupById,
       feedback,
       feedbackDispatch,
@@ -1209,18 +1235,12 @@ export const Panel = ({
     // draft stays in the map — reopening restores it.
     onStartReply: (threadId: string): void => setReplyingThreadId(threadId),
     onReplyDraftChange: (text: string): void => {
-      setReplyDrafts((prev) => {
-        if (replyingThreadId === null) {
-          return prev
-        }
-        const next = new Map(prev)
-        next.set(replyingThreadId, text)
-
-        return next
-      })
+      if (replyingThreadId !== null) {
+        setReplyDraft(replyingThreadId, text)
+      }
     },
     onSubmitReply: (threadId: string, text: string): void => {
-      setReplyDrafts((prev) => new Map(prev).set(threadId, text))
+      setReplyDraft(threadId, text)
       setFinishOpen(false)
       setSendNowCommentId(null)
       setReplyDispatchThreadId(threadId)
@@ -1228,12 +1248,7 @@ export const Panel = ({
     // Explicit cancel clears ONLY the active thread's draft.
     onCancelReply: (): void => {
       if (replyingThreadId !== null) {
-        setReplyDrafts((prev) => {
-          const next = new Map(prev)
-          next.delete(replyingThreadId)
-
-          return next
-        })
+        setReplyDraft(replyingThreadId, null)
       }
       setReplyingThreadId(null)
     },
@@ -1959,6 +1974,12 @@ export const Panel = ({
   )
 
   const openSelectedFileComment = useCallback((): void => {
+    if (reviewControlsPaused) {
+      notifyInfo('Review comments are unavailable until review history loads.')
+
+      return
+    }
+
     if (selectedFileEntry === undefined) {
       notifyInfo('No file selected.')
 
@@ -1966,10 +1987,23 @@ export const Panel = ({
     }
 
     openFileCommentEditor(selectedFileEntry)
-  }, [notifyInfo, openFileCommentEditor, selectedFileEntry])
+  }, [
+    notifyInfo,
+    openFileCommentEditor,
+    reviewControlsPaused,
+    selectedFileEntry,
+  ])
 
   const handleAddFileComment = useCallback(
     (file: ChangedFile, anchor: HTMLElement): void => {
+      if (reviewControlsPaused) {
+        notifyInfo(
+          'Review comments are unavailable until review history loads.'
+        )
+
+        return
+      }
+
       selectDiffFile(file)
 
       if (!filesListPinnedOpen) {
@@ -1982,7 +2016,9 @@ export const Panel = ({
     [
       clearFilesListHideTimer,
       filesListPinnedOpen,
+      notifyInfo,
       openFileCommentEditor,
+      reviewControlsPaused,
       selectDiffFile,
     ]
   )
@@ -2350,6 +2386,14 @@ export const Panel = ({
 
   const handleBodyAddComment = useCallback(
     (lineNumber: number, side: AnnotationSide): void => {
+      if (reviewControlsPaused) {
+        notifyInfo(
+          'Review comments are unavailable until review history loads.'
+        )
+
+        return
+      }
+
       if (selectedFilePath === null) {
         return
       }
@@ -2380,6 +2424,8 @@ export const Panel = ({
     [
       annotationTarget,
       deactivateReviewTarget,
+      notifyInfo,
+      reviewControlsPaused,
       selectedFilePath,
       selectedFileStaged,
       setCommentCategory,
@@ -2417,8 +2463,11 @@ export const Panel = ({
     ]
   )
 
-  const feedbackCount = feedback.pendingAnnotations()
-  const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
+  const feedbackCount = reviewControlsPaused ? 0 : feedback.pendingAnnotations()
+
+  const feedbackDraftCount =
+    !reviewControlsPaused && commentDraftText.trim().length > 0 ? 1 : 0
+
   const pendingFeedbackCount = feedbackCount + feedbackDraftCount
 
   // Files with at least one pending comment — the "across N files" the Finish
@@ -2432,7 +2481,7 @@ export const Panel = ({
   )
 
   const onFinishFeedback =
-    feedbackCount > 0 && !review.open
+    !reviewControlsPaused && feedbackCount > 0 && !review.open
       ? (): void => {
           review.closePopover()
           setSendNowCommentId(null)
@@ -2481,7 +2530,7 @@ export const Panel = ({
   // The "Request review" affordance (VIM-304) — always available when a file
   // diff is loaded, independent of pending comments (unlike Finish).
   const onRequestReview =
-    review.canRequest && !isFinishPopoverOpen
+    !reviewControlsPaused && review.canRequest && !isFinishPopoverOpen
       ? (): void => {
           setFinishOpen(false)
           review.openPopover()
@@ -2771,14 +2820,14 @@ export const Panel = ({
           fileCommentsForSelectedFile.length > 0 ? (
             <div
               data-testid="file-level-comments-panel"
-              className="flex max-h-56 shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
+              className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
             >
               <div className="px-2 text-xs font-medium text-on-surface-variant">
                 Commented on file
               </div>
               <div
                 data-testid="file-level-comments-list"
-                className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1"
+                className="flex flex-col gap-1 pr-1"
               >
                 {fileThreads.collapsed.map((annotation) => {
                   const fileGroupKey = threadGroupKey(annotation)

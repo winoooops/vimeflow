@@ -3827,8 +3827,8 @@ describe('Panel', () => {
         )
       ).not.toBeInTheDocument()
 
-      expect(fileCommentsPanel).toHaveClass('max-h-56')
-      expect(commentList).toHaveClass('overflow-y-auto')
+      expect(fileCommentsPanel).not.toHaveClass('max-h-56')
+      expect(commentList).not.toHaveClass('overflow-y-auto')
     })
 
     test('keyboard Shift+U edits the selected file-level comment', async (): Promise<void> => {
@@ -6068,10 +6068,11 @@ describe('Panel', () => {
       expect(pending?.byHandle.get(1)?.lineNumber).toBe(1)
       // VIM-298: handle carries the threadId so a reply lands in the right
       // thread. The only dispatched comment is a fresh root, which self-roots —
-      // its threadId must be its own generated comment id (counter value is
-      // order-dependent across tests, hence a shape match, not a literal).
+      // its threadId must be its own generated comment id.
       const handle1 = pending?.byHandle.get(1)
-      expect(handle1?.threadId).toMatch(/^feedback-comment-\d+$/)
+      expect(handle1?.threadId).toMatch(
+        /^feedback-comment-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      )
 
       clearPendingReview('pty-1', nonce) // module singleton — don't leak into other tests
     })

@@ -38,10 +38,27 @@ export interface PendingReview {
   dispatchedAt: number
   /** `[#n]` → the comment it addressed, in the order the dispatch numbered them. */
   byHandle: Map<number, PendingReviewHandle>
+  /** Handles already attached, retained while sibling handles remain pending. */
+  consumedHandles?: Set<number>
 }
 
-// Module-singleton keyed by (ptyId, nonce) — correlation state, not persisted
-// review data (comments persist via the feedback store). Multiple dispatches
+export interface PersistedPendingReviewHandle extends Omit<
+  PendingReviewHandle,
+  'cwd'
+> {
+  id: number
+}
+
+export interface PersistedPendingReview extends Omit<
+  PendingReview,
+  'ownerKey' | 'byHandle' | 'consumedHandles'
+> {
+  handles: PersistedPendingReviewHandle[]
+  consumedHandleIds?: number[]
+}
+
+// Module-singleton keyed by (ptyId, nonce). The workspace review snapshot also
+// persists these records so correlation survives restart. Multiple dispatches
 // can be in flight on one pty at once (VIM-297: a single comment sent now must
 // not clobber the batch's correlation, and vice versa); each reply resolves by
 // the nonce it echoes. Records are consumed when their replies land and are
@@ -50,9 +67,27 @@ const reviewKey = (ptyId: string, nonce: string): string =>
   `${ptyId}\u0000${nonce}`
 
 const store = new Map<string, PendingReview>()
+const listeners = new Set<() => void>()
+let revision = 0
+
+const emit = (): void => {
+  revision += 1
+  listeners.forEach((listener) => listener())
+}
+
+export const subscribePendingReviews = (listener: () => void): (() => void) => {
+  listeners.add(listener)
+
+  return (): void => {
+    listeners.delete(listener)
+  }
+}
+
+export const pendingReviewsRevision = (): number => revision
 
 export const setPendingReview = (review: PendingReview): void => {
   store.set(reviewKey(review.ptyId, review.nonce), review)
+  emit()
 }
 
 export const getPendingReview = (
@@ -61,12 +96,66 @@ export const getPendingReview = (
 ): PendingReview | undefined => store.get(reviewKey(ptyId, nonce))
 
 export const clearPendingReview = (ptyId: string, nonce: string): void => {
-  store.delete(reviewKey(ptyId, nonce))
+  if (store.delete(reviewKey(ptyId, nonce))) {
+    emit()
+  }
 }
 
-export const pendingNoncesForPty = (ptyId: string): string[] =>
+export const persistedPendingReviews = (
+  ownerKey: string
+): PersistedPendingReview[] =>
   [...store.values()]
-    .filter((review) => review.ptyId === ptyId)
+    .filter((review) => review.ownerKey === ownerKey)
+    .map((review) => ({
+      ptyId: review.ptyId,
+      nonce: review.nonce,
+      dispatchedAt: review.dispatchedAt,
+      consumedHandleIds: [...(review.consumedHandles ?? [])],
+      handles: [...review.byHandle.entries()].map(([id, handle]) => ({
+        id,
+        filePath: handle.filePath,
+        staged: handle.staged,
+        lineNumber: handle.lineNumber,
+        side: handle.side,
+        target: handle.target,
+        threadId: handle.threadId,
+      })),
+    }))
+
+export const restorePendingReviews = (
+  ownerKey: string,
+  cwd: string,
+  currentPtyId: string | undefined,
+  reviews: readonly PersistedPendingReview[]
+): void => {
+  for (const [key, review] of store) {
+    if (review.ownerKey === ownerKey) {
+      store.delete(key)
+    }
+  }
+
+  for (const review of reviews) {
+    const ptyId = currentPtyId ?? review.ptyId
+    store.set(reviewKey(ptyId, review.nonce), {
+      ptyId,
+      ownerKey,
+      nonce: review.nonce,
+      dispatchedAt: review.dispatchedAt,
+      consumedHandles: new Set(review.consumedHandleIds ?? []),
+      byHandle: new Map(
+        review.handles.map(({ id, ...handle }) => [id, { cwd, ...handle }])
+      ),
+    })
+  }
+  emit()
+}
+
+export const pendingNoncesForPty = (
+  ptyId: string,
+  isOwnerReady: (ownerKey: string) => boolean = () => true
+): string[] =>
+  [...store.values()]
+    .filter((review) => review.ptyId === ptyId && isOwnerReady(review.ownerKey))
     .map((review) => review.nonce)
 
 const RECOVERY_NONCE_BATCH_SIZE = 50
@@ -84,9 +173,14 @@ export const recoveryNonceBatches = (nonces: readonly string[]): string[][] =>
 export const prunePendingReviewOwners = (
   liveOwnerKeys: ReadonlySet<string>
 ): void => {
+  let changed = false
   for (const [key, review] of store) {
     if (!liveOwnerKeys.has(review.ownerKey)) {
       store.delete(key)
+      changed = true
     }
+  }
+  if (changed) {
+    emit()
   }
 }
