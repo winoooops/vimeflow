@@ -223,6 +223,27 @@ describe('useSessionSwitcher', () => {
     expect(result.current.selectedIndex).toBe(1)
   })
 
+  test('reorder while open keeps the selected session identity', () => {
+    const { result, rerender } = setup(['A', 'B', 'C'])
+
+    act(() => void document.dispatchEvent(ctrlTab()))
+    expect(result.current.selectedIndex).toBe(1)
+
+    rerender({ ids: ['B', 'C', 'A'] })
+    expect(result.current.selectedIndex).toBe(0)
+  })
+
+  test('release after a reorder commits the session picked before it', () => {
+    const { result, rerender, onCommit } = setup(['A', 'B', 'C'])
+
+    act(() => void document.dispatchEvent(ctrlTab()))
+    expect(result.current.selectedIndex).toBe(1)
+
+    rerender({ ids: ['C', 'A', 'B'] })
+    act(() => void document.dispatchEvent(ctrlKeyUp()))
+    expect(onCommit).toHaveBeenCalledWith('B')
+  })
+
   test('zero sessions: the chord does not open', () => {
     const { result } = setup([])
 

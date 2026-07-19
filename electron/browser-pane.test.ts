@@ -2627,5 +2627,7 @@ describe('BrowserPaneController', () => {
     expect(forwardedScript).toContain('proxyOwnsFocus')
     expect(forwardedScript).toContain('dockHasFocus')
     expect(forwardedScript).toContain('dialogOpen')
+    // The refocus probe must treat the aria-hidden native placeholder as open.
+    expect(forwardedScript).toContain('[data-dialog-layer="true"]')
   })
 })

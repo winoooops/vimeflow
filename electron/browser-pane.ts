@@ -1917,7 +1917,7 @@ export class BrowserPaneController {
                 activeElement instanceof Element &&
                 activeElement.closest('[data-container-id="dock"]') !== null
               const dialogOpen = document.querySelector(
-                '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
+                '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"]),[data-dialog-layer="true"]'
               ) !== null
               resolve(
                 activeBrowserPane &&

@@ -67,23 +67,53 @@ export const useSessionSwitcher = ({
   const onCancelRef = useRef(onCancel)
   onCancelRef.current = onCancel
   const holdCheckerRef = useRef<HoldChecker | null>(null)
+  // Selection identity: reorders while open must not change the pending choice.
+  const selectedIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (open && selectedIndex >= orderedIds.length) {
-      setSelectedIndex(Math.max(0, orderedIds.length - 1))
+    if (!open) {
+      return
     }
-  }, [open, orderedIds, selectedIndex])
+
+    const trackedId = selectedIdRef.current
+
+    const trackedIndex = trackedId === null ? -1 : orderedIds.indexOf(trackedId)
+    if (trackedIndex >= 0) {
+      if (trackedIndex !== selectedIndexRef.current) {
+        setSelectedIndex(trackedIndex)
+      }
+
+      return
+    }
+
+    if (selectedIndexRef.current >= orderedIds.length) {
+      const clamped = Math.max(0, orderedIds.length - 1)
+      selectedIdRef.current = orderedIds[clamped] ?? null
+      setSelectedIndex(clamped)
+
+      return
+    }
+
+    selectedIdRef.current = orderedIds[selectedIndexRef.current] ?? null
+  }, [open, orderedIds])
 
   const close = useCallback((): void => {
     holdCheckerRef.current = null
+    selectedIdRef.current = null
     setOpen(false)
     setSelectedIndex(0)
   }, [])
 
   const commitSelected = useCallback((): void => {
     const ids = orderedIdsRef.current
+    const trackedId = selectedIdRef.current
     const index = selectedIndexRef.current
     close()
+    if (trackedId !== null && ids.includes(trackedId)) {
+      onCommitRef.current(trackedId)
+
+      return
+    }
     if (index < ids.length) {
       onCommitRef.current(ids[index])
     }
@@ -152,11 +182,12 @@ export const useSessionSwitcher = ({
           bindingForRef.current(commandId)
         )
 
-        setSelectedIndex(
+        const initialIndex =
           commandId === 'session-switch-next'
             ? Math.min(1, ids.length - 1)
             : ids.length - 1
-        )
+        selectedIdRef.current = ids[initialIndex] ?? null
+        setSelectedIndex(initialIndex)
         setOpen(true)
 
         return
@@ -181,14 +212,18 @@ export const useSessionSwitcher = ({
       if (commandId !== null) {
         event.preventDefault()
         event.stopPropagation()
-        const length = orderedIdsRef.current.length
-        if (length === 0) {
+        const ids = orderedIdsRef.current
+        if (ids.length === 0) {
           cancel()
 
           return
         }
         const delta = commandId === 'session-switch-next' ? 1 : -1
-        setSelectedIndex((previous) => (previous + delta + length) % length)
+
+        const next =
+          (selectedIndexRef.current + delta + ids.length) % ids.length
+        selectedIdRef.current = ids[next] ?? null
+        setSelectedIndex(next)
 
         return
       }
