@@ -31,10 +31,13 @@ import {
 /** Identity label for a main-agent turn shown on the review-level surface. */
 const AGENT_REVIEW_LEVEL_LABEL = 'Agent'
 const MAX_BUFFERED_AGENT_REPLIES = 200
+const ownerReviewStateAlwaysReady = (): boolean => true
 
 export interface UseAgentReplyOptions {
   /** Buffer live events until durable correlation state has hydrated. */
   enabled?: boolean
+  /** Whether the event's target owner has durable correlation state available. */
+  isOwnerReviewStateReady?: (ownerKey: string) => boolean
   /** PTY currently visible in the workspace; returning to it triggers recovery. */
   activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
@@ -53,6 +56,7 @@ export interface UseAgentReplyOptions {
 
 const handleAgentReply = (
   event: AgentReplyEvent,
+  isOwnerReviewStateReady: (ownerKey: string) => boolean,
   addAnnotationForOwner: UseAgentReplyOptions['addAnnotationForOwner'],
   nextCommentId: UseAgentReplyOptions['nextCommentId']
 ): boolean => {
@@ -163,6 +167,10 @@ const handleAgentReply = (
   // feedback nonce against the pending [#n] handles below.
   const record = getFindingThreadRecord(event.sessionId, event.nonce)
   if (record !== undefined) {
+    if (!isOwnerReviewStateReady(record.ownerKey)) {
+      return false
+    }
+
     handleFindingTurns(record)
 
     return true
@@ -172,6 +180,9 @@ const handleAgentReply = (
   // only a reply echoing a live dispatch's nonce on its own pty resolves.
   const pending = getPendingReview(event.sessionId, event.nonce)
   if (pending === undefined) {
+    return false
+  }
+  if (!isOwnerReviewStateReady(pending.ownerKey)) {
     return false
   }
 
@@ -251,6 +262,7 @@ const handleAgentReply = (
  */
 export const useAgentReply = ({
   enabled = true,
+  isOwnerReviewStateReady = ownerReviewStateAlwaysReady,
   activePtyId,
   addAnnotationForOwner,
   nextCommentId,
@@ -290,11 +302,18 @@ export const useAgentReply = ({
         return
       }
 
-      if (!handleAgentReply(event, addAnnotationForOwner, nextCommentId)) {
+      if (
+        !handleAgentReply(
+          event,
+          isOwnerReviewStateReady,
+          addAnnotationForOwner,
+          nextCommentId
+        )
+      ) {
         queueReply(event)
       }
     },
-    [addAnnotationForOwner, nextCommentId, queueReply]
+    [addAnnotationForOwner, isOwnerReviewStateReady, nextCommentId, queueReply]
   )
 
   useEffect(() => {
@@ -310,8 +329,8 @@ export const useAgentReply = ({
     async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
       const nonces = [
         ...new Set([
-          ...pendingNoncesForPty(ptyId),
-          ...findingThreadNoncesForPty(ptyId),
+          ...pendingNoncesForPty(ptyId, isOwnerReviewStateReady),
+          ...findingThreadNoncesForPty(ptyId, isOwnerReviewStateReady),
         ]),
       ]
       if (nonces.length === 0) {
@@ -339,7 +358,7 @@ export const useAgentReply = ({
         }
       }
     },
-    [handleReply, notifyInfo]
+    [handleReply, isOwnerReviewStateReady, notifyInfo]
   )
 
   useEffect(() => {

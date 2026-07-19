@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-07-19
-ref_count: 14
+ref_count: 15
 ---
 
 # Persisted State Invariants
@@ -297,4 +297,21 @@ Durable user-facing state (workspace shapes, caches, settings files) can be malf
 - **Fix:** Mirrored saved owner state under the current repository identity and
   every validated lifecycle alias, while deletes still remove the owner from all
   identities. Added backend regressions for alias mirroring and alias deletion.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 26. Review-state readiness must not gate unrelated workflows globally
+
+- **Source:** github-codex-connector | PR #706 round 2 | 2026-07-19
+- **Severity:** P1 / HIGH
+- **File:** `src/features/workspace/components/DockPanel.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Review-state hydration failure replaced the whole diff panel,
+  blocking unrelated diff, stage, and discard workflows. The same active-owner
+  hydration state also disabled the global agent reply/review listeners, so a
+  failed active pane could stall live events for unrelated owners whose durable
+  correlation state was already ready.
+- **Fix:** Keep the diff panel mounted while review comments are loading or
+  unavailable, and pause only review-comment data/actions behind a scoped
+  status. Expose per-owner review-state readiness from the feedback store and
+  use it when routing live reply/review events and recovery scans, so only the
+  event's target owner is buffered.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

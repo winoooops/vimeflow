@@ -467,6 +467,12 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
 
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
 
+    const reviewStateStatus = reviewStateUnavailable
+      ? 'unavailable'
+      : reviewStateLoading
+        ? 'loading'
+        : undefined
+
     const compactActions =
       !isVerticalDock && horizontalSize < DOCK_INLINE_ACTIONS_MIN_WIDTH_PX
 
@@ -643,18 +649,19 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                 data-testid="diff-focus-target"
                 ref={diffWrapperRef}
                 tabIndex={-1}
-                className="flex min-h-0 flex-1 focus:outline-none"
+                className="flex min-h-0 flex-1 flex-col focus:outline-none"
               >
-                {reviewStateLoading || reviewStateUnavailable ? (
+                {reviewStateStatus !== undefined ? (
                   <div
                     role="status"
-                    className="m-auto text-xs text-on-surface-variant"
+                    className="border-b border-outline-variant/35 bg-surface-container-low px-4 py-1.5 text-xs text-on-surface-variant"
                   >
-                    {reviewStateUnavailable
-                      ? 'Review history is temporarily unavailable.'
-                      : 'Restoring review…'}
+                    {reviewStateStatus === 'unavailable'
+                      ? 'Review comments are temporarily unavailable.'
+                      : 'Restoring review comments…'}
                   </div>
-                ) : selectedDiffFile !== undefined ? (
+                ) : null}
+                {selectedDiffFile !== undefined ? (
                   <Panel
                     cwd={cwd}
                     gitStatus={gitStatus}
@@ -664,6 +671,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
+                    reviewStateStatus={reviewStateStatus}
                     feedbackOwnerKey={activeFeedbackReviewKey}
                   />
                 ) : (
@@ -674,6 +682,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
+                    reviewStateStatus={reviewStateStatus}
                     feedbackOwnerKey={activeFeedbackReviewKey}
                   />
                 )}

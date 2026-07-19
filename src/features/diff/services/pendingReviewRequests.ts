@@ -98,9 +98,14 @@ export const clearPendingReviewRequest = (nonce: string): void => {
   }
 }
 
-export const pendingReviewRequestNoncesForPty = (ptyId: string): string[] =>
+export const pendingReviewRequestNoncesForPty = (
+  ptyId: string,
+  isOwnerReady: (ownerKey: string) => boolean = () => true
+): string[] =>
   [...store.values()]
-    .filter((request) => request.ptyId === ptyId)
+    .filter(
+      (request) => request.ptyId === ptyId && isOwnerReady(request.ownerKey)
+    )
     .map((request) => request.nonce)
 
 /**
@@ -237,9 +242,12 @@ export const getFindingThreadRecord = (
 ): FindingThreadRecord | undefined =>
   findingThreads.get(threadKey(ptyId, nonce))
 
-export const findingThreadNoncesForPty = (ptyId: string): string[] =>
+export const findingThreadNoncesForPty = (
+  ptyId: string,
+  isOwnerReady: (ownerKey: string) => boolean = () => true
+): string[] =>
   [...findingThreads.values()]
-    .filter((record) => record.ptyId === ptyId)
+    .filter((record) => record.ptyId === ptyId && isOwnerReady(record.ownerKey))
     .map((record) => record.nonce)
 
 export const clearFindingThreadRecord = (

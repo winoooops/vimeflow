@@ -2281,6 +2281,7 @@ const WorkspaceViewContent = (): ReactElement => {
     feedbackDraft,
     summaries: feedbackSummaries,
     pruneOwners: pruneFeedbackOwners,
+    isOwnerReviewStateReady,
     hydrating: reviewStateHydrating,
     hydrationFailed: reviewStateHydrationFailed,
   } = useFeedbackBatchStore(
@@ -2299,7 +2300,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // where every feedback owner is reachable so a reply attaches onto the owner
   // that dispatched it — even after the user switches panes.
   useAgentReply({
-    enabled: !reviewStateHydrating && !reviewStateHydrationFailed,
+    isOwnerReviewStateReady,
     activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReplyCommentId,
@@ -2309,7 +2310,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // Capture delegated review findings (VIM-304): the same single subscription
   // point, placing reviewer findings onto the owner that requested the review.
   useAgentReview({
-    enabled: !reviewStateHydrating && !reviewStateHydrationFailed,
+    isOwnerReviewStateReady,
     activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReviewCommentId,

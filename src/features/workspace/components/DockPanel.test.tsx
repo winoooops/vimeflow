@@ -1350,20 +1350,46 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
   })
 
-  test('waits for durable review hydration before rendering the diff', () => {
-    renderDockPanel({ tab: 'diff', reviewStateLoading: true })
-
-    expect(screen.getByRole('status')).toHaveTextContent('Restoring review…')
-    expect(screen.queryByTestId('multi-file-diff')).not.toBeInTheDocument()
-  })
-
-  test('does not expose stale review state after hydration fails', () => {
-    renderDockPanel({ tab: 'diff', reviewStateUnavailable: true })
+  test('keeps the diff available while durable review hydration loads', () => {
+    renderDockPanel({
+      tab: 'diff',
+      reviewStateLoading: true,
+      selectedDiffFile: {
+        path: 'src/foo.ts',
+        staged: false,
+        cwd: '/repo',
+      },
+      onSelectedDiffFileChange: vi.fn(),
+    })
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Review history is temporarily unavailable.'
+      'Restoring review comments…'
     )
-    expect(screen.queryByTestId('multi-file-diff')).not.toBeInTheDocument()
+
+    expect(
+      screen.getByRole('toolbar', { name: 'Diff toolbar' })
+    ).toBeInTheDocument()
+  })
+
+  test('keeps the diff available when review hydration fails', () => {
+    renderDockPanel({
+      tab: 'diff',
+      reviewStateUnavailable: true,
+      selectedDiffFile: {
+        path: 'src/foo.ts',
+        staged: false,
+        cwd: '/repo',
+      },
+      onSelectedDiffFileChange: vi.fn(),
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Review comments are temporarily unavailable.'
+    )
+
+    expect(
+      screen.getByRole('toolbar', { name: 'Diff toolbar' })
+    ).toBeInTheDocument()
   })
 
   test('preserves selected diff file when the dock closes and reopens', () => {

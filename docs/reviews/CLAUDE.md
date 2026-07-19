@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 96       | 92   | 2026-07-19   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 86   | 2026-07-19   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 87   | 2026-07-19   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 1    | 2026-07-18   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
@@ -87,7 +87,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 28       | 19   | 2026-07-19   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 25       | 14   | 2026-07-19   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 15   | 2026-07-19   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 23       | 12   | 2026-07-15   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |

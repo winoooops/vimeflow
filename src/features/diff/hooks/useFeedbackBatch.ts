@@ -462,6 +462,7 @@ export interface UseFeedbackBatchStoreReturn {
   feedbackDraft: FeedbackDraftStore
   summaries: FeedbackBatchSummary[]
   pruneOwners: (liveOwnerKeys: ReadonlySet<string>) => void
+  isOwnerReviewStateReady: (ownerKey: string) => boolean
   hydrating: boolean
   hydrationFailed: boolean
 }
@@ -1504,12 +1505,26 @@ export const useFeedbackBatchStore = (
     []
   )
 
+  const isOwnerReviewStateReady = useCallback(
+    (targetOwnerKey: string): boolean => {
+      const context = persistenceContextsRef.current.get(targetOwnerKey)
+
+      return (
+        context === undefined ||
+        hydratedPersistenceTargetsRef.current.get(targetOwnerKey) ===
+          context.hydrationTarget
+      )
+    },
+    []
+  )
+
   return {
     feedbackBatch,
     feedbackRepoRootRef,
     feedbackDraft,
     summaries,
     pruneOwners,
+    isOwnerReviewStateReady,
     hydrating:
       persistenceTarget !== null &&
       settledPersistenceTarget !== persistenceTarget,

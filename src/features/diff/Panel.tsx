@@ -105,6 +105,7 @@ const isDiffNativeFocusTarget = (target: Element): boolean =>
 // after this delay — longer than the hover-leave delay since there's no pointer
 // motion to signal intent. Wire to Settings later.
 const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
+const EMPTY_REVIEW_ANNOTATIONS: DiffLineAnnotation<ReviewComment>[] = []
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -185,6 +186,8 @@ interface PanelBaseProps {
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
+  /** Durable review state is not ready; keep diff workflows active but pause review edits. */
+  reviewStateStatus?: 'loading' | 'unavailable'
   /** The active feedback owner (sessionId:paneId) — recorded at dispatch so an
    * agent reply routes back to this review even after a pane switch (VIM-249). */
   feedbackOwnerKey?: string
@@ -275,6 +278,7 @@ export const Panel = ({
   feedbackDraft = undefined,
   feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
+  reviewStateStatus = undefined,
   feedbackOwnerKey = undefined,
 }: PanelProps): ReactElement => {
   const { bindingFor, matches } = useKeybindings()
@@ -634,6 +638,7 @@ export const Panel = ({
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
   const hasParentFeedbackBatch = feedbackBatch !== undefined
   const feedback: UseFeedbackBatchReturn = feedbackBatch ?? localFeedback
+  const reviewControlsPaused = reviewStateStatus !== undefined
   const localRepoRootRef = useRef('') as FeedbackRepoRootRef
   const repoRootRef = feedbackRepoRootRef ?? localRepoRootRef
 
@@ -665,10 +670,16 @@ export const Panel = ({
   }, [response, repoRootRef])
 
   // Real annotations for the currently selected file.
-  const annotationsForSelectedFile = feedback.annotationsForFile(
-    cwd,
-    selectedFilePath ?? '',
-    selectedFileStaged
+  const annotationsForSelectedFile = useMemo(
+    (): DiffLineAnnotation<ReviewComment>[] =>
+      reviewControlsPaused
+        ? EMPTY_REVIEW_ANNOTATIONS
+        : feedback.annotationsForFile(
+            cwd,
+            selectedFilePath ?? '',
+            selectedFileStaged
+          ),
+    [cwd, feedback, reviewControlsPaused, selectedFilePath, selectedFileStaged]
   )
 
   const realAnnotations = useMemo(
@@ -679,7 +690,7 @@ export const Panel = ({
 
   const fileCommentsForSelectedFile = useMemo(
     (): DiffLineAnnotation<ReviewComment>[] =>
-      selectedFileEntry === undefined
+      selectedFileEntry === undefined || reviewControlsPaused
         ? []
         : feedback
             .annotationsForFile(
@@ -688,7 +699,7 @@ export const Panel = ({
               selectedFileEntry.staged
             )
             .filter(isFileLevelReviewAnnotation),
-    [cwd, feedback, selectedFileEntry]
+    [cwd, feedback, reviewControlsPaused, selectedFileEntry]
   )
 
   const {
@@ -1963,6 +1974,12 @@ export const Panel = ({
   )
 
   const openSelectedFileComment = useCallback((): void => {
+    if (reviewControlsPaused) {
+      notifyInfo('Review comments are unavailable until review history loads.')
+
+      return
+    }
+
     if (selectedFileEntry === undefined) {
       notifyInfo('No file selected.')
 
@@ -1970,10 +1987,23 @@ export const Panel = ({
     }
 
     openFileCommentEditor(selectedFileEntry)
-  }, [notifyInfo, openFileCommentEditor, selectedFileEntry])
+  }, [
+    notifyInfo,
+    openFileCommentEditor,
+    reviewControlsPaused,
+    selectedFileEntry,
+  ])
 
   const handleAddFileComment = useCallback(
     (file: ChangedFile, anchor: HTMLElement): void => {
+      if (reviewControlsPaused) {
+        notifyInfo(
+          'Review comments are unavailable until review history loads.'
+        )
+
+        return
+      }
+
       selectDiffFile(file)
 
       if (!filesListPinnedOpen) {
@@ -1986,7 +2016,9 @@ export const Panel = ({
     [
       clearFilesListHideTimer,
       filesListPinnedOpen,
+      notifyInfo,
       openFileCommentEditor,
+      reviewControlsPaused,
       selectDiffFile,
     ]
   )
@@ -2354,6 +2386,14 @@ export const Panel = ({
 
   const handleBodyAddComment = useCallback(
     (lineNumber: number, side: AnnotationSide): void => {
+      if (reviewControlsPaused) {
+        notifyInfo(
+          'Review comments are unavailable until review history loads.'
+        )
+
+        return
+      }
+
       if (selectedFilePath === null) {
         return
       }
@@ -2384,6 +2424,8 @@ export const Panel = ({
     [
       annotationTarget,
       deactivateReviewTarget,
+      notifyInfo,
+      reviewControlsPaused,
       selectedFilePath,
       selectedFileStaged,
       setCommentCategory,
@@ -2421,8 +2463,11 @@ export const Panel = ({
     ]
   )
 
-  const feedbackCount = feedback.pendingAnnotations()
-  const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
+  const feedbackCount = reviewControlsPaused ? 0 : feedback.pendingAnnotations()
+
+  const feedbackDraftCount =
+    !reviewControlsPaused && commentDraftText.trim().length > 0 ? 1 : 0
+
   const pendingFeedbackCount = feedbackCount + feedbackDraftCount
 
   // Files with at least one pending comment — the "across N files" the Finish
@@ -2436,7 +2481,7 @@ export const Panel = ({
   )
 
   const onFinishFeedback =
-    feedbackCount > 0 && !review.open
+    !reviewControlsPaused && feedbackCount > 0 && !review.open
       ? (): void => {
           review.closePopover()
           setSendNowCommentId(null)
@@ -2485,7 +2530,7 @@ export const Panel = ({
   // The "Request review" affordance (VIM-304) — always available when a file
   // diff is loaded, independent of pending comments (unlike Finish).
   const onRequestReview =
-    review.canRequest && !isFinishPopoverOpen
+    !reviewControlsPaused && review.canRequest && !isFinishPopoverOpen
       ? (): void => {
           setFinishOpen(false)
           review.openPopover()

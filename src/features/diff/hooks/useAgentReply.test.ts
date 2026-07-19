@@ -79,12 +79,16 @@ const handle = (
   ...overrides,
 })
 
-const pending = (byHandle: PendingReview['byHandle']): PendingReview => ({
+const pending = (
+  byHandle: PendingReview['byHandle'],
+  overrides: Partial<PendingReview> = {}
+): PendingReview => ({
   ptyId: 'pty-1',
   ownerKey: 'owner-a',
   nonce: 'abc',
   dispatchedAt: 1,
   byHandle,
+  ...overrides,
 })
 
 const event = (partial: Partial<AgentReplyEvent>): AgentReplyEvent => ({
@@ -126,6 +130,7 @@ beforeEach(() => {
 afterEach(() => {
   clearPendingReview('pty-1', 'abc')
   clearPendingReview('pty-1', 'xyz')
+  clearPendingReview('pty-1', 'ready')
   for (let index = 0; index < 51; index += 1) {
     clearPendingReview('pty-1', `nonce-${index}`)
   }
@@ -500,6 +505,66 @@ describe('useAgentReply', () => {
     rerender({ enabled: true })
 
     await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+  })
+
+  test('does not let one not-ready owner block another owner reply', async () => {
+    setPendingReview(
+      pending(new Map([[1, handle()]]), {
+        ownerKey: 'owner-waiting',
+        nonce: 'abc',
+      })
+    )
+
+    setPendingReview(
+      pending(new Map([[1, handle({ filePath: 'ready.ts' })]]), {
+        ownerKey: 'owner-ready',
+        nonce: 'ready',
+      })
+    )
+
+    renderHook(() =>
+      useAgentReply({
+        activePtyId: 'pty-1',
+        isOwnerReviewStateReady: (ownerKey) => ownerKey === 'owner-ready',
+        addAnnotationForOwner,
+        nextCommentId: () => `agent-${(ids += 1)}`,
+        notifyInfo: vi.fn(),
+      })
+    )
+
+    await emit(
+      event({
+        nonce: 'abc',
+        replies: [
+          {
+            id: 1,
+            status: 'reply',
+            target: 'comment',
+            text: 'Still waiting.',
+          },
+        ],
+      })
+    )
+
+    await emit(
+      event({
+        nonce: 'ready',
+        replies: [
+          {
+            id: 1,
+            status: 'reply',
+            target: 'comment',
+            text: 'Ready owner.',
+          },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledOnce()
+    expect(addAnnotationForOwner.mock.calls[0][0]).toBe('owner-ready')
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Ready owner.'
+    )
   })
 
   test('replays a live reply after its owner correlation hydrates', async () => {

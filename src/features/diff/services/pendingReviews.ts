@@ -150,9 +150,12 @@ export const restorePendingReviews = (
   emit()
 }
 
-export const pendingNoncesForPty = (ptyId: string): string[] =>
+export const pendingNoncesForPty = (
+  ptyId: string,
+  isOwnerReady: (ownerKey: string) => boolean = () => true
+): string[] =>
   [...store.values()]
-    .filter((review) => review.ptyId === ptyId)
+    .filter((review) => review.ptyId === ptyId && isOwnerReady(review.ownerKey))
     .map((review) => review.nonce)
 
 const RECOVERY_NONCE_BATCH_SIZE = 50

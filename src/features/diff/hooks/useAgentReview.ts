@@ -28,10 +28,13 @@ import { recoveryNonceBatches } from '../services/pendingReviews'
 
 export const REVIEWER_FINDING_SOFT_CAP = 50
 const MAX_BUFFERED_AGENT_REVIEWS = 200
+const ownerReviewStateAlwaysReady = (): boolean => true
 
 export interface UseAgentReviewOptions {
   /** Buffer live events until durable correlation state has hydrated. */
   enabled?: boolean
+  /** Whether the event's target owner has durable correlation state available. */
+  isOwnerReviewStateReady?: (ownerKey: string) => boolean
   /** PTY currently visible in the workspace; returning to it triggers recovery. */
   activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
@@ -125,6 +128,7 @@ const resolveFindingEntry = (
  */
 export const useAgentReview = ({
   enabled = true,
+  isOwnerReviewStateReady = ownerReviewStateAlwaysReady,
   activePtyId,
   addAnnotationForOwner,
   nextCommentId,
@@ -207,6 +211,9 @@ export const useAgentReview = ({
       // review we delegated to a pane and one you copied and pasted into any
       // agent — no session check, and the copy path needs no pty id.
       if (request === undefined) {
+        return false
+      }
+      if (!isOwnerReviewStateReady(request.ownerKey)) {
         return false
       }
 
@@ -307,7 +314,7 @@ export const useAgentReview = ({
 
       return true
     },
-    [addAnnotationForOwner, nextCommentId]
+    [addAnnotationForOwner, isOwnerReviewStateReady, nextCommentId]
   )
 
   const queueReview = useCallback((event: AgentReviewEvent): void => {
@@ -351,7 +358,10 @@ export const useAgentReview = ({
 
   const recoverPty = useCallback(
     async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
-      const nonces = pendingReviewRequestNoncesForPty(ptyId)
+      const nonces = pendingReviewRequestNoncesForPty(
+        ptyId,
+        isOwnerReviewStateReady
+      )
       if (nonces.length === 0) {
         return
       }
@@ -377,7 +387,7 @@ export const useAgentReview = ({
         }
       }
     },
-    [handleReview, notifyInfo]
+    [handleReview, isOwnerReviewStateReady, notifyInfo]
   )
 
   useEffect(() => {
