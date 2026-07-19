@@ -2278,7 +2278,7 @@ const WorkspaceViewContent = (): ReactElement => {
               {
                 id,
                 title: session.name,
-                agentGlyph: null,
+                layoutId: session.layout,
                 isActive: id === activeSessionId,
               },
             ]

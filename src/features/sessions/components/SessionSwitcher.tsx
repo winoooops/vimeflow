@@ -1,9 +1,18 @@
-import { useCallback, useMemo, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import type {
   NativeOverlayActionHandler,
   NativeOverlaySessionSwitcherDialogPayload,
 } from '@/components/Dialog'
 import { Dialog } from '@/components/Dialog'
+import { LayoutGlyph } from '../../terminal/components/LayoutSwitcher'
+import type { PaneLayoutId } from '../types'
 
 const NATIVE_ACTION_COMMIT_INDEX = 'session-switcher:commit-index'
 const NATIVE_ACTION_CANCEL = 'session-switcher:cancel'
@@ -14,7 +23,7 @@ export const SESSION_SWITCHER_DIALOG_TEST_ID = 'session-switcher-dialog'
 export interface SessionSwitcherEntry {
   id: string
   title: string
-  agentGlyph: string | null
+  layoutId: PaneLayoutId
   isActive: boolean
 }
 
@@ -31,6 +40,28 @@ const scrollSelectedOptionIntoView = (node: HTMLButtonElement | null): void => {
   node?.scrollIntoView({ block: 'nearest' })
 }
 
+const ROW_BASE_CLASSES =
+  'flex w-full items-center gap-[11px] rounded-[9px] px-[10px] py-2 ' +
+  'text-left transition-colors'
+
+const rowClasses = (selected: boolean): string =>
+  selected
+    ? `${ROW_BASE_CLASSES} bg-gradient-to-b from-primary/[0.17] to-primary/[0.12] ring-1 ring-inset ring-primary/25`
+    : `${ROW_BASE_CLASSES} hover:bg-on-surface/[0.04]`
+
+const glyphClasses = (selected: boolean): string =>
+  selected
+    ? 'grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] bg-primary/20 text-primary ring-1 ring-inset ring-primary/20'
+    : 'grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] bg-surface-container-high/85 text-on-surface-muted'
+
+const titleClasses = (selected: boolean): string =>
+  selected
+    ? 'min-w-0 flex-1 truncate font-body text-sm font-semibold text-on-surface'
+    : 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface-variant'
+
+const LIST_MASK_CLASS =
+  '[mask-image:linear-gradient(180deg,transparent_0,black_26px,black_calc(100%-26px),transparent_100%)]'
+
 export const SessionSwitcher = ({
   open,
   entries,
@@ -38,12 +69,20 @@ export const SessionSwitcher = ({
   onCommitIndex,
   onCancel,
 }: SessionSwitcherProps): ReactElement | null => {
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const [listOverflows, setListOverflows] = useState(false)
+
+  useEffect(() => {
+    const list = listRef.current
+    setListOverflows(list !== null && list.scrollHeight > list.clientHeight)
+  }, [entries, open])
+
   const nativeOverlayPayload =
     useMemo((): NativeOverlaySessionSwitcherDialogPayload => {
       const items = entries.map((entry) => ({
         id: entry.id,
         title: entry.title,
-        ...(entry.agentGlyph === null ? {} : { agentGlyph: entry.agentGlyph }),
+        layoutId: entry.layoutId,
         isActive: entry.isActive,
       }))
 
@@ -99,10 +138,21 @@ export const SessionSwitcher = ({
       nativeOverlayPayload={nativeOverlayPayload}
       nativeOverlayActions={nativeOverlayActions}
     >
+      <div className="flex items-center gap-2.5 border-b border-outline-variant/20 px-4 pb-2.5 pt-3">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-on-surface-muted">
+          Switch session
+        </span>
+        <span className="ml-auto font-mono text-[10px] tracking-[0.06em] text-on-surface-muted/70">
+          {entries.length} open · MRU
+        </span>
+      </div>
       <ul
+        ref={listRef}
         role="listbox"
         aria-label="Session switcher"
-        className="max-h-[min(480px,60vh)] overflow-y-auto"
+        className={`max-h-[min(480px,60vh)] space-y-[2px] overflow-y-auto p-1.5 ${
+          listOverflows ? LIST_MASK_CLASS : ''
+        }`}
       >
         {entries.map((entry, index) => (
           <li key={entry.id}>
@@ -115,16 +165,26 @@ export const SessionSwitcher = ({
                   ? scrollSelectedOptionIntoView
                   : undefined
               }
-              className={
-                index === selectedIndex
-                  ? 'flex w-full items-center gap-2 rounded-md bg-surface-container-high px-3 py-2 text-left font-body text-sm text-on-surface'
-                  : 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left font-body text-sm text-on-surface-muted'
-              }
+              className={rowClasses(index === selectedIndex)}
               onClick={() => onCommitIndex(index)}
             >
-              <span className="flex-1 truncate">{entry.title}</span>
+              <span className={glyphClasses(index === selectedIndex)}>
+                <LayoutGlyph layoutId={entry.layoutId} />
+              </span>
+              <span className={titleClasses(index === selectedIndex)}>
+                {entry.title}
+              </span>
               {entry.isActive ? (
-                <span className="text-xs text-primary">active</span>
+                <span className="shrink-0 rounded-full bg-primary/15 px-[7px] py-[2px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-primary">
+                  active
+                </span>
+              ) : index === selectedIndex ? (
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-primary/15 px-[5px] font-mono text-[11px] font-semibold text-primary ring-1 ring-inset ring-primary/40"
+                >
+                  ↵
+                </span>
               ) : null}
             </button>
           </li>

@@ -296,8 +296,8 @@ const sessionSwitcherRequest: NativeOverlayRequest = {
     ariaLabel: 'Session switcher',
     selectedIndex: 1,
     items: [
-      { id: 'a', title: 'api server', isActive: true },
-      { id: 'b', title: 'docs', agentGlyph: 'C', isActive: false },
+      { id: 'a', title: 'api server', layoutId: 'single', isActive: true },
+      { id: 'b', title: 'docs', layoutId: 'quad', isActive: false },
     ],
     actions: {
       commitIndex: 'session-switcher:commit-index',

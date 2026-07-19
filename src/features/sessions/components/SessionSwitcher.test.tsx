@@ -7,8 +7,8 @@ import {
 } from './SessionSwitcher'
 
 const entries = [
-  { id: 'a', title: 'api server', agentGlyph: null, isActive: true },
-  { id: 'b', title: 'docs', agentGlyph: null, isActive: false },
+  { id: 'a', title: 'api server', layoutId: 'single' as const, isActive: true },
+  { id: 'b', title: 'docs', layoutId: 'quad' as const, isActive: false },
 ]
 
 describe('SessionSwitcher', () => {
@@ -127,6 +127,54 @@ describe('SessionSwitcher', () => {
       'max-h-[min(480px,60vh)]',
       'overflow-y-auto'
     )
+  })
+
+  test('header shows the open count and the MRU ordering hint', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={0}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Switch session')).toBeInTheDocument()
+    expect(screen.getByText('2 open · MRU')).toBeInTheDocument()
+  })
+
+  test('trailing slot shows the active pill, or the commit keycap on selection', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={1}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const options = screen.getAllByRole('option')
+    expect(options[0]).toHaveTextContent('active')
+    expect(options[1]).toHaveTextContent('↵')
+    expect(options[1]).not.toHaveTextContent('active')
+  })
+
+  test('the active row keeps its pill even while selected', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={0}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const options = screen.getAllByRole('option')
+    expect(options[0]).toHaveTextContent('active')
+    expect(options[0]).not.toHaveTextContent('↵')
   })
 
   test('scrolls the selected option into view as the selection moves', () => {

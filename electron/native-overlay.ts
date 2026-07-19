@@ -199,6 +199,7 @@ interface NativeOverlaySessionSwitcherItem {
   id: string
   title: string
   agentGlyph?: string
+  layoutId?: string
   isActive: boolean
 }
 
@@ -666,6 +667,7 @@ const isSessionSwitcherItem = (
   isString(value.id) &&
   isString(value.title) &&
   (value.agentGlyph === undefined || typeof value.agentGlyph === 'string') &&
+  (value.layoutId === undefined || typeof value.layoutId === 'string') &&
   typeof value.isActive === 'boolean'
 
 const isSessionSwitcherActions = (

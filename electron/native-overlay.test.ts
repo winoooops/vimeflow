@@ -365,7 +365,7 @@ const sessionSwitcherDialogRequest = {
     ariaLabel: 'Session switcher',
     selectedIndex: 1,
     items: [
-      { id: 'a', title: 'api', isActive: true },
+      { id: 'a', title: 'api', layoutId: 'single', isActive: true },
       { id: 'b', title: 'docs', agentGlyph: 'C', isActive: false },
     ],
     actions: {
@@ -1792,6 +1792,24 @@ describe('NativeOverlayController', () => {
       handler(NATIVE_OVERLAY_OPEN)(
         { sender: electronMock.owner.webContents },
         oversizedRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  test('rejects a session switcher item with a non-string layout id', async () => {
+    const badLayoutRequest = {
+      ...sessionSwitcherDialogRequest,
+      payload: {
+        ...sessionSwitcherDialogRequest.payload,
+        items: [{ id: 'a', title: 'api', layoutId: 7, isActive: true }],
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        badLayoutRequest
       )
     ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()

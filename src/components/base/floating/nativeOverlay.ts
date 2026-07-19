@@ -185,6 +185,7 @@ export interface NativeOverlaySessionSwitcherItem {
   id: string
   title: string
   agentGlyph?: string
+  layoutId?: string
   isActive: boolean
 }
 
