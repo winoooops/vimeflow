@@ -8,7 +8,10 @@ import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
 import { subtitle } from '../utils/subtitle'
 import { LayoutGlyph } from '../../terminal/components/LayoutSwitcher'
-import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../terminal/layout-registry'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  type PaneLayoutRegistry,
+} from '../../terminal/layout-registry'
 
 export interface CardProps {
   session: Session
@@ -19,6 +22,7 @@ export interface CardProps {
   onRename?: (id: string, name: string) => void
   onReorderDragStart?: () => void
   onReorderDragEnd?: () => void
+  layoutRegistry?: PaneLayoutRegistry
 }
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
@@ -67,6 +71,7 @@ const CardComponent = ({
   onRename = undefined,
   onReorderDragStart = undefined,
   onReorderDragEnd = undefined,
+  layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
 }: CardProps): ReactElement => {
   const {
     isEditing,
@@ -123,10 +128,7 @@ const CardComponent = ({
   const subtitleText = subtitle(session)
   const status = STATUS_TEXT[session.status]
 
-  // Use the builtin registry fallback here because custom definitions are
-  // workspace-level state that the sidebar card does not own yet. This keeps a
-  // stale/custom id from crashing the card while preserving current builtin UI.
-  const layout = BUILTIN_PANE_LAYOUT_REGISTRY.getFallbackLayout(session.layout)
+  const layout = layoutRegistry.getFallbackLayout(session.layout)
   const showGlyph = layout.id !== 'single'
 
   const ariaLabel = showGlyph
