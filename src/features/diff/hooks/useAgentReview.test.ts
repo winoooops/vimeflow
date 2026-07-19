@@ -133,7 +133,9 @@ beforeEach(() => {
 
 afterEach(() => {
   clearPendingReviewRequest('abc')
+  clearPendingReviewRequest('ready')
   clearReviewLevelNotes('owner')
+  clearReviewLevelNotes('owner-ready')
   clearFindingThreadRecord('pty-1', 'abc')
   delete window.vimeflow
 })
@@ -206,6 +208,53 @@ describe('useAgentReview', () => {
     mount()
     await emit(event({ nonce: 'nope', findings: [finding()] }))
     expect(addAnnotationForOwner).not.toHaveBeenCalled()
+  })
+
+  test('places an event after its persisted request hydrates', async () => {
+    mount()
+    await emit(event({ findings: [finding({ text: 'Delayed finding.' })] }))
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    setPendingReviewRequest(request())
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Delayed finding.'
+    )
+  })
+
+  test('does not let one not-ready owner block another owner review', async () => {
+    setPendingReviewRequest(request({ ownerKey: 'owner-waiting' }))
+    setPendingReviewRequest(
+      request({
+        nonce: 'ready',
+        ownerKey: 'owner-ready',
+      })
+    )
+
+    renderHook(() =>
+      useAgentReview({
+        activePtyId: 'pty-1',
+        isOwnerReviewStateReady: (ownerKey) => ownerKey === 'owner-ready',
+        addAnnotationForOwner,
+        nextCommentId: () => `rev-${(ids += 1)}`,
+        notifyInfo: vi.fn(),
+      })
+    )
+
+    await emit(event({ findings: [finding({ text: 'Still waiting.' })] }))
+    await emit(
+      event({
+        nonce: 'ready',
+        findings: [finding({ text: 'Ready owner.' })],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledOnce()
+    expect(addAnnotationForOwner.mock.calls[0][0]).toBe('owner-ready')
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Ready owner.'
+    )
   })
 
   test('accepts a matching nonce from any session (the nonce is the whole gate)', async () => {

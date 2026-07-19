@@ -11,9 +11,44 @@
  * `(cwd, filePath, staged)` and summaries by owner; the hook handles map keys,
  * optimistic updates, soft caps, owner pruning, and repo-root lookup.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import type { AnnotationSide, DiffLineAnnotation } from '@pierre/diffs'
 import type { AgentReplyStatus } from '@/bindings'
+import { isDesktop } from '@/lib/environment'
+import { createLogger } from '@/lib/log'
+import { registerRendererTeardownFlush } from '@/lib/teardownFlush'
+import {
+  pendingReviewsRevision,
+  persistedPendingReviews,
+  restorePendingReviews,
+  subscribePendingReviews,
+} from '../services/pendingReviews'
+import {
+  persistedFindingThreads,
+  persistedPendingReviewRequests,
+  persistedReviewLevelNotes,
+  restoreReviewRequestState,
+  reviewRequestStateRevision,
+  subscribeReviewLevelNotes,
+} from '../services/pendingReviewRequests'
+import {
+  deleteReviewOwnerState,
+  drainReviewStateWrites,
+  loadReviewState,
+  REVIEW_STATE_VERSION,
+  saveReviewState,
+  type PersistedReviewState,
+} from '../services/reviewStatePersistence'
+
+const log = createLogger('review-state')
 
 /**
  * The user's one-axis tag on a review comment (VIM-256/253). It is the
@@ -277,6 +312,9 @@ Object.freeze(EMPTY)
 const EMPTY_BATCH: FeedbackBatch = new Map()
 Object.freeze(EMPTY_BATCH)
 
+const EMPTY_THREAD_DRAFTS: ReadonlyMap<string, string> = new Map()
+Object.freeze(EMPTY_THREAD_DRAFTS)
+
 const REPO_ROOT_KEY_SEP = '\0'
 
 const makeRepoRootKey = (ownerKey: string, cwd: string): string =>
@@ -286,6 +324,42 @@ const ownerKeyFromRepoRootKey = (key: string): string =>
   key.split(REPO_ROOT_KEY_SEP)[0] ?? ''
 
 const LOCAL_FEEDBACK_OWNER_KEY = '__local_feedback__'
+
+interface ReviewPersistenceContext {
+  ownerKey: string
+  cwd: string
+  ptyId?: string
+  hydrationTarget: string
+  saveTarget: string
+}
+
+interface QueuedReviewSave extends ReviewPersistenceContext {
+  state: PersistedReviewState
+  serializedState: string
+}
+
+const emptyPersistedReviewState = (): PersistedReviewState => ({
+  version: REVIEW_STATE_VERSION,
+  annotations: [],
+  draft: null,
+  threadDrafts: [],
+  pendingReviews: [],
+  pendingReviewRequests: [],
+  findingThreads: [],
+  reviewLevelNotes: [],
+})
+
+const makePersistenceTarget = (
+  ownerKey: string,
+  cwd: string,
+  ptyId?: string
+): string => `${ownerKey}${KEY_SEP}${cwd}${KEY_SEP}${ptyId ?? ''}`
+
+const makePersistenceSaveTarget = (ownerKey: string, cwd: string): string =>
+  `${ownerKey}${KEY_SEP}${cwd}`
+
+const ownerKeyFromPersistenceTarget = (target: string): string =>
+  target.split(KEY_SEP)[0] ?? ''
 
 export interface UseFeedbackBatchReturn {
   batch: FeedbackBatch
@@ -378,6 +452,8 @@ export type FeedbackDraft =
 export interface FeedbackDraftStore {
   draft: FeedbackDraft | null
   setDraft: (draft: FeedbackDraft | null) => void
+  threadDrafts?: ReadonlyMap<string, string>
+  setThreadDraft?: (threadId: string, text: string | null) => void
 }
 
 export interface UseFeedbackBatchStoreReturn {
@@ -386,11 +462,54 @@ export interface UseFeedbackBatchStoreReturn {
   feedbackDraft: FeedbackDraftStore
   summaries: FeedbackBatchSummary[]
   pruneOwners: (liveOwnerKeys: ReadonlySet<string>) => void
+  isOwnerReviewStateReady: (ownerKey: string) => boolean
+  hydrating: boolean
+  hydrationFailed: boolean
+}
+
+const persistedStateForOwner = (
+  ownerKey: string,
+  cwd: string,
+  batch: FeedbackBatch,
+  draft: FeedbackDraft | null,
+  threadDrafts: ReadonlyMap<string, string>
+): PersistedReviewState => {
+  let persistedDraft: PersistedReviewState['draft'] = null
+  if (draft?.cwd === cwd && draft.text.trim().length > 0) {
+    const { cwd: draftCwd, ...draftWithoutCwd } = draft
+    void draftCwd
+    persistedDraft = draftWithoutCwd
+  }
+
+  return {
+    version: REVIEW_STATE_VERSION,
+    annotations: [...batch.entries()].flatMap(([key, annotations]) => {
+      const parsed = parseBatchKey(key)
+      if (parsed.cwd !== cwd) {
+        return []
+      }
+
+      return annotations.map((annotation) => ({
+        filePath: parsed.filePath,
+        staged: parsed.staged,
+        annotation,
+      }))
+    }),
+    draft: persistedDraft,
+    threadDrafts: [...threadDrafts.entries()].filter(
+      ([, text]) => text.trim().length > 0
+    ),
+    pendingReviews: persistedPendingReviews(ownerKey),
+    pendingReviewRequests: persistedPendingReviewRequests(ownerKey),
+    findingThreads: persistedFindingThreads(ownerKey),
+    reviewLevelNotes: persistedReviewLevelNotes(ownerKey),
+  }
 }
 
 export const useFeedbackBatchStore = (
   ownerKey: string,
-  cwd: string
+  cwd: string,
+  currentPtyId?: string
 ): UseFeedbackBatchStoreReturn => {
   const [batchesByOwner, setBatchesByOwner] = useState<
     Map<string, FeedbackBatch>
@@ -400,18 +519,378 @@ export const useFeedbackBatchStore = (
     Map<string, FeedbackDraft>
   >(() => new Map())
 
+  const [threadDraftsByOwner, setThreadDraftsByOwner] = useState<
+    Map<string, ReadonlyMap<string, string>>
+  >(() => new Map())
+
   // Mirrors review batches for synchronous optimistic mutations before React
   // commits state; this is the user-visible comment data.
   const optimisticBatchesRef = useRef(batchesByOwner)
+  const draftsByOwnerRef = useRef(draftsByOwner)
+  const threadDraftsByOwnerRef = useRef(threadDraftsByOwner)
   const repoRootsRef = useRef<Map<string, string>>(new Map())
   const addAnnotationResultRef = useRef<'ok' | 'cap-reached'>('ok')
+  const previousLiveOwnerKeysRef = useRef<ReadonlySet<string> | null>(null)
 
-  useEffect(() => {
+  const persistenceContextsRef = useRef<Map<string, ReviewPersistenceContext>>(
+    new Map()
+  )
+  const hydratedPersistenceTargetsRef = useRef<Map<string, string>>(new Map())
+  const desiredSnapshotsRef = useRef<Map<string, string>>(new Map())
+  const latestReviewSavesRef = useRef<Map<string, QueuedReviewSave>>(new Map())
+
+  const reviewSaveTimersRef = useRef<
+    Map<string, ReturnType<typeof setTimeout>>
+  >(new Map())
+
+  const persistenceEnabled =
+    isDesktop() &&
+    ownerKey !== LOCAL_FEEDBACK_OWNER_KEY &&
+    (cwd.startsWith('/') || /^[A-Za-z]:[\\/]/.test(cwd))
+
+  const persistenceContext = useMemo<ReviewPersistenceContext | null>(
+    () =>
+      persistenceEnabled
+        ? {
+            ownerKey,
+            cwd,
+            ...(currentPtyId === undefined ? {} : { ptyId: currentPtyId }),
+            hydrationTarget: makePersistenceTarget(ownerKey, cwd, currentPtyId),
+            saveTarget: makePersistenceSaveTarget(ownerKey, cwd),
+          }
+        : null,
+    [currentPtyId, cwd, ownerKey, persistenceEnabled]
+  )
+  const persistenceTarget = persistenceContext?.hydrationTarget ?? null
+  if (persistenceContext !== null) {
+    persistenceContextsRef.current.set(ownerKey, persistenceContext)
+  }
+
+  const [settledPersistenceTarget, setSettledPersistenceTarget] = useState<
+    string | null
+  >(null)
+
+  const [failedPersistenceTarget, setFailedPersistenceTarget] = useState<
+    string | null
+  >(null)
+
+  const pendingReviewRevision = useSyncExternalStore(
+    subscribePendingReviews,
+    pendingReviewsRevision,
+    pendingReviewsRevision
+  )
+
+  const requestStateRevision = useSyncExternalStore(
+    subscribeReviewLevelNotes,
+    reviewRequestStateRevision,
+    reviewRequestStateRevision
+  )
+
+  useLayoutEffect(() => {
     optimisticBatchesRef.current = batchesByOwner
-  }, [batchesByOwner])
+    draftsByOwnerRef.current = draftsByOwner
+    threadDraftsByOwnerRef.current = threadDraftsByOwner
+  }, [batchesByOwner, draftsByOwner, threadDraftsByOwner])
 
   const batch = batchesByOwner.get(ownerKey) ?? EMPTY_BATCH
   const draft = draftsByOwner.get(ownerKey) ?? null
+  const threadDrafts = threadDraftsByOwner.get(ownerKey) ?? EMPTY_THREAD_DRAFTS
+
+  const persistReviewSave = useCallback(
+    async (save: QueuedReviewSave): Promise<void> => {
+      try {
+        await saveReviewState(save.cwd, save.ownerKey, save.state)
+      } catch (error) {
+        log.warn('review state persistence failed', error)
+        if (
+          desiredSnapshotsRef.current.get(save.saveTarget) ===
+            save.serializedState &&
+          !latestReviewSavesRef.current.has(save.saveTarget)
+        ) {
+          latestReviewSavesRef.current.set(save.saveTarget, save)
+        }
+      }
+    },
+    []
+  )
+
+  const flushReviewSave = useCallback(
+    async (saveTarget: string): Promise<void> => {
+      const timer = reviewSaveTimersRef.current.get(saveTarget)
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        reviewSaveTimersRef.current.delete(saveTarget)
+      }
+
+      const latest = latestReviewSavesRef.current.get(saveTarget)
+      if (latest === undefined) {
+        return
+      }
+      latestReviewSavesRef.current.delete(saveTarget)
+      await persistReviewSave(latest)
+    },
+    [persistReviewSave]
+  )
+
+  const queueReviewSave = useCallback(
+    (context: ReviewPersistenceContext, state: PersistedReviewState): void => {
+      const serializedState = JSON.stringify(state)
+      if (
+        desiredSnapshotsRef.current.get(context.saveTarget) === serializedState
+      ) {
+        return
+      }
+
+      const existingTimer = reviewSaveTimersRef.current.get(context.saveTarget)
+      if (existingTimer !== undefined) {
+        clearTimeout(existingTimer)
+        reviewSaveTimersRef.current.delete(context.saveTarget)
+      }
+
+      const save: QueuedReviewSave = {
+        ...context,
+        state,
+        serializedState,
+      }
+      desiredSnapshotsRef.current.set(context.saveTarget, serializedState)
+      latestReviewSavesRef.current.set(context.saveTarget, save)
+      reviewSaveTimersRef.current.set(
+        context.saveTarget,
+        setTimeout(() => {
+          reviewSaveTimersRef.current.delete(context.saveTarget)
+          if (latestReviewSavesRef.current.get(context.saveTarget) !== save) {
+            return
+          }
+          latestReviewSavesRef.current.delete(context.saveTarget)
+          void persistReviewSave(save)
+        }, 150)
+      )
+    },
+    [persistReviewSave]
+  )
+
+  const flushAllReviewState = useCallback(async (): Promise<void> => {
+    const saveTargets = new Set(latestReviewSavesRef.current.keys())
+    for (const context of persistenceContextsRef.current.values()) {
+      if (
+        hydratedPersistenceTargetsRef.current.get(context.ownerKey) !==
+        context.hydrationTarget
+      ) {
+        continue
+      }
+
+      queueReviewSave(
+        context,
+        persistedStateForOwner(
+          context.ownerKey,
+          context.cwd,
+          optimisticBatchesRef.current.get(context.ownerKey) ?? EMPTY_BATCH,
+          draftsByOwnerRef.current.get(context.ownerKey) ?? null,
+          threadDraftsByOwnerRef.current.get(context.ownerKey) ??
+            EMPTY_THREAD_DRAFTS
+        )
+      )
+      saveTargets.add(context.saveTarget)
+    }
+
+    await Promise.all(
+      [...saveTargets].map(async (target) => flushReviewSave(target))
+    )
+    await drainReviewStateWrites()
+  }, [flushReviewSave, queueReviewSave])
+
+  useEffect(
+    () => registerRendererTeardownFlush(flushAllReviewState),
+    [flushAllReviewState]
+  )
+
+  useEffect(() => {
+    if (persistenceTarget === null) {
+      setSettledPersistenceTarget(null)
+      setFailedPersistenceTarget(null)
+
+      return undefined
+    }
+
+    let cancelled = false
+    const hydratedTargets = hydratedPersistenceTargetsRef.current
+
+    const hydrate = async (): Promise<void> => {
+      if (
+        hydratedPersistenceTargetsRef.current.get(ownerKey) ===
+        persistenceTarget
+      ) {
+        setSettledPersistenceTarget(persistenceTarget)
+        setFailedPersistenceTarget(null)
+
+        return
+      }
+
+      try {
+        if (
+          persistenceContext !== null &&
+          latestReviewSavesRef.current.has(persistenceContext.saveTarget)
+        ) {
+          await flushReviewSave(persistenceContext.saveTarget)
+        }
+
+        const loadedState = await loadReviewState(cwd, ownerKey)
+        if (cancelled) {
+          return
+        }
+
+        const retainedState =
+          persistenceContext === null
+            ? undefined
+            : latestReviewSavesRef.current.get(persistenceContext.saveTarget)
+                ?.state
+        const state = retainedState ?? loadedState
+
+        let restoredBatch: FeedbackBatch = new Map()
+        for (const entry of state?.annotations ?? []) {
+          restoredBatch = addAnnotationToBatch(
+            restoredBatch,
+            makeBatchKey(cwd, entry.filePath, entry.staged),
+            entry.annotation
+          )
+        }
+
+        setBatchesByOwner((previous) => {
+          const next = new Map(previous)
+          if (restoredBatch.size === 0) {
+            next.delete(ownerKey)
+          } else {
+            next.set(ownerKey, restoredBatch)
+          }
+          optimisticBatchesRef.current = next
+
+          return next
+        })
+
+        setDraftsByOwner((previous) => {
+          const next = new Map(previous)
+          if (state?.draft === null || state?.draft === undefined) {
+            next.delete(ownerKey)
+          } else {
+            next.set(ownerKey, { cwd, ...state.draft } as FeedbackDraft)
+          }
+          draftsByOwnerRef.current = next
+
+          return next
+        })
+
+        setThreadDraftsByOwner((previous) => {
+          const next = new Map(previous)
+          if (state === null || state.threadDrafts.length === 0) {
+            next.delete(ownerKey)
+          } else {
+            next.set(ownerKey, new Map(state.threadDrafts))
+          }
+          threadDraftsByOwnerRef.current = next
+
+          return next
+        })
+
+        restorePendingReviews(
+          ownerKey,
+          cwd,
+          currentPtyId,
+          state?.pendingReviews ?? []
+        )
+
+        restoreReviewRequestState(
+          ownerKey,
+          cwd,
+          currentPtyId,
+          state?.pendingReviewRequests ?? [],
+          state?.findingThreads ?? [],
+          state?.reviewLevelNotes ?? []
+        )
+
+        const context = persistenceContextsRef.current.get(ownerKey)
+        if (context?.hydrationTarget !== persistenceTarget) {
+          return
+        }
+
+        const serializedState = JSON.stringify(
+          state ?? emptyPersistedReviewState()
+        )
+        desiredSnapshotsRef.current.set(context.saveTarget, serializedState)
+        hydratedPersistenceTargetsRef.current.set(ownerKey, persistenceTarget)
+        setFailedPersistenceTarget(null)
+        setSettledPersistenceTarget(persistenceTarget)
+      } catch (error) {
+        log.warn('review state hydration failed', error)
+        if (!cancelled) {
+          setFailedPersistenceTarget(persistenceTarget)
+          setSettledPersistenceTarget(persistenceTarget)
+        }
+      }
+    }
+
+    void hydrate()
+
+    return (): void => {
+      cancelled = true
+      if (
+        persistenceContext !== null &&
+        hydratedTargets.get(persistenceContext.ownerKey) ===
+          persistenceContext.hydrationTarget
+      ) {
+        queueReviewSave(
+          persistenceContext,
+          persistedStateForOwner(
+            persistenceContext.ownerKey,
+            persistenceContext.cwd,
+            optimisticBatchesRef.current.get(persistenceContext.ownerKey) ??
+              EMPTY_BATCH,
+            draftsByOwnerRef.current.get(persistenceContext.ownerKey) ?? null,
+            threadDraftsByOwnerRef.current.get(persistenceContext.ownerKey) ??
+              EMPTY_THREAD_DRAFTS
+          )
+        )
+        void flushReviewSave(persistenceContext.saveTarget)
+      }
+    }
+  }, [
+    currentPtyId,
+    cwd,
+    flushReviewSave,
+    ownerKey,
+    persistenceContext,
+    persistenceTarget,
+    queueReviewSave,
+  ])
+
+  useEffect(() => {
+    for (const context of persistenceContextsRef.current.values()) {
+      if (
+        hydratedPersistenceTargetsRef.current.get(context.ownerKey) !==
+        context.hydrationTarget
+      ) {
+        continue
+      }
+
+      queueReviewSave(
+        context,
+        persistedStateForOwner(
+          context.ownerKey,
+          context.cwd,
+          batchesByOwner.get(context.ownerKey) ?? EMPTY_BATCH,
+          draftsByOwner.get(context.ownerKey) ?? null,
+          threadDraftsByOwner.get(context.ownerKey) ?? EMPTY_THREAD_DRAFTS
+        )
+      )
+    }
+  }, [
+    batchesByOwner,
+    draftsByOwner,
+    pendingReviewRevision,
+    queueReviewSave,
+    requestStateRevision,
+    settledPersistenceTarget,
+    threadDraftsByOwner,
+  ])
 
   const totalAnnotations = useCallback(
     (): number => countAnnotationsInBatch(batch),
@@ -615,6 +1094,16 @@ export const useFeedbackBatchStore = (
 
       return next
     })
+
+    setThreadDraftsByOwner((previous) => {
+      if (!previous.has(ownerKey)) {
+        return previous
+      }
+      const next = new Map(previous)
+      next.delete(ownerKey)
+
+      return next
+    })
   }, [ownerKey])
 
   const clearOwnerDraft = useCallback((): void => {
@@ -781,6 +1270,34 @@ export const useFeedbackBatchStore = (
     [ownerKey]
   )
 
+  const setThreadDraft = useCallback(
+    (threadId: string, text: string | null): void => {
+      setThreadDraftsByOwner((previous) => {
+        const ownerDrafts = previous.get(ownerKey) ?? EMPTY_THREAD_DRAFTS
+        if (text === null && !ownerDrafts.has(threadId)) {
+          return previous
+        }
+
+        const nextOwnerDrafts = new Map(ownerDrafts)
+        if (text === null) {
+          nextOwnerDrafts.delete(threadId)
+        } else {
+          nextOwnerDrafts.set(threadId, text)
+        }
+
+        const next = new Map(previous)
+        if (nextOwnerDrafts.size === 0) {
+          next.delete(ownerKey)
+        } else {
+          next.set(ownerKey, nextOwnerDrafts)
+        }
+
+        return next
+      })
+    },
+    [ownerKey]
+  )
+
   const feedbackBatch = useMemo<UseFeedbackBatchReturn>(
     () => ({
       batch,
@@ -843,8 +1360,10 @@ export const useFeedbackBatchStore = (
     () => ({
       draft,
       setDraft,
+      threadDrafts,
+      setThreadDraft,
     }),
-    [draft, setDraft]
+    [draft, setDraft, setThreadDraft, threadDrafts]
   )
 
   const summaries = useMemo<FeedbackBatchSummary[]>(() => {
@@ -853,12 +1372,16 @@ export const useFeedbackBatchStore = (
       ...[...draftsByOwner.entries()]
         .filter(([, entryDraft]) => entryDraft.text.trim().length > 0)
         .map(([entryOwnerKey]) => entryOwnerKey),
+      ...threadDraftsByOwner.keys(),
     ])
 
     return [...ownerKeys]
       .map((entryOwnerKey) => {
         const entryBatch = batchesByOwner.get(entryOwnerKey) ?? EMPTY_BATCH
         const entryDraft = draftsByOwner.get(entryOwnerKey) ?? null
+
+        const entryThreadDrafts =
+          threadDraftsByOwner.get(entryOwnerKey) ?? EMPTY_THREAD_DRAFTS
 
         // Only files with a pending comment count as unfinished — dispatched
         // thread anchors are done (VIM-282).
@@ -869,7 +1392,10 @@ export const useFeedbackBatchStore = (
         )
 
         const draftCount =
-          entryDraft !== null && entryDraft.text.trim().length > 0 ? 1 : 0
+          (entryDraft !== null && entryDraft.text.trim().length > 0 ? 1 : 0) +
+          [...entryThreadDrafts.values()].filter(
+            (text) => text.trim().length > 0
+          ).length
 
         if (draftCount > 0 && entryDraft !== null) {
           fileKeys.add(
@@ -885,10 +1411,47 @@ export const useFeedbackBatchStore = (
         }
       })
       .filter((summary) => summary.commentCount > 0 || summary.draftCount > 0)
-  }, [batchesByOwner, draftsByOwner])
+  }, [batchesByOwner, draftsByOwner, threadDraftsByOwner])
 
   const pruneOwners = useCallback(
     (liveOwnerKeys: ReadonlySet<string>): void => {
+      const previousLiveOwnerKeys = previousLiveOwnerKeysRef.current
+      if (previousLiveOwnerKeys !== null) {
+        for (const previousOwnerKey of previousLiveOwnerKeys) {
+          if (!liveOwnerKeys.has(previousOwnerKey)) {
+            const deleteOwnerState = async (): Promise<void> => {
+              try {
+                await deleteReviewOwnerState(previousOwnerKey)
+              } catch (error) {
+                log.warn('review owner cleanup failed', error)
+              }
+            }
+
+            void deleteOwnerState()
+          }
+        }
+      }
+      previousLiveOwnerKeysRef.current = new Set(liveOwnerKeys)
+
+      for (const [entryOwnerKey, context] of persistenceContextsRef.current) {
+        if (liveOwnerKeys.has(entryOwnerKey)) {
+          continue
+        }
+        const timer = reviewSaveTimersRef.current.get(context.saveTarget)
+        if (timer !== undefined) {
+          clearTimeout(timer)
+          reviewSaveTimersRef.current.delete(context.saveTarget)
+        }
+        latestReviewSavesRef.current.delete(context.saveTarget)
+        persistenceContextsRef.current.delete(entryOwnerKey)
+        hydratedPersistenceTargetsRef.current.delete(entryOwnerKey)
+      }
+      for (const target of desiredSnapshotsRef.current.keys()) {
+        if (!liveOwnerKeys.has(ownerKeyFromPersistenceTarget(target))) {
+          desiredSnapshotsRef.current.delete(target)
+        }
+      }
+
       setBatchesByOwner((prev) => {
         const next = new Map(
           [...prev.entries()].filter(([entryOwnerKey]) =>
@@ -928,6 +1491,29 @@ export const useFeedbackBatchStore = (
 
         return next
       })
+
+      setThreadDraftsByOwner((previous) => {
+        const next = new Map(
+          [...previous.entries()].filter(([entryOwnerKey]) =>
+            liveOwnerKeys.has(entryOwnerKey)
+          )
+        )
+
+        return next.size === previous.size ? previous : next
+      })
+    },
+    []
+  )
+
+  const isOwnerReviewStateReady = useCallback(
+    (targetOwnerKey: string): boolean => {
+      const context = persistenceContextsRef.current.get(targetOwnerKey)
+
+      return (
+        context === undefined ||
+        hydratedPersistenceTargetsRef.current.get(targetOwnerKey) ===
+          context.hydrationTarget
+      )
     },
     []
   )
@@ -938,6 +1524,13 @@ export const useFeedbackBatchStore = (
     feedbackDraft,
     summaries,
     pruneOwners,
+    isOwnerReviewStateReady,
+    hydrating:
+      persistenceTarget !== null &&
+      settledPersistenceTarget !== persistenceTarget,
+    hydrationFailed:
+      persistenceTarget !== null &&
+      failedPersistenceTarget === persistenceTarget,
   }
 }
 

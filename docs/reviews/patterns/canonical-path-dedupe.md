@@ -2,8 +2,8 @@
 id: canonical-path-dedupe
 category: correctness
 created: 2026-06-14
-last_updated: 2026-06-14
-ref_count: 0
+last_updated: 2026-07-18
+ref_count: 1
 ---
 
 # Canonical Path Dedupe
@@ -39,4 +39,18 @@ maps, target lists, and skip-logic.
 - **File:** `crates/backend/src/agent/adapter/kimi/locator.rs` L197-L217
 - **Finding:** `try_resolve_from_proc_fds` compared the raw `/proc/<pid>/fd` target against `home.join("sessions")` using lexical `PathBuf::starts_with`. If the effective kimi home was reached through a symlink (NFS mount, Docker volume, or `$KIMI_CODE_HOME` pointing through a symlink), the two spellings could differ even though they named the same directory, causing the authoritative per-process binding to fall back to weaker index/bucket heuristics.
 - **Fix:** Canonicalized both the fd wire path and `home.join("sessions")` before the `starts_with` check, falling back to the original paths if either canonicalization fails. The proc-fd fast path now anchors to the real directory while preserving its security boundary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. Repository identity cache used raw, unbounded cwd keys
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** The process-lifetime repository identity cache keyed entries by
+  the caller's raw cwd string and never evicted them. Equivalent path spellings
+  created duplicate Git probes, while long-running workspace churn could grow
+  the cache without a bound.
+- **Fix:** Canonicalize cwd values before lookup and insertion, cap the cache at
+  128 repositories, and clear the small cache when it reaches that ceiling.
+  Added regression coverage for equivalent paths and the size boundary.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

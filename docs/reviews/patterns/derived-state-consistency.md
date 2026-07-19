@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-17
-ref_count: 24
+last_updated: 2026-07-18
+ref_count: 25
 ---
 
 # Derived State Consistency
@@ -416,4 +416,17 @@ base data is technically "correct."
   source, derived `SETTINGS_SECTIONS` and `AVAILABLE_SETTINGS_SECTIONS` from it,
   and made `SettingsContent` type its pane registry against that same ID union.
   Added focused coverage that available IDs and available sections stay aligned.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Unfinished-review summaries omitted thread reply drafts
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/hooks/useFeedbackBatch.ts`
+- **Finding:** Thread reply drafts were persisted by owner, but the unfinished
+  review summary derived its owner set and draft count only from top-level
+  drafts and comments. Switching panes could therefore hide the navigation
+  entry for an owner whose only pending work was a thread reply.
+- **Fix:** Include thread-draft owners when deriving summaries and count each
+  nonblank reply draft. Added a focused regression test for a reply-only owner.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

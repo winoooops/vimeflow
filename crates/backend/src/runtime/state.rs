@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 #[cfg(feature = "e2e-test")]
 use std::time::SystemTime;
 
@@ -15,6 +15,7 @@ use crate::agent::types::{
 use crate::agent::{sanitize_title, AgentWatcherState, TranscriptState};
 use crate::aliases::{AgentAlias, AgentAliasesStore, AliasesCache, CURRENT_AGENT_ALIASES_VERSION};
 use crate::git::watcher::GitWatcherState;
+use crate::review_state::ReviewStateCache;
 use crate::settings::{list_system_fonts, AppSettings, AppSettingsCache, SystemFont};
 use crate::terminal::cache::SessionCache;
 use crate::terminal::state::PtyState;
@@ -22,6 +23,8 @@ use crate::terminal::types::SessionId;
 use crate::terminal::workspace_layout::{WorkspaceLayoutCache, WorkspaceLayoutStore};
 
 use super::event_sink::EventSink;
+
+const MAX_REVIEW_REPOSITORY_IDS: usize = 128;
 
 fn no_live_agent_error(pty_id: &str) -> RenameAgentSessionError {
     RenameAgentSessionError::new(
@@ -51,6 +54,8 @@ pub struct BackendState {
     pty: PtyState,
     sessions: Arc<SessionCache>,
     workspace_layouts: Arc<WorkspaceLayoutCache>,
+    review_states: Arc<ReviewStateCache>,
+    review_repository_ids: Mutex<HashMap<PathBuf, Vec<String>>>,
     app_settings: Arc<AppSettingsCache>,
     aliases: Arc<AliasesCache>,
     agents: AgentWatcherState,
@@ -83,6 +88,7 @@ impl BackendState {
         let cache_path = app_data_dir.join("sessions.json");
         let layouts_path = app_data_dir.join("workspace-layouts.json");
         let settings_path = app_data_dir.join("settings.json");
+        let review_state_path = app_data_dir.join("review-state.json");
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         Self {
             app_data_dir: app_data_dir.clone(),
@@ -91,6 +97,8 @@ impl BackendState {
                 SessionCache::load_or_recover(cache_path).with_app_data_dir(app_data_dir),
             ),
             workspace_layouts: Arc::new(WorkspaceLayoutCache::new(layouts_path)),
+            review_states: Arc::new(ReviewStateCache::new(review_state_path)),
+            review_repository_ids: Mutex::new(HashMap::new()),
             app_settings: Arc::new(AppSettingsCache::new(settings_path)),
             aliases: Arc::new(AliasesCache::new(aliases_path)),
             agents: AgentWatcherState::new(),
@@ -137,6 +145,64 @@ impl BackendState {
     /// Persist the assembled workspace-layout store. Main-invoked (not renderer).
     pub fn save_workspace_layout(&self, store: &WorkspaceLayoutStore) -> Result<(), String> {
         self.workspace_layouts.save(store)
+    }
+
+    pub async fn load_review_state(
+        &self,
+        cwd: String,
+        owner_key: String,
+    ) -> Result<Option<serde_json::Value>, String> {
+        let repository_ids = self.review_repository_ids(&cwd).await?;
+        Ok(repository_ids
+            .iter()
+            .find_map(|repository_id| self.review_states.load(repository_id, &owner_key)))
+    }
+
+    pub async fn save_review_state(
+        &self,
+        cwd: String,
+        owner_key: String,
+        state: Option<serde_json::Value>,
+    ) -> Result<(), String> {
+        let repository_ids = self.review_repository_ids(&cwd).await?;
+        let (repository_id, aliases) = repository_ids
+            .split_first()
+            .ok_or_else(|| "repository identity is empty".to_string())?;
+        self.review_states
+            .save_with_aliases(repository_id, aliases, &owner_key, state)
+    }
+
+    pub fn delete_review_owner_state(&self, owner_key: String) -> Result<(), String> {
+        self.review_states.delete_owner(&owner_key)
+    }
+
+    async fn review_repository_ids(&self, cwd: &str) -> Result<Vec<String>, String> {
+        let canonical_cwd = crate::git::validate_cwd(cwd)?;
+        if let Some(repository_ids) = self
+            .review_repository_ids
+            .lock()
+            .expect("review repository-id mutex poisoned")
+            .get(&canonical_cwd)
+            .cloned()
+        {
+            return Ok(repository_ids);
+        }
+
+        let repository_ids = crate::git::git_repository_identities_inner(
+            canonical_cwd.to_string_lossy().into_owned(),
+        )
+        .await?;
+        let mut cache = self
+            .review_repository_ids
+            .lock()
+            .expect("review repository-id mutex poisoned");
+        // ponytail: clear this tiny cache at its ceiling; add LRU only if Git
+        // identity probes become measurable under heavy workspace churn.
+        if cache.len() >= MAX_REVIEW_REPOSITORY_IDS {
+            cache.clear();
+        }
+        cache.insert(canonical_cwd, repository_ids.clone());
+        Ok(repository_ids)
     }
 
     /// Load the durable app settings store; missing / corrupt → defaults.
@@ -790,6 +856,40 @@ mod tests {
 
     use crate::agent::events::AGENT_SESSION_TITLE;
     use crate::terminal::state::{ManagedSession, RingBuffer};
+
+    #[tokio::test]
+    async fn review_repository_id_cache_is_canonical_and_bounded() {
+        let home = crate::filesystem::scope::home_canonical().unwrap();
+        let repo = tempfile::tempdir_in(home).unwrap();
+        std::process::Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        let (state, _sink) = BackendState::with_fake_sink();
+        let cwd = repo.path().to_string_lossy().into_owned();
+
+        state.review_repository_ids(&cwd).await.unwrap();
+        state
+            .review_repository_ids(&format!("{cwd}/."))
+            .await
+            .unwrap();
+        assert_eq!(state.review_repository_ids.lock().unwrap().len(), 1);
+
+        {
+            let mut cache = state.review_repository_ids.lock().unwrap();
+            cache.clear();
+            for index in 0..MAX_REVIEW_REPOSITORY_IDS {
+                cache.insert(
+                    PathBuf::from(format!("fake-{index}")),
+                    vec![format!("identity-{index}")],
+                );
+            }
+        }
+
+        state.review_repository_ids(&cwd).await.unwrap();
+        assert_eq!(state.review_repository_ids.lock().unwrap().len(), 1);
+    }
 
     #[derive(Clone)]
     struct CapturingWriter {
