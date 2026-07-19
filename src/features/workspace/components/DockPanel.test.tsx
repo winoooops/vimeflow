@@ -1350,6 +1350,22 @@ describe('DockPanel', () => {
     expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
   })
 
+  test('waits for durable review hydration before rendering the diff', () => {
+    renderDockPanel({ tab: 'diff', reviewStateLoading: true })
+
+    expect(screen.getByRole('status')).toHaveTextContent('Restoring review…')
+    expect(screen.queryByTestId('multi-file-diff')).not.toBeInTheDocument()
+  })
+
+  test('does not expose stale review state after hydration fails', () => {
+    renderDockPanel({ tab: 'diff', reviewStateUnavailable: true })
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Review history is temporarily unavailable.'
+    )
+    expect(screen.queryByTestId('multi-file-diff')).not.toBeInTheDocument()
+  })
+
   test('preserves selected diff file when the dock closes and reopens', () => {
     const useFileDiffSpy = vi.mocked(useFileDiffModule.useFileDiff)
     const { rerender } = render(<SelectedDiffLifecycleHarness open />)

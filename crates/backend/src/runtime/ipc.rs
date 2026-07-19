@@ -796,6 +796,42 @@ mod router {
                 state.save_workspace_layout(&p.store)?;
                 Ok(Value::Null)
             }
+            "load_review_state" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    cwd: String,
+                    owner_key: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                encode_result(state.load_review_state(p.cwd, p.owner_key).await?)
+            }
+            "save_review_state" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    cwd: String,
+                    owner_key: String,
+                    #[serde(default)]
+                    state: Option<Value>,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.save_review_state(p.cwd, p.owner_key, p.state).await?;
+                Ok(Value::Null)
+            }
+            "delete_review_owner_state" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    owner_key: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.delete_review_owner_state(p.owner_key)?;
+                Ok(Value::Null)
+            }
             "load_app_settings" => encode_result(state.load_app_settings()),
             "save_app_settings" => {
                 #[derive(Deserialize)]
@@ -2269,6 +2305,52 @@ mod tests {
                 "git_worktree_name must be a known method, got: {err}"
             ),
         }
+    }
+
+    #[tokio::test]
+    async fn dispatch_review_state_round_trips_and_deletes() {
+        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
+        let cwd = std::env::current_dir()
+            .expect("current dir")
+            .to_string_lossy()
+            .into_owned();
+
+        super::router::dispatch(
+            state.clone(),
+            "save_review_state",
+            serde_json::json!({
+                "cwd": cwd,
+                "ownerKey": "session-a:p0",
+                "state": { "version": 1, "annotations": [] },
+            }),
+        )
+        .await
+        .expect("save review state");
+
+        let loaded = super::router::dispatch(
+            state.clone(),
+            "load_review_state",
+            serde_json::json!({ "cwd": cwd, "ownerKey": "session-a:p0" }),
+        )
+        .await
+        .expect("load review state");
+        assert_eq!(loaded["version"], 1);
+
+        super::router::dispatch(
+            state.clone(),
+            "delete_review_owner_state",
+            serde_json::json!({ "ownerKey": "session-a:p0" }),
+        )
+        .await
+        .expect("delete review owner state");
+        let deleted = super::router::dispatch(
+            state,
+            "load_review_state",
+            serde_json::json!({ "cwd": cwd, "ownerKey": "session-a:p0" }),
+        )
+        .await
+        .expect("load deleted review state");
+        assert!(deleted.is_null());
     }
 
     #[tokio::test]

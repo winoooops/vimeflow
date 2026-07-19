@@ -425,6 +425,18 @@ describe('useAgentReply', () => {
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
     expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe('A')
+
+    // Recovery replays the whole mixed event. Seeing a consumed handle makes
+    // it a no-op even though the original unknown id is still present.
+    await emit(
+      event({
+        replies: [
+          { id: 1, status: 'reply', target: 'comment', text: 'A' },
+          { id: 99, status: 'reply', target: 'comment', text: 'ignored' },
+        ],
+      })
+    )
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
   })
 
   test('partial reply leaves the unanswered handles pending', async () => {
@@ -444,6 +456,15 @@ describe('useAgentReply', () => {
       })
     )
 
+    // Transcript recovery may replay the already-consumed partial turn while
+    // #2 is still pending. It must remain a no-op, not degrade raw text onto #2.
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+
     await emit(
       event({
         replies: [{ id: 2, status: 'resolved', target: 'comment', text: 'B' }],
@@ -452,6 +473,33 @@ describe('useAgentReply', () => {
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
     expect(addAnnotationForOwner.mock.calls[1][4].metadata.text).toBe('B')
+  })
+
+  test('buffers a live reply until durable correlation hydration completes', async () => {
+    setPendingReview(pending(new Map([[1, handle()]])))
+
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useAgentReply({
+          enabled,
+          activePtyId: 'pty-1',
+          addAnnotationForOwner,
+          nextCommentId: () => `agent-${(ids += 1)}`,
+          notifyInfo: vi.fn(),
+        }),
+      { initialProps: { enabled: false } }
+    )
+
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    rerender({ enabled: true })
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
   })
 
   test('a file-scope reply inherits the file target (not a line-0 annotation)', async () => {

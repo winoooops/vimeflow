@@ -273,6 +273,10 @@ interface DockPanelBaseProps {
   feedbackBatch?: UseFeedbackBatchReturn
   /** Workspace-owned comment editor that has not been submitted yet. */
   feedbackDraft?: FeedbackDraftStore
+  /** Prevent rendering an empty diff review before durable state hydrates. */
+  reviewStateLoading?: boolean
+  /** Prevent editing when durable state could not be loaded safely. */
+  reviewStateUnavailable?: boolean
   /** Optional workspace-owned repo root cache for feedback dispatch. */
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments. */
@@ -323,6 +327,8 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       gitStatus = undefined,
       feedbackBatch = undefined,
       feedbackDraft = undefined,
+      reviewStateLoading = false,
+      reviewStateUnavailable = false,
       feedbackRepoRootRef = undefined,
       feedbackDispatch = undefined,
       pendingFeedbackReviews = [],
@@ -639,7 +645,16 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                 tabIndex={-1}
                 className="flex min-h-0 flex-1 focus:outline-none"
               >
-                {selectedDiffFile !== undefined ? (
+                {reviewStateLoading || reviewStateUnavailable ? (
+                  <div
+                    role="status"
+                    className="m-auto text-xs text-on-surface-variant"
+                  >
+                    {reviewStateUnavailable
+                      ? 'Review history is temporarily unavailable.'
+                      : 'Restoring review…'}
+                  </div>
+                ) : selectedDiffFile !== undefined ? (
                   <Panel
                     cwd={cwd}
                     gitStatus={gitStatus}

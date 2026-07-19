@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-07-18
-ref_count: 3
+ref_count: 4
 ---
 
 # IPC Resource Bounds
@@ -170,4 +170,19 @@ not become repeated unhandled main-process failures.
   one event per requested nonce. Applied the same guard to Codex and Claude Code
   reply/review recovery and extended regression tests with duplicate completed
   rows.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Durable review-state IPC needs aggregate cache bounds
+
+- **Source:** local-codex | VIM-346 local review | 2026-07-18
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/review_state.rs`
+- **Finding:** A per-record size cap still allowed the renderer to create an
+  unlimited number of repository/owner records. Every write cloned and
+  serialized the entire store, so repeated valid requests could exhaust memory
+  or disk and stall sidecar IPC; startup also read the whole file without a
+  size check.
+- **Fix:** Bound the aggregate record count and serialized store size, reject an
+  oversized file before reading it, filter oversized malformed siblings, and
+  leave unsupported or oversized durable files untouched.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

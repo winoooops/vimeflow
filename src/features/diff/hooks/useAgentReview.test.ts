@@ -208,6 +208,19 @@ describe('useAgentReview', () => {
     expect(addAnnotationForOwner).not.toHaveBeenCalled()
   })
 
+  test('places an event after its persisted request hydrates', async () => {
+    mount()
+    await emit(event({ findings: [finding({ text: 'Delayed finding.' })] }))
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    setPendingReviewRequest(request())
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Delayed finding.'
+    )
+  })
+
   test('accepts a matching nonce from any session (the nonce is the whole gate)', async () => {
     // No session/pty gating: whether the review was delegated to a pane or
     // copied and pasted into some other agent, a matching nonce is enough.

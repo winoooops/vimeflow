@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-05
-ref_count: 17
+last_updated: 2026-07-18
+ref_count: 18
 ---
 
 # UI Visual Regression
@@ -339,4 +339,16 @@ test case for the state that triggers the collision.
 - **Fix:** Mirrored the review-navigation side resolver by classifying both
   `change-deletion` and `removed` as deletions, and expanded the co-located
   range-bar test to cover both unified deletion row spellings.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. File comments lost dock-height containment
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The file-comment section dropped its maximum height and inner
+  overflow classes. A file with many comments could consume the diff dock or
+  clip content instead of keeping the comment list independently scrollable.
+- **Fix:** Restored the bounded section height and vertical overflow container,
+  with component coverage for both layout contracts.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

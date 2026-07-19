@@ -3,6 +3,7 @@ mod test_helpers;
 pub mod watcher;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
@@ -1954,6 +1955,67 @@ pub(crate) async fn git_worktree_name_inner(cwd: String) -> Result<Option<String
     Ok(top.file_name().and_then(|s| s.to_str()).map(str::to_string))
 }
 
+/// Repository identities for Vimeflow-owned durable state, ordered from the
+/// current preferred identity to older lifecycle aliases. Origin URLs and root
+/// commits survive path moves and are shared by linked worktrees; the common
+/// git directory keeps unborn repositories reachable after their first commit.
+pub(crate) async fn git_repository_identities_inner(cwd: String) -> Result<Vec<String>, String> {
+    let safe_cwd = validate_cwd(&cwd)?;
+
+    let mut remote_cmd = Command::new("git");
+    remote_cmd
+        .arg("-C")
+        .arg(&safe_cwd)
+        .args(["config", "--get", "remote.origin.url"])
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let remote_output = run_git_with_timeout(remote_cmd).await?;
+
+    let mut roots_cmd = Command::new("git");
+    roots_cmd
+        .arg("-C")
+        .arg(&safe_cwd)
+        .args(["rev-list", "--max-parents=0", "HEAD"])
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let roots_output = run_git_with_timeout(roots_cmd).await?;
+    let mut identity_sources = Vec::new();
+    if remote_output.status.success() && !remote_output.stdout.is_empty() {
+        let remote = String::from_utf8(remote_output.stdout)
+            .map_err(|e| format!("repository remote utf8: {e}"))?;
+        identity_sources.push(format!("remote:{}", remote.trim()));
+    }
+    if roots_output.status.success() && !roots_output.stdout.is_empty() {
+        let mut roots = String::from_utf8(roots_output.stdout)
+            .map_err(|e| format!("repository identity utf8: {e}"))?
+            .lines()
+            .map(str::trim)
+            .filter(|root| !root.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        roots.sort_unstable();
+        identity_sources.push(format!("roots:{}", roots.join(",")));
+    }
+
+    let mut common_dir_cmd = Command::new("git");
+    common_dir_cmd
+        .arg("-C")
+        .arg(&safe_cwd)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let common_dir_output = run_git_with_timeout(common_dir_cmd).await?;
+    if !common_dir_output.status.success() {
+        let stderr = String::from_utf8_lossy(&common_dir_output.stderr);
+        return Err(format!("repository identity: {}", stderr.trim()));
+    }
+    let common_dir = String::from_utf8(common_dir_output.stdout)
+        .map_err(|e| format!("repository common-dir utf8: {e}"))?;
+    identity_sources.push(format!("common-dir:{}", common_dir.trim()));
+
+    Ok(identity_sources
+        .into_iter()
+        .map(|source| format!("repo-v1:{:x}", Sha256::digest(source)))
+        .collect())
+}
+
 pub(crate) async fn git_branch_inner(cwd: String) -> Result<String, String> {
     let safe_cwd = validate_cwd(&cwd)?;
 
@@ -3006,6 +3068,85 @@ index 1111111,2222222..0000000\n\
             "expected Ok(None), got {:?}",
             result
         );
+    }
+
+    #[tokio::test]
+    async fn repository_identity_matches_linked_worktrees_but_not_unrelated_repos() {
+        let (_tmp, main, worktrees) = create_main_repo_with_worktrees(&["feat"]);
+        let unrelated = home_tempdir();
+        Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(unrelated.path())
+            .output()
+            .expect("git init");
+        configure_test_git(unrelated.path());
+        std::fs::write(unrelated.path().join("seed"), "different").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(unrelated.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "unrelated"])
+            .current_dir(unrelated.path())
+            .output()
+            .unwrap();
+
+        let main_id = git_repository_identities_inner(main.to_string_lossy().into_owned())
+            .await
+            .unwrap()[0]
+            .clone();
+        let worktree_id =
+            git_repository_identities_inner(worktrees[0].to_string_lossy().into_owned())
+                .await
+                .unwrap()[0]
+                .clone();
+        let unrelated_id =
+            git_repository_identities_inner(unrelated.path().to_string_lossy().into_owned())
+                .await
+                .unwrap()[0]
+                .clone();
+
+        assert_eq!(main_id, worktree_id);
+        assert_ne!(main_id, unrelated_id);
+    }
+
+    #[tokio::test]
+    async fn repository_identity_keeps_lifecycle_aliases() {
+        let repo = home_tempdir();
+        Command::new("git")
+            .args(["init", "--initial-branch=main"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git init");
+        configure_test_git(repo.path());
+
+        let cwd = repo.path().to_string_lossy().into_owned();
+        let unborn = git_repository_identities_inner(cwd.clone()).await.unwrap();
+
+        std::fs::write(repo.path().join("seed"), "seed").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "seed"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+
+        let committed = git_repository_identities_inner(cwd.clone()).await.unwrap();
+        assert!(committed[1..].contains(&unborn[0]));
+
+        Command::new("git")
+            .args(["remote", "add", "origin", "git@example.test:repo.git"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+
+        let with_remote = git_repository_identities_inner(cwd).await.unwrap();
+        assert!(with_remote[1..].contains(&committed[0]));
     }
 
     #[tokio::test]

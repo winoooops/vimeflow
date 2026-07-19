@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { invoke, listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import type {
@@ -18,14 +18,19 @@ import {
 } from '../services/pendingReviews'
 import {
   addReviewLevelNote,
+  findingThreadNoncesForPty,
   getFindingThreadRecord,
+  setFindingThreadRecord,
   type FindingThreadRecord,
 } from '../services/pendingReviewRequests'
 
 /** Identity label for a main-agent turn shown on the review-level surface. */
 const AGENT_REVIEW_LEVEL_LABEL = 'Agent'
+const MAX_BUFFERED_AGENT_REPLIES = 200
 
 export interface UseAgentReplyOptions {
+  /** Buffer live events until durable correlation state has hydrated. */
+  enabled?: boolean
   /** PTY currently visible in the workspace; returning to it triggers recovery. */
   activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
@@ -84,16 +89,23 @@ const handleAgentReply = (
     // Malformed marker: degrade to one review-level note; the living thread
     // record survives one garbled turn.
     if (event.replies === null) {
+      const turnKey = `raw\u0000${event.rawText}`
+      if (record.seenReplies.has(turnKey)) {
+        return
+      }
       addReviewLevelNote(record.ownerKey, {
         commentId: nextCommentId(),
         reviewer: AGENT_REVIEW_LEVEL_LABEL,
         text: event.rawText,
         nonce: record.nonce,
       })
+      record.seenReplies.add(turnKey)
+      setFindingThreadRecord(record)
 
       return
     }
 
+    let changed = false
     for (const reply of event.replies) {
       if (reply.target !== 'finding') {
         continue
@@ -118,6 +130,7 @@ const handleAgentReply = (
         )
         if (result === 'ok') {
           record.seenReplies.add(turnKey)
+          changed = true
         }
         continue
       }
@@ -130,6 +143,10 @@ const handleAgentReply = (
         outcome: reply.status,
       })
       record.seenReplies.add(turnKey)
+      changed = true
+    }
+    if (changed) {
+      setFindingThreadRecord(record)
     }
   }
 
@@ -159,6 +176,7 @@ const handleAgentReply = (
   )
 
   if (event.replies !== null && matched.length > 0) {
+    const consumedHandles = pending.consumedHandles ?? new Set<number>()
     for (const reply of matched) {
       const handle = pending.byHandle.get(reply.id)
       if (handle === undefined) {
@@ -173,8 +191,10 @@ const handleAgentReply = (
       )
       if (result === 'ok') {
         pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
+        consumedHandles.add(reply.id)
       }
     }
+    pending.consumedHandles = consumedHandles
 
     if (pending.byHandle.size === 0) {
       clearPendingReview(event.sessionId, event.nonce)
@@ -182,6 +202,16 @@ const handleAgentReply = (
       setPendingReview(pending)
     }
 
+    return
+  }
+
+  if (
+    event.replies !== null &&
+    event.replies.length > 0 &&
+    event.replies.some(
+      (reply) => pending.consumedHandles?.has(reply.id) === true
+    )
+  ) {
     return
   }
 
@@ -214,20 +244,49 @@ const handleAgentReply = (
  * it never throws.
  */
 export const useAgentReply = ({
+  enabled = true,
   activePtyId,
   addAnnotationForOwner,
   nextCommentId,
   notifyInfo,
 }: UseAgentReplyOptions): void => {
+  const enabledRef = useRef(enabled)
+  const queuedRepliesRef = useRef<AgentReplyEvent[]>([])
+  enabledRef.current = enabled
+
   const handleReply = useCallback(
-    (event: AgentReplyEvent): void =>
-      handleAgentReply(event, addAnnotationForOwner, nextCommentId),
+    (event: AgentReplyEvent): void => {
+      if (!enabledRef.current) {
+        if (queuedRepliesRef.current.length >= MAX_BUFFERED_AGENT_REPLIES) {
+          queuedRepliesRef.current.shift()
+        }
+        queuedRepliesRef.current.push(event)
+
+        return
+      }
+
+      handleAgentReply(event, addAnnotationForOwner, nextCommentId)
+    },
     [addAnnotationForOwner, nextCommentId]
   )
 
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
+    const queued = queuedRepliesRef.current.splice(0)
+    queued.forEach(handleReply)
+  }, [enabled, handleReply])
+
   const recoverPty = useCallback(
     async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
-      const nonces = pendingNoncesForPty(ptyId)
+      const nonces = [
+        ...new Set([
+          ...pendingNoncesForPty(ptyId),
+          ...findingThreadNoncesForPty(ptyId),
+        ]),
+      ]
       if (nonces.length === 0) {
         return
       }
@@ -295,7 +354,7 @@ export const useAgentReply = ({
   }, [handleReply, recoverPty])
 
   useEffect(() => {
-    if (!isDesktop() || activePtyId === null) {
+    if (!isDesktop() || !enabled || activePtyId === null) {
       return undefined
     }
 
@@ -305,5 +364,5 @@ export const useAgentReply = ({
     return (): void => {
       cancelled = true
     }
-  }, [activePtyId, recoverPty])
+  }, [activePtyId, enabled, recoverPty])
 }
