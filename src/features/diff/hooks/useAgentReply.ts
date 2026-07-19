@@ -259,11 +259,13 @@ export const useAgentReply = ({
   const enabledRef = useRef(enabled)
   const queuedRepliesRef = useRef<AgentReplyEvent[]>([])
   enabledRef.current = enabled
+
   const pendingReviewRevision = useSyncExternalStore(
     subscribePendingReviews,
     pendingReviewsRevision,
     pendingReviewsRevision
   )
+
   const findingThreadRevision = useSyncExternalStore(
     subscribeReviewLevelNotes,
     reviewRequestStateRevision,
