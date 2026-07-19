@@ -123,7 +123,7 @@ describe('ghostty native parent', () => {
 
   test('visible-dialog selector ignores a dismissed mounted burner', () => {
     expect(DIALOG_SELECTOR).toBe(
-      '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
+      '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"]),[data-native-overlay-active="true"]'
     )
   })
 
@@ -2679,6 +2679,10 @@ describe('ghostty native parent', () => {
     })
 
     expect(addon.focus).not.toHaveBeenCalled()
+
+    // The refocus probe must treat the aria-hidden native placeholder as open.
+    const forwardedScript = webContentsExecuteJavaScript.mock.calls[0]?.[0]
+    expect(forwardedScript).toContain('data-native-overlay-active')
 
     controller.dispose()
   })
