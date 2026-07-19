@@ -835,9 +835,15 @@ describe('NativeOverlayHost', () => {
       name: 'Session switcher',
     })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
-    expect(
-      within(dialog).getByRole('listbox', { name: 'Session switcher' })
-    ).toBeInTheDocument()
+
+    const listbox = within(dialog).getByRole('listbox', {
+      name: 'Session switcher',
+    })
+    expect(listbox).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- the viewport bound lives on the scrollable panel wrapping the list
+    expect(listbox.closest('.overflow-y-auto')).toHaveClass(
+      'max-h-[min(480px,60vh)]'
+    )
 
     fireEvent.mouseDown(dialog)
     await waitFor(() => {
@@ -857,6 +863,16 @@ describe('NativeOverlayHost', () => {
       bridge.emitRender(sessionSwitcherRequest)
       await screen.findByRole('listbox', { name: 'Session switcher' })
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+
+      scrollIntoView.mockClear()
+      bridge.emitRender({
+        ...sessionSwitcherRequest,
+        payload: { ...sessionSwitcherRequest.payload, selectedIndex: 0 },
+      })
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      })
     } finally {
       scrollIntoView.mockRestore()
     }

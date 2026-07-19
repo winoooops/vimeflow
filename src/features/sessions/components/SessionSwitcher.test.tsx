@@ -123,7 +123,10 @@ describe('SessionSwitcher', () => {
       />
     )
 
-    expect(screen.getByRole('listbox')).toHaveClass('overflow-y-auto')
+    expect(screen.getByRole('listbox')).toHaveClass(
+      'max-h-[min(480px,60vh)]',
+      'overflow-y-auto'
+    )
   })
 
   test('scrolls the selected option into view as the selection moves', () => {
