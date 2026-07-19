@@ -3228,6 +3228,7 @@ const WorkspaceViewContent = (): ReactElement => {
                     onRemoveSession={handleRemoveSession}
                     onRenameSession={renameSession}
                     onReorderSessions={reorderSessions}
+                    layoutRegistry={layoutRegistry}
                   />
                   <FilesView
                     hidden={activeTab !== 'files'}

@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  PaneLayoutRegistry,
+  createGridTemplate,
+} from '@/features/terminal/layout-registry'
 import { mockSessions } from '../data/mockSessions'
 import { SessionsView } from './SessionsView'
 
@@ -12,6 +17,7 @@ const baseProps = {
   onRemoveSession: noop,
   onRenameSession: noop,
   onReorderSessions: noop,
+  layoutRegistry: BUILTIN_PANE_LAYOUT_REGISTRY,
 }
 
 describe('SessionsView', () => {
@@ -46,5 +52,23 @@ describe('SessionsView', () => {
     const root = screen.getByTestId('sessions-view')
     expect(root).toHaveClass('flex')
     expect(root).not.toHaveClass('hidden')
+  })
+
+  test('renders the active custom layout glyph and pane count', () => {
+    render(
+      <SessionsView
+        {...baseProps}
+        sessions={[
+          {
+            ...mockSessions[0],
+            layout: 'custom:template-2x1',
+          },
+        ]}
+        layoutRegistry={new PaneLayoutRegistry([createGridTemplate(2, 1)])}
+      />
+    )
+
+    expect(screen.getByTestId('session-layout-glyph')).toBeInTheDocument()
+    expect(screen.getByTestId('session-pane-count')).toHaveTextContent('2')
   })
 })
