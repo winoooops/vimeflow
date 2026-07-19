@@ -204,7 +204,7 @@ interface NativeOverlaySessionSwitcherItem {
 }
 
 interface NativeOverlaySessionSwitcherActions {
-  commitIndex: string
+  commitIdPrefix: string
   cancel: string
 }
 
@@ -673,7 +673,7 @@ const isSessionSwitcherItem = (
 const isSessionSwitcherActions = (
   value: unknown
 ): value is NativeOverlaySessionSwitcherActions =>
-  isRecord(value) && isString(value.commitIndex) && isString(value.cancel)
+  isRecord(value) && isString(value.commitIdPrefix) && isString(value.cancel)
 
 const isSessionSwitcherDialogPayload = (
   value: unknown

@@ -190,7 +190,7 @@ export interface NativeOverlaySessionSwitcherItem {
 }
 
 export interface NativeOverlaySessionSwitcherActions {
-  commitIndex: string
+  commitIdPrefix: string
   cancel: string
 }
 

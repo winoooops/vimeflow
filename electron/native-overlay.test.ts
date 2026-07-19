@@ -369,7 +369,7 @@ const sessionSwitcherDialogRequest = {
       { id: 'b', title: 'docs', agentGlyph: 'C', isActive: false },
     ],
     actions: {
-      commitIndex: 'session-switcher:commit-index',
+      commitIdPrefix: 'session-switcher:commit-id:',
       cancel: 'session-switcher:cancel',
     },
   },
@@ -1782,7 +1782,7 @@ describe('NativeOverlayController', () => {
           isActive: false,
         })),
         actions: {
-          commitIndex: 'session-switcher:commit-index',
+          commitIdPrefix: 'session-switcher:commit-id:',
           cancel: 'session-switcher:cancel',
         },
       },
@@ -1825,7 +1825,7 @@ describe('NativeOverlayController', () => {
         selectedIndex: 1,
         items: [{ id: 'a', title: 'api', isActive: true }],
         actions: {
-          commitIndex: 'session-switcher:commit-index',
+          commitIdPrefix: 'session-switcher:commit-id:',
           cancel: 'session-switcher:cancel',
         },
       },

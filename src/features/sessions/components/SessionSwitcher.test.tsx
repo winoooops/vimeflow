@@ -129,6 +129,25 @@ describe('SessionSwitcher', () => {
     )
   })
 
+  test('focuses the listbox and tracks selection via aria-activedescendant', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={1}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    const listbox = screen.getByRole('listbox')
+    expect(listbox).toHaveFocus()
+    expect(listbox).toHaveAttribute(
+      'aria-activedescendant',
+      'session-switcher-option-b'
+    )
+  })
+
   test('row buttons suppress the browser focus outline', () => {
     render(
       <SessionSwitcher

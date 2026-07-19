@@ -14,8 +14,11 @@ import { Dialog } from '@/components/Dialog'
 import { LayoutGlyph } from '../../terminal/components/LayoutSwitcher'
 import type { PaneLayoutId } from '../types'
 
-const NATIVE_ACTION_COMMIT_INDEX = 'session-switcher:commit-index'
+const NATIVE_ACTION_COMMIT_ID_PREFIX = 'session-switcher:commit-id:'
 const NATIVE_ACTION_CANCEL = 'session-switcher:cancel'
+
+// Option ids anchor aria-activedescendant and the native commit actions.
+const optionDomId = (id: string): string => `session-switcher-option-${id}`
 
 // Stable dialog marker so the owning hook can ignore its own exiting overlay.
 export const SESSION_SWITCHER_DIALOG_TEST_ID = 'session-switcher-dialog'
@@ -93,27 +96,33 @@ export const SessionSwitcher = ({
         selectedIndex,
         items,
         actions: {
-          commitIndex: NATIVE_ACTION_COMMIT_INDEX,
+          commitIdPrefix: NATIVE_ACTION_COMMIT_ID_PREFIX,
           cancel: NATIVE_ACTION_CANCEL,
         },
       }
     }, [entries, selectedIndex])
 
-  const nativeOverlayActions = useMemo(
-    (): ReadonlyMap<string, NativeOverlayActionHandler> =>
-      new Map([
-        [
-          NATIVE_ACTION_COMMIT_INDEX,
-          (event): void => {
-            if (event?.index !== undefined) {
-              onCommitIndex(event.index)
-            }
-          },
-        ],
-        [NATIVE_ACTION_CANCEL, (): void => onCancel()],
-      ]),
-    [onCancel, onCommitIndex]
-  )
+  // Per-entry commit actions carry the session id across the async overlay
+  // boundary; a click on a stale native frame simply finds no handler.
+  const nativeOverlayActions = useMemo((): ReadonlyMap<
+    string,
+    NativeOverlayActionHandler
+  > => {
+    const handlers = new Map<string, NativeOverlayActionHandler>([
+      [NATIVE_ACTION_CANCEL, (): void => onCancel()],
+    ])
+
+    entries.forEach((entry) => {
+      handlers.set(`${NATIVE_ACTION_COMMIT_ID_PREFIX}${entry.id}`, (): void => {
+        const index = entries.findIndex((other) => other.id === entry.id)
+        if (index >= 0) {
+          onCommitIndex(index)
+        }
+      })
+    })
+
+    return handlers
+  }, [entries, onCancel, onCommitIndex])
 
   const handleOpenChange = useCallback(
     (isOpen: boolean): void => {
@@ -123,6 +132,8 @@ export const SessionSwitcher = ({
     },
     [onCancel]
   )
+
+  const selectedEntry = entries.find((_, index) => index === selectedIndex)
 
   return (
     <Dialog
@@ -134,6 +145,7 @@ export const SessionSwitcher = ({
       testId={SESSION_SWITCHER_DIALOG_TEST_ID}
       // eslint-disable-next-line react/jsx-boolean-value
       restoreFocus={false}
+      initialFocusRef={listRef}
       nativeOverlay
       nativeOverlayPayload={nativeOverlayPayload}
       nativeOverlayActions={nativeOverlayActions}
@@ -150,7 +162,13 @@ export const SessionSwitcher = ({
         ref={listRef}
         role="listbox"
         aria-label="Session switcher"
-        className={`max-h-[min(480px,60vh)] space-y-[2px] overflow-y-auto p-1.5 ${
+        tabIndex={-1}
+        aria-activedescendant={
+          selectedEntry === undefined
+            ? undefined
+            : optionDomId(selectedEntry.id)
+        }
+        className={`max-h-[min(480px,60vh)] space-y-[2px] overflow-y-auto p-1.5 outline-none ${
           listOverflows ? LIST_MASK_CLASS : ''
         }`}
       >
@@ -159,6 +177,8 @@ export const SessionSwitcher = ({
             <button
               type="button"
               role="option"
+              id={optionDomId(entry.id)}
+              tabIndex={-1}
               aria-selected={index === selectedIndex}
               ref={
                 index === selectedIndex

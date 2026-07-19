@@ -300,7 +300,7 @@ const sessionSwitcherRequest: NativeOverlayRequest = {
       { id: 'b', title: 'docs', layoutId: 'quad', isActive: false },
     ],
     actions: {
-      commitIndex: 'session-switcher:commit-index',
+      commitIdPrefix: 'session-switcher:commit-id:',
       cancel: 'session-switcher:cancel',
     },
   },
@@ -815,13 +815,16 @@ describe('NativeOverlayHost', () => {
     expect(options).toHaveLength(2)
     expect(options[1]).toHaveAttribute('aria-selected', 'true')
     expect(options[0]).toHaveAttribute('aria-selected', 'false')
+    expect(listbox).toHaveAttribute(
+      'aria-activedescendant',
+      'session-switcher-option-b'
+    )
 
     await user.click(screen.getByRole('option', { name: /docs/ }))
     expect(bridge.action).toHaveBeenCalledWith({
       surfaceId: 'dialog-session-switcher',
-      actionId: 'session-switcher:commit-index',
+      actionId: 'session-switcher:commit-id:b',
       closeOnSelect: false,
-      index: 1,
     })
   })
 

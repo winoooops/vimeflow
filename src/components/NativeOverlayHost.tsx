@@ -887,17 +887,17 @@ const NativeOverlaySessionSwitcher = ({
     setListOverflows(list !== null && list.scrollHeight > list.clientHeight)
   }, [payload.items])
 
-  const dispatchAction = (
-    actionId: string,
-    options: { index?: number } = {}
-  ): void => {
+  const dispatchAction = (actionId: string): void => {
     void nativeOverlayHostBridge()?.action({
       surfaceId: request.surfaceId,
       actionId,
       closeOnSelect: false,
-      ...options,
     })
   }
+
+  const selectedItem = payload.items.find(
+    (_, index) => index === payload.selectedIndex
+  )
 
   return (
     <div
@@ -925,6 +925,11 @@ const NativeOverlaySessionSwitcher = ({
           ref={listRef}
           role="listbox"
           aria-label={payload.ariaLabel}
+          aria-activedescendant={
+            selectedItem === undefined
+              ? undefined
+              : `session-switcher-option-${selectedItem.id}`
+          }
           className={`max-h-[min(480px,60vh)] space-y-[2px] overflow-y-auto p-1.5 ${
             listOverflows ? OVERLAY_SESSION_SWITCHER_MASK_CLASS : ''
           }`}
@@ -934,6 +939,8 @@ const NativeOverlaySessionSwitcher = ({
               <button
                 type="button"
                 role="option"
+                id={`session-switcher-option-${item.id}`}
+                tabIndex={-1}
                 aria-selected={index === payload.selectedIndex}
                 ref={
                   index === payload.selectedIndex
@@ -942,7 +949,7 @@ const NativeOverlaySessionSwitcher = ({
                 }
                 className={switcherRowClasses(index === payload.selectedIndex)}
                 onClick={() =>
-                  dispatchAction(payload.actions.commitIndex, { index })
+                  dispatchAction(`${payload.actions.commitIdPrefix}${item.id}`)
                 }
               >
                 <span
