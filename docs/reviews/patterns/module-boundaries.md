@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-07-11
+last_updated: 2026-07-20
 ref_count: 8
 ---
 
@@ -213,3 +213,30 @@ Don't widen the coupling by adding a second importer.
 - **Finding:** `NativeOverlayHost` lived under shared `src/components/**` but imported `ActivityTooltipContent`, `ACTIVITY_CARD_SURFACE`, and the activity popover host hook from `features/agent-status`. Because `src/main.tsx` mounts the shared host for every native overlay renderer, every overlay window paid for agent-status feature dependencies and the primitive layer became coupled to one feature surface.
 - **Fix:** Moved the serializable activity popover guard into the shared activity payload contract, moved the DOM hover/dismiss host hook into a shared React hook, extracted the activity popover card into `src/components/NativeOverlayActivityCard.tsx`, and rewired the agent-status row to reuse those shared components. `NativeOverlayHost` now imports only shared component modules for activity popovers.
 - **Commit:** same commit as this entry
+
+### 20. Session island indicator behavior lived inside the container component
+
+- **Source:** github-human | PR #714 round 1 | 2026-07-20
+- **Severity:** HUMAN
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** The session indicator button owned display-mode text, active
+  width, positional tones, click dispatch, and tooltip behavior inline inside
+  the session island container. That made the container tests cover button
+  responsibilities instead of the island's batching/composition behavior.
+- **Fix:** Extracted `SessionIslandIndicator` into its own component with tests
+  for tooltip display, selection dispatch, dot/number/label rendering, and
+  positional tones. Trimmed `SessionIsland` tests back to container-level
+  batching and composition.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. New session island imports used relative paths after alias request
+
+- **Source:** github-human | PR #714 round 1 | 2026-07-20
+- **Severity:** HUMAN
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** The new session island component used relative imports for
+  app-local session types and utilities even though the review requested the
+  `@` alias for imports touched in the changelist.
+- **Fix:** Updated the touched session island and extracted indicator/test
+  imports to use `@/features/...` paths for app-local modules.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

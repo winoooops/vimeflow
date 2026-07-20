@@ -298,6 +298,7 @@ const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
 const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 const SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX = 700
+const SESSION_ISLAND_COMPACT_BATCH_SIZE = 5
 
 const SESSION_ISLAND_NOTIFICATIONS_ENABLED =
   import.meta.env.VITE_SESSION_ISLAND_NOTIFICATIONS === '1'
@@ -3414,6 +3415,11 @@ const WorkspaceViewContent = (): ReactElement => {
               settings.sessionIslandDisplay
             )}
             onSessionSelect={handleSetActiveSessionId}
+            maxVisibleSessions={
+              isLayoutSwitcherCompact
+                ? SESSION_ISLAND_COMPACT_BATCH_SIZE
+                : undefined
+            }
             showNotifications={SESSION_ISLAND_NOTIFICATIONS_ENABLED}
           />
           <span className="min-w-[10px] flex-1" />
@@ -3445,6 +3451,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   onDuplicateCustomLayout={handleDuplicateCustomLayout}
                   onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
+                  compactSelectionMode={isLayoutSwitcherCompact}
                   nativeOverlay
                 />
               }

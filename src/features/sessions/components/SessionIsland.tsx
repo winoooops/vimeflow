@@ -1,48 +1,18 @@
-import { useRef, type CSSProperties, type ReactElement } from 'react'
-import { Tooltip } from '@/components/Tooltip'
-import type { Session } from '../types'
-import { isOpenSession } from '../utils/sessionStatus'
-import type { SessionIslandDisplayMode } from '../utils/sessionIslandDisplay'
+import { useRef, type ReactElement } from 'react'
+import type { Session } from '@/features/sessions/types'
+import { SessionIslandIndicator } from '@/features/sessions/components/SessionIslandIndicator'
+import type { SessionIslandDisplayMode } from '@/features/sessions/utils/sessionIslandDisplay'
+import { isOpenSession } from '@/features/sessions/utils/sessionStatus'
 
 const SESSION_BATCH_SIZE = 10
-const ACTIVE_INDICATOR_WIDTH_PX = 48
-const ACTIVE_LABEL_MAX_WIDTH_PX = 160
 
 export interface SessionIslandProps {
   sessions: readonly Session[]
   activeSessionId: string | null
   displayMode: SessionIslandDisplayMode
   onSessionSelect: (sessionId: string) => void
+  maxVisibleSessions?: number
   showNotifications?: boolean
-}
-
-const activeLabelWidth = (name: string): number =>
-  Math.min(
-    ACTIVE_LABEL_MAX_WIDTH_PX,
-    Math.max(ACTIVE_INDICATOR_WIDTH_PX, Array.from(name).length * 7 + 24)
-  )
-
-const indicatorText = (
-  session: Session,
-  index: number,
-  active: boolean,
-  displayMode: SessionIslandDisplayMode
-): string => {
-  if (displayMode === 'numbers') {
-    return String(index + 1)
-  }
-
-  return displayMode === 'labels' && active ? session.name : ''
-}
-
-const indicatorPositionClass = (index: number, activeIndex: number): string => {
-  if (index === activeIndex) {
-    return 'w-[48px] bg-primary text-on-primary'
-  }
-
-  return activeIndex >= 0 && index < activeIndex
-    ? 'bg-secondary text-on-secondary'
-    : 'bg-secondary/55 text-on-secondary'
 }
 
 export const SessionIsland = ({
@@ -50,6 +20,7 @@ export const SessionIsland = ({
   activeSessionId,
   displayMode,
   onSessionSelect,
+  maxVisibleSessions = SESSION_BATCH_SIZE,
   showNotifications = false,
 }: SessionIslandProps): ReactElement | null => {
   const lastBatchStartRef = useRef(0)
@@ -63,13 +34,19 @@ export const SessionIsland = ({
     (session) => session.id === activeSessionId
   )
 
+  const batchSize = Math.max(
+    1,
+    Math.min(SESSION_BATCH_SIZE, maxVisibleSessions)
+  )
+
   const maxBatchStart =
-    Math.floor((openSessions.length - 1) / SESSION_BATCH_SIZE) *
-    SESSION_BATCH_SIZE
+    Math.floor((openSessions.length - 1) / batchSize) * batchSize
 
   if (activeIndex >= 0) {
-    lastBatchStartRef.current =
-      Math.floor(activeIndex / SESSION_BATCH_SIZE) * SESSION_BATCH_SIZE
+    // The island is paginated into stable batches once the session list exceeds
+    // the visible indicator count, so selecting session 11 moves from 1-10 to
+    // 11-20 instead of sliding the whole strip one dot at a time.
+    lastBatchStartRef.current = Math.floor(activeIndex / batchSize) * batchSize
   } else {
     lastBatchStartRef.current = Math.min(
       lastBatchStartRef.current,
@@ -79,7 +56,7 @@ export const SessionIsland = ({
 
   const batchStart = lastBatchStartRef.current
 
-  const batch = openSessions.slice(batchStart, batchStart + SESSION_BATCH_SIZE)
+  const batch = openSessions.slice(batchStart, batchStart + batchSize)
 
   return (
     <nav
@@ -90,43 +67,23 @@ export const SessionIsland = ({
       {batch.map((session, offset) => {
         const index = batchStart + offset
         const active = index === activeIndex
-        const text = indicatorText(session, index, active, displayMode)
-
-        const style: CSSProperties | undefined =
-          active && displayMode === 'labels'
-            ? { width: activeLabelWidth(session.name) }
-            : undefined
 
         return (
-          <Tooltip
+          <SessionIslandIndicator
             key={session.id}
-            content={session.name}
-            placement="bottom"
-            nativeOverlay
-          >
-            <button
-              type="button"
-              aria-label={`Switch to session ${index + 1}: ${session.name}`}
-              aria-current={active ? 'page' : undefined}
-              data-testid={`session-island-indicator-${session.id}`}
-              onClick={(): void => onSessionSelect(session.id)}
-              style={style}
-              className={`grid h-[16px] w-[16px] shrink-0 place-items-center overflow-hidden rounded-full border-0 p-0 font-mono text-[9px] font-extrabold opacity-100 transition-[width,background-color,color,opacity] duration-[222.222ms] ease-[cubic-bezier(.333333,1,.666667,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 motion-reduce:duration-[1ms] ${indicatorPositionClass(
-                index,
-                activeIndex
-              )}`}
-            >
-              {displayMode === 'labels' && active ? (
-                <span className="w-full truncate px-2">{text}</span>
-              ) : (
-                text
-              )}
-            </button>
-          </Tooltip>
+            session={session}
+            index={index}
+            activeIndex={activeIndex}
+            active={active}
+            displayMode={displayMode}
+            onSelect={onSessionSelect}
+          />
         )
       })}
 
       {showNotifications && (
+        // TODO(VIM-361, https://linear.app/vimeflow/issue/VIM-361): wire the
+        // notification slot to real unread/background-agent state in V2.
         <span
           aria-hidden="true"
           data-testid="session-island-notifications"

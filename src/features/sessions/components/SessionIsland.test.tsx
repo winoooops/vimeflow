@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Session } from '../types'
-import { SessionIsland } from './SessionIsland'
+import type { Session } from '@/features/sessions/types'
+import { SessionIsland } from '@/features/sessions/components/SessionIsland'
 
 const session = (index: number, overrides: Partial<Session> = {}): Session => ({
   id: `session-${index}`,
@@ -118,6 +118,24 @@ describe('SessionIsland', () => {
     expect(screen.getAllByRole('button')).toHaveLength(10)
   })
 
+  test('uses a smaller batch when compact chrome reserves room for controls', () => {
+    render(
+      <SessionIsland
+        sessions={sessions(12)}
+        activeSessionId="session-6"
+        displayMode="numbers"
+        maxVisibleSessions={5}
+        onSessionSelect={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('5')).not.toBeInTheDocument()
+    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.getByText('10')).toBeInTheDocument()
+    expect(screen.queryByText('11')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(5)
+  })
+
   test('swaps batches at a boundary and preserves keyed nodes within a batch', () => {
     const allSessions = sessions(20)
 
@@ -215,29 +233,6 @@ describe('SessionIsland', () => {
     expect(screen.getAllByRole('button')).toHaveLength(5)
   })
 
-  test('uses positional semantic colors around the active indicator', () => {
-    render(
-      <SessionIsland
-        sessions={sessions(5)}
-        activeSessionId="session-3"
-        displayMode="dots"
-        onSessionSelect={vi.fn()}
-      />
-    )
-
-    expect(
-      screen.getByTestId('session-island-indicator-session-2')
-    ).toHaveClass('bg-secondary')
-
-    expect(
-      screen.getByTestId('session-island-indicator-session-3')
-    ).toHaveClass('bg-primary', 'w-[48px]')
-
-    expect(
-      screen.getByTestId('session-island-indicator-session-4')
-    ).toHaveClass('bg-secondary/55')
-  })
-
   test('dims every indicator when the selected session is Recent', () => {
     render(
       <SessionIsland
@@ -252,28 +247,6 @@ describe('SessionIsland', () => {
       expect(button).toHaveClass('bg-secondary/55')
       expect(button).not.toHaveClass('w-12')
     })
-  })
-
-  test('shows only the active session name in active-label mode', () => {
-    const long = session(2, {
-      name: 'A very long session name that must be truncated in the island',
-    })
-    render(
-      <SessionIsland
-        sessions={[session(1), long, session(3)]}
-        activeSessionId="session-2"
-        displayMode="labels"
-        onSessionSelect={vi.fn()}
-      />
-    )
-
-    const active = screen.getByTestId('session-island-indicator-session-2')
-    expect(active).toHaveTextContent(long.name)
-    expect(active).toHaveStyle({ width: '160px' })
-    expect(within(active).getByText(long.name)).toHaveClass('truncate')
-    expect(
-      screen.getByTestId('session-island-indicator-session-1')
-    ).toHaveTextContent('')
   })
 
   test('uses the approved surface geometry and motion tokens', () => {

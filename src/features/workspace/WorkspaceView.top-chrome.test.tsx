@@ -428,6 +428,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
   })
 
   test('compacts the layout pillar below the 700px main-column threshold', async () => {
+    const user = userEvent.setup()
     const originalResizeObserver = globalThis.ResizeObserver
     installMockResizeObserver()
 
@@ -460,6 +461,19 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       expect(
         screen.getByRole('button', { name: 'Configure displayed layouts' })
       ).toBeInTheDocument()
+
+      await user.click(
+        screen.getByRole('button', { name: 'Configure displayed layouts' })
+      )
+
+      await user.click(
+        await screen.findByRole('menuitemcheckbox', { name: 'Quad' })
+      )
+
+      expect(mockSessionManager.setSessionLayout).toHaveBeenCalledWith(
+        'session-1',
+        'quad'
+      )
 
       act(() => {
         observer.trigger({ width: 700, height: 700 })
