@@ -48,10 +48,7 @@ export const SessionIsland = ({
     // 11-20 instead of sliding the whole strip one dot at a time.
     lastBatchStartRef.current = Math.floor(activeIndex / batchSize) * batchSize
   } else {
-    const clampedBatchStart = Math.min(
-      lastBatchStartRef.current,
-      maxBatchStart
-    )
+    const clampedBatchStart = Math.min(lastBatchStartRef.current, maxBatchStart)
     lastBatchStartRef.current =
       Math.floor(clampedBatchStart / batchSize) * batchSize
   }
