@@ -141,8 +141,8 @@ describe('ChangedFilesList', () => {
 
     scrollContainer = screen.getByTestId('changed-files-scroll-container')
 
-    // Opening the list reveals the current selection.
-    expect(scrollContainer.scrollTop).toBe(60)
+    // Opening the list does not scroll; only later n/p selection changes do.
+    expect(scrollContainer.scrollTop).toBe(0)
     expect(scrollSpy).not.toHaveBeenCalled()
 
     // n/p moved the selection from outside the list → the NEW row scrolls

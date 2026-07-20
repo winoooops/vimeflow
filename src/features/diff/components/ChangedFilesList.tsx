@@ -39,6 +39,8 @@ interface ChangedFileItemProps {
   commentShortcut: ShortcutInput
   file: ChangedFile
   selected: boolean
+  selectionKey: string | null
+  initialSelectionKeyRef: RefObject<string | null>
   scrollContainerRef: RefObject<HTMLDivElement | null>
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
@@ -105,6 +107,8 @@ const ChangedFileItem = ({
   commentShortcut,
   file,
   selected,
+  selectionKey,
+  initialSelectionKeyRef,
   scrollContainerRef,
   onSelectFile,
   onAddFileComment = undefined,
@@ -115,18 +119,23 @@ const ChangedFileItem = ({
   const isDeleted = file.status === 'deleted'
   const itemRef = useRef<HTMLDivElement | null>(null)
 
-  // Keyboard file navigation (n/p) moves the selection from outside the list;
-  // keep the active row visible inside the changed-files scroller only. Avoid
-  // Element.scrollIntoView here because it may walk up to the app viewport and
-  // move unrelated surfaces during smoke tests.
+  // Keyboard file navigation (n/p) moves the selection from outside the list.
+  // Skip the already-selected mount state so merely rendering the diff dock
+  // cannot move unrelated app surfaces during smoke tests.
   useEffect(() => {
     const item = itemRef.current
     const container = scrollContainerRef.current
 
-    if (selected && item !== null && container !== null) {
+    if (
+      selected &&
+      selectionKey !== null &&
+      selectionKey !== initialSelectionKeyRef.current &&
+      item !== null &&
+      container !== null
+    ) {
       scrollIntoNearestContainerView(item, container)
     }
-  }, [scrollContainerRef, selected])
+  }, [initialSelectionKeyRef, scrollContainerRef, selected, selectionKey])
 
   return (
     <div
@@ -272,6 +281,10 @@ export const ChangedFilesList = ({
   const commentAriaKeyshortcuts = chordToAriaShortcut(commentShortcut)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
 
+  const selectionKey =
+    selectedFile === null ? null : `${selectedFile.path}:${selectedFile.staged}`
+  const initialSelectionKeyRef = useRef<string | null>(selectionKey)
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant/25 px-3 py-2.5">
@@ -307,6 +320,8 @@ export const ChangedFilesList = ({
             commentAriaKeyshortcuts={commentAriaKeyshortcuts}
             commentShortcut={commentShortcutInput}
             file={file}
+            selectionKey={selectionKey}
+            initialSelectionKeyRef={initialSelectionKeyRef}
             scrollContainerRef={scrollContainerRef}
             selected={
               selectedFile?.path === file.path &&
