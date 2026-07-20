@@ -1114,16 +1114,18 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
   }
 
   const headerInSlot = (slot: HTMLElement): HTMLElement => {
-    // eslint-disable-next-line testing-library/no-node-access -- drag handle is the header element inside the slot
-    const header = slot.querySelector('[data-testid="terminal-pane-header"]')
-    if (!(header instanceof HTMLElement)) {
-      throw new Error('no terminal-pane-header in slot')
+    // eslint-disable-next-line testing-library/no-node-access -- drag handle is the inner handle inside the pane header
+    const handle = slot.querySelector(
+      '[data-testid="terminal-pane-drag-handle"]'
+    )
+    if (!(handle instanceof HTMLElement)) {
+      throw new Error('no terminal-pane-drag-handle in slot')
     }
 
-    return header
+    return handle
   }
 
-  test('terminal pane header is draggable but the body is not', () => {
+  test('terminal pane drag handle is draggable but the body is not', () => {
     render(
       <SplitView
         session={makeSession('vsplit', 2)}

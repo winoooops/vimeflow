@@ -323,7 +323,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const containerStyle = {
       boxShadow: 'none',
-      cursor: isActive ? ('default' as const) : ('pointer' as const),
     }
 
     return (
@@ -399,6 +398,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
             style={{
               borderBottomLeftRadius: terminalBodyBottomCornerRadius,
               borderBottomRightRadius: terminalBodyBottomCornerRadius,
+              cursor: isActive ? 'default' : 'pointer',
             }}
           >
             <TerminalBody
