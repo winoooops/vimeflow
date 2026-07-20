@@ -347,3 +347,12 @@ true` and drop the chunk.
 - **Finding:** The delegated-review block used `Vec<FindingDto>`, so Serde rejected the entire block when any array member was not an object or carried a wrong-typed field. One malformed range could therefore discard unrelated valid findings and force the frontend to render the whole response as an off-file note.
 - **Fix:** Deserialize finding members as `serde_json::Value`, validate each member independently, retain valid siblings, and report the omitted-member count through the typed review event. Regression coverage mixes missing range fields and a wrong-typed line with a valid line finding, proving only the malformed members are omitted.
 - **Commit:** same commit as this entry
+
+### 25. Partial parser salvage compacted stable finding ordinals
+
+- **Source:** github-codex-connector | PR #716 round 1 | 2026-07-20
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/review.rs`, `src/features/diff/hooks/useAgentReview.ts`
+- **Finding:** Omitting malformed entries compacted the valid findings array, and the frontend rebuilt reply-thread ordinals from that compacted position. A later `target: "finding"` reply still used the finding's original position in the review block, so it could attach to the wrong finding or disappear.
+- **Fix:** Preserve the original 1-based array position as a typed `ordinal` while validating each finding, carry it through the generated binding, and key frontend thread targets from that value. Regression coverage places an invalid entry before a valid finding and verifies the valid thread remains addressable as finding 2.
+- **Commit:** same commit as this entry

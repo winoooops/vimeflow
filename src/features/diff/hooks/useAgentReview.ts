@@ -214,8 +214,8 @@ export const useAgentReview = ({
       // Cap-omitted findings have no entry — they were never placed.
       const byOrdinal = new Map<number, FindingThreadTarget>()
 
-      for (const [index, finding] of findingsToPlace.entries()) {
-        const ordinal = index + 1
+      for (const finding of findingsToPlace) {
+        const { ordinal } = finding
         const resolved = resolveFindingEntry(diffSnapshot, finding)
 
         // path not in the reviewed diff → no (path, staged) row to anchor under.

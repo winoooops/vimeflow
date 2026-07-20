@@ -134,8 +134,12 @@ fn validate(json: &str) -> Option<(String, String, Vec<AgentReviewFinding>, u32)
     let finding_count = raw_findings.len();
     let findings: Vec<_> = raw_findings
         .into_iter()
-        .filter_map(|value| serde_json::from_value(value).ok())
-        .filter_map(validate_finding)
+        .enumerate()
+        .filter_map(|(index, value)| {
+            let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+            let finding = serde_json::from_value(value).ok()?;
+            validate_finding(finding, ordinal)
+        })
         .collect();
     let omitted_finding_count = u32::try_from(finding_count - findings.len()).unwrap_or(u32::MAX);
 
@@ -146,7 +150,7 @@ fn positive_u32(n: Option<i64>) -> Option<u32> {
     u32::try_from(n?).ok().filter(|&x| x > 0)
 }
 
-fn validate_finding(f: FindingDto) -> Option<AgentReviewFinding> {
+fn validate_finding(f: FindingDto, ordinal: u32) -> Option<AgentReviewFinding> {
     let scope = match f.scope.as_deref()? {
         "line" => ReviewFindingScope::Line,
         "range" => ReviewFindingScope::Range,
@@ -187,6 +191,7 @@ fn validate_finding(f: FindingDto) -> Option<AgentReviewFinding> {
     };
 
     Some(AgentReviewFinding {
+        ordinal,
         scope,
         path,
         side,
@@ -277,6 +282,7 @@ mod tests {
             }) => {
                 assert_eq!(findings.len(), 1);
                 assert_eq!(findings[0].path, "a.ts");
+                assert_eq!(findings[0].ordinal, 2);
                 assert_eq!(omitted_finding_count, 2);
             }
             other => panic!("expected Structured, got {other:?}"),
