@@ -26,6 +26,7 @@ export type {
   NativeOverlayActionHandler,
   NativeOverlayCommandPaletteDialogPayload,
   NativeOverlayNewSessionDialogPayload,
+  NativeOverlaySessionSwitcherDialogPayload,
 } from '@/components/base/floating/nativeOverlay'
 
 type DialogPlacement = 'center' | 'top'
@@ -514,6 +515,7 @@ const DialogRoot = ({
           ref={dialogRef}
           role="dialog"
           data-dialog-layer="true"
+          data-native-overlay-active={hideLocalForNative ? 'true' : undefined}
           aria-modal="true"
           aria-hidden={hideLocalForNative ? 'true' : undefined}
           inert={hideLocalForNative ? true : undefined}

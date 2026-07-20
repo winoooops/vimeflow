@@ -2482,6 +2482,78 @@ describe('BrowserPaneController', () => {
     }
   })
 
+  test('forwards the session switcher and close shortcuts, but not an unknown global command', async () => {
+    await handler(BROWSER_PANE_CREATE)(eventForSender(), {
+      sessionId: 'pty-1',
+      paneId: 'p1',
+      workspaceId: 'proj-1',
+      initialUrl: 'https://example.com/',
+    })
+
+    const snapshot = createWorkspaceKeybindingSnapshot({}, process.platform)
+
+    setWorkspaceKeybindingSnapshot(
+      electronMock.win as unknown as Parameters<
+        typeof setWorkspaceKeybindingSnapshot
+      >[0],
+      snapshot
+    )
+
+    const beforeInputHandler = listenerFor(0, 'before-input-event')
+
+    const bindingFor = (id: string): (typeof snapshot.bindings)[number] => {
+      const found = snapshot.bindings.find((entry) => entry.id === id)
+      if (!found) {
+        throw new Error(`missing binding ${id}`)
+      }
+
+      return found
+    }
+
+    for (const id of [
+      'session-close',
+      'session-switch-next',
+      'session-switch-prev',
+    ]) {
+      const binding = bindingFor(id)
+      const preventDefault = vi.fn()
+
+      beforeInputHandler(
+        { preventDefault },
+        {
+          type: 'keyDown',
+          key: binding.code,
+          code: binding.code,
+          control: binding.control,
+          meta: binding.meta,
+          alt: binding.alt,
+          shift: binding.shift,
+        }
+      )
+
+      expect(preventDefault, id).toHaveBeenCalledOnce()
+    }
+
+    // single-pane-focus is a global command absent from the forward set
+    const unknownBinding = bindingFor('single-pane-focus')
+    const preventUnknownDefault = vi.fn()
+
+    beforeInputHandler(
+      { preventDefault: preventUnknownDefault },
+      {
+        type: 'keyDown',
+        key: unknownBinding.code,
+        code: unknownBinding.code,
+        control: unknownBinding.control,
+        meta: unknownBinding.meta,
+        alt: unknownBinding.alt,
+        shift: unknownBinding.shift,
+      }
+    )
+
+    expect(preventUnknownDefault).not.toHaveBeenCalled()
+  })
+
   test('leaves browser text-editing shortcuts in the page', async () => {
     await handler(BROWSER_PANE_CREATE)(eventForSender(), {
       sessionId: 'pty-1',
@@ -2555,5 +2627,7 @@ describe('BrowserPaneController', () => {
     expect(forwardedScript).toContain('proxyOwnsFocus')
     expect(forwardedScript).toContain('dockHasFocus')
     expect(forwardedScript).toContain('dialogOpen')
+    // The refocus probe must treat the aria-hidden native placeholder as open.
+    expect(forwardedScript).toContain('[data-native-overlay-active="true"]')
   })
 })

@@ -181,3 +181,12 @@ describe('DEFAULT_ALIASES', () => {
     expect(DEFAULT_ALIASES.every((alias) => alias.extra === '')).toBe(true)
   })
 })
+
+describe('Sessions keymap targets', () => {
+  test('session switcher commands are searchable settings targets', () => {
+    const ids = SETTINGS_TARGETS.map((t) => t.id)
+    expect(ids).toContain(keymapCommandTargetId('session-switch-next'))
+    expect(ids).toContain(keymapCommandTargetId('session-switch-prev'))
+    expect(ids).toContain(keymapCommandTargetId('session-close'))
+  })
+})

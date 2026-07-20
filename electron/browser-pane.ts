@@ -417,8 +417,11 @@ const BROWSER_WORKSPACE_SHORTCUT_IDS_TO_FORWARD = new Set<string>([
   'new-session',
   'palette',
   'palette-leader',
+  'session-close',
   'session-next',
   'session-prev',
+  'session-switch-next',
+  'session-switch-prev',
   'settings',
   'settings-control',
   'sidebar-files',
@@ -1914,7 +1917,7 @@ export class BrowserPaneController {
                 activeElement instanceof Element &&
                 activeElement.closest('[data-container-id="dock"]') !== null
               const dialogOpen = document.querySelector(
-                '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
+                '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"]),[data-native-overlay-active="true"]'
               ) !== null
               resolve(
                 activeBrowserPane &&

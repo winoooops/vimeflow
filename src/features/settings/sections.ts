@@ -121,6 +121,7 @@ export const VIM_KEYMAP_GROUPS: KeymapGroup[] = [
 
 const KEYMAP_TARGET_GROUPS = new Set([
   'Global',
+  'Sessions',
   'Panes & Layout',
   'Terminal',
   'Browser',

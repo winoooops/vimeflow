@@ -122,3 +122,4 @@ release/
 
 # local Linear API key (never commit) — see linear.env.example + rules/common/linear-workflow.md
 linear.env
+tests/e2e/.wdio-cache/

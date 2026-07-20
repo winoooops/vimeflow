@@ -1595,11 +1595,12 @@ describe('useSessionManager', () => {
   // Round 9, Finding 4 (codex P2): out-of-order setActiveSession IPC failures
   // must not revert to a stale selection. Scenario:
   //   1. Active = 'a'
-  //   2. User clicks 'b' → req=1 fires, optimistic active = 'b'
-  //   3. User clicks 'c' BEFORE req=1 settles → req=2 fires, active = 'c'
-  //   4. req=1 rejects (transient failure) → revert candidate is 'a'
-  //   5. After the fix, req=1's rollback no-ops because req=2 is now the
-  //      latest. Active stays 'c' — the user's actual newest pick.
+  //   2. User clicks 'b' → req=1 dispatches, optimistic active = 'b'
+  //   3. User clicks 'c' BEFORE req=1 settles → 'c' queues as the pending
+  //      target, optimistic active = 'c'
+  //   4. req=1 rejects (transient failure) → with 'c' pending, nothing is
+  //      recorded or reverted; 'c' dispatches as req=2.
+  //   5. Active stays 'c' — the user's actual newest pick.
   test('round 9 F4: stale setActiveSession failure does not revert past a newer request', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
@@ -1668,8 +1669,9 @@ describe('useSessionManager', () => {
 
     // Now reject req=1 (the OLDER request). With the bug, this would
     // setActiveSessionIdState('a') because that's the prev captured at
-    // req=1's call site — clobbering the user's 'c' pick. With the fix,
-    // req=1 sees its myReq is no longer the latest and skips the revert.
+    // req=1's call site — clobbering the user's 'c' pick. Under serialized
+    // settlement, req=1's failure sees 'c' pending, records nothing, and
+    // dispatches 'c'.
     act(() => {
       const req1 = settlers.find((s) => s.id === 'b')
       req1?.reject('transient')
@@ -1679,13 +1681,14 @@ describe('useSessionManager', () => {
     await waitFor(() => expect(result.current.activeSessionId).toBe('c'))
     expect(result.current.activeSessionId).toBe('c')
 
-    // For completeness: when the latest request also fails, rollback is
-    // honored. We revert to whatever was on screen when req=2 started — 'b'.
+    // For completeness: when the latest request also fails with nothing
+    // pending, rollback restores the committed baseline — 'a', the last id
+    // the backend actually accepted ('b' never was; its IPC failed).
     act(() => {
       const req2 = settlers.find((s) => s.id === 'c')
       req2?.reject('also-transient')
     })
-    await waitFor(() => expect(result.current.activeSessionId).toBe('b'))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('a'))
   })
 
   test('renders Exited sessions from list_sessions', async () => {

@@ -26,7 +26,18 @@ export const createApplicationMenuTemplate = (
 
   return [
     { role: 'appMenu' },
-    { role: 'fileMenu' },
+    // fileMenu role's ⌘W now belongs to the in-app session-close shortcut.
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Close Window',
+          click: (_item, focusedWindow): void => {
+            focusedWindow?.close()
+          },
+        },
+      ],
+    },
     { role: 'editMenu' },
     workspaceViewMenu,
     { role: 'windowMenu' },

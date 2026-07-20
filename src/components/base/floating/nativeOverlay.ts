@@ -181,9 +181,32 @@ export interface NativeOverlayNewSessionDialogPayload {
   actions: NativeOverlayNewSessionActions
 }
 
+export interface NativeOverlaySessionSwitcherItem {
+  id: string
+  title: string
+  agentGlyph?: string
+  layoutId?: string
+  isActive: boolean
+}
+
+export interface NativeOverlaySessionSwitcherActions {
+  commitIdPrefix: string
+  cancel: string
+}
+
+export interface NativeOverlaySessionSwitcherDialogPayload {
+  kind: 'dialog'
+  dialog: 'session-switcher'
+  ariaLabel: string
+  selectedIndex: number
+  items: NativeOverlaySessionSwitcherItem[]
+  actions: NativeOverlaySessionSwitcherActions
+}
+
 export type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
+  | NativeOverlaySessionSwitcherDialogPayload
 
 // Native overlay payloads are plain data only. Each rich surface gets a narrow
 // serializable model instead of sending arbitrary React children over IPC.

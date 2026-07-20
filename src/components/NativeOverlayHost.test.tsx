@@ -285,6 +285,27 @@ const newSessionRequest: NativeOverlayRequest = {
   },
 }
 
+const sessionSwitcherRequest: NativeOverlayRequest = {
+  surfaceId: 'dialog-session-switcher',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'session-switcher',
+    ariaLabel: 'Session switcher',
+    selectedIndex: 1,
+    items: [
+      { id: 'a', title: 'api server', layoutId: 'single', isActive: true },
+      { id: 'b', title: 'docs', layoutId: 'quad', isActive: false },
+    ],
+    actions: {
+      commitIdPrefix: 'session-switcher:commit-id:',
+      cancel: 'session-switcher:cancel',
+    },
+  },
+}
+
 let cleanupHostBridgeEvents: (() => void) | null = null
 
 const installNativeOverlayHostBridge = (): {
@@ -778,6 +799,89 @@ describe('NativeOverlayHost', () => {
       actionId: 'new-session:create',
       closeOnSelect: true,
     })
+  })
+
+  test('renders session switcher dialog requests and dispatches the commit action', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(sessionSwitcherRequest)
+
+    const listbox = await screen.findByRole('listbox', {
+      name: 'Session switcher',
+    })
+    const options = within(listbox).getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(options[1]).toHaveAttribute('aria-selected', 'true')
+    expect(options[0]).toHaveAttribute('aria-selected', 'false')
+    expect(listbox).toHaveAttribute(
+      'aria-activedescendant',
+      'session-switcher-option-b'
+    )
+    expect(screen.getByText('2 open')).toBeInTheDocument()
+    expect(screen.getByText('api server')).toHaveClass('font-medium')
+    expect(screen.getByText('docs')).toHaveClass('font-medium')
+
+    await user.click(screen.getByRole('option', { name: /docs/ }))
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-session-switcher',
+      actionId: 'session-switcher:commit-id:b',
+      closeOnSelect: false,
+    })
+  })
+
+  test('renders the session switcher inside a modal dialog shell that closes on outside mousedown', async () => {
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(sessionSwitcherRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Session switcher',
+    })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+    const listbox = within(dialog).getByRole('listbox', {
+      name: 'Session switcher',
+    })
+    expect(listbox).toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- the viewport bound lives on the scrollable panel wrapping the list
+    expect(listbox.closest('.overflow-y-auto')).toHaveClass(
+      'max-h-[min(480px,60vh)]'
+    )
+
+    fireEvent.mouseDown(dialog)
+    await waitFor(() => {
+      expect(bridge.close).toHaveBeenCalledWith({
+        surfaceId: 'dialog-session-switcher',
+        reason: 'outside',
+      })
+    })
+  })
+
+  test('scrolls the selected session switcher option into view', async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    try {
+      bridge.emitRender(sessionSwitcherRequest)
+      await screen.findByRole('listbox', { name: 'Session switcher' })
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+
+      scrollIntoView.mockClear()
+      bridge.emitRender({
+        ...sessionSwitcherRequest,
+        payload: { ...sessionSwitcherRequest.payload, selectedIndex: 0 },
+      })
+
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+      })
+    } finally {
+      scrollIntoView.mockRestore()
+    }
   })
 
   test('scrolls the selected command palette row into view', async () => {

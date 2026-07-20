@@ -305,6 +305,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
     mockSessionManager = {
       sessions: mockSessions,
       activeSessionId: 'session-1',
+      mruSessionIds: [],
       setActiveSessionId: vi.fn(),
       createSession: vi.fn(),
       createBrowserSession: vi.fn(),

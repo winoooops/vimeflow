@@ -354,6 +354,27 @@ const newSessionDialogRequest = {
   },
 } as const
 
+const sessionSwitcherDialogRequest = {
+  surfaceId: 'dialog-session-switcher',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'session-switcher',
+    ariaLabel: 'Session switcher',
+    selectedIndex: 1,
+    items: [
+      { id: 'a', title: 'api', layoutId: 'single', isActive: true },
+      { id: 'b', title: 'docs', agentGlyph: 'C', isActive: false },
+    ],
+    actions: {
+      commitIdPrefix: 'session-switcher:commit-id:',
+      cancel: 'session-switcher:cancel',
+    },
+  },
+} as const
+
 const menuOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=menu'
 const tooltipOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=tooltip'
 
@@ -1723,6 +1744,99 @@ describe('NativeOverlayController', () => {
       accepted: false,
       reason: 'unsupported-platform',
     })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  test('accepts a session switcher dialog payload', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      sessionSwitcherDialogRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    finishOverlayLoad(1)
+
+    await Promise.resolve()
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      sessionSwitcherDialogRequest
+    )
+
+    await acknowledgeOverlayReady(
+      menuWindow,
+      sessionSwitcherDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+  })
+
+  test('rejects a session switcher payload with unbounded items', async () => {
+    const oversizedRequest = {
+      ...sessionSwitcherDialogRequest,
+      payload: {
+        kind: 'dialog',
+        dialog: 'session-switcher',
+        ariaLabel: 'Session switcher',
+        selectedIndex: 1,
+        items: Array.from({ length: 501 }, (_value, index) => ({
+          id: String(index),
+          title: 'x',
+          isActive: false,
+        })),
+        actions: {
+          commitIdPrefix: 'session-switcher:commit-id:',
+          cancel: 'session-switcher:cancel',
+        },
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        oversizedRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  test('rejects a session switcher item with a non-string layout id', async () => {
+    const badLayoutRequest = {
+      ...sessionSwitcherDialogRequest,
+      payload: {
+        ...sessionSwitcherDialogRequest.payload,
+        items: [{ id: 'a', title: 'api', layoutId: 7, isActive: true }],
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        badLayoutRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  test('still rejects an unknown dialog discriminant for a session switcher shaped payload', async () => {
+    const unknownDialogRequest = {
+      ...sessionSwitcherDialogRequest,
+      payload: {
+        kind: 'dialog',
+        dialog: 'mystery',
+        ariaLabel: 'Session switcher',
+        selectedIndex: 1,
+        items: [{ id: 'a', title: 'api', isActive: true }],
+        actions: {
+          commitIdPrefix: 'session-switcher:commit-id:',
+          cancel: 'session-switcher:cancel',
+        },
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        unknownDialogRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 })

@@ -123,7 +123,7 @@ describe('ghostty native parent', () => {
 
   test('visible-dialog selector ignores a dismissed mounted burner', () => {
     expect(DIALOG_SELECTOR).toBe(
-      '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"])'
+      '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),[role="alertdialog"]:not([hidden]):not([aria-hidden="true"]),[data-native-overlay-active="true"]'
     )
   })
 
@@ -2609,6 +2609,80 @@ describe('ghostty native parent', () => {
 
     expect(inputBlocked).toHaveBeenCalledTimes(2)
     expect(addon.focus).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
+  test('an open dialog reported by the dispatch state suppresses ghostty refocus', async () => {
+    const callbacks: {
+      onShortcut?: (
+        key: string,
+        code: string,
+        control: boolean,
+        meta: boolean,
+        alt: boolean,
+        shift: boolean,
+        repeat: boolean
+      ) => void
+    } = {}
+    const surface = { id: 'surface-1' }
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, _resize, _focus, shortcut, _renamePane) => {
+          void _renamePane
+          callbacks.onShortcut = shortcut
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: false,
+      dialogOpen: true,
+    })
+    callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, false)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(addon.focus).not.toHaveBeenCalled()
+
+    // The refocus probe must treat the aria-hidden native placeholder as open.
+    const forwardedScript = webContentsExecuteJavaScript.mock.calls[0]?.[0]
+    expect(forwardedScript).toContain('data-native-overlay-active')
 
     controller.dispose()
   })

@@ -28,6 +28,7 @@ import type {
   NativeOverlayNewSessionCommandOption,
   NativeOverlayNewSessionDialogPayload,
   NativeOverlayRequest,
+  NativeOverlaySessionSwitcherDialogPayload,
   NativeOverlayTooltipRequest,
 } from '@/components/base/floating/nativeOverlay'
 import type { Placement } from '@/components/base/floating/glassSurface'
@@ -70,6 +71,10 @@ type NativeOverlayCommandPaletteRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlayCommandPaletteDialogPayload
 }
 
+type NativeOverlaySessionSwitcherRequest = NativeOverlayDialogRequest & {
+  payload: NativeOverlaySessionSwitcherDialogPayload
+}
+
 const COPY_FEEDBACK_MS = 1300
 
 const nativeOverlayHostBridge = (): NativeOverlayHostBridge | undefined =>
@@ -103,7 +108,9 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
   ((value as { payload?: { dialog?: unknown } }).payload?.dialog ===
     'command-palette' ||
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
-      'new-session')
+      'new-session' ||
+    (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+      'session-switcher')
 
 const isCopyActionResult = (
   value: unknown
@@ -217,6 +224,14 @@ const OVERLAY_COMMAND_PALETTE_FOOTER_KEY_CLASSES =
   'inline-flex min-w-[18px] h-[18px] px-[5px] items-center justify-center ' +
   'rounded-[4px] border font-mono text-[10px] font-semibold ' +
   'bg-surface-container-highest/60 text-on-surface-variant border-outline-variant/60'
+
+const OVERLAY_SESSION_SWITCHER_PANEL_CLASSES =
+  'w-full max-w-sm mx-4 flex flex-col overflow-hidden ' +
+  'bg-surface-container/90 glass-panel rounded-2xl ' +
+  'border border-outline-variant/30 shadow-2xl'
+
+const OVERLAY_SESSION_SWITCHER_MASK_CLASS =
+  '[mask-image:linear-gradient(180deg,transparent_0,black_26px,black_calc(100%-26px),transparent_100%)]'
 
 const OVERLAY_NEW_SESSION_PANEL_CLASSES =
   'w-[min(560px,calc(100vw-32px))] max-h-[min(680px,calc(100vh-48px))] ' +
@@ -764,6 +779,207 @@ const commandButtonClass = (selected: boolean): string =>
       : 'border-outline-variant/40 bg-surface-container-lowest/40 text-on-surface-variant hover:bg-surface-container-high/60'
   }`
 
+// Callback ref: fires when the selected option attaches, keeping it visible.
+const scrollSelectedOptionIntoView = (node: HTMLButtonElement | null): void => {
+  node?.scrollIntoView({ block: 'nearest' })
+}
+
+const SWITCHER_ROW_BASE_CLASSES =
+  'flex w-full items-center gap-[11px] rounded-[9px] px-[10px] py-2 ' +
+  'text-left outline-none transition-colors'
+
+const switcherRowClasses = (selected: boolean): string =>
+  selected
+    ? `${SWITCHER_ROW_BASE_CLASSES} bg-gradient-to-b from-primary/[0.17] to-primary/[0.12]`
+    : `${SWITCHER_ROW_BASE_CLASSES} hover:bg-on-surface/[0.04]`
+
+const switcherGlyphClasses = (selected: boolean): string =>
+  selected
+    ? 'grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] bg-primary/20 text-primary ring-1 ring-inset ring-primary/20'
+    : 'grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] bg-surface-container-high/85 text-on-surface-muted'
+
+const switcherTitleClasses = (selected: boolean): string =>
+  selected
+    ? 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface'
+    : 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface-variant'
+
+// Payload-driven mirror of the sessions feature's LayoutGlyph; unknown or
+// custom layout ids fall back to the bare frame.
+const SwitcherLayoutGlyph = ({
+  layoutId,
+}: {
+  layoutId: string | undefined
+}): ReactElement => {
+  const sw = 1.4
+
+  const line = (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number
+  ): ReactElement => (
+    <line
+      x1={x1}
+      y1={y1}
+      x2={x2}
+      y2={y2}
+      stroke="currentColor"
+      strokeWidth={sw}
+    />
+  )
+
+  return (
+    <svg
+      width="14"
+      height="11"
+      viewBox="0 0 14 11"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect
+        x="1"
+        y="1"
+        width="12"
+        height="9"
+        rx="1.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={sw}
+      />
+      {layoutId === 'vsplit' && line(7, 1.5, 7, 9.5)}
+      {layoutId === 'hsplit' && line(1.5, 5.5, 12.5, 5.5)}
+      {layoutId === 'threeRight' && (
+        <>
+          {line(8, 1.5, 8, 9.5)}
+          {line(8, 5.5, 12.5, 5.5)}
+        </>
+      )}
+      {layoutId === 'quad' && (
+        <>
+          {line(7, 1.5, 7, 9.5)}
+          {line(1.5, 5.5, 12.5, 5.5)}
+        </>
+      )}
+      {layoutId === 'grid3x2' && (
+        <>
+          {line(5.15, 1.5, 5.15, 9.5)}
+          {line(8.85, 1.5, 8.85, 9.5)}
+          {line(1.5, 5.5, 12.5, 5.5)}
+        </>
+      )}
+    </svg>
+  )
+}
+
+const NativeOverlaySessionSwitcher = ({
+  request,
+  close,
+}: {
+  request: NativeOverlaySessionSwitcherRequest
+  close: () => void
+}): ReactElement => {
+  const payload = request.payload
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const [listOverflows, setListOverflows] = useState(false)
+
+  useEffect(() => {
+    const list = listRef.current
+    setListOverflows(list !== null && list.scrollHeight > list.clientHeight)
+  }, [payload.items])
+
+  const dispatchAction = (actionId: string): void => {
+    void nativeOverlayHostBridge()?.action({
+      surfaceId: request.surfaceId,
+      actionId,
+      closeOnSelect: false,
+    })
+  }
+
+  const selectedItem = payload.items.find(
+    (_, index) => index === payload.selectedIndex
+  )
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={payload.ariaLabel}
+      className={OVERLAY_DIALOG_BACKDROP_CLASSES}
+      onMouseDown={(event): void => {
+        if (event.target === event.currentTarget) {
+          event.preventDefault()
+          close()
+        }
+      }}
+    >
+      <div className={OVERLAY_SESSION_SWITCHER_PANEL_CLASSES}>
+        <div className="flex items-center gap-2.5 border-b border-outline-variant/20 px-4 pb-2.5 pt-3">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-on-surface-muted">
+            Switch session
+          </span>
+          <span className="ml-auto font-mono text-[10px] tracking-[0.06em] text-on-surface-muted/70">
+            {payload.items.length} open
+          </span>
+        </div>
+        <ul
+          ref={listRef}
+          role="listbox"
+          aria-label={payload.ariaLabel}
+          aria-activedescendant={
+            selectedItem === undefined
+              ? undefined
+              : `session-switcher-option-${selectedItem.id}`
+          }
+          className={`max-h-[min(480px,60vh)] space-y-[2px] overflow-y-auto p-1.5 ${
+            listOverflows ? OVERLAY_SESSION_SWITCHER_MASK_CLASS : ''
+          }`}
+        >
+          {payload.items.map((item, index) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                role="option"
+                id={`session-switcher-option-${item.id}`}
+                tabIndex={-1}
+                aria-selected={index === payload.selectedIndex}
+                ref={
+                  index === payload.selectedIndex
+                    ? scrollSelectedOptionIntoView
+                    : undefined
+                }
+                className={switcherRowClasses(index === payload.selectedIndex)}
+                onClick={() =>
+                  dispatchAction(`${payload.actions.commitIdPrefix}${item.id}`)
+                }
+              >
+                <span
+                  className={switcherGlyphClasses(
+                    index === payload.selectedIndex
+                  )}
+                >
+                  <SwitcherLayoutGlyph layoutId={item.layoutId} />
+                </span>
+                <span
+                  className={switcherTitleClasses(
+                    index === payload.selectedIndex
+                  )}
+                >
+                  {item.title}
+                </span>
+                {item.isActive && (
+                  <span className="shrink-0 rounded-full bg-primary/15 px-[7px] py-[2px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-primary">
+                    active
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 const NativeOverlayNewSession = ({
   request,
   close,
@@ -1251,6 +1467,15 @@ export const NativeOverlayHost = ({
         return (
           <NativeOverlayNewSession
             request={request as NativeOverlayNewSessionRequest}
+            close={close}
+          />
+        )
+      }
+
+      if (request.payload.dialog === 'session-switcher') {
+        return (
+          <NativeOverlaySessionSwitcher
+            request={request as NativeOverlaySessionSwitcherRequest}
             close={close}
           />
         )
