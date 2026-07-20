@@ -83,6 +83,7 @@ const request = (
 })
 
 const finding = (o: Partial<AgentReviewFinding> = {}): AgentReviewFinding => ({
+  ordinal: 1,
   scope: 'line',
   path: 'a.ts',
   side: 'additions',
@@ -344,7 +345,7 @@ describe('useAgentReview', () => {
     mount()
     await emit(
       event({
-        findings: [finding({ text: 'Valid finding.' })],
+        findings: [finding({ ordinal: 2, text: 'Valid finding.' })],
         omittedFindingCount: 2,
       })
     )
@@ -357,6 +358,14 @@ describe('useAgentReview', () => {
     expect(reviewLevelNotes('owner').map((note) => note.text)).toEqual([
       '2 malformed reviewer findings were omitted.',
     ])
+
+    expect(getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(2)?.kind).toBe(
+      'anchored'
+    )
+
+    expect(
+      getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(1)
+    ).toBeUndefined()
   })
 
   test('a clean review (empty findings) places nothing and clears the request', async () => {
@@ -409,7 +418,7 @@ describe('finding-thread transition (VIM-304 PR-3)', () => {
       event({
         findings: [
           finding(), // line 42, in-hunk → anchored, ordinal 1
-          finding({ path: 'other.ts' }), // off-snapshot → review-level, ordinal 2
+          finding({ ordinal: 2, path: 'other.ts' }), // off-snapshot → review-level, ordinal 2
         ],
       })
     )
