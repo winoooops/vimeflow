@@ -6,6 +6,7 @@ import {
   type ReviewCommentCategory,
 } from '../hooks/useFeedbackBatch'
 import type { ReviewedFile } from './pendingReviewRequests'
+import delegatedReviewPrompt from '../prompts/delegated-review.prompt.md?raw'
 
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -231,14 +232,9 @@ export const formatReviewRequest = (
     `> Delegate a code review of ${files.length === 1 ? 'this' : 'these'} ${files.length} change${files.length === 1 ? '' : 's'}:`,
     ...groups,
     '>',
-    '> Anchor each finding with diff-side line numbers: "additions" uses new-file lines, "deletions" uses old-file lines.',
-    '> In the JSON block, use the repo-relative path before the parentheses as each finding path.',
-    '> category is one of: "bug", "suggestion", "change", "question". scope is "line", "range", or "file".',
-    '> When done, end your reply with this exact block — echo the nonce verbatim and self-report the reviewer name.',
-    '> Also give a one-line overview in your normal reply (not in the block), especially if there is little to report.',
-    '> <<<VIMEFLOW_REVIEW',
-    `> {"v":1,"nonce":"${nonce}","reviewer":"<your name>","findings":[{"path":"<file>","scope":"line","side":"additions","line":1,"category":"bug","text":"..."}]}`,
-    '> VIMEFLOW_REVIEW>>>',
+    delegatedReviewPrompt
+      .trimEnd()
+      .replace('{{NONCE}}', () => stripControls(nonce)),
   ].join('\n')
 }
 

@@ -115,7 +115,7 @@ const resolveFindingEntry = (
  * sentinel or a review we did not ask for cannot mutate the diff. Each finding resolves
  * against the request's diff snapshot: line/range in a hunk → anchored; line/range
  * out of range → file-level; path not in the snapshot → a review-level note
- * (never dropped). A malformed event degrades to one review-level note. The
+ * (never dropped). A malformed event degrades to one concise review-level note. The
  * request is cleared after processing so a replay is a no-op. It never throws.
  */
 export const useAgentReview = ({
@@ -198,7 +198,7 @@ export const useAgentReview = ({
         addReviewLevelNote(ownerKey, {
           commentId: nextCommentId(),
           reviewer,
-          text: event.rawText,
+          text: 'The reviewer returned an invalid structured review. Request another review to retry.',
           nonce,
         })
         clearPendingReviewRequest(event.nonce)
@@ -267,6 +267,15 @@ export const useAgentReview = ({
           commentId: nextCommentId(),
           reviewer,
           text: `${omittedCount} additional reviewer findings were omitted because this review exceeded the ${REVIEWER_FINDING_SOFT_CAP}-finding display limit.`,
+          nonce,
+        })
+      }
+
+      if (event.omittedFindingCount > 0) {
+        addReviewLevelNote(ownerKey, {
+          commentId: nextCommentId(),
+          reviewer,
+          text: `${event.omittedFindingCount} malformed reviewer finding${event.omittedFindingCount === 1 ? ' was' : 's were'} omitted.`,
           nonce,
         })
       }

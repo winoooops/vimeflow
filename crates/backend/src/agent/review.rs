@@ -19,15 +19,14 @@ pub(crate) enum AgentReviewOutcome {
     // a parseable-but-invalid object so the degrade note can be gated (nonce) and
     // named (reviewer); either may be None when unrecoverable.
     Malformed {
-        raw: String,
         nonce: Option<String>,
         reviewer: Option<String>,
     },
     Structured {
-        raw: String,
         nonce: String,
         reviewer: String,
         findings: Vec<AgentReviewFinding>, // may be empty (a clean review)
+        omitted_finding_count: u32,
     },
 }
 
@@ -36,7 +35,7 @@ struct BlockDto {
     v: Option<i64>,
     nonce: Option<String>,
     reviewer: Option<String>,
-    findings: Option<Vec<FindingDto>>,
+    findings: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Deserialize)]
@@ -61,20 +60,21 @@ pub(crate) fn extract_agent_review(reply_text: &str) -> Option<AgentReviewOutcom
     let Some(rel) = reply_text[after..].find(CLOSE) else {
         // open sentinel, no close → truncated
         let json = crate::agent::reply::normalize_reply_json(reply_text[after..].trim());
-        return Some(malformed(reply_text[open..].to_string(), &json));
+        return Some(malformed(&json));
     };
     let close = after + rel;
-    let raw = reply_text[open..close + CLOSE.len()].to_string();
     let json = crate::agent::reply::normalize_reply_json(reply_text[after..close].trim());
 
     match validate(&json) {
-        Some((nonce, reviewer, findings)) => Some(AgentReviewOutcome::Structured {
-            raw,
-            nonce,
-            reviewer,
-            findings,
-        }),
-        None => Some(malformed(raw, &json)),
+        Some((nonce, reviewer, findings, omitted_finding_count)) => {
+            Some(AgentReviewOutcome::Structured {
+                nonce,
+                reviewer,
+                findings,
+                omitted_finding_count,
+            })
+        }
+        None => Some(malformed(&json)),
     }
 }
 
@@ -83,26 +83,27 @@ pub(crate) fn map_review_outcome(
     session_id: &str,
     outcome: AgentReviewOutcome,
 ) -> AgentReviewEvent {
-    let (raw, nonce, reviewer, findings) = match outcome {
+    let (nonce, reviewer, findings, omitted_finding_count) = match outcome {
         AgentReviewOutcome::Structured {
-            raw,
             nonce,
             reviewer,
             findings,
-        } => (raw, Some(nonce), Some(reviewer), Some(findings)),
-        AgentReviewOutcome::Malformed {
-            raw,
-            nonce,
-            reviewer,
-        } => (raw, nonce, reviewer, None),
+            omitted_finding_count,
+        } => (
+            Some(nonce),
+            Some(reviewer),
+            Some(findings),
+            omitted_finding_count,
+        ),
+        AgentReviewOutcome::Malformed { nonce, reviewer } => (nonce, reviewer, None, 0),
     };
 
     AgentReviewEvent {
         session_id: session_id.to_string(),
         nonce,
         reviewer,
-        raw_text: raw,
         findings,
+        omitted_finding_count,
     }
 }
 
@@ -114,15 +115,14 @@ fn best_effort_field(json: &str, key: &str) -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
-fn malformed(raw: String, json: &str) -> AgentReviewOutcome {
+fn malformed(json: &str) -> AgentReviewOutcome {
     AgentReviewOutcome::Malformed {
-        raw,
         nonce: best_effort_field(json, "nonce"),
         reviewer: best_effort_field(json, "reviewer"),
     }
 }
 
-fn validate(json: &str) -> Option<(String, String, Vec<AgentReviewFinding>)> {
+fn validate(json: &str) -> Option<(String, String, Vec<AgentReviewFinding>, u32)> {
     let dto: BlockDto = serde_json::from_str(json).ok()?;
     if dto.v != Some(1) {
         return None;
@@ -131,12 +131,15 @@ fn validate(json: &str) -> Option<(String, String, Vec<AgentReviewFinding>)> {
     let reviewer = dto.reviewer.filter(|s| !s.is_empty())?;
     let raw_findings = dto.findings?; // may be empty
 
-    let mut findings = Vec::with_capacity(raw_findings.len());
-    for f in raw_findings {
-        findings.push(validate_finding(f)?);
-    }
+    let finding_count = raw_findings.len();
+    let findings: Vec<_> = raw_findings
+        .into_iter()
+        .filter_map(|value| serde_json::from_value(value).ok())
+        .filter_map(validate_finding)
+        .collect();
+    let omitted_finding_count = u32::try_from(finding_count - findings.len()).unwrap_or(u32::MAX);
 
-    Some((nonce, reviewer, findings))
+    Some((nonce, reviewer, findings, omitted_finding_count))
 }
 
 fn positive_u32(n: Option<i64>) -> Option<u32> {
@@ -261,6 +264,26 @@ mod tests {
     }
 
     #[test]
+    fn invalid_findings_are_omitted_without_discarding_valid_findings() {
+        let t = block(
+            r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[{"scope":"range","path":"a.ts","side":"additions","line":11,"category":"change","text":"missing range fields"},{"scope":"line","path":"a.ts","side":"additions","line":42,"category":"bug","text":"valid"},{"scope":"line","path":"b.ts","side":"deletions","line":"8","category":"bug","text":"wrong line type"}]}"#,
+        );
+
+        match extract_agent_review(&t) {
+            Some(AgentReviewOutcome::Structured {
+                findings,
+                omitted_finding_count,
+                ..
+            }) => {
+                assert_eq!(findings.len(), 1);
+                assert_eq!(findings[0].path, "a.ts");
+                assert_eq!(omitted_finding_count, 2);
+            }
+            other => panic!("expected Structured, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn empty_findings_is_clean_structured() {
         let t = block(r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[]}"#);
         assert!(matches!(
@@ -270,17 +293,24 @@ mod tests {
     }
 
     #[test]
-    fn schema_violations_are_malformed() {
+    fn mapped_event_reports_omitted_finding_count() {
+        let outcome = extract_agent_review(&block(
+            r#"{"v":1,"nonce":"n","reviewer":"codex","findings":["invalid"]}"#,
+        ))
+        .expect("review outcome");
+
+        let event = map_review_outcome("pty-1", outcome);
+
+        assert_eq!(event.omitted_finding_count, 1);
+        assert_eq!(event.findings, Some(Vec::new()));
+    }
+
+    #[test]
+    fn block_schema_violations_are_malformed() {
         let cases = [
             r#"{"v":2,"nonce":"n","reviewer":"r","findings":[]}"#, // bad version
             r#"{"v":1,"nonce":"","reviewer":"r","findings":[]}"#,  // empty nonce
             r#"{"v":1,"nonce":"n","reviewer":"","findings":[]}"#,  // empty reviewer
-            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"line","path":"a","category":"bug","text":"x"}]}"#, // line missing side/line
-            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"range","path":"a","side":"additions","startLine":9,"endLine":2,"category":"bug","text":"x"}]}"#, // start > end
-            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"file","path":"a","category":"nope","text":"x"}]}"#, // bad category
-            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"file","category":"bug","text":"x"}]}"#, // file missing path
-            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"line","path":"a","side":"sideways","line":1,"category":"bug","text":"x"}]}"#, // bad side
-            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"line","path":"a","side":"additions","line":0,"category":"bug","text":"x"}]}"#, // zero line
         ];
         for c in cases {
             assert!(
@@ -294,10 +324,33 @@ mod tests {
     }
 
     #[test]
+    fn invalid_finding_schemas_are_omitted() {
+        let cases = [
+            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"line","path":"a","category":"bug","text":"x"}]}"#, // line missing side/line
+            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"range","path":"a","side":"additions","startLine":9,"endLine":2,"category":"bug","text":"x"}]}"#, // start > end
+            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"file","path":"a","category":"nope","text":"x"}]}"#, // bad category
+            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"file","category":"bug","text":"x"}]}"#, // file missing path
+            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"line","path":"a","side":"sideways","line":1,"category":"bug","text":"x"}]}"#, // bad side
+            r#"{"v":1,"nonce":"n","reviewer":"r","findings":[{"scope":"line","path":"a","side":"additions","line":0,"category":"bug","text":"x"}]}"#, // zero line
+        ];
+        for c in cases {
+            assert!(
+                matches!(
+                    extract_agent_review(&block(c)),
+                    Some(AgentReviewOutcome::Structured {
+                        ref findings,
+                        omitted_finding_count: 1,
+                        ..
+                    }) if findings.is_empty()
+                ),
+                "expected one omitted finding for {c}"
+            );
+        }
+    }
+
+    #[test]
     fn malformed_recovers_best_effort_nonce_and_reviewer() {
-        let t = block(
-            r#"{"v":1,"nonce":"keep","reviewer":"codex","findings":[{"scope":"file","category":"nope","text":"x"}]}"#,
-        );
+        let t = block(r#"{"v":2,"nonce":"keep","reviewer":"codex","findings":[]}"#);
         assert!(matches!(
             extract_agent_review(&t),
             Some(AgentReviewOutcome::Malformed { nonce: Some(n), reviewer: Some(r), .. })
