@@ -410,6 +410,8 @@ pub struct AgentReviewEvent {
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct AgentReviewFinding {
+    /// Original 1-based position in the review block's findings array.
+    pub ordinal: u32,
     pub scope: ReviewFindingScope,
     pub path: String,
     /// Present for line / range scope.
