@@ -325,6 +325,17 @@ test('formatReviewRequest names the scope, coordinate convention, and block (VIM
   expect(payload).toContain('VIMEFLOW_REVIEW>>>')
 })
 
+test('formatReviewRequest documents valid line, range, file, and clean schemas', () => {
+  const payload = formatReviewRequest(reviewedFiles, 'r3v13w')
+
+  expect(payload).toContain('"scope":"line"')
+  expect(payload).toContain('"line":42')
+  expect(payload).toContain('"scope":"range"')
+  expect(payload).toContain('"startLine":88,"endLine":94')
+  expect(payload).toContain('"scope":"file"')
+  expect(payload).toContain('"findings":[]')
+})
+
 test('formatReviewRequest can include absolute prompt paths while preserving JSON paths', () => {
   const payload = formatReviewRequest(
     [

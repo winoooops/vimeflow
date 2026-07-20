@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-15
-ref_count: 12
+last_updated: 2026-07-20
+ref_count: 13
 ---
 
 # Parser Resilience
@@ -338,3 +338,12 @@ true` and drop the chunk.
 - **Finding:** `extract_agent_reply` selected the last complete block by finding the rightmost close marker and then the nearest preceding open marker. If a valid final JSON payload mentioned `<<<VIMEFLOW_REPLY` inside a text field, that embedded substring became the candidate opener and the parser sliced malformed tail JSON, losing an otherwise valid reply.
 - **Fix:** Replaced the two-sided `rfind` heuristic with a forward scan that pairs each open marker with its nearest following close, records complete blocks, and validates the last recorded block. Added a regression test where the final structured reply text quotes the open marker.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Typed finding-array deserialization let one malformed child discard valid siblings
+
+- **Source:** local-codex | VIM-370 pre-PR review | 2026-07-20
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/review.rs`
+- **Finding:** The delegated-review block used `Vec<FindingDto>`, so Serde rejected the entire block when any array member was not an object or carried a wrong-typed field. One malformed range could therefore discard unrelated valid findings and force the frontend to render the whole response as an off-file note.
+- **Fix:** Deserialize finding members as `serde_json::Value`, validate each member independently, retain valid siblings, and report the omitted-member count through the typed review event. Regression coverage mixes missing range fields and a wrong-typed line with a valid line finding, proving only the malformed members are omitted.
+- **Commit:** same commit as this entry

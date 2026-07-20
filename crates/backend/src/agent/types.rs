@@ -381,8 +381,8 @@ pub enum AgentReplyStatus {
 }
 
 /// A delegated reviewer's findings for the current diff (VIM-304).
-/// `findings: None` is the malformed marker; `raw_text` carries the full block
-/// so the frontend can degrade to a plain-text reviewer note.
+/// `findings: None` is the malformed marker. Invalid individual findings are
+/// omitted while valid siblings remain available.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -396,11 +396,11 @@ pub struct AgentReviewEvent {
     /// The reviewer's self-reported name; best-effort on malformed (the frontend
     /// falls back to a label).
     pub reviewer: Option<String>,
-    /// The full block text — the frontend degrade note.
-    pub raw_text: String,
     /// Typed findings when the block is schema-valid (may be empty = clean
     /// review); None is the malformed marker.
     pub findings: Option<Vec<AgentReviewFinding>>,
+    /// Schema-invalid entries omitted while parsing an otherwise valid block.
+    pub omitted_finding_count: u32,
 }
 
 /// One self-anchoring review finding (VIM-304).
