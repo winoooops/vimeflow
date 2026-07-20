@@ -278,3 +278,18 @@ to persistent state through a separate, explicit path.
   the initial selected effect pass. Added regression coverage for moving back
   to the file that was selected on mount.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Overlay remount reset the selected-row scroll guard
+
+- **Source:** github-claude | PR #713 round 2 | 2026-07-20
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The unpinned changed-files overlay unmounted the list while
+  hidden, so a keyboard-selected file chosen while hidden became the fresh
+  mount's initial selection. Revealing the default overlay then skipped the
+  selected-row scroll instead of showing the current file.
+- **Fix:** Moved the initial-scroll suppression state to
+  `ChangedFilesListSurface`, preserving it across overlay reveal remounts while
+  keeping standalone list behavior unchanged. Added regression coverage for
+  hidden n/p selection followed by overlay reveal.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

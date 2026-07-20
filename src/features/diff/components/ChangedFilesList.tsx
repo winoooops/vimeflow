@@ -18,6 +18,12 @@ export interface ChangedFilesListProps {
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
   pinned?: boolean
   onTogglePinned?: () => void
+  scrollState?: ChangedFilesListScrollState
+}
+
+export interface ChangedFilesListScrollState {
+  initialSelectionKeyRef: RefObject<string | null>
+  hasObservedPostMountSelectionRef: RefObject<boolean>
 }
 
 interface ChangedFilesListSurfaceProps {
@@ -63,6 +69,11 @@ const getDirectory = (path: string): string => {
 
   return parts.length > 1 ? parts.slice(0, -1).join('/') : ''
 }
+
+const getSelectionKey = (
+  selectedFile: { path: string; staged: boolean } | null
+): string | null =>
+  selectedFile === null ? null : `${selectedFile.path}:${selectedFile.staged}`
 
 const statusTone = (
   status: ChangedFile['status']
@@ -290,6 +301,7 @@ export const ChangedFilesList = ({
   onAddFileComment = undefined,
   pinned = false,
   onTogglePinned = undefined,
+  scrollState = undefined,
 }: ChangedFilesListProps): ReactElement => {
   const totals = sumLines(files)
   const commentShortcut = bindingFor('diff-comment-file')
@@ -297,11 +309,16 @@ export const ChangedFilesList = ({
   const commentShortcutInput = chordToShortcutInput(commentShortcut)
   const commentAriaKeyshortcuts = chordToAriaShortcut(commentShortcut)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const selectionKey = getSelectionKey(selectedFile)
+  const defaultInitialSelectionKeyRef = useRef<string | null>(selectionKey)
+  const defaultHasObservedPostMountSelectionRef = useRef(selectionKey === null)
 
-  const selectionKey =
-    selectedFile === null ? null : `${selectedFile.path}:${selectedFile.staged}`
-  const initialSelectionKeyRef = useRef<string | null>(selectionKey)
-  const hasObservedPostMountSelectionRef = useRef(selectionKey === null)
+  const initialSelectionKeyRef =
+    scrollState?.initialSelectionKeyRef ?? defaultInitialSelectionKeyRef
+
+  const hasObservedPostMountSelectionRef =
+    scrollState?.hasObservedPostMountSelectionRef ??
+    defaultHasObservedPostMountSelectionRef
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -375,6 +392,18 @@ export const ChangedFilesListSurface = ({
   onSelectFile,
   onAddFileComment,
 }: ChangedFilesListSurfaceProps): ReactElement => {
+  const surfaceSelectionKey = getSelectionKey(selectedFile)
+  const initialSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
+  const hasObservedPostMountSelectionRef = useRef(selectedFile === null)
+  const previousSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
+
+  useEffect(() => {
+    if (previousSelectionKeyRef.current !== surfaceSelectionKey) {
+      hasObservedPostMountSelectionRef.current = true
+      previousSelectionKeyRef.current = surfaceSelectionKey
+    }
+  }, [surfaceSelectionKey])
+
   const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
     const nextTarget = event.relatedTarget
 
@@ -395,6 +424,10 @@ export const ChangedFilesListSurface = ({
       selectedFile={selectedFile}
       pinned={pinned}
       onTogglePinned={onTogglePinned}
+      scrollState={{
+        initialSelectionKeyRef,
+        hasObservedPostMountSelectionRef,
+      }}
       onSelectFile={onSelectFile}
       onAddFileComment={onAddFileComment}
     />
