@@ -358,9 +358,11 @@ describe('useAgentReview', () => {
     expect(reviewLevelNotes('owner').map((note) => note.text)).toEqual([
       '2 malformed reviewer findings were omitted.',
     ])
+
     expect(getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(2)?.kind).toBe(
       'anchored'
     )
+
     expect(
       getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(1)
     ).toBeUndefined()
