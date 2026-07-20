@@ -6,6 +6,10 @@ import { Group } from './Group'
 import { isOpenSession } from '../utils/sessionStatus'
 import { pickNextVisibleSessionId } from '../utils/pickNextVisibleSessionId'
 import { mediateReorder } from '../utils/mediateReorder'
+import {
+  BUILTIN_PANE_LAYOUT_REGISTRY,
+  type PaneLayoutRegistry,
+} from '../../terminal/layout-registry'
 
 export interface ListProps {
   sessions: Session[]
@@ -14,6 +18,7 @@ export interface ListProps {
   onRemoveSession?: (sessionId: string) => SessionCloseResult
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
+  layoutRegistry?: PaneLayoutRegistry
 }
 
 export const List = ({
@@ -23,6 +28,7 @@ export const List = ({
   onRemoveSession = undefined,
   onRenameSession = undefined,
   onReorderSessions = undefined,
+  layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
 }: ListProps): ReactElement => {
   // Active = open statuses (running/paused) per the canonical predicate
   // in pickNextVisibleSessionId.ts. Recent = the complement so any
@@ -138,6 +144,7 @@ export const List = ({
               onClick={onSessionClick}
               onRemove={cardRemoveSession}
               onRename={onRenameSession}
+              layoutRegistry={layoutRegistry}
             />
           ))}
         </Group>
@@ -155,6 +162,7 @@ export const List = ({
                   onClick={onSessionClick}
                   onRemove={cardRemoveSession}
                   onRename={onRenameSession}
+                  layoutRegistry={layoutRegistry}
                 />
               ))}
             </Group>

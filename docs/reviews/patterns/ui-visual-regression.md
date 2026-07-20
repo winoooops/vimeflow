@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-20
-ref_count: 18
+ref_count: 19
 ---
 
 # UI Visual Regression
@@ -368,4 +368,16 @@ test case for the state that triggers the collision.
 - **Fix:** Moved the visible background and overflow clipping onto the isolated
   drag handle while preserving its scoped drag area, and added test assertions
   for the rounded clipped preview surface.
+  
+### 30. File comments expanded into the dock
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** HIGH
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The file-comment section was still constrained by a nested
+  scrollbar, which hid longer review threads inside the already scrollable diff
+  dock and made multi-comment files harder to scan.
+- **Fix:** Let the file-level comment stack expand naturally in the dock-level
+  scroll container, with component coverage that asserts the nested height and
+  overflow clamps stay absent.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

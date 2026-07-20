@@ -460,7 +460,7 @@ describe('usePushWorkspaceGrouping', () => {
     expect(pushWorkspaceShape).toHaveBeenCalledTimes(1)
   })
 
-  test('final-shape request pushes immediately and cancels pending drift', () => {
+  test('final-shape request flushes renderer state and cancels pending drift', async () => {
     vi.useFakeTimers()
 
     const { rerender } = renderHook(
@@ -488,6 +488,8 @@ describe('usePushWorkspaceGrouping', () => {
     expect(pushWorkspaceShape).not.toHaveBeenCalled()
 
     finalShapeCallbacks[0]()
+    await Promise.resolve()
+    await Promise.resolve()
     expect(pushWorkspaceShape).toHaveBeenCalledTimes(1)
     expect(pushWorkspaceShape).toHaveBeenCalledWith(
       expect.objectContaining({

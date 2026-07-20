@@ -37,6 +37,12 @@ export const createApplicationMenuTemplate = (
 export const installApplicationEditMenu = (
   platform = process.platform
 ): void => {
+  if (platform === 'linux') {
+    Menu.setApplicationMenu(null)
+
+    return
+  }
+
   const template = createApplicationMenuTemplate(platform)
   if (template.length === 0) {
     return
