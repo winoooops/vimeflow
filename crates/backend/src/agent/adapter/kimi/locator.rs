@@ -28,7 +28,8 @@
 //! On macOS (no `/proc`, `proc_root == None`) steps 1-2 cleanly skip and
 //! resolution falls through to the index / bucket fallbacks.
 
-use std::io::{BufRead, BufReader};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -57,6 +58,7 @@ const KIMI_INDEX_FRESHNESS_SLACK: Duration = Duration::from_secs(3);
 // have been created BY this process (session creation lags the fork slightly).
 // Paired with `KIMI_INDEX_FRESHNESS_SLACK` as the lower (clock-skew) bound.
 const KIMI_OWN_WINDOW: Duration = Duration::from_secs(30);
+const KIMI_RESUME_LOG_TAIL_BYTES: u64 = 64 * 1024;
 
 /// One `session_index.jsonl` line.
 #[derive(Deserialize)]
@@ -96,6 +98,7 @@ pub(crate) struct KimiLocator {
     // Plan-usage (`/usages`) state, shared with the decoder. The fetch is
     // gated on user consent and runs at most once per new main-agent turn.
     usage: Arc<Mutex<UsageState>>,
+    resume_evidence: Arc<Mutex<HashMap<String, SystemTime>>>,
 }
 
 /// Out-of-band kimi plan-usage state behind the locator's shared Arc. The
@@ -160,6 +163,7 @@ impl KimiLocator {
             resolved_session_dir: Arc::new(Mutex::new(None)),
             resolved_cwd: Arc::new(Mutex::new(None)),
             usage: Arc::new(Mutex::new(UsageState::default())),
+            resume_evidence: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -478,7 +482,7 @@ impl KimiLocator {
                     let owned_at = candidate
                         .created
                         .filter(|created| created_in_own_window(*created, start))
-                        .or_else(|| session_resume_at(&candidate.session_dir, start))?;
+                        .or_else(|| self.session_resume_at(&candidate.session_dir, start))?;
                     Some((
                         candidate.work_len,
                         owned_at,
@@ -582,6 +586,29 @@ impl KimiLocator {
             agent_session_id,
             resolved_directory: None,
         })
+    }
+
+    fn session_resume_at(
+        &self,
+        session_dir: &str,
+        process_start: SystemTime,
+    ) -> Option<SystemTime> {
+        if let Some(cached) = self
+            .resume_evidence
+            .lock()
+            .expect("resume_evidence lock")
+            .get(session_dir)
+            .copied()
+        {
+            return Some(cached);
+        }
+
+        let resumed = session_resume_at(session_dir, process_start)?;
+        self.resume_evidence
+            .lock()
+            .expect("resume_evidence lock")
+            .insert(session_dir.to_string(), resumed);
+        Some(resumed)
     }
 }
 
@@ -702,6 +729,10 @@ fn created_in_own_window(created: SystemTime, start: SystemTime) -> bool {
     created >= lower && created <= start + KIMI_OWN_WINDOW
 }
 
+fn resumed_in_own_window(resumed: SystemTime, start: SystemTime) -> bool {
+    resumed >= start && resumed <= start + KIMI_OWN_WINDOW
+}
+
 /// Absolute distance between two instants, regardless of order.
 fn abs_duration(a: SystemTime, b: SystemTime) -> Duration {
     a.duration_since(b)
@@ -746,7 +777,19 @@ fn session_resume_at(session_dir: &str, process_start: SystemTime) -> Option<Sys
     let log = PathBuf::from(session_dir)
         .join("logs")
         .join("kimi-code.log");
-    let reader = BufReader::new(std::fs::File::open(log).ok()?);
+    let mut file = std::fs::File::open(log).ok()?;
+    let len = file.metadata().ok()?.len();
+    let tail_start = len.saturating_sub(KIMI_RESUME_LOG_TAIL_BYTES);
+    if tail_start > 0 {
+        file.seek(SeekFrom::Start(tail_start)).ok()?;
+    }
+
+    let mut reader = BufReader::new(file);
+    if tail_start > 0 {
+        let mut partial = Vec::new();
+        reader.read_until(b'\n', &mut partial).ok()?;
+    }
+
     reader
         .lines()
         .map_while(Result::ok)
@@ -756,7 +799,7 @@ fn session_resume_at(session_dir: &str, process_start: SystemTime) -> Option<Sys
             let timestamp = chrono::DateTime::parse_from_rfc3339(raw).ok()?;
             let millis = u64::try_from(timestamp.timestamp_millis()).ok()?;
             let resumed = SystemTime::UNIX_EPOCH + Duration::from_millis(millis);
-            created_in_own_window(resumed, process_start).then_some(resumed)
+            resumed_in_own_window(resumed, process_start).then_some(resumed)
         })
         .min_by_key(|resumed| abs_duration(*resumed, process_start))
 }
@@ -1229,6 +1272,79 @@ mod tests {
         let located = locator
             .locate(work.path(), "pty-1")
             .expect("resumed session resolves");
+        assert_eq!(located.status_path, resumed_wire);
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_resumed"));
+    }
+
+    #[test]
+    fn proc_index_rejects_prior_process_resume_log_entry() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let proc_root = tempfile::tempdir().expect("proc root");
+
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        let process_start_ms = (btime + 50) * 1000;
+        write_proc_btime(proc_root.path(), btime);
+        write_proc_stat(proc_root.path(), pid, 50 * hz);
+
+        let stale_dir = session_under(kimi_home.path(), "wd_a", "session_stale");
+        write_wire_created(&stale_dir, process_start_ms - 3_600_000);
+        let log = stale_dir.join("logs").join("kimi-code.log");
+        std::fs::create_dir_all(log.parent().expect("log parent")).expect("mkdir log");
+        std::fs::write(
+            log,
+            b"2023-11-14T22:14:08.500Z INFO  session resume  app_version=0.27.0\n",
+        )
+        .expect("write stale session log");
+        write_index(
+            kimi_home.path(),
+            &[("session_stale", &stale_dir, work.path())],
+        );
+
+        let locator = locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        assert!(
+            locator.locate(work.path(), "pty-1").is_err(),
+            "a prior process's resume diagnostic in the clock-skew slack must not bind"
+        );
+    }
+
+    #[test]
+    fn proc_index_finds_resume_from_bounded_log_tail() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let proc_root = tempfile::tempdir().expect("proc root");
+
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        let process_start_ms = (btime + 50) * 1000;
+        write_proc_btime(proc_root.path(), btime);
+        write_proc_stat(proc_root.path(), pid, 50 * hz);
+
+        let resumed_dir = session_under(kimi_home.path(), "wd_a", "session_resumed");
+        let resumed_wire = write_wire_created(&resumed_dir, process_start_ms - 3_600_000);
+        let log = resumed_dir.join("logs").join("kimi-code.log");
+        std::fs::create_dir_all(log.parent().expect("log parent")).expect("mkdir log");
+        let old_prefix =
+            "2023-11-14T22:14:08.500Z INFO  session resume  app_version=0.27.0\n".repeat(1200);
+        std::fs::write(
+            log,
+            format!(
+                "{old_prefix}2023-11-14T22:14:10.000Z INFO  session resume  app_version=0.27.0\n",
+            ),
+        )
+        .expect("write long session log");
+        write_index(
+            kimi_home.path(),
+            &[("session_resumed", &resumed_dir, work.path())],
+        );
+
+        let locator = locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        let located = locator
+            .locate(work.path(), "pty-1")
+            .expect("tail resume evidence resolves");
         assert_eq!(located.status_path, resumed_wire);
         assert_eq!(located.agent_session_id.as_deref(), Some("session_resumed"));
     }

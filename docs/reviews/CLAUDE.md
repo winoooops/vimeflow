@@ -55,14 +55,15 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 32       | 25   | 2026-07-18   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
-| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 9        | 3    | 2026-07-13   |
+| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 10       | 4    | 2026-07-20   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 88       | 42   | 2026-07-09   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 6    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 96       | 92   | 2026-07-19   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 87   | 2026-07-19   |
-| [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 1    | 2026-07-18   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 88   | 2026-07-19   |
+| [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
+| [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 1        | 0    | 2026-07-20   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
@@ -87,7 +88,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 31       | 20   | 2026-07-20   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
-| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 15   | 2026-07-19   |
+| [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 16   | 2026-07-19   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 23       | 12   | 2026-07-15   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 2        | 0    | 2026-06-19   |
@@ -99,7 +100,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 18       | 11   | 2026-07-09   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 2        | 1    | 2026-06-19   |
-| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 10   | 2026-07-05   |
+| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 11   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |

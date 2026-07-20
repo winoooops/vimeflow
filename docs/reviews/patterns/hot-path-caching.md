@@ -2,8 +2,8 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-07-13
-ref_count: 3
+last_updated: 2026-07-20
+ref_count: 4
 ---
 
 # Hot-Path Caching
@@ -102,4 +102,13 @@ feature.
 - **File:** `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** `recordPaneAgentLauncher` reloaded aliases and settings for every submitted non-canonical command while a pane was still generic. Ordinary shell usage such as repeated `git` commands therefore paid disk-backed IPC work even though no agent launcher could be recorded.
 - **Fix:** Added a short-lived per-launcher alias-miss cache so repeated ordinary command tokens bypass alias/settings reloads after the first miss. Canonical launcher detection remains synchronous, and unknown non-canonical tokens still reload aliases on first sight so newly configured aliases can be captured.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. Kimi resumed-session lookup rescanned complete logs on refresh
+
+- **Source:** github-claude + github-codex-connector | PR #715 round 1 | 2026-07-20
+- **Severity:** MEDIUM / P2
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** Resumed Kimi sessions used `session_resume_at` during each 750 ms status refresh, and the helper reread `logs/kimi-code.log` from the beginning for every matching index candidate. Large persisted logs therefore created repeated synchronous disk I/O and parsing on the locator hot path.
+- **Fix:** Added per-locator caching for positive resume evidence and bounded the log scan to the startup tail before parsing resume diagnostics. Misses remain retryable, while successful resumed-session ownership no longer rescans the log on subsequent refreshes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
