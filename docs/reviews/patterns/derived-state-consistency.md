@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-07-20
-ref_count: 25
+ref_count: 26
 ---
 
 # Derived State Consistency
@@ -444,4 +444,19 @@ base data is technically "correct."
   tabs. Close/rename paths resolve the active tab from the all-tabs list, while
   `:next`, `:previous`, `:tabn`, `:tabp`, and `:goto` use the navigable list.
   Added command-builder tests for exited active tabs and live-only navigation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Session island retained compact batch start after full-width expansion
+
+- **Source:** github-claude | PR #714 round 2 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** While a Recent/completed session was active, the session island
+  retained the previous open-session batch start by clamping it to the current
+  maximum, but did not realign it to the current `batchSize`. A compact-to-full
+  chrome transition could therefore render a non-canonical slice such as
+  sessions 6-15 instead of the documented 1-10 or 11-20 batches.
+- **Fix:** Clamp the retained batch start and then floor it to the current
+  batch-size boundary in the Recent-session path. Added a rerender regression
+  test that expands from five visible indicators to ten while Recent is active.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

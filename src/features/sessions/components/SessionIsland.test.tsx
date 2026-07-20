@@ -233,6 +233,52 @@ describe('SessionIsland', () => {
     expect(screen.getAllByRole('button')).toHaveLength(5)
   })
 
+  test('realigns a retained Recent batch when compact chrome expands', () => {
+    const allSessions = sessions(15)
+
+    const { rerender } = render(
+      <SessionIsland
+        sessions={[...allSessions, recentSession()]}
+        activeSessionId="session-6"
+        displayMode="numbers"
+        maxVisibleSessions={5}
+        onSessionSelect={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('5')).not.toBeInTheDocument()
+    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.getByText('10')).toBeInTheDocument()
+
+    rerender(
+      <SessionIsland
+        sessions={[...allSessions, recentSession()]}
+        activeSessionId="recent"
+        displayMode="numbers"
+        maxVisibleSessions={5}
+        onSessionSelect={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('6')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { current: 'page' })).toBeNull()
+
+    rerender(
+      <SessionIsland
+        sessions={[...allSessions, recentSession()]}
+        activeSessionId="recent"
+        displayMode="numbers"
+        maxVisibleSessions={10}
+        onSessionSelect={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('10')).toBeInTheDocument()
+    expect(screen.queryByText('11')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { current: 'page' })).toBeNull()
+  })
+
   test('dims every indicator when the selected session is Recent', () => {
     render(
       <SessionIsland
