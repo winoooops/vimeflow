@@ -422,7 +422,7 @@ const CATALOG_LITERAL = [
   },
   {
     id: 'session-switch-next',
-    label: 'Switch session (MRU)',
+    label: 'Switch session (recent first)',
     group: 'Sessions',
     context: 'global',
     matchPolicy: 'exact',
@@ -431,7 +431,7 @@ const CATALOG_LITERAL = [
   },
   {
     id: 'session-switch-prev',
-    label: 'Switch session backward (MRU)',
+    label: 'Switch session backward (recent first)',
     group: 'Sessions',
     context: 'global',
     matchPolicy: 'exact',

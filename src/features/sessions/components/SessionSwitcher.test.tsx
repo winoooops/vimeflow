@@ -164,7 +164,7 @@ describe('SessionSwitcher', () => {
     }
   })
 
-  test('header shows the open count and the MRU ordering hint', () => {
+  test('header shows the open session count', () => {
     render(
       <SessionSwitcher
         open
@@ -176,10 +176,25 @@ describe('SessionSwitcher', () => {
     )
 
     expect(screen.getByText('Switch session')).toBeInTheDocument()
-    expect(screen.getByText('2 open · MRU')).toBeInTheDocument()
+    expect(screen.getByText('2 open')).toBeInTheDocument()
   })
 
-  test('trailing slot shows the active pill, or the commit keycap on selection', () => {
+  test('selection does not change title weight', () => {
+    render(
+      <SessionSwitcher
+        open
+        entries={entries}
+        selectedIndex={1}
+        onCommitIndex={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('api server')).toHaveClass('font-medium')
+    expect(screen.getByText('docs')).toHaveClass('font-medium')
+  })
+
+  test('trailing slot only identifies the active session', () => {
     render(
       <SessionSwitcher
         open
@@ -192,7 +207,6 @@ describe('SessionSwitcher', () => {
 
     const options = screen.getAllByRole('option')
     expect(options[0]).toHaveTextContent('active')
-    expect(options[1]).toHaveTextContent('↵')
     expect(options[1]).not.toHaveTextContent('active')
   })
 

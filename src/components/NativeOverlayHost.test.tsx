@@ -819,6 +819,9 @@ describe('NativeOverlayHost', () => {
       'aria-activedescendant',
       'session-switcher-option-b'
     )
+    expect(screen.getByText('2 open')).toBeInTheDocument()
+    expect(screen.getByText('api server')).toHaveClass('font-medium')
+    expect(screen.getByText('docs')).toHaveClass('font-medium')
 
     await user.click(screen.getByRole('option', { name: /docs/ }))
     expect(bridge.action).toHaveBeenCalledWith({

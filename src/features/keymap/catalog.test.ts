@@ -139,6 +139,9 @@ describe('session switching commands', () => {
       expect(cmd.matchPolicy).toBe('exact')
       expect(cmd.rebindable).toBe(true)
     }
+
+    expect(next.label).toBe('Switch session (recent first)')
+    expect(prev.label).toBe('Switch session backward (recent first)')
   })
 
   test('switcher defaults are literal Ctrl+Tab on both platforms', () => {

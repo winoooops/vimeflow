@@ -800,7 +800,7 @@ const switcherGlyphClasses = (selected: boolean): string =>
 
 const switcherTitleClasses = (selected: boolean): string =>
   selected
-    ? 'min-w-0 flex-1 truncate font-body text-sm font-semibold text-on-surface'
+    ? 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface'
     : 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface-variant'
 
 // Payload-driven mirror of the sessions feature's LayoutGlyph; unknown or
@@ -918,7 +918,7 @@ const NativeOverlaySessionSwitcher = ({
             Switch session
           </span>
           <span className="ml-auto font-mono text-[10px] tracking-[0.06em] text-on-surface-muted/70">
-            {payload.items.length} open · MRU
+            {payload.items.length} open
           </span>
         </div>
         <ul
@@ -966,18 +966,11 @@ const NativeOverlaySessionSwitcher = ({
                 >
                   {item.title}
                 </span>
-                {item.isActive ? (
+                {item.isActive && (
                   <span className="shrink-0 rounded-full bg-primary/15 px-[7px] py-[2px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-primary">
                     active
                   </span>
-                ) : index === payload.selectedIndex ? (
-                  <span
-                    aria-hidden="true"
-                    className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-primary/15 px-[5px] font-mono text-[11px] font-semibold text-primary ring-1 ring-inset ring-primary/40"
-                  >
-                    ↵
-                  </span>
-                ) : null}
+                )}
               </button>
             </li>
           ))}

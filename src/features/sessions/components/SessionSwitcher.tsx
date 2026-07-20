@@ -59,7 +59,7 @@ const glyphClasses = (selected: boolean): string =>
 
 const titleClasses = (selected: boolean): string =>
   selected
-    ? 'min-w-0 flex-1 truncate font-body text-sm font-semibold text-on-surface'
+    ? 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface'
     : 'min-w-0 flex-1 truncate font-body text-sm font-medium text-on-surface-variant'
 
 const LIST_MASK_CLASS =
@@ -155,7 +155,7 @@ export const SessionSwitcher = ({
           Switch session
         </span>
         <span className="ml-auto font-mono text-[10px] tracking-[0.06em] text-on-surface-muted/70">
-          {entries.length} open · MRU
+          {entries.length} open
         </span>
       </div>
       <ul
@@ -194,18 +194,11 @@ export const SessionSwitcher = ({
               <span className={titleClasses(index === selectedIndex)}>
                 {entry.title}
               </span>
-              {entry.isActive ? (
+              {entry.isActive && (
                 <span className="shrink-0 rounded-full bg-primary/15 px-[7px] py-[2px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-primary">
                   active
                 </span>
-              ) : index === selectedIndex ? (
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-primary/15 px-[5px] font-mono text-[11px] font-semibold text-primary ring-1 ring-inset ring-primary/40"
-                >
-                  ↵
-                </span>
-              ) : null}
+              )}
             </button>
           </li>
         ))}
