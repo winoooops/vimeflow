@@ -177,24 +177,25 @@ interface OverlayCheckboxClickResult {
 type LayoutValidationMode = 'compact-selection' | 'display-toggle'
 
 const clickEnabledOverlayCheckbox = async (
-  mode: LayoutValidationMode
-): Promise<OverlayCheckboxClickResult | null> =>
-  browser.electron.execute(async (electron: ElectronModule) => {
-    const overlay = electron.webContents
-      .getAllWebContents()
-      .find((contents) => {
-        const mode = new URL(contents.getURL()).searchParams.get(
-          'nativeOverlay'
-        )
+  validationMode: LayoutValidationMode
+): Promise<OverlayCheckboxClickResult | null> => {
+  const result = await browser.electron.execute(
+    async (electron: ElectronModule) => {
+      const overlay = electron.webContents
+        .getAllWebContents()
+        .find((contents) => {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
 
-        return mode === '1' || mode === 'menu'
-      })
+          return mode === '1' || mode === 'menu'
+        })
 
-    if (!overlay) {
-      return null
-    }
+      if (!overlay) {
+        return null
+      }
 
-    return overlay.executeJavaScript(`
+      return overlay.executeJavaScript(`
       (() => {
         const item = Array.from(
           document.querySelectorAll('[role="menuitemcheckbox"]')
@@ -216,12 +217,15 @@ const clickEnabledOverlayCheckbox = async (
         item.click()
         return {
           label,
-          mode: ${JSON.stringify(mode)},
           wasChecked,
         }
       })()
-    `) as Promise<OverlayCheckboxClickResult | null>
-  })
+    `) as Promise<Omit<OverlayCheckboxClickResult, 'mode'> | null>
+    }
+  )
+
+  return result === null ? null : { ...result, mode: validationMode }
+}
 
 const getOverlayMenuRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
