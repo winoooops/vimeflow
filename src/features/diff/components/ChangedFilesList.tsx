@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { FocusEvent, ReactElement } from 'react'
 import { IconButton } from '@/components/IconButton'
 import {
@@ -89,9 +89,20 @@ const ChangedFileItem = ({
   const directory = getDirectory(file.path)
   const status = statusTone(file.status)
   const isDeleted = file.status === 'deleted'
+  const itemRef = useRef<HTMLDivElement | null>(null)
+
+  // Keyboard file navigation (n/p) moves the selection from outside the list;
+  // keep the active row visible. `nearest` is a no-op for an already-visible
+  // row, so mouse selection cannot cause a scroll jump (VIM-359).
+  useEffect(() => {
+    if (selected) {
+      itemRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selected])
 
   return (
     <div
+      ref={itemRef}
       className={`flex items-center gap-2 rounded-md px-[9px] py-[7px] text-left transition-colors ${
         selected ? 'bg-primary/15' : 'hover:bg-surface-container-high/60'
       }`}

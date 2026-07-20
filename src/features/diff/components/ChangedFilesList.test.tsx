@@ -95,6 +95,55 @@ describe('ChangedFilesList', () => {
     expect(screen.getByText('-18')).toBeInTheDocument()
   })
 
+  test('scrolls the newly selected row into view, once per selection change', () => {
+    const scrollSpy = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(function (this: Element) {
+        void this
+      })
+
+    const { rerender } = render(
+      <ChangedFilesList
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+        onSelectFile={vi.fn()}
+      />
+    )
+
+    // Opening the list reveals the current selection.
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
+    expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' })
+
+    // n/p moved the selection from outside the list → the NEW row scrolls
+    // (the deselected row must not).
+    rerender(
+      <ChangedFilesList
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={{ path: 'tsconfig.json', staged: false }}
+        onSelectFile={vi.fn()}
+      />
+    )
+    expect(scrollSpy).toHaveBeenCalledTimes(2)
+    expect((scrollSpy.mock.contexts[1] as HTMLElement).textContent).toContain(
+      'tsconfig.json'
+    )
+
+    // Unrelated re-render with the same selection: no extra scroll.
+    rerender(
+      <ChangedFilesList
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={{ path: 'tsconfig.json', staged: false }}
+        onSelectFile={vi.fn()}
+      />
+    )
+    expect(scrollSpy).toHaveBeenCalledTimes(2)
+
+    scrollSpy.mockRestore()
+  })
+
   test('applies active file highlighting when selected', () => {
     render(
       <ChangedFilesList
