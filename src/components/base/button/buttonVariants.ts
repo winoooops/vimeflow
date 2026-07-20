@@ -1,7 +1,7 @@
 import { tv, type VariantProps } from 'tailwind-variants'
 
 export const buttonVariants = tv({
-  base: 'inline-flex shrink-0 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none',
+  base: 'inline-flex shrink-0 cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none',
   variants: {
     variant: {
       ghost:

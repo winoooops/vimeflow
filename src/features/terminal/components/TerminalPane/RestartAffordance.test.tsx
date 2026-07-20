@@ -34,6 +34,14 @@ describe('RestartAffordance', () => {
     expect(onRestart).toHaveBeenCalledWith('s1')
   })
 
+  test('restart button keeps its pointer cursor affordance', () => {
+    render(<RestartAffordance {...baseProps} />)
+
+    expect(
+      screen.getByRole('button', { name: /restart session s1/i })
+    ).toHaveClass('cursor-pointer')
+  })
+
   test('renders relative-time string', () => {
     render(<RestartAffordance {...baseProps} />)
 

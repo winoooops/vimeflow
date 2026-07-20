@@ -92,41 +92,56 @@ export const Header = ({
   return (
     <div
       data-testid="terminal-pane-header"
-      data-drag-handle={draggable || undefined}
-      draggable={draggable}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      style={{ cursor: draggable ? 'grab' : undefined }}
       className={`flex shrink-0 select-none items-center border-b border-outline-variant/[0.18] font-mono text-[10.5px] ${
         isActive ? 'bg-primary-container/15' : ''
       } gap-1.5 px-2 py-1`}
     >
-      <Chip
-        data-testid="agent-glyph-chip"
-        tone="custom"
-        radius="md"
-        size="custom"
-        className="h-[22px] w-[22px] shrink-0 justify-center rounded-md border p-0 font-semibold tracking-[0.04em]"
-        style={{
-          background: agent.accentDim,
-          borderColor: agent.accentSoft,
-          color: agent.accent,
-        }}
+      {/* Drag handle is isolated to the left/title rect so gaps around the
+       * action buttons do not inherit the grab cursor or start a drag. */}
+      <div
+        data-testid="terminal-pane-drag-handle"
+        data-drag-handle={draggable || undefined}
+        draggable={draggable}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        style={{ cursor: draggable ? 'grab' : undefined }}
+        className={`-my-1 -ml-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden rounded-[10px] px-2 py-1 ${
+          isActive ? '' : 'bg-surface-container-lowest'
+        }`}
       >
-        <span className="text-[12px]" aria-hidden="true">
-          <AgentGlyph agent={agent} size={12} />
-        </span>
-        <span data-testid="agent-glyph-label" className="hidden">
-          {agent.short}
-        </span>
-      </Chip>
+        <Chip
+          data-testid="agent-glyph-chip"
+          tone="custom"
+          radius="md"
+          size="custom"
+          className="h-[22px] w-[22px] shrink-0 justify-center rounded-md border p-0 font-semibold tracking-[0.04em]"
+          style={{
+            background: agent.accentDim,
+            borderColor: agent.accentSoft,
+            color: agent.accent,
+          }}
+        >
+          <span className="text-[12px]" aria-hidden="true">
+            <AgentGlyph agent={agent} size={12} />
+          </span>
+          <span data-testid="agent-glyph-label" className="hidden">
+            {agent.short}
+          </span>
+        </Chip>
 
-      {/* Flexible title truncates so the fixed action zone never clips. */}
-      <span ref={titleRef} className="min-w-0 flex-1 truncate text-on-surface">
-        {paneUserLabel ?? paneAgentTitle ?? session.name}
-      </span>
+        {/* Flexible title truncates so the fixed action zone never clips. */}
+        <span
+          ref={titleRef}
+          className="min-w-0 flex-1 truncate text-on-surface"
+        >
+          {paneUserLabel ?? paneAgentTitle ?? session.name}
+        </span>
+      </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div
+        data-testid="terminal-pane-header-actions"
+        className="flex shrink-0 items-center gap-1.5"
+      >
         <HeaderActions
           isCollapsed={isCollapsed}
           onToggleCollapse={onToggleCollapse}

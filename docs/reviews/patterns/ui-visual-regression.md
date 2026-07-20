@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-19
-ref_count: 19
+last_updated: 2026-07-20
+ref_count: 20
 ---
 
 # UI Visual Regression
@@ -341,7 +341,35 @@ test case for the state that triggers the collision.
   range-bar test to cover both unified deletion row spellings.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 28. File comments expanded into the dock
+### 28. Header icon buttons lost pointer cursor affordances
+
+- **Source:** github-claude | PR #712 round 1 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Header.tsx`
+- **Finding:** Moving the pane-level cursor rule onto only the terminal body
+  removed the inherited pointer cursor that header `IconButton`s and the
+  awaiting-restart button had relied on. Clickable header controls therefore
+  rendered with the default arrow cursor even though the PR intended to keep
+  pointer affordances scoped to real interactive targets.
+- **Fix:** Added `cursor-pointer` to the shared button primitive and to the raw
+  restart button, then added focused tests covering header action buttons and
+  the restart affordance.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Isolated terminal drag handle lacked its own preview surface
+
+- **Source:** github-codex-connector | PR #712 round 1 | 2026-07-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Header.tsx`
+- **Finding:** After the terminal pane drag handle was narrowed to the title
+  rect, the draggable element no longer owned the header background or clipping.
+  Chromium's drag snapshot could therefore capture only the chip/title content
+  instead of the intended rounded header pill.
+- **Fix:** Moved the visible background and overflow clipping onto the isolated
+  drag handle while preserving its scoped drag area, and added test assertions
+  for the rounded clipped preview surface.
+
+### 30. File comments expanded into the dock
 
 - **Source:** local-codex | VIM-346 fix review | 2026-07-18
 - **Severity:** HIGH
@@ -352,4 +380,17 @@ test case for the state that triggers the collision.
 - **Fix:** Let the file-level comment stack expand naturally in the dock-level
   scroll container, with component coverage that asserts the nested height and
   overflow clamps stay absent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Active terminal header stacked translucent backgrounds
+
+- **Source:** github-claude | PR #712 round 2 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Header.tsx`
+- **Finding:** The active terminal header applied `bg-primary-container/15` on
+  the outer header and again on the nested isolated drag handle, so the
+  chip/title region composited darker than the action-button region.
+- **Fix:** Kept the active tint on the outer header and made the isolated drag
+  handle paint only its inactive preview background. Updated the focused header
+  test to assert the active handle no longer carries the duplicate tint.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

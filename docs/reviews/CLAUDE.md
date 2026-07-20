@@ -85,7 +85,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 42       | 16   | 2026-07-18   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
-| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 28       | 19   | 2026-07-19   |
+| [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 31       | 20   | 2026-07-20   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 15   | 2026-07-19   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 23       | 12   | 2026-07-15   |

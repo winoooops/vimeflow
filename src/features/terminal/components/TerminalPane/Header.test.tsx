@@ -222,7 +222,7 @@ describe('Header', () => {
   test('is not draggable by default', () => {
     render(<Header {...baseProps} />)
 
-    expect(screen.getByTestId('terminal-pane-header')).not.toHaveAttribute(
+    expect(screen.getByTestId('terminal-pane-drag-handle')).not.toHaveAttribute(
       'draggable',
       'true'
     )
@@ -241,27 +241,64 @@ describe('Header', () => {
       />
     )
 
-    const header = screen.getByTestId('terminal-pane-header')
-    expect(header).toHaveAttribute('draggable', 'true')
-    expect(header).toHaveAttribute('data-drag-handle', 'true')
+    const handle = screen.getByTestId('terminal-pane-drag-handle')
+    expect(handle).toHaveAttribute('draggable', 'true')
+    expect(handle).toHaveAttribute('data-drag-handle', 'true')
 
-    fireEvent.dragStart(header)
+    fireEvent.dragStart(handle)
     expect(onHeaderDragStart).toHaveBeenCalledTimes(1)
 
-    fireEvent.dragEnd(header)
+    fireEvent.dragEnd(handle)
     expect(onHeaderDragEnd).toHaveBeenCalledTimes(1)
   })
 
   test('rounds all corners during the drag so the snapshot reads as a pill', () => {
     render(<Header {...baseProps} draggable onHeaderDragStart={vi.fn()} />)
 
+    const handle = screen.getByTestId('terminal-pane-drag-handle')
+    expect(handle).toHaveClass('overflow-hidden')
+    expect(handle).toHaveClass('rounded-[10px]')
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass(
+      'bg-primary-container/15'
+    )
+    expect(handle).not.toHaveClass('bg-primary-container/15')
+    expect(handle.style.borderRadius).toBe('')
+
+    fireEvent.dragStart(handle)
+    expect(handle.style.borderRadius).toBe('10px')
+
+    fireEvent.dragEnd(handle)
+    expect(handle.style.borderRadius).toBe('')
+  })
+
+  test('action area is not part of the drag handle', () => {
+    render(
+      <Header
+        {...baseProps}
+        draggable
+        onClose={vi.fn()}
+        onToggleCollapse={vi.fn()}
+      />
+    )
+
     const header = screen.getByTestId('terminal-pane-header')
-    expect(header.style.borderRadius).toBe('')
+    expect(header).not.toHaveAttribute('draggable', 'true')
+    expect(header).not.toHaveAttribute('data-drag-handle', 'true')
 
-    fireEvent.dragStart(header)
-    expect(header.style.borderRadius).toBe('10px')
+    const actions = screen.getByTestId('terminal-pane-header-actions')
+    expect(actions).not.toHaveAttribute('draggable', 'true')
+    expect(actions).not.toHaveAttribute('data-drag-handle', 'true')
+  })
 
-    fireEvent.dragEnd(header)
-    expect(header.style.borderRadius).toBe('')
+  test('header action buttons keep their pointer cursor affordance', () => {
+    render(<Header {...baseProps} onClose={vi.fn()} />)
+
+    expect(
+      screen.getByRole('button', { name: /collapse status/i })
+    ).toHaveClass('cursor-pointer')
+
+    expect(screen.getByRole('button', { name: /close pane/i })).toHaveClass(
+      'cursor-pointer'
+    )
   })
 })

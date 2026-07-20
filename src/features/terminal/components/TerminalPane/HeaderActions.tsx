@@ -212,12 +212,18 @@ export const HeaderActions = ({
   return (
     <>
       {shortcutHint && (
-        <span
-          data-testid="pane-shortcut-hint"
-          className="shrink-0 rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-on-surface-variant"
+        <Tooltip
+          content={`${shortcutHint} to focus`}
+          placement="bottom"
+          nativeOverlay
         >
-          {shortcutHint}
-        </span>
+          <span
+            data-testid="pane-shortcut-hint"
+            className="shrink-0 cursor-default rounded bg-on-surface/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-on-surface-variant"
+          >
+            {shortcutHint}
+          </span>
+        </Tooltip>
       )}
 
       {burnerButton ? (

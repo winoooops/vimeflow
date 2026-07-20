@@ -639,6 +639,38 @@ describe('HeaderActions', () => {
     ).toBeTruthy()
   })
 
+  test('shortcut hint uses the default arrow cursor', () => {
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        shortcutHint="⌘1"
+      />
+    )
+
+    expect(screen.getByTestId('pane-shortcut-hint')).toHaveClass(
+      'cursor-default'
+    )
+  })
+
+  test('hovering the shortcut hint shows a focus tooltip', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <HeaderActions
+        isCollapsed={expanded}
+        onToggleCollapse={vi.fn()}
+        shortcutHint="⌘1"
+      />
+    )
+
+    await user.hover(screen.getByTestId('pane-shortcut-hint'))
+
+    const tip = await screen.findByRole('tooltip')
+
+    expect(tip).toHaveTextContent('⌘1 to focus')
+  })
+
   test('hovering the collapse-status button shows a plain tooltip', async () => {
     const user = userEvent.setup()
     render(<HeaderActions isCollapsed={expanded} onToggleCollapse={vi.fn()} />)

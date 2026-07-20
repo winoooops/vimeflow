@@ -307,6 +307,40 @@ describe('TerminalPane index', () => {
     expect(onRequestActive).toHaveBeenCalledWith('s1', 'p0')
   })
 
+  test('inactive pane shows pointer cursor only on the body, not the header', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: false }}
+        isActive={inactive}
+      />
+    )
+
+    expect(screen.getByTestId('terminal-pane-body-slot')).toHaveStyle({
+      cursor: 'pointer',
+    })
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveStyle({
+      cursor: 'pointer',
+    })
+
+    expect(screen.getByTestId('terminal-pane-wrapper')).not.toHaveStyle({
+      cursor: 'pointer',
+    })
+  })
+
+  test('active pane keeps default cursor on the body and header', () => {
+    render(<TerminalPane {...baseProps} />)
+
+    expect(screen.getByTestId('terminal-pane-body-slot')).toHaveStyle({
+      cursor: 'default',
+    })
+
+    expect(screen.getByTestId('terminal-pane-header')).not.toHaveStyle({
+      cursor: 'pointer',
+    })
+  })
+
   test('renders RestartAffordance when mode is awaiting-restart', () => {
     const completedSession: Session = {
       ...session,
