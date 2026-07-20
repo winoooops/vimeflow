@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
+import { StrictMode } from 'react'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { getCommand, type CommandId } from '@/features/keymap/catalog'
@@ -93,6 +94,107 @@ describe('ChangedFilesList', () => {
 
     // tsconfig: +0 -18
     expect(screen.getByText('-18')).toBeInTheDocument()
+  })
+
+  test('scrolls the newly selected row into view, once per selection change', () => {
+    let scrollContainer: HTMLElement | null = null
+
+    const scrollSpy = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(function (this: Element) {
+        void this
+      })
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'changed-files-scroll-container') {
+          return new DOMRect(0, 0, 0, 40)
+        }
+
+        const currentScroll =
+          this.parentElement?.dataset.testid ===
+          'changed-files-scroll-container'
+            ? this.parentElement.scrollTop
+            : (scrollContainer?.scrollTop ?? 0)
+
+        if (this.textContent?.includes('NavBar.tsx')) {
+          return new DOMRect(0, 80 - currentScroll, 0, 20)
+        }
+
+        if (this.textContent?.includes('tsconfig.json')) {
+          return new DOMRect(0, 120 - currentScroll, 0, 20)
+        }
+
+        return new DOMRect(0, 0, 0, 0)
+      })
+
+    const clientHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'changed-files-scroll-container' ? 40 : 0
+      })
+
+    const { rerender } = render(
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    scrollContainer = screen.getByTestId('changed-files-scroll-container')
+
+    // Opening the list does not scroll; only later n/p selection changes do.
+    expect(scrollContainer.scrollTop).toBe(0)
+    expect(scrollSpy).not.toHaveBeenCalled()
+
+    // n/p moved the selection from outside the list → the NEW row scrolls
+    // (the deselected row must not).
+    rerender(
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'tsconfig.json', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
+    )
+    expect(scrollContainer.scrollTop).toBe(100)
+
+    // Moving back to the file selected when the list mounted still scrolls.
+    rerender(
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
+    )
+    expect(scrollContainer.scrollTop).toBe(80)
+
+    // Unrelated re-render with the same selection: no extra scroll.
+    rerender(
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
+    )
+    expect(scrollContainer.scrollTop).toBe(80)
+
+    clientHeightSpy.mockRestore()
+    rectSpy.mockRestore()
+    scrollSpy.mockRestore()
   })
 
   test('applies active file highlighting when selected', () => {
@@ -454,6 +556,24 @@ describe('ChangedFilesListSurface', () => {
     },
   ]
 
+  const scrollFiles: ChangedFile[] = [
+    mockFiles[0],
+    {
+      path: 'src/utils/api-helper.rs',
+      status: 'added',
+      insertions: 45,
+      deletions: 0,
+      staged: true,
+    },
+    {
+      path: 'tsconfig.json',
+      status: 'deleted',
+      insertions: 0,
+      deletions: 18,
+      staged: false,
+    },
+  ]
+
   test('keeps the panel open when activating after focus reveal', async () => {
     const user = userEvent.setup()
     const onReveal = vi.fn()
@@ -544,5 +664,249 @@ describe('ChangedFilesListSurface', () => {
     await user.tab()
     expect(screen.getByRole('button', { name: /outside diff/i })).toHaveFocus()
     expect(onScheduleHide).toHaveBeenCalledOnce()
+  })
+
+  test('scrolls to hidden keyboard selection when the unpinned list is revealed', () => {
+    let scrollContainer: HTMLElement | null = null
+    const unpinned = false
+    const hidden = false
+    const shown = true
+
+    const scrollSpy = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(function (this: Element) {
+        void this
+      })
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'changed-files-scroll-container') {
+          return new DOMRect(0, 0, 0, 40)
+        }
+
+        const currentScroll =
+          this.parentElement?.dataset.testid ===
+          'changed-files-scroll-container'
+            ? this.parentElement.scrollTop
+            : (scrollContainer?.scrollTop ?? 0)
+
+        if (this.textContent?.includes('NavBar.tsx')) {
+          return new DOMRect(0, 80 - currentScroll, 0, 20)
+        }
+
+        if (this.textContent?.includes('tsconfig.json')) {
+          return new DOMRect(0, 120 - currentScroll, 0, 20)
+        }
+
+        return new DOMRect(0, 0, 0, 0)
+      })
+
+    const clientHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'changed-files-scroll-container' ? 40 : 0
+      })
+
+    const { rerender } = render(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          pinned={unpinned}
+          revealed={hidden}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    expect(screen.queryByTestId('changed-files-scroll-container')).toBeNull()
+
+    rerender(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          pinned={unpinned}
+          revealed={shown}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    scrollContainer = screen.getByTestId('changed-files-scroll-container')
+    expect(scrollContainer.scrollTop).toBe(0)
+    expect(scrollSpy).not.toHaveBeenCalled()
+
+    rerender(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'tsconfig.json', staged: false }}
+          pinned={unpinned}
+          revealed={hidden}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    expect(screen.queryByTestId('changed-files-scroll-container')).toBeNull()
+
+    rerender(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'tsconfig.json', staged: false }}
+          pinned={unpinned}
+          revealed={shown}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    scrollContainer = screen.getByTestId('changed-files-scroll-container')
+    expect(scrollContainer.scrollTop).toBe(100)
+
+    clientHeightSpy.mockRestore()
+    rectSpy.mockRestore()
+    scrollSpy.mockRestore()
+  })
+
+  test('remembers hidden keyboard selection changes that return to the initial file before reveal', () => {
+    const unpinned = false
+    const hidden = false
+    const shown = true
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'changed-files-scroll-container') {
+          return new DOMRect(0, 0, 0, 40)
+        }
+
+        const currentScroll =
+          this.parentElement?.dataset.testid ===
+          'changed-files-scroll-container'
+            ? this.parentElement.scrollTop
+            : 0
+
+        if (this.textContent?.includes('NavBar.tsx')) {
+          return new DOMRect(0, 80 - currentScroll, 0, 20)
+        }
+
+        if (this.textContent?.includes('tsconfig.json')) {
+          return new DOMRect(0, 120 - currentScroll, 0, 20)
+        }
+
+        return new DOMRect(0, 0, 0, 0)
+      })
+
+    const clientHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'changed-files-scroll-container' ? 40 : 0
+      })
+
+    const { rerender } = render(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          pinned={unpinned}
+          revealed={hidden}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    rerender(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'tsconfig.json', staged: false }}
+          pinned={unpinned}
+          revealed={hidden}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    rerender(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          pinned={unpinned}
+          revealed={hidden}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    rerender(
+      <StrictMode>
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={scrollFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          pinned={unpinned}
+          revealed={shown}
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </StrictMode>
+    )
+
+    const scrollContainer = screen.getByTestId('changed-files-scroll-container')
+    expect(scrollContainer.scrollTop).toBe(60)
+
+    clientHeightSpy.mockRestore()
+    rectSpy.mockRestore()
   })
 })

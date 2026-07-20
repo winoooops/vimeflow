@@ -2,7 +2,7 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-07-07
+last_updated: 2026-07-20
 ref_count: 9
 ---
 
@@ -263,4 +263,33 @@ to persistent state through a separate, explicit path.
   in the native payload and effect dependencies. Added regression coverage that
   rerenders an open native tooltip with a fresh inline shortcut array without
   closing or reopening the overlay.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Mount-time selection key suppressed later return navigation
+
+- **Source:** github-claude | PR #713 round 1 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The changed-files list compared every selected row against the
+  key captured when the list mounted. Navigating away and then back to that
+  original file therefore skipped the scroll side effect as if it were still
+  the first render.
+- **Fix:** Replaced the identity comparison with a one-time boolean skip for
+  the initial selected effect pass. Added regression coverage for moving back
+  to the file that was selected on mount.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Overlay remount reset the selected-row scroll guard
+
+- **Source:** github-claude | PR #713 round 2 | 2026-07-20
+- **Severity:** HIGH
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The unpinned changed-files overlay unmounted the list while
+  hidden, so a keyboard-selected file chosen while hidden became the fresh
+  mount's initial selection. Revealing the default overlay then skipped the
+  selected-row scroll instead of showing the current file.
+- **Fix:** Moved the initial-scroll suppression state to
+  `ChangedFilesListSurface`, preserving it across overlay reveal remounts while
+  keeping standalone list behavior unchanged. Added regression coverage for
+  hidden n/p selection followed by overlay reveal.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
