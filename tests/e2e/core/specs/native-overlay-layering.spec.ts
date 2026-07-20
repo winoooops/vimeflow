@@ -170,27 +170,31 @@ const captureScreen = (): DecodedPng => {
 
 interface OverlayCheckboxClickResult {
   label: string
+  mode: LayoutValidationMode
   wasChecked: boolean
 }
 
-const clickEnabledOverlayCheckbox =
-  async (): Promise<OverlayCheckboxClickResult | null> =>
-    browser.electron.execute(async (electron: ElectronModule) => {
-      const overlay = electron.webContents
-        .getAllWebContents()
-        .find((contents) => {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+type LayoutValidationMode = 'compact-selection' | 'display-toggle'
 
-          return mode === '1' || mode === 'menu'
-        })
+const clickEnabledOverlayCheckbox = async (
+  mode: LayoutValidationMode
+): Promise<OverlayCheckboxClickResult | null> =>
+  browser.electron.execute(async (electron: ElectronModule) => {
+    const overlay = electron.webContents
+      .getAllWebContents()
+      .find((contents) => {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
 
-      if (!overlay) {
-        return null
-      }
+        return mode === '1' || mode === 'menu'
+      })
 
-      return overlay.executeJavaScript(`
+    if (!overlay) {
+      return null
+    }
+
+    return overlay.executeJavaScript(`
       (() => {
         const item = Array.from(
           document.querySelectorAll('[role="menuitemcheckbox"]')
@@ -210,10 +214,14 @@ const clickEnabledOverlayCheckbox =
 
         const wasChecked = item.getAttribute('aria-checked') === 'true'
         item.click()
-        return { label, wasChecked }
+        return {
+          label,
+          mode: ${JSON.stringify(mode)},
+          wasChecked,
+        }
       })()
     `) as Promise<OverlayCheckboxClickResult | null>
-    })
+  })
 
 const getOverlayMenuRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
@@ -477,6 +485,15 @@ describe('NativeOverlay BrowserWindow layering', () => {
     await waitForLayoutDisplayAnchor()
     const before = captureScreen()
     const mapping = await mapViewportToScreenPixels()
+    const validationMode = await browser.execute<LayoutValidationMode, []>(
+      () => {
+        const compactReadout = document.querySelector(
+          '[data-testid="layout-switcher"] [aria-label^="Current pane layout:"]'
+        )
+
+        return compactReadout === null ? 'display-toggle' : 'compact-selection'
+      }
+    )
 
     const clicked = await browser.execute(() => {
       const button = document.querySelector<HTMLElement>(
@@ -493,14 +510,22 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     await waitForOverlayPaint(before, mapping, paneRect)
 
-    const checkbox = await clickEnabledOverlayCheckbox()
+    const checkbox = await clickEnabledOverlayCheckbox(validationMode)
     if (checkbox === null) {
       throw new Error('NativeOverlay menu had no enabled layout checkbox row')
     }
 
     await browser.waitUntil(
       async () =>
-        browser.execute(({ label, wasChecked }) => {
+        browser.execute(({ label, mode, wasChecked }) => {
+          if (mode === 'compact-selection') {
+            const activeLayoutReadout = document.querySelector(
+              `[data-testid="layout-switcher"] [aria-label="Current pane layout: ${CSS.escape(label)}"]`
+            )
+
+            return activeLayoutReadout !== null
+          }
+
           const layoutButton = document
             .querySelector('[data-testid="layout-switcher"]')
             ?.querySelector(`button[aria-label="${CSS.escape(label)}"]`)
