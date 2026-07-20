@@ -3,7 +3,7 @@ id: canonical-path-dedupe
 category: correctness
 created: 2026-06-14
 last_updated: 2026-07-18
-ref_count: 1
+ref_count: 2
 ---
 
 # Canonical Path Dedupe

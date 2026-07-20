@@ -3,7 +3,7 @@ id: persisted-state-invariants
 category: correctness
 created: 2026-06-08
 last_updated: 2026-07-19
-ref_count: 15
+ref_count: 16
 ---
 
 # Persisted State Invariants
