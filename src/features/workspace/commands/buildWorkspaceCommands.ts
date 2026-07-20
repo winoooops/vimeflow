@@ -42,6 +42,7 @@ export type WorkspaceTab = Pick<Session, WorkspaceTabKey>
 
 export interface WorkspaceCommandDeps {
   sessions: WorkspaceTab[]
+  navigableSessions?: WorkspaceTab[]
   activeSessionId: string | null
   /**
    * PTY handle of the active pane in the active session, or `null` if no
@@ -179,6 +180,7 @@ export const buildWorkspaceCommands = (
 ): Command[] => {
   const {
     sessions,
+    navigableSessions = sessions,
     activeSessionId,
     activePanePtyId,
     activePaneAgentType = null,
@@ -248,7 +250,7 @@ export const buildWorkspaceCommands = (
     sessions.findIndex((s) => s.id === activeSessionId)
 
   const switchRelativeSession = (delta: number): void => {
-    const nextSession = cycleSession(sessions, activeSessionId, delta)
+    const nextSession = cycleSession(navigableSessions, activeSessionId, delta)
     if (nextSession === null) {
       notifyInfo('No open sessions')
 
@@ -701,7 +703,7 @@ export const buildWorkspaceCommands = (
         // Without it, `:goto 1` against zero sessions would emit the
         // less-helpful "No tab at position 1" while `:goto foo` correctly
         // emits "No open sessions" — same root cause, two different messages.
-        if (sessions.length === 0) {
+        if (navigableSessions.length === 0) {
           notifyInfo('No open sessions')
 
           return
@@ -728,18 +730,18 @@ export const buildWorkspaceCommands = (
             return
           }
 
-          if (position > sessions.length) {
+          if (position > navigableSessions.length) {
             notifyInfo(`No tab at position ${position}`)
 
             return
           }
 
-          setActiveSessionId(sessions[position - 1].id)
+          setActiveSessionId(navigableSessions[position - 1].id)
 
           return
         }
 
-        const match = sessions.reduce<{
+        const match = navigableSessions.reduce<{
           session: WorkspaceTab | null
           score: number
         }>(

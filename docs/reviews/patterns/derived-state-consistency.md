@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-18
+last_updated: 2026-07-20
 ref_count: 25
 ---
 
@@ -429,4 +429,19 @@ base data is technically "correct."
   entry for an owner whose only pending work was a thread reply.
 - **Fix:** Include thread-draft owners when deriving summaries and count each
   nonblank reply draft. Added a focused regression test for a reply-only owner.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Command palette reused live-session navigation state for visible tab actions
+
+- **Source:** github-codex-connector | PR #714 round 1 | 2026-07-20
+- **Severity:** HIGH
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
+- **Finding:** The workspace command builder received a live-only session list
+  and reused it for both navigation commands and active-tab actions. When the
+  active tab had just exited but remained visible, `:close`, `:qa`,
+  `:tabclose`, and `:rename-session` could not find the active session.
+- **Fix:** Split command dependencies into all workspace tabs and live navigable
+  tabs. Close/rename paths resolve the active tab from the all-tabs list, while
+  `:next`, `:previous`, `:tabn`, `:tabp`, and `:goto` use the navigable list.
+  Added command-builder tests for exited active tabs and live-only navigation.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

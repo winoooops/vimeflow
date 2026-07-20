@@ -651,7 +651,11 @@ const WorkspaceViewContent = (): ReactElement => {
   // encoding is collision-free regardless of separator characters in names.
   const liveSessions = useMemo(() => sessions.filter(isOpenSession), [sessions])
 
-  const sessionsSignature = JSON.stringify(
+  const commandSessionsSignature = JSON.stringify(
+    sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
+  )
+
+  const navigableSessionsSignature = JSON.stringify(
     liveSessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
   )
 
@@ -1979,7 +1983,8 @@ const WorkspaceViewContent = (): ReactElement => {
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
-        sessions: liveSessions,
+        sessions,
+        navigableSessions: liveSessions,
         activeSessionId,
         activePanePtyId: activePanePtyIdForCommands,
         activePaneAgentType: activePaneAgentTypeForCommands,
@@ -2038,12 +2043,15 @@ const WorkspaceViewContent = (): ReactElement => {
         keybindingShortcut: (id) =>
           chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
       }),
-    // sessionsSignature captures every field the closures read; activity-only
-    // changes keep the signature stable so the memo (and downstream
-    // filteredResults / handler refs) do not churn during agent I/O.
+    // These signatures capture every session field the closures read.
+    // Activity-only changes keep them stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O. Keep the
+    // all-tabs and navigable-tabs signatures split: close/rename can target the
+    // visibly active just-exited tab, while navigation stays live-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      sessionsSignature,
+      commandSessionsSignature,
+      navigableSessionsSignature,
       activeSessionId,
       activePanePtyIdForCommands,
       activePaneAgentTypeForCommands,
