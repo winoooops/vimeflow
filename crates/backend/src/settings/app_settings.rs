@@ -32,6 +32,7 @@ pub struct AppSettings {
     pub mono_font: String,
     pub terminal_font_family: String,
     pub reservoir_swell: String,
+    pub session_island_display: String,
     pub keymap_preset: String,
     pub agent_shim_enabled: bool,
     #[serde(default, deserialize_with = "lenient_string_map")]
@@ -74,6 +75,7 @@ impl Default for AppSettings {
             mono_font: "jetbrains".into(),
             terminal_font_family: "JetBrains Mono".into(),
             reservoir_swell: "soft-mound".into(),
+            session_island_display: "dots".into(),
             keymap_preset: "vimeflow".into(),
             agent_shim_enabled: true,
             custom_keybindings: HashMap::new(),
@@ -100,6 +102,7 @@ impl AppSettings {
             ("monoFont", self.mono_font.as_str()),
             ("terminalFontFamily", self.terminal_font_family.as_str()),
             ("reservoirSwell", self.reservoir_swell.as_str()),
+            ("sessionIslandDisplay", self.session_island_display.as_str()),
             ("keymapPreset", self.keymap_preset.as_str()),
         ] {
             if value.chars().count() > MAX_SETTINGS_STRING_CHARS {
@@ -227,6 +230,7 @@ mod tests {
             mono_font: "iosevka".into(),
             terminal_font_family: "Iosevka".into(),
             reservoir_swell: "trailing".into(),
+            session_island_display: "numbers".into(),
             keymap_preset: "vim".into(),
             agent_shim_enabled: false,
             custom_keybindings: HashMap::from([(
@@ -253,6 +257,7 @@ mod tests {
         assert_eq!(s.mono_font, "jetbrains");
         assert_eq!(s.terminal_font_family, "JetBrains Mono");
         assert_eq!(s.reservoir_swell, "soft-mound");
+        assert_eq!(s.session_island_display, "dots");
         assert_eq!(s.keymap_preset, "vimeflow");
         assert!(s.agent_shim_enabled);
         assert!(s.custom_keybindings.is_empty());
@@ -280,6 +285,10 @@ mod tests {
         );
         assert!(
             json.contains("\"reservoirSwell\":\"soft-mound\""),
+            "json: {json}"
+        );
+        assert!(
+            json.contains("\"sessionIslandDisplay\":\"dots\""),
             "json: {json}"
         );
         assert!(json.contains("\"agentShimEnabled\":true"), "json: {json}");
@@ -349,6 +358,7 @@ mod tests {
         assert_eq!(loaded.density, "comfortable");
         assert_eq!(loaded.terminal_font_family, "JetBrains Mono");
         assert_eq!(loaded.reservoir_swell, "soft-mound");
+        assert_eq!(loaded.session_island_display, "dots");
         assert_eq!(loaded.keymap_preset, "vimeflow");
         assert!(loaded.custom_keybindings.is_empty());
     }
@@ -416,7 +426,7 @@ mod tests {
     #[test]
     fn validate_ipc_payload_rejects_overlong_settings_strings() {
         let settings = AppSettings {
-            terminal_font_family: "x".repeat(MAX_SETTINGS_STRING_CHARS + 1),
+            session_island_display: "x".repeat(MAX_SETTINGS_STRING_CHARS + 1),
             ..AppSettings::default()
         };
 

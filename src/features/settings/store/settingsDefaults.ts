@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   monoFont: 'jetbrains',
   terminalFontFamily: 'JetBrains Mono',
   reservoirSwell: 'soft-mound',
+  sessionIslandDisplay: 'dots',
   keymapPreset: 'vimeflow',
   agentShimEnabled: true,
   customKeybindings: {},

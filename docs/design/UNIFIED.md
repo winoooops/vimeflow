@@ -30,7 +30,7 @@ The workspace is **three outer zones** in a CSS grid (`grid-template-columns: au
 
 ```
 ┌─────────┬────────────────────────────────────┬──────────┐
-│         │  top chrome (44px) · layout pills    │          │
+│         │ top chrome · session island · layouts│          │
 │         ├────────────────────────────────────┤          │
 │ Sidebar │   SplitView terminal canvas         │ Activity │
 │ (chrome)│   (1–4 panes)                       │  panel   │
@@ -536,6 +536,20 @@ Rules:
 - `SegmentedControl` uses `role="group"` + per-button `aria-pressed`; it implements roving `tabIndex` and arrow/Home/End key movement. Use `skipActiveReselect` when the active option must not fire callbacks (for example `LayoutSwitcher`).
 - Visual variants are `pill`, `dock`, `framed`, `toolbar`, `toolbarInline`, and `sidebar`; they are a `tailwind-variants` matrix, matching the Button substrate approach.
 - `IconButton` is still the right primitive for icon-only controls embedded inside tab strips. VIM-125 consumes the VIM-124 grouped-control ratchet: no `-- VIM-125: grouped control` disables should remain.
+
+### 5.14 `SessionIsland`
+
+Centered open-session navigation in the 44px main-canvas top chrome. It is additive to the sidebar and right-aligned `LayoutSwitcher`; it never replaces either.
+
+- Source/order: `sessions.filter(isOpenSession)`, exactly matching the sidebar Active section. Recent/completed sessions have no indicators.
+- Batch: at most 10, automatically following the selected open session (1–10, 11–20, ...). A Recent selection keeps the last valid batch with no active capsule.
+- Geometry: 28px-high, 18px-radius themed glass capsule; 16px inactive circles; 48px active capsule; active-label mode grows to at most 160px. The island is mathematically centered with `left: 50%` / `translateX(-50%)` and has no shadow.
+- Color: active = `primary`; indicators to its left = full `secondary`; indicators to its right = `secondary`/55. With no selected open session all use the right/upcoming treatment. These positions are navigation context, not agent/session state.
+- Motion: width/color/opacity transition over `222.222ms cubic-bezier(.333333,1,.666667,1)`; reduced motion uses 1ms.
+- Display setting: `sessionIslandDisplay` is `dots` (default), `numbers` (global Active position), or `labels` (active name only).
+- Accessibility: `nav[aria-label="Open sessions"]`; every indicator is a named button with `aria-current="page"` only on the selected open session and uses the shared `Tooltip`.
+- Responsive: below a 700px main-column width, the layout pillar yields space by collapsing to the active layout readout plus its configuration menu. The session island remains centered.
+- Notifications: the quiet outline-bell placeholder is absent unless `VITE_SESSION_ISLAND_NOTIFICATIONS=1`; notification state/badges are deferred.
 
 ---
 

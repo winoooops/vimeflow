@@ -70,7 +70,9 @@ import { formatShortcut } from '@/lib/formatShortcut'
 import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
 import { cycleSession } from '@/features/sessions/utils/cycleSession'
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
+import { SessionIsland } from '@/features/sessions/components/SessionIsland'
 import { SessionSwitcher } from '@/features/sessions/components/SessionSwitcher'
+import { resolveSessionIslandDisplay } from '@/features/sessions/utils/sessionIslandDisplay'
 import {
   clampSize,
   useResizable,
@@ -295,6 +297,10 @@ const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
 // in the collapsed rail, so the control reads as symmetric in both states.
 const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
+const SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX = 700
+
+const SESSION_ISLAND_NOTIFICATIONS_ENABLED =
+  import.meta.env.VITE_SESSION_ISLAND_NOTIFICATIONS === '1'
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
@@ -482,6 +488,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const [isCompactViewport, setIsCompactViewport] =
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
+  const [isLayoutSwitcherCompact, setIsLayoutSwitcherCompact] = useState(false)
 
   const [visibleLayoutIds, setVisibleLayoutIds] = useState<
     readonly PaneLayoutId[]
@@ -1152,6 +1159,12 @@ const WorkspaceViewContent = (): ReactElement => {
 
       const workspaceWidth =
         workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth
+
+      if (width > 0) {
+        setIsLayoutSwitcherCompact(
+          width < SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX
+        )
+      }
 
       if (
         !sidebarCollapsed &&
@@ -3394,6 +3407,15 @@ const WorkspaceViewContent = (): ReactElement => {
               }}
             />
           )}
+          <SessionIsland
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            displayMode={resolveSessionIslandDisplay(
+              settings.sessionIslandDisplay
+            )}
+            onSessionSelect={handleSetActiveSessionId}
+            showNotifications={SESSION_ISLAND_NOTIFICATIONS_ENABLED}
+          />
           <span className="min-w-[10px] flex-1" />
 
           {/* Pills render in every layout, with the layout-display config
@@ -3407,6 +3429,7 @@ const WorkspaceViewContent = (): ReactElement => {
               onPick={handlePickLayout}
               labelSingleAsFocusAction
               nativeOverlayTooltips
+              compact={isLayoutSwitcherCompact}
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}

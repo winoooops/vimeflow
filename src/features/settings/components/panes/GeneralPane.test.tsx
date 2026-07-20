@@ -30,6 +30,7 @@ const createLoadedSettings = (): AppSettings => ({
   monoFont: 'fira',
   terminalFontFamily: 'Iosevka',
   reservoirSwell: 'trailing',
+  sessionIslandDisplay: 'numbers',
   keymapPreset: 'vscode',
   agentShimEnabled: false,
   customKeybindings: {},
