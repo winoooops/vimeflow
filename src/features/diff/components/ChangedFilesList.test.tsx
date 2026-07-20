@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
+import { StrictMode } from 'react'
 import { render, screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { getCommand, type CommandId } from '@/features/keymap/catalog'
@@ -131,12 +132,14 @@ describe('ChangedFilesList', () => {
       })
 
     const { rerender } = render(
-      <ChangedFilesList
-        bindingFor={bindingFor}
-        files={mockFiles}
-        selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
-        onSelectFile={vi.fn()}
-      />
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
     )
 
     scrollContainer = screen.getByTestId('changed-files-scroll-container')
@@ -148,25 +151,42 @@ describe('ChangedFilesList', () => {
     // n/p moved the selection from outside the list → the NEW row scrolls
     // (the deselected row must not).
     rerender(
-      <ChangedFilesList
-        bindingFor={bindingFor}
-        files={mockFiles}
-        selectedFile={{ path: 'tsconfig.json', staged: false }}
-        onSelectFile={vi.fn()}
-      />
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'tsconfig.json', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
     )
     expect(scrollContainer.scrollTop).toBe(100)
 
+    // Moving back to the file selected when the list mounted still scrolls.
+    rerender(
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
+    )
+    expect(scrollContainer.scrollTop).toBe(80)
+
     // Unrelated re-render with the same selection: no extra scroll.
     rerender(
-      <ChangedFilesList
-        bindingFor={bindingFor}
-        files={mockFiles}
-        selectedFile={{ path: 'tsconfig.json', staged: false }}
-        onSelectFile={vi.fn()}
-      />
+      <StrictMode>
+        <ChangedFilesList
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={{ path: 'src/components/NavBar.tsx', staged: false }}
+          onSelectFile={vi.fn()}
+        />
+      </StrictMode>
     )
-    expect(scrollContainer.scrollTop).toBe(100)
+    expect(scrollContainer.scrollTop).toBe(80)
 
     clientHeightSpy.mockRestore()
     rectSpy.mockRestore()

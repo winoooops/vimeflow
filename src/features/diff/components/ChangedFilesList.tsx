@@ -41,6 +41,7 @@ interface ChangedFileItemProps {
   selected: boolean
   selectionKey: string | null
   initialSelectionKeyRef: RefObject<string | null>
+  hasObservedPostMountSelectionRef: RefObject<boolean>
   scrollContainerRef: RefObject<HTMLDivElement | null>
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
@@ -109,6 +110,7 @@ const ChangedFileItem = ({
   selected,
   selectionKey,
   initialSelectionKeyRef,
+  hasObservedPostMountSelectionRef,
   scrollContainerRef,
   onSelectFile,
   onAddFileComment = undefined,
@@ -127,15 +129,30 @@ const ChangedFileItem = ({
     const container = scrollContainerRef.current
 
     if (
-      selected &&
-      selectionKey !== null &&
-      selectionKey !== initialSelectionKeyRef.current &&
-      item !== null &&
-      container !== null
+      !selected ||
+      selectionKey === null ||
+      item === null ||
+      container === null
     ) {
-      scrollIntoNearestContainerView(item, container)
+      return
     }
-  }, [initialSelectionKeyRef, scrollContainerRef, selected, selectionKey])
+
+    if (!hasObservedPostMountSelectionRef.current) {
+      if (selectionKey === initialSelectionKeyRef.current) {
+        return
+      }
+
+      hasObservedPostMountSelectionRef.current = true
+    }
+
+    scrollIntoNearestContainerView(item, container)
+  }, [
+    hasObservedPostMountSelectionRef,
+    initialSelectionKeyRef,
+    scrollContainerRef,
+    selected,
+    selectionKey,
+  ])
 
   return (
     <div
@@ -284,6 +301,7 @@ export const ChangedFilesList = ({
   const selectionKey =
     selectedFile === null ? null : `${selectedFile.path}:${selectedFile.staged}`
   const initialSelectionKeyRef = useRef<string | null>(selectionKey)
+  const hasObservedPostMountSelectionRef = useRef(selectionKey === null)
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -322,6 +340,7 @@ export const ChangedFilesList = ({
             file={file}
             selectionKey={selectionKey}
             initialSelectionKeyRef={initialSelectionKeyRef}
+            hasObservedPostMountSelectionRef={hasObservedPostMountSelectionRef}
             scrollContainerRef={scrollContainerRef}
             selected={
               selectedFile?.path === file.path &&
