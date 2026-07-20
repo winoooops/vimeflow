@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-05
-ref_count: 17
+last_updated: 2026-07-20
+ref_count: 18
 ---
 
 # UI Visual Regression
@@ -339,4 +339,33 @@ test case for the state that triggers the collision.
 - **Fix:** Mirrored the review-navigation side resolver by classifying both
   `change-deletion` and `removed` as deletions, and expanded the co-located
   range-bar test to cover both unified deletion row spellings.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 28. Header icon buttons lost pointer cursor affordances
+
+- **Source:** github-claude | PR #712 round 1 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Header.tsx`
+- **Finding:** Moving the pane-level cursor rule onto only the terminal body
+  removed the inherited pointer cursor that header `IconButton`s and the
+  awaiting-restart button had relied on. Clickable header controls therefore
+  rendered with the default arrow cursor even though the PR intended to keep
+  pointer affordances scoped to real interactive targets.
+- **Fix:** Added `cursor-pointer` to the shared button primitive and to the raw
+  restart button, then added focused tests covering header action buttons and
+  the restart affordance.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Isolated terminal drag handle lacked its own preview surface
+
+- **Source:** github-codex-connector | PR #712 round 1 | 2026-07-20
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Header.tsx`
+- **Finding:** After the terminal pane drag handle was narrowed to the title
+  rect, the draggable element no longer owned the header background or clipping.
+  Chromium's drag snapshot could therefore capture only the chip/title content
+  instead of the intended rounded header pill.
+- **Fix:** Moved the visible background and overflow clipping onto the isolated
+  drag handle while preserving its scoped drag area, and added test assertions
+  for the rounded clipped preview surface.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

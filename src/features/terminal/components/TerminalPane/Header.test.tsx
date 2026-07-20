@@ -256,6 +256,9 @@ describe('Header', () => {
     render(<Header {...baseProps} draggable onHeaderDragStart={vi.fn()} />)
 
     const handle = screen.getByTestId('terminal-pane-drag-handle')
+    expect(handle).toHaveClass('overflow-hidden')
+    expect(handle).toHaveClass('rounded-[10px]')
+    expect(handle).toHaveClass('bg-primary-container/15')
     expect(handle.style.borderRadius).toBe('')
 
     fireEvent.dragStart(handle)
@@ -282,5 +285,17 @@ describe('Header', () => {
     const actions = screen.getByTestId('terminal-pane-header-actions')
     expect(actions).not.toHaveAttribute('draggable', 'true')
     expect(actions).not.toHaveAttribute('data-drag-handle', 'true')
+  })
+
+  test('header action buttons keep their pointer cursor affordance', () => {
+    render(<Header {...baseProps} onClose={vi.fn()} />)
+
+    expect(
+      screen.getByRole('button', { name: /collapse status/i })
+    ).toHaveClass('cursor-pointer')
+
+    expect(screen.getByRole('button', { name: /close pane/i })).toHaveClass(
+      'cursor-pointer'
+    )
   })
 })
