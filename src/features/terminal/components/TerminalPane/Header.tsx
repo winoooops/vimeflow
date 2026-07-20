@@ -106,7 +106,7 @@ export const Header = ({
         onDragEnd={handleDragEnd}
         style={{ cursor: draggable ? 'grab' : undefined }}
         className={`-my-1 -ml-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden rounded-[10px] px-2 py-1 ${
-          isActive ? 'bg-primary-container/15' : 'bg-surface-container-lowest'
+          isActive ? '' : 'bg-surface-container-lowest'
         }`}
       >
         <Chip

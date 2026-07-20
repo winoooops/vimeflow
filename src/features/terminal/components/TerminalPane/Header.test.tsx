@@ -258,7 +258,10 @@ describe('Header', () => {
     const handle = screen.getByTestId('terminal-pane-drag-handle')
     expect(handle).toHaveClass('overflow-hidden')
     expect(handle).toHaveClass('rounded-[10px]')
-    expect(handle).toHaveClass('bg-primary-container/15')
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass(
+      'bg-primary-container/15'
+    )
+    expect(handle).not.toHaveClass('bg-primary-container/15')
     expect(handle.style.borderRadius).toBe('')
 
     fireEvent.dragStart(handle)

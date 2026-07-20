@@ -3,7 +3,7 @@ id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
 last_updated: 2026-07-20
-ref_count: 19
+ref_count: 20
 ---
 
 # UI Visual Regression
@@ -380,4 +380,17 @@ test case for the state that triggers the collision.
 - **Fix:** Let the file-level comment stack expand naturally in the dock-level
   scroll container, with component coverage that asserts the nested height and
   overflow clamps stay absent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Active terminal header stacked translucent backgrounds
+
+- **Source:** github-claude | PR #712 round 2 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Header.tsx`
+- **Finding:** The active terminal header applied `bg-primary-container/15` on
+  the outer header and again on the nested isolated drag handle, so the
+  chip/title region composited darker than the action-button region.
+- **Fix:** Kept the active tint on the outer header and made the isolated drag
+  handle paint only its inactive preview background. Updated the focused header
+  test to assert the active handle no longer carries the duplicate tint.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
