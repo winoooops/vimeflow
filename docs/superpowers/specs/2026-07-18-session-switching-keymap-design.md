@@ -31,11 +31,10 @@ directory. Sessions render in the **sidebar sessions view** (`SessionsView` → 
 renders). The sidebar shows **two groups**: open sessions, then closed "Recent" sessions.
 
 This design deliberately scopes to the **switchable set** —
-`getVisibleSessions(sessions, activeSessionId)`, i.e. open sessions plus the active
-session even if it is no longer open. Recent (closed) rows are **not** switcher or
-successor targets: activating one means _resuming_ it, a heavier action that stays with
-the sidebar and palette. The switchable set is therefore intentionally narrower than what
-the sidebar displays, and the spec never equates the two.
+`sessions.filter(isOpenSession)`, exactly matching the sidebar Active group and Session
+Island. Recent (closed) rows are not keyboard-cycle, switcher, palette-navigation, or
+successor targets: selecting and resuming one stays in the sidebar. A resumed session
+automatically re-enters the switchable set when it becomes open again.
 
 Today's session switching is limited to sequential cycling (`session-prev` /
 `session-next` on `⌘[` / `⌘]`, Linux `Ctrl+Shift+[` / `]`), sidebar clicks, and palette
@@ -61,7 +60,7 @@ it (`KeymapPane.tsx` renders rows straight from `CATALOG`).
 
 - **Direct digit jump to session N** — dropped from v1 after review; the full analysis of
   why no viable default chord tier exists is preserved in §8.
-- Fuzzy session picker (the command palette already reaches sessions by name).
+- Fuzzy session picker (the command palette already reaches live sessions by name).
 - MRU persistence across relaunch (v1 is in-memory).
 - Session reordering shortcuts.
 - Keyup transport through the native input bridges (§5 defines fallbacks instead).

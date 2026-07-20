@@ -133,10 +133,7 @@ import {
   isLiveStatus,
   isOpenSession,
 } from '@/features/sessions/utils/sessionStatus'
-import {
-  getVisibleSessions,
-  pickNextVisibleSessionId,
-} from '@/features/sessions/utils/pickNextVisibleSessionId'
+import { pickNextVisibleSessionId } from '@/features/sessions/utils/pickNextVisibleSessionId'
 import { closeSessionWithSuccessor } from '@/features/sessions/utils/closeSessionWithSuccessor'
 import { orderSwitcherSessionIds } from './utils/orderSwitcherSessionIds'
 import {
@@ -652,8 +649,10 @@ const WorkspaceViewContent = (): ReactElement => {
   // — adding a key there automatically extends this signature so the memo
   // rebuilds whenever a newly-readable field actually changes. JSON
   // encoding is collision-free regardless of separator characters in names.
+  const liveSessions = useMemo(() => sessions.filter(isOpenSession), [sessions])
+
   const sessionsSignature = JSON.stringify(
-    sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
+    liveSessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
   )
 
   // `activePane` is declared further down (after `activeSession`); resolve
@@ -1980,7 +1979,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
-        sessions,
+        sessions: liveSessions,
         activeSessionId,
         activePanePtyId: activePanePtyIdForCommands,
         activePaneAgentType: activePaneAgentTypeForCommands,
@@ -2229,11 +2228,11 @@ const WorkspaceViewContent = (): ReactElement => {
     matches,
   })
 
-  // VIM-104: ⌘[ / ⌘] cycle to the previous / next session (Ctrl+⇧[ / Ctrl+⇧]
-  // on Linux). Mirrors the previous/next-session palette commands.
+  // VIM-104: ⌘[ / ⌘] cycle to the previous / next live session (Ctrl+⇧[ /
+  // Ctrl+⇧] on Linux). Recent sessions stay sidebar-only until resumed.
   const switchRelativeSession = useCallback(
     (delta: number): void => {
-      const nextSession = cycleSession(sessions, activeSessionId, delta)
+      const nextSession = cycleSession(liveSessions, activeSessionId, delta)
       if (nextSession === null) {
         notifyInfo('No open sessions')
 
@@ -2243,7 +2242,13 @@ const WorkspaceViewContent = (): ReactElement => {
       setActiveSessionId(nextSession.id)
       claimTerminal()
     },
-    [sessions, activeSessionId, setActiveSessionId, notifyInfo, claimTerminal]
+    [
+      liveSessions,
+      activeSessionId,
+      setActiveSessionId,
+      notifyInfo,
+      claimTerminal,
+    ]
   )
 
   const handlePrevSession = useCallback((): void => {
@@ -2262,19 +2267,14 @@ const WorkspaceViewContent = (): ReactElement => {
 
   // Ctrl+Tab MRU switcher: switchable set in MRU order, never-activated
   // sessions appended so every open session stays reachable.
-  const switchableSessions = useMemo(
-    () => getVisibleSessions(sessions, activeSessionId),
-    [activeSessionId, sessions]
-  )
-
   const switcherOrderedIds = useMemo(
     () =>
       orderSwitcherSessionIds(
         mruSessionIds,
-        switchableSessions.map((s) => s.id),
+        liveSessions.map((s) => s.id),
         activeSessionId
       ),
-    [activeSessionId, mruSessionIds, switchableSessions]
+    [activeSessionId, liveSessions, mruSessionIds]
   )
 
   const switcherEntries = useMemo(
@@ -2298,6 +2298,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const sessionSwitcher = useSessionSwitcher({
     orderedIds: switcherOrderedIds,
+    activeSessionId,
     matches,
     bindingFor,
     onCommit: handleSetActiveSessionId,

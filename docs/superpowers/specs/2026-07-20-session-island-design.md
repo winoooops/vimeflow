@@ -18,8 +18,8 @@ navigation and position chrome; its colors do not encode agent activity or sessi
 ## 2. Source of truth
 
 - Input order is `sessions.filter(isOpenSession)`, exactly matching the sidebar Active group.
-- Reordering the sidebar updates the island immediately. The Ctrl+Tab MRU order is unrelated
-  and must not be reused.
+- Keyboard navigation uses the same open-only membership. Reordering the sidebar updates the
+  island immediately, while Ctrl+Tab keeps its separate MRU ordering.
 - Selection uses the workspace's existing `handleSetActiveSessionId`, preserving terminal
   focus and the current activation controller behavior.
 - Recent/completed sessions never receive indicators. If one is selected, the island remains

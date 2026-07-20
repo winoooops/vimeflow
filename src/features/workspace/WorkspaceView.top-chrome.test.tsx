@@ -387,6 +387,65 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     ).toBeNull()
   })
 
+  test('excludes Recent sessions from sequential and MRU keyboard cycling', async () => {
+    const recent = createMockSession('recent', 'completed work', {
+      status: 'completed',
+    })
+    await setupSessionManager([...mockSessions, recent], 'recent')
+    mockSessionManager.mruSessionIds = ['recent', 'session-2', 'session-1']
+    render(<WorkspaceView />)
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          code: 'BracketRight',
+          key: '}',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-1'
+    )
+    vi.mocked(mockSessionManager.setActiveSessionId).mockClear()
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          code: 'Tab',
+          key: 'Tab',
+          ctrlKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
+    const switcher = screen.getByRole('listbox', {
+      name: 'Session switcher',
+    })
+    const options = within(switcher).getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    expect(within(switcher).queryByText('completed work')).toBeNull()
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keyup', {
+          code: 'ControlLeft',
+          key: 'Control',
+          bubbles: true,
+        })
+      )
+    })
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-2'
+    )
+  })
+
   test('omits the island when no sessions are open', async () => {
     await setupSessionManager(
       [

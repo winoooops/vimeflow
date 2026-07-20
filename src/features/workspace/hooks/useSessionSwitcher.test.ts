@@ -59,13 +59,16 @@ type SwitcherHarness = RenderHookResult<
 
 const setup = (
   orderedIds: readonly string[],
-  onCommit = vi.fn(),
-  onCancel = vi.fn()
+  activeSessionId: string | null = orderedIds[0] ?? null
 ): SwitcherHarness => {
+  const onCommit = vi.fn()
+  const onCancel = vi.fn()
+
   const rendered = renderHook(
     ({ ids }: { ids: readonly string[] }) =>
       useSessionSwitcher({
         orderedIds: ids,
+        activeSessionId,
         matches,
         bindingFor,
         onCommit,
@@ -127,6 +130,16 @@ describe('useSessionSwitcher', () => {
     act(() => void document.dispatchEvent(ctrlKeyUp()))
     expect(onCommit).toHaveBeenCalledWith('B')
     expect(result.current.open).toBe(false)
+  })
+
+  test('quick tap from outside the live set commits the first MRU session', () => {
+    const { result, onCommit } = setup(['A', 'B'], 'recent')
+
+    act(() => void document.dispatchEvent(ctrlTab()))
+    expect(result.current.selectedIndex).toBe(0)
+
+    act(() => void document.dispatchEvent(ctrlKeyUp()))
+    expect(onCommit).toHaveBeenCalledWith('A')
   })
 
   test('held Ctrl with repeated Tab advances with wraparound', () => {
