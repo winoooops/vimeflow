@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { FocusEvent, ReactElement } from 'react'
+import type { FocusEvent, ReactElement, RefObject } from 'react'
 import { IconButton } from '@/components/IconButton'
 import {
   chordToAriaShortcut,
@@ -39,6 +39,7 @@ interface ChangedFileItemProps {
   commentShortcut: ShortcutInput
   file: ChangedFile
   selected: boolean
+  scrollContainerRef: RefObject<HTMLDivElement | null>
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
 }
@@ -77,11 +78,34 @@ const statusTone = (
   }
 }
 
+const scrollIntoNearestContainerView = (
+  item: HTMLElement,
+  container: HTMLElement
+): void => {
+  const itemRect = item.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const itemTop = itemRect.top - containerRect.top + container.scrollTop
+  const itemBottom = itemTop + itemRect.height
+  const visibleTop = container.scrollTop
+  const visibleBottom = visibleTop + container.clientHeight
+
+  if (itemTop < visibleTop) {
+    container.scrollTop = itemTop
+
+    return
+  }
+
+  if (itemBottom > visibleBottom) {
+    container.scrollTop = itemBottom - container.clientHeight
+  }
+}
+
 const ChangedFileItem = ({
   commentAriaKeyshortcuts,
   commentShortcut,
   file,
   selected,
+  scrollContainerRef,
   onSelectFile,
   onAddFileComment = undefined,
 }: ChangedFileItemProps): ReactElement => {
@@ -92,13 +116,17 @@ const ChangedFileItem = ({
   const itemRef = useRef<HTMLDivElement | null>(null)
 
   // Keyboard file navigation (n/p) moves the selection from outside the list;
-  // keep the active row visible. `nearest` is a no-op for an already-visible
-  // row, so mouse selection cannot cause a scroll jump (VIM-359).
+  // keep the active row visible inside the changed-files scroller only. Avoid
+  // Element.scrollIntoView here because it may walk up to the app viewport and
+  // move unrelated surfaces during smoke tests.
   useEffect(() => {
-    if (selected) {
-      itemRef.current?.scrollIntoView({ block: 'nearest' })
+    const item = itemRef.current
+    const container = scrollContainerRef.current
+
+    if (selected && item !== null && container !== null) {
+      scrollIntoNearestContainerView(item, container)
     }
-  }, [selected])
+  }, [scrollContainerRef, selected])
 
   return (
     <div
@@ -242,6 +270,7 @@ export const ChangedFilesList = ({
   const pinShortcut = bindingFor('diff-files-pin')
   const commentShortcutInput = chordToShortcutInput(commentShortcut)
   const commentAriaKeyshortcuts = chordToAriaShortcut(commentShortcut)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -267,13 +296,18 @@ export const ChangedFilesList = ({
         ) : null}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1.5">
+      <div
+        ref={scrollContainerRef}
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1.5"
+        data-testid="changed-files-scroll-container"
+      >
         {files.map((file) => (
           <ChangedFileItem
             key={`${file.path}:${file.staged}`}
             commentAriaKeyshortcuts={commentAriaKeyshortcuts}
             commentShortcut={commentShortcutInput}
             file={file}
+            scrollContainerRef={scrollContainerRef}
             selected={
               selectedFile?.path === file.path &&
               selectedFile.staged === file.staged

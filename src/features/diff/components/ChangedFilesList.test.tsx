@@ -96,10 +96,38 @@ describe('ChangedFilesList', () => {
   })
 
   test('scrolls the newly selected row into view, once per selection change', () => {
+    let scrollContainer: HTMLElement | null = null
+
     const scrollSpy = vi
       .spyOn(Element.prototype, 'scrollIntoView')
       .mockImplementation(function (this: Element) {
         void this
+      })
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'changed-files-scroll-container') {
+          return new DOMRect(0, 0, 0, 40)
+        }
+
+        const currentScroll = scrollContainer?.scrollTop ?? 0
+
+        if (this.textContent?.includes('NavBar.tsx')) {
+          return new DOMRect(0, 80 - currentScroll, 0, 20)
+        }
+
+        if (this.textContent?.includes('tsconfig.json')) {
+          return new DOMRect(0, 120 - currentScroll, 0, 20)
+        }
+
+        return new DOMRect(0, 0, 0, 0)
+      })
+
+    const clientHeightSpy = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'changed-files-scroll-container' ? 40 : 0
       })
 
     const { rerender } = render(
@@ -111,9 +139,11 @@ describe('ChangedFilesList', () => {
       />
     )
 
+    scrollContainer = screen.getByTestId('changed-files-scroll-container')
+
     // Opening the list reveals the current selection.
-    expect(scrollSpy).toHaveBeenCalledTimes(1)
-    expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(scrollContainer.scrollTop).toBe(60)
+    expect(scrollSpy).not.toHaveBeenCalled()
 
     // n/p moved the selection from outside the list → the NEW row scrolls
     // (the deselected row must not).
@@ -125,10 +155,7 @@ describe('ChangedFilesList', () => {
         onSelectFile={vi.fn()}
       />
     )
-    expect(scrollSpy).toHaveBeenCalledTimes(2)
-    expect((scrollSpy.mock.contexts[1] as HTMLElement).textContent).toContain(
-      'tsconfig.json'
-    )
+    expect(scrollContainer.scrollTop).toBe(100)
 
     // Unrelated re-render with the same selection: no extra scroll.
     rerender(
@@ -139,8 +166,10 @@ describe('ChangedFilesList', () => {
         onSelectFile={vi.fn()}
       />
     )
-    expect(scrollSpy).toHaveBeenCalledTimes(2)
+    expect(scrollContainer.scrollTop).toBe(100)
 
+    clientHeightSpy.mockRestore()
+    rectSpy.mockRestore()
     scrollSpy.mockRestore()
   })
 
