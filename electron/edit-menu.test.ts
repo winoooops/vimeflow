@@ -78,12 +78,12 @@ describe('application edit menu', () => {
     expect(menuMock.setApplicationMenu).toHaveBeenCalledWith({ template })
   })
 
-  test('leaves non-mac application menus unchanged', () => {
+  test('suppresses the default application menu on Linux', () => {
     expect(createApplicationMenuTemplate('linux')).toEqual([])
 
     installApplicationEditMenu('linux')
 
     expect(menuMock.buildFromTemplate).not.toHaveBeenCalled()
-    expect(menuMock.setApplicationMenu).not.toHaveBeenCalled()
+    expect(menuMock.setApplicationMenu).toHaveBeenCalledWith(null)
   })
 })
