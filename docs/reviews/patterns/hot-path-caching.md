@@ -2,8 +2,8 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-07-20
-ref_count: 4
+last_updated: 2026-07-21
+ref_count: 5
 ---
 
 # Hot-Path Caching
@@ -111,4 +111,22 @@ feature.
 - **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
 - **Finding:** Resumed Kimi sessions used `session_resume_at` during each 750 ms status refresh, and the helper reread `logs/kimi-code.log` from the beginning for every matching index candidate. Large persisted logs therefore created repeated synchronous disk I/O and parsing on the locator hot path.
 - **Fix:** Added per-locator caching for positive resume evidence and bounded the log scan to the startup tail before parsing resume diagnostics. Misses remain retryable, while successful resumed-session ownership no longer rescans the log on subsequent refreshes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. Kimi macOS process-start lookup spawned `ps` on every poll
+
+- **Source:** github-claude | PR #719 round 1 | 2026-07-21
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** The macOS `process_start` path shelled out to `ps -p <pid> -o etime=` from the repeated index and fallback resolution paths. Because the supervisor refreshes Kimi sessions every 750 ms, each attached pane could keep spawning subprocesses indefinitely to recompute a process start time that cannot change for that pid.
+- **Fix:** Added a per-locator process-start cache that stores the first resolved platform process-start evidence and reuses it for subsequent index and fallback lookups. The same cache also avoids calling the platform source twice during a single locate pass.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Kimi process-start cache made transient misses permanent
+
+- **Source:** github-codex-connector | PR #719 round 2 | 2026-07-21
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
+- **Finding:** The process-start cache stored the first lookup result even when the platform source returned `None`. A transient `/proc` or macOS `ps` miss could therefore disable process-owned session tie-breaking for the locator lifetime and fall back to activity-based selection for same-cwd Kimi sessions.
+- **Fix:** Changed the cache to store only successful `ProcessStartEvidence` values, leaving misses retryable on the next poll. Added a regression test proving a missing first `/proc` read does not prevent a later successful process-start resolution from being used.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
