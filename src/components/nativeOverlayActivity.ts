@@ -1,11 +1,21 @@
+const NATIVE_OVERLAY_ACTIVITY_TOOL_KINDS = [
+  'edit',
+  'bash',
+  'read',
+  'write',
+  'grep',
+  'glob',
+  'plan',
+  'wait',
+  'agent',
+  'web',
+  'interaction',
+  'external',
+  'meta',
+] as const
+
 type NativeOverlayActivityToolKind =
-  | 'edit'
-  | 'bash'
-  | 'read'
-  | 'write'
-  | 'grep'
-  | 'glob'
-  | 'meta'
+  (typeof NATIVE_OVERLAY_ACTIVITY_TOOL_KINDS)[number]
 
 export type NativeOverlayActivityEventKind =
   | NativeOverlayActivityToolKind
@@ -24,6 +34,7 @@ export type NativeOverlayActivityEvent =
   | (NativeOverlayActivityEventBase & {
       kind: NativeOverlayActivityToolKind
       tool: string
+      label: string
       durationMs: number | null
       diff?: { added: number; removed: number }
       bashResult?: { passed: number; total: number }
@@ -66,13 +77,7 @@ const isFiniteNumber = (value: unknown): value is number =>
 const isActivityToolKind = (
   value: unknown
 ): value is NativeOverlayActivityToolKind =>
-  value === 'edit' ||
-  value === 'bash' ||
-  value === 'read' ||
-  value === 'write' ||
-  value === 'grep' ||
-  value === 'glob' ||
-  value === 'meta'
+  NATIVE_OVERLAY_ACTIVITY_TOOL_KINDS.some((kind) => kind === value)
 
 const isCountPair = (value: unknown, first: string, second: string): boolean =>
   isRecord(value) &&
@@ -102,6 +107,7 @@ const isActivityEvent = (
   return (
     isActivityToolKind(value.kind) &&
     typeof value.tool === 'string' &&
+    typeof value.label === 'string' &&
     (value.durationMs === null || isFiniteNumber(value.durationMs)) &&
     (value.diff === undefined || isCountPair(value.diff, 'added', 'removed')) &&
     (value.bashResult === undefined ||

@@ -45,6 +45,7 @@ const toolEvent = (
   id: 't-1',
   kind: 'edit',
   tool: 'Edit',
+  label: 'EDIT',
   body: 'src/foo.ts',
   timestamp: '2026-04-22T11:59:42Z', // 18s before now
   status: 'done',
@@ -98,10 +99,48 @@ describe('ActivityEvent — basic row', () => {
       symbol: 'tune',
       label: 'WEBFETCH',
     },
+    {
+      kind: 'plan' as const,
+      tool: 'TaskCreate',
+      symbol: 'checklist',
+      label: 'CREATE TASK',
+    },
+    {
+      kind: 'wait' as const,
+      tool: 'TaskOutput',
+      symbol: 'hourglass_top',
+      label: 'TASK OUTPUT',
+    },
+    {
+      kind: 'agent' as const,
+      tool: 'Agent',
+      symbol: 'hub',
+      label: 'AGENT',
+    },
+    {
+      kind: 'web' as const,
+      tool: 'WebSearch',
+      symbol: 'language',
+      label: 'WEB SEARCH',
+    },
+    {
+      kind: 'interaction' as const,
+      tool: 'AskUserQuestion',
+      symbol: 'forum',
+      label: 'ASK USER',
+    },
+    {
+      kind: 'external' as const,
+      tool: 'mcp__github__get_issue',
+      symbol: 'extension',
+      label: 'GITHUB · GET ISSUE',
+    },
   ])(
     'renders $label icon as material symbol $symbol',
     ({ kind, tool, symbol, label }) => {
-      render(<ActivityEvent event={toolEvent({ kind, tool })} now={now} />)
+      render(
+        <ActivityEvent event={toolEvent({ kind, tool, label })} now={now} />
+      )
       const article = screen.getByRole('article', { name: label })
       // eslint-disable-next-line testing-library/no-node-access -- Material Symbols icon verification per rules/typescript/testing/CLAUDE.md
       const icon = article.querySelector('.material-symbols-outlined')
@@ -114,7 +153,11 @@ describe('ActivityEvent — basic row', () => {
   test('renders meta row icon with crisp sizing and readable contrast', () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'meta', tool: 'EXEC_COMMAND' })}
+        event={toolEvent({
+          kind: 'meta',
+          tool: 'EXEC_COMMAND',
+          label: 'EXEC_COMMAND',
+        })}
         now={now}
       />
     )
@@ -158,7 +201,11 @@ describe('ActivityEvent — basic row', () => {
   test('meta kind uses raw tool name as label', () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'meta', tool: 'WebFetch' })}
+        event={toolEvent({
+          kind: 'meta',
+          tool: 'WebFetch',
+          label: 'WEBFETCH',
+        })}
         now={now}
       />
     )
@@ -240,6 +287,7 @@ describe('ActivityEvent — diff chips (EDIT/WRITE)', () => {
         event={toolEvent({
           kind: 'read',
           tool: 'Read',
+          label: 'READ',
           diff: { added: 1, removed: 1 },
         })}
         now={now}
@@ -257,6 +305,7 @@ describe('ActivityEvent — bash status pill', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           status: 'done',
           bashResult: { passed: 4, total: 4 },
         })}
@@ -274,6 +323,7 @@ describe('ActivityEvent — bash status pill', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           status: 'failed',
           bashResult: { passed: 1, total: 4 },
         })}
@@ -288,7 +338,12 @@ describe('ActivityEvent — bash status pill', () => {
   test('status=done, no bashResult → "OK" in success palette', () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          status: 'done',
+        })}
         now={now}
       />
     )
@@ -300,7 +355,12 @@ describe('ActivityEvent — bash status pill', () => {
   test('status=failed, no bashResult → "FAILED" in error palette', () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          status: 'failed',
+        })}
         now={now}
       />
     )
@@ -312,7 +372,12 @@ describe('ActivityEvent — bash status pill', () => {
   test('non-bash kinds render no status pill', () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'read', tool: 'Read', status: 'done' })}
+        event={toolEvent({
+          kind: 'read',
+          tool: 'Read',
+          label: 'READ',
+          status: 'done',
+        })}
         now={now}
       />
     )
@@ -330,6 +395,7 @@ describe('ActivityEvent — running state', () => {
           id: 'active-Bash',
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           timestamp: '2026-04-22T11:59:52Z', // 8s before now
           status: 'running',
@@ -349,6 +415,7 @@ describe('ActivityEvent — running state', () => {
           id: 'active-Bash',
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           timestamp: '2026-04-22T11:59:52Z',
           status: 'running',
@@ -379,6 +446,7 @@ describe('ActivityEvent — running state', () => {
           id: 'active-Bash',
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           timestamp: '2026-04-22T12:00:00.500Z',
           status: 'running',
@@ -400,6 +468,7 @@ describe('ActivityEvent — tooltip integration', () => {
           id: 'e1',
           kind: 'edit',
           tool: 'Edit',
+          label: 'EDIT',
           body: 'src/components/Tooltip.tsx with a long trailing description',
           timestamp: '2026-04-23T03:00:00Z',
           status: 'done',
@@ -416,13 +485,14 @@ describe('ActivityEvent — tooltip integration', () => {
     )
   })
 
-  test('shows activity details even when the body fits in the row', async () => {
+  test('shows trace details even when the body fits in the row', async () => {
     render(
       <ActivityEvent
         event={{
           id: 'e2',
           kind: 'read',
           tool: 'Read',
+          label: 'READ',
           body: 'short.tsx',
           timestamp: '2026-04-23T03:00:00Z',
           status: 'done',
@@ -436,13 +506,13 @@ describe('ActivityEvent — tooltip integration', () => {
     fireEvent.focus(row)
 
     const details = await screen.findByRole('dialog', {
-      name: 'READ activity details',
+      name: 'READ trace details',
     })
 
     expect(details).toHaveTextContent('short.tsx')
   })
 
-  test('shows full activity details on row hover and copies the body', async () => {
+  test('shows full trace details on row hover and copies the body', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn().mockResolvedValue(undefined)
 
@@ -457,6 +527,7 @@ describe('ActivityEvent — tooltip integration', () => {
           id: 'e3',
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body,
           timestamp: '2026-04-23T03:00:00Z',
           status: 'done',
@@ -470,12 +541,12 @@ describe('ActivityEvent — tooltip integration', () => {
     fireEvent.focus(row)
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
 
     expect(details).toHaveTextContent(body)
     await user.click(
-      within(details).getByRole('button', { name: 'Copy activity details' })
+      within(details).getByRole('button', { name: 'Copy trace details' })
     )
 
     expect(writeText).toHaveBeenCalledWith(body)
@@ -493,6 +564,7 @@ describe('ActivityEvent — tooltip integration', () => {
           id: 'e4',
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           timestamp: '2026-04-23T03:00:00Z',
           status: 'done',
@@ -506,11 +578,11 @@ describe('ActivityEvent — tooltip integration', () => {
     fireEvent.focus(row)
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
 
     await user.click(
-      within(details).getByRole('button', { name: 'Copy activity details' })
+      within(details).getByRole('button', { name: 'Copy trace details' })
     )
 
     expect(within(details).getByText('Failed')).toBeInTheDocument()
@@ -528,6 +600,7 @@ describe('ActivityEvent — test-file verb prefix', () => {
           id: 'e1',
           kind: 'write',
           tool: 'Write',
+          label: 'WRITE',
           body: 'src/foo.test.ts',
           isTestFile: true,
         })}
@@ -566,6 +639,7 @@ describe('ActivityEvent — test-file verb prefix', () => {
           id: 'e3',
           kind: 'write',
           tool: 'Write',
+          label: 'WRITE',
           body: 'src/foo.ts',
           isTestFile: false,
         })}
@@ -587,17 +661,22 @@ describe('ActivityEvent — copy with resultPreview', () => {
 
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'bash', tool: 'Bash', body: 'pnpm test' })}
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          body: 'pnpm test',
+        })}
         now={now}
       />
     )
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     await user.click(
-      within(details).getByRole('button', { name: 'Copy activity details' })
+      within(details).getByRole('button', { name: 'Copy trace details' })
     )
 
     expect(writeText).toHaveBeenCalledWith('pnpm test')
@@ -613,6 +692,7 @@ describe('ActivityEvent — copy with resultPreview', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           resultPreview: '✓ 4 passed',
         })}
@@ -622,10 +702,10 @@ describe('ActivityEvent — copy with resultPreview', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     await user.click(
-      within(details).getByRole('button', { name: 'Copy activity details' })
+      within(details).getByRole('button', { name: 'Copy trace details' })
     )
 
     expect(writeText).toHaveBeenCalledWith('pnpm test\n\n✓ 4 passed')
@@ -638,7 +718,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'EDIT activity details',
+      name: 'EDIT trace details',
     })
 
     expect(details).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
@@ -651,14 +731,19 @@ describe('ActivityEvent — structured tooltip', () => {
   test('tooltip header shows the lowercase kind chip for a done tool call', async () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'done' })}
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          status: 'done',
+        })}
         now={now}
       />
     )
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
 
     expect(within(details).getByText('bash')).toBeInTheDocument()
@@ -669,14 +754,19 @@ describe('ActivityEvent — structured tooltip', () => {
   test('failed and running tool calls show no status chip in the tooltip', async () => {
     const { rerender } = render(
       <ActivityEvent
-        event={toolEvent({ kind: 'bash', tool: 'Bash', status: 'failed' })}
+        event={toolEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          status: 'failed',
+        })}
         now={now}
       />
     )
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const failed = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     expect(within(failed).queryByText('FAILED')).not.toBeInTheDocument()
     expect(within(failed).queryByText('RUNNING')).not.toBeInTheDocument()
@@ -687,6 +777,7 @@ describe('ActivityEvent — structured tooltip', () => {
           id: 'r',
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           timestamp: '2026-04-22T11:59:52Z',
           status: 'running',
@@ -698,7 +789,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const running = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     expect(within(running).queryByText('RUNNING')).not.toBeInTheDocument()
   })
@@ -709,6 +800,7 @@ describe('ActivityEvent — structured tooltip', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           status: 'done',
           bashResult: { passed: 4, total: 4 },
         })}
@@ -718,7 +810,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     expect(within(details).queryByText('OK 4/4')).not.toBeInTheDocument()
     expect(within(details).getByText('bash')).toBeInTheDocument()
@@ -740,7 +832,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'THINK' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'THINK activity details',
+      name: 'THINK trace details',
     })
     expect(within(details).queryByText('OK')).not.toBeInTheDocument()
     const body = within(details).getByText('considering options')
@@ -750,14 +842,19 @@ describe('ActivityEvent — structured tooltip', () => {
   test('no resultPreview → no output pre block', async () => {
     render(
       <ActivityEvent
-        event={toolEvent({ kind: 'read', tool: 'Read', body: 'src/x.ts' })}
+        event={toolEvent({
+          kind: 'read',
+          tool: 'Read',
+          label: 'READ',
+          body: 'src/x.ts',
+        })}
         now={now}
       />
     )
     fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'READ activity details',
+      name: 'READ trace details',
     })
     // eslint-disable-next-line testing-library/no-node-access -- assert the <pre> output block is absent
     expect(details.querySelector('pre')).toBeNull()
@@ -769,6 +866,7 @@ describe('ActivityEvent — structured tooltip', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           status: 'done',
           durationMs: 0,
         })}
@@ -785,6 +883,7 @@ describe('ActivityEvent — structured tooltip', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           status: 'done',
         })}
@@ -794,7 +893,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     expect(within(details).getByText('pnpm test')).toBeInTheDocument()
     expect(within(details).getByText('$')).toBeInTheDocument()
@@ -815,7 +914,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'EDIT activity details',
+      name: 'EDIT trace details',
     })
     expect(within(details).getByText('Button.tsx')).toBeInTheDocument()
   })
@@ -826,6 +925,7 @@ describe('ActivityEvent — structured tooltip', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'pnpm test',
           status: 'done',
         })}
@@ -835,7 +935,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     expect(within(details).getByText(/rerun/)).toBeInTheDocument()
     expect(within(details).getByText(/open in terminal/)).toBeInTheDocument()
@@ -860,7 +960,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'USER' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'USER activity details',
+      name: 'USER trace details',
     })
     const body = within(details).getByText('refactor this')
     expect(body).not.toHaveClass('italic')
@@ -881,7 +981,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'EDIT activity details',
+      name: 'EDIT trace details',
     })
     const dir = within(details).getByText('src/components/')
     expect(dir).toHaveClass('text-syn-comment')
@@ -908,7 +1008,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'EDIT activity details',
+      name: 'EDIT trace details',
     })
     const dir = within(details).getByText('C:\\repo\\src\\')
     expect(dir).toHaveClass('text-syn-comment')
@@ -922,6 +1022,7 @@ describe('ActivityEvent — structured tooltip', () => {
         event={toolEvent({
           kind: 'read',
           tool: 'Read',
+          label: 'READ',
           body: 'src/components/Button.tsx',
           status: 'done',
         })}
@@ -931,7 +1032,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'READ' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'READ activity details',
+      name: 'READ trace details',
     })
     const filename = within(details).getByText('Button.tsx')
     expect(filename).toHaveClass('font-semibold')
@@ -947,6 +1048,7 @@ describe('ActivityEvent — structured tooltip', () => {
         event={toolEvent({
           kind: 'bash',
           tool: 'Bash',
+          label: 'BASH',
           body: 'npm run test -- --run src/features/agent-status/components/ActivityEvent.test.tsx',
           status: 'done',
         })}
@@ -956,7 +1058,7 @@ describe('ActivityEvent — structured tooltip', () => {
     fireEvent.focus(screen.getByRole('article', { name: 'BASH' }))
 
     const details = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
 
     const cmd = within(details).getByText(

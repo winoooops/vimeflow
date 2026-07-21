@@ -269,7 +269,7 @@ const activityPopoverRequest = {
   payload: {
     kind: 'popover',
     popover: 'activity',
-    ariaLabel: 'BASH activity details',
+    ariaLabel: 'BASH trace details',
     event: {
       id: 'activity-1',
       kind: 'bash',
@@ -277,6 +277,7 @@ const activityPopoverRequest = {
       status: 'done',
       body: 'npm test',
       tool: 'Bash',
+      label: 'BASH',
       durationMs: 1200,
     },
   },

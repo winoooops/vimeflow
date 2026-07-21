@@ -29,6 +29,12 @@ export const ACTIVITY_KIND_ICON: Record<
   bash: 'terminal',
   grep: 'search',
   glob: 'find_in_page',
+  plan: 'checklist',
+  wait: 'hourglass_top',
+  agent: 'hub',
+  web: 'language',
+  interaction: 'forum',
+  external: 'extension',
   think: 'psychology',
   user: 'person',
   meta: 'tune',
@@ -44,6 +50,12 @@ export const ACTIVITY_KIND_COLOR: Record<
   bash: 'text-secondary',
   grep: 'text-on-surface-variant',
   glob: 'text-on-surface-variant',
+  plan: 'text-primary-container',
+  wait: 'text-tertiary',
+  agent: 'text-secondary',
+  web: 'text-tertiary',
+  interaction: 'text-tertiary',
+  external: 'text-on-surface-variant',
   think: 'text-primary-container',
   user: 'text-tertiary',
   meta: 'text-on-surface-muted',
@@ -106,6 +118,12 @@ const KIND_ACCENT: Record<NativeOverlayActivityEventKind, string> = {
   read: 'var(--color-on-surface-muted)',
   grep: 'var(--color-secondary)',
   glob: 'var(--color-secondary)',
+  plan: 'var(--color-primary)',
+  wait: 'var(--color-tertiary)',
+  agent: 'var(--color-secondary)',
+  web: 'var(--color-tertiary)',
+  interaction: 'var(--color-agent-shell-accent)',
+  external: 'var(--color-on-surface-muted)',
   meta: 'var(--color-secondary)',
   think: 'var(--color-secondary-dim)',
   user: 'var(--color-agent-shell-accent)',
@@ -124,17 +142,23 @@ const Dot = (): ReactElement => (
 const CommandBlock = ({
   cmd,
   accent,
+  prompt,
 }: {
   cmd: string
   accent: string
+  prompt: string | undefined
 }): ReactElement => (
-  <pre className="relative m-0 max-h-[12rem] overflow-y-auto rounded-md border border-outline-variant/30 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent)] p-2 pl-6 font-mono text-[11px] leading-[1.55] text-on-surface-variant">
-    <span
-      className="absolute left-[10px] top-2 text-sm"
-      style={{ color: accent, opacity: 0.8 }}
-    >
-      $
-    </span>
+  <pre
+    className={`relative m-0 max-h-[12rem] overflow-y-auto rounded-md border border-outline-variant/30 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent)] p-2 font-mono text-[11px] leading-[1.55] text-on-surface-variant ${prompt ? 'pl-6' : ''}`}
+  >
+    {prompt ? (
+      <span
+        className="absolute left-[10px] top-2 text-sm"
+        style={{ color: accent, opacity: 0.8 }}
+      >
+        {prompt}
+      </span>
+    ) : null}
     <span className="whitespace-pre-wrap break-all text-on-surface">{cmd}</span>
   </pre>
 )
@@ -209,10 +233,10 @@ export const NativeOverlayActivityCard = ({
 
   const copyButtonLabel =
     copyState === 'copied'
-      ? 'Copied activity details'
+      ? 'Copied trace details'
       : copyState === 'failed'
         ? 'Copy failed, try again'
-        : 'Copy activity details'
+        : 'Copy trace details'
 
   const copyFeedback =
     copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : ''
@@ -225,13 +249,15 @@ export const NativeOverlayActivityCard = ({
       ? formatDuration(event.durationMs)
       : null
   const accent = KIND_ACCENT[event.kind]
-  const kindLabel = event.kind.toLowerCase()
 
-  const showFooter =
-    event.kind === 'bash' ||
-    event.kind === 'edit' ||
-    event.kind === 'write' ||
-    event.kind === 'read'
+  const kindLabel = isToolEvent(event)
+    ? event.label.toLowerCase()
+    : event.kind.toLowerCase()
+
+  const showsFilePath =
+    event.kind === 'edit' || event.kind === 'write' || event.kind === 'read'
+
+  const showFooter = event.kind === 'bash' || showsFilePath
   const modKey = formatShortcut('Mod')
 
   return (
@@ -291,16 +317,15 @@ export const NativeOverlayActivityCard = ({
       </div>
 
       <div className="px-3.5 py-1 pb-3">
-        {event.kind === 'bash' ||
-        event.kind === 'grep' ||
-        event.kind === 'glob' ||
-        event.kind === 'meta' ? (
-          <CommandBlock cmd={event.body} accent={accent} />
+        {isToolEvent(event) && !showsFilePath ? (
+          <CommandBlock
+            cmd={event.body}
+            accent={accent}
+            prompt={event.kind === 'bash' ? '$' : undefined}
+          />
         ) : null}
 
-        {event.kind === 'edit' ||
-        event.kind === 'write' ||
-        event.kind === 'read' ? (
+        {showsFilePath ? (
           <FilePathChip path={event.body} accent={accent} />
         ) : null}
 

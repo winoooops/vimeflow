@@ -12,6 +12,7 @@ const runningEvent = (
   id: 'live-1',
   kind: 'edit',
   tool: 'Edit',
+  label: 'EDIT',
   body: 'src/middleware/auth.ts',
   timestamp: '2026-04-22T11:59:42Z', // 18s before `now`
   status: 'running',
@@ -60,7 +61,12 @@ describe('LiveActionCard — presentation', () => {
     const tool = 'TodoWrite'
     render(
       <LiveActionCard
-        event={runningEvent({ kind: 'meta', tool, body: 'todos' })}
+        event={runningEvent({
+          kind: 'meta',
+          tool,
+          label: tool.toUpperCase(),
+          body: 'todos',
+        })}
         now={now}
       />
     )
@@ -150,7 +156,12 @@ describe('LiveActionCard — activation', () => {
     // focusable for keyboard users to reach its tooltip details.
     render(
       <LiveActionCard
-        event={runningEvent({ kind: 'bash', tool: 'Bash', body: 'npm test' })}
+        event={runningEvent({
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          body: 'npm test',
+        })}
         now={now}
       />
     )

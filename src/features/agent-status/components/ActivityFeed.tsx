@@ -122,12 +122,12 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
   )
 
   return (
-    <CollapsibleSection title="Activity" count={events.length} defaultExpanded>
+    <CollapsibleSection title="Traces" count={events.length} defaultExpanded>
       {events.length === 0 ? (
-        <p className="text-xs text-on-surface-variant">No activity yet</p>
+        <p className="text-xs text-on-surface-variant">No traces yet</p>
       ) : (
         <>
-          <div role="feed" aria-label="Activity events" className="relative">
+          <div role="feed" aria-label="Agent traces" className="relative">
             <div
               data-testid="activity-feed-rail"
               className="absolute left-3 top-0 bottom-0 w-px bg-outline-variant/40"

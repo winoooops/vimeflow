@@ -41,12 +41,8 @@ export const getLabel = (event: ActivityEventType): string => {
     // unless asked"); the verb-prefixed text is the differentiator.
     return event.tool === 'Edit' ? 'UPDATED TEST' : 'CREATED TEST'
   }
-  // The `kind === 'meta'` branch narrows `event` to ToolActivityEvent
-  // via the discriminated union — `tool` is always present. Drop the
-  // redundant `'tool' in event` guard that misled readers into thinking
-  // it could be absent.
-  if (event.kind === 'meta') {
-    return event.tool.toUpperCase()
+  if ('tool' in event) {
+    return event.label
   }
 
   return event.kind.toUpperCase()
@@ -166,7 +162,7 @@ export const ActivityEvent = ({
     <ActivityDetailsTooltip
       event={event}
       now={now}
-      ariaLabel={`${label} activity details`}
+      ariaLabel={`${label} trace details`}
     >
       <article
         ref={rowRef}

@@ -169,7 +169,7 @@ describe('AgentStatusPanel', () => {
       screen.getByRole('meter', { name: /context window usage/i })
     ).toHaveAttribute('aria-valuetext', 'Context usage unknown')
     expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
-    expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/No traces yet/i)).toBeInTheDocument()
   })
 
   test('passes the configured reservoir swell to the context bucket', () => {
@@ -307,7 +307,7 @@ describe('AgentStatusPanel', () => {
     const toolCallsSection = screen.getByTestId('tool-calls-section')
 
     const activityHeader = screen.getByRole('button', {
-      name: /activity\s*1/i,
+      name: /traces\s*1/i,
     })
 
     // Tool Calls is pinned with the metric cards (outside the scroll region);
@@ -347,7 +347,7 @@ describe('AgentStatusPanel', () => {
 
     expect(screen.getByTestId('tool-calls-section')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /activity\s*1/i })
+      screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
   })
 
@@ -978,10 +978,10 @@ describe('AgentStatusPanel', () => {
     )
 
     expect(
-      screen.getByRole('button', { name: /activity\s*1/i })
+      screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
     expect(screen.getByText('src/retained.ts')).toBeInTheDocument()
-    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No traces yet/i)).not.toBeInTheDocument()
     expect(
       screen.getByTestId('agent-status-panel-body-refresh-indicator')
     ).toBeInTheDocument()
@@ -1045,7 +1045,7 @@ describe('AgentStatusPanel', () => {
     expect(
       screen.queryByTestId('agent-status-panel-body-loading')
     ).not.toBeInTheDocument()
-    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No traces yet/i)).not.toBeInTheDocument()
 
     rerender(
       <AgentStatusPanel
@@ -1128,7 +1128,7 @@ describe('AgentStatusPanel', () => {
     )
 
     expect(screen.queryByText('src/retained.ts')).not.toBeInTheDocument()
-    expect(screen.getByText(/No activity yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/No traces yet/i)).toBeInTheDocument()
     expect(
       screen.queryByTestId('agent-status-panel-body-refresh-indicator')
     ).not.toBeInTheDocument()
@@ -1256,7 +1256,7 @@ describe('AgentStatusPanel', () => {
     expect(
       screen.getByTestId('agent-status-panel-body-loading')
     ).toBeInTheDocument()
-    expect(screen.queryByText(/No activity yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/No traces yet/i)).not.toBeInTheDocument()
     expect(screen.getByText('Loading agent status')).toHaveAttribute(
       'aria-live',
       'polite'
@@ -1399,7 +1399,7 @@ describe('AgentStatusPanel — live action card', () => {
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-action-card')).toBeNull()
     expect(
-      screen.getByRole('button', { name: /activity\s*1/i })
+      screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
 
     expect(screen.getByRole('article')).toHaveTextContent(
@@ -1460,7 +1460,7 @@ describe('AgentStatusPanel — live action card', () => {
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
     expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /activity\s*1/i })
+      screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
   })
 
@@ -1489,7 +1489,7 @@ describe('AgentStatusPanel — live action card', () => {
     // 1 active + 1 recent: the active row is promoted to the NOW card, so the
     // feed lists only the single recent event (count 1, not 2).
     expect(
-      screen.getByRole('button', { name: /activity\s*1/i })
+      screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
     expect(screen.getByText('LIVE')).toBeInTheDocument()
   })
