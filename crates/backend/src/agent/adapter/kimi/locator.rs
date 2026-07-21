@@ -82,6 +82,12 @@ struct IndexCandidate {
     entry: SessionIndexEntry,
 }
 
+#[derive(Clone, Copy)]
+struct ProcessStartEvidence {
+    at: SystemTime,
+    resume_floor: SystemTime,
+}
+
 pub(crate) struct KimiLocator {
     kimi_home: PathBuf,
     agent_pid: u32,
@@ -101,6 +107,7 @@ pub(crate) struct KimiLocator {
     // gated on user consent and runs at most once per new main-agent turn.
     usage: Arc<Mutex<UsageState>>,
     resume_evidence: Arc<Mutex<HashMap<String, SystemTime>>>,
+    process_start: Arc<Mutex<Option<Option<ProcessStartEvidence>>>>,
 }
 
 /// Out-of-band kimi plan-usage state behind the locator's shared Arc. The
@@ -166,6 +173,7 @@ impl KimiLocator {
             resolved_cwd: Arc::new(Mutex::new(None)),
             usage: Arc::new(Mutex::new(UsageState::default())),
             resume_evidence: Arc::new(Mutex::new(HashMap::new())),
+            process_start: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -324,7 +332,17 @@ impl KimiLocator {
     /// anchored on the system boot epoch (`btime` in `<proc_root>/stat`).
     /// On macOS, derives the same value from `ps etime`. `None` when the
     /// platform process source is unavailable or cannot be parsed.
-    fn process_start(&self) -> Option<SystemTime> {
+    fn process_start(&self) -> Option<ProcessStartEvidence> {
+        if let Some(cached) = *self.process_start.lock().expect("process_start lock") {
+            return cached;
+        }
+
+        let resolved = self.resolve_process_start();
+        *self.process_start.lock().expect("process_start lock") = Some(resolved);
+        resolved
+    }
+
+    fn resolve_process_start(&self) -> Option<ProcessStartEvidence> {
         if let Some(proc_root) = self.proc_root.as_deref() {
             let stat =
                 std::fs::read_to_string(proc_root.join(self.agent_pid.to_string()).join("stat"))
@@ -340,17 +358,19 @@ impl KimiLocator {
                 .parse()
                 .ok()?;
             let since_boot_ms = starttime_ticks.checked_mul(1000)? / clock_ticks_per_sec();
-            return Some(
-                SystemTime::UNIX_EPOCH
-                    + Duration::from_secs(read_btime(proc_root)?)
-                    + Duration::from_millis(since_boot_ms),
-            );
+            let at = SystemTime::UNIX_EPOCH
+                + Duration::from_secs(read_btime(proc_root)?)
+                + Duration::from_millis(since_boot_ms);
+            return Some(ProcessStartEvidence {
+                at,
+                resume_floor: at,
+            });
         }
 
         #[cfg(target_os = "macos")]
         {
-            // ponytail: `ps etime` is second-granularity; use libproc if
-            // simultaneous sub-second Kimi launches become a real case.
+            // `ps etime` is second-granularity, so the estimated start can be
+            // up to one second after the real start.
             let output = Command::new("ps")
                 .arg("-p")
                 .arg(self.agent_pid.to_string())
@@ -363,7 +383,8 @@ impl KimiLocator {
             return process_start_from_elapsed(
                 String::from_utf8_lossy(&output.stdout).trim(),
                 SystemTime::now(),
-            );
+            )
+            .map(ProcessStartEvidence::from_second_granularity);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -508,7 +529,7 @@ impl KimiLocator {
                 .filter_map(|candidate| {
                     let owned_at = candidate
                         .created
-                        .filter(|created| created_in_own_window(*created, start))
+                        .filter(|created| created_in_own_window(*created, start.at))
                         .or_else(|| self.session_resume_at(&candidate.session_dir, start))?;
                     Some((
                         candidate.work_len,
@@ -518,7 +539,7 @@ impl KimiLocator {
                     ))
                 })
                 .min_by_key(|(work_len, owned_at, _, _)| {
-                    (abs_duration(*owned_at, start), usize::MAX - *work_len)
+                    (abs_duration(*owned_at, start.at), usize::MAX - *work_len)
                 })
                 .map(|(_, _, session_dir, entry)| (entry, session_dir)),
             None => matches
@@ -585,7 +606,7 @@ impl KimiLocator {
                 Some(start) => session_path
                     .to_str()
                     .and_then(session_created_at)
-                    .is_some_and(|created| created_in_own_window(created, start)),
+                    .is_some_and(|created| created_in_own_window(created, start.at)),
                 None => wire_is_fresh(&wire, self.pty_start),
             };
             if !fresh {
@@ -618,7 +639,7 @@ impl KimiLocator {
     fn session_resume_at(
         &self,
         session_dir: &str,
-        process_start: SystemTime,
+        process_start: ProcessStartEvidence,
     ) -> Option<SystemTime> {
         if let Some(cached) = self
             .resume_evidence
@@ -636,6 +657,15 @@ impl KimiLocator {
             .expect("resume_evidence lock")
             .insert(session_dir.to_string(), resumed);
         Some(resumed)
+    }
+}
+
+impl ProcessStartEvidence {
+    fn from_second_granularity(at: SystemTime) -> Self {
+        Self {
+            at,
+            resume_floor: at.checked_sub(Duration::from_secs(1)).unwrap_or(at),
+        }
     }
 }
 
@@ -756,8 +786,8 @@ fn created_in_own_window(created: SystemTime, start: SystemTime) -> bool {
     created >= lower && created <= start + KIMI_OWN_WINDOW
 }
 
-fn resumed_in_own_window(resumed: SystemTime, start: SystemTime) -> bool {
-    resumed >= start && resumed <= start + KIMI_OWN_WINDOW
+fn resumed_in_own_window(resumed: SystemTime, start: ProcessStartEvidence) -> bool {
+    resumed >= start.resume_floor && resumed <= start.at + KIMI_OWN_WINDOW
 }
 
 /// Absolute distance between two instants, regardless of order.
@@ -830,7 +860,10 @@ fn session_created_at(session_dir: &str) -> Option<SystemTime> {
 /// Resumed sessions retain their original wire creation timestamp, while Kimi
 /// opens the wire only for each flush, so this log entry is the immediate
 /// ownership signal when proc-fd is empty.
-fn session_resume_at(session_dir: &str, process_start: SystemTime) -> Option<SystemTime> {
+fn session_resume_at(
+    session_dir: &str,
+    process_start: ProcessStartEvidence,
+) -> Option<SystemTime> {
     let log = PathBuf::from(session_dir)
         .join("logs")
         .join("kimi-code.log");
@@ -858,7 +891,7 @@ fn session_resume_at(session_dir: &str, process_start: SystemTime) -> Option<Sys
             let resumed = SystemTime::UNIX_EPOCH + Duration::from_millis(millis);
             resumed_in_own_window(resumed, process_start).then_some(resumed)
         })
-        .min_by_key(|resumed| abs_duration(*resumed, process_start))
+        .min_by_key(|resumed| abs_duration(*resumed, process_start.at))
 }
 
 /// Best-effort activity timestamp for macOS/no-proc index tie-breaking.
@@ -1129,7 +1162,26 @@ mod tests {
         );
 
         let started = locator.process_start().expect("live process start");
-        assert!(started <= SystemTime::now());
+        assert!(started.at <= SystemTime::now());
+    }
+
+    #[test]
+    fn process_start_is_cached_after_first_resolution() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let proc_root = tempfile::tempdir().expect("proc root");
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        write_proc_btime(proc_root.path(), btime);
+        write_proc_stat(proc_root.path(), pid, 50 * hz);
+
+        let locator = locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        let first = locator.process_start().expect("first start");
+        write_proc_stat(proc_root.path(), pid, 90 * hz);
+        let second = locator.process_start().expect("cached start");
+
+        assert_eq!(second.at, first.at);
+        assert_eq!(second.resume_floor, first.resume_floor);
     }
 
     #[test]
@@ -1329,6 +1381,7 @@ mod tests {
         let process_start = locator.process_start().expect("macOS process start");
         let process_start_ms = u64::try_from(
             process_start
+                .at
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .expect("process started after epoch")
                 .as_millis(),
@@ -1430,6 +1483,32 @@ mod tests {
         assert!(
             locator.locate(work.path(), "pty-1").is_err(),
             "a prior process's resume diagnostic in the clock-skew slack must not bind"
+        );
+    }
+
+    #[test]
+    fn second_granularity_process_start_accepts_subsecond_resume_evidence() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let session_dir = session_under(kimi_home.path(), "wd_a", "session_resumed");
+        write_wire_created(&session_dir, 1_700_000_000_000);
+        let log = session_dir.join("logs").join("kimi-code.log");
+        std::fs::create_dir_all(log.parent().expect("log parent")).expect("mkdir log");
+        std::fs::write(
+            log,
+            b"2023-11-14T22:13:19.250Z INFO  session resume  app_version=0.27.0\n",
+        )
+        .expect("write session log");
+
+        let estimated_start =
+            SystemTime::UNIX_EPOCH + Duration::from_millis(1_700_000_000_000);
+        let process_start = ProcessStartEvidence::from_second_granularity(estimated_start);
+        let resumed =
+            session_resume_at(session_dir.to_str().expect("session dir"), process_start)
+                .expect("subsecond resume evidence resolves");
+
+        assert_eq!(
+            resumed,
+            SystemTime::UNIX_EPOCH + Duration::from_millis(1_699_999_999_250)
         );
     }
 
