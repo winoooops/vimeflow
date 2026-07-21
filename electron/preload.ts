@@ -8,6 +8,7 @@ import {
   E2E_COMMAND_PALETTE_SHORTCUT,
   KEYMAP_CAPTURE_ACTIVE,
   SETTINGS_CHANGED,
+  SETTINGS_NAVIGATE_TARGET,
   SETTINGS_OPEN_FILE,
   SETTINGS_OPEN_WINDOW,
   SETTINGS_SYNC_SNAPSHOT,
@@ -392,7 +393,19 @@ contextBridge.exposeInMainWorld('vimeflow', {
       invoke('save_app_settings', { settings }),
     listSystemFonts: (): Promise<SystemFont[]> => invoke('list_system_fonts'),
     openFile: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_FILE),
-    openWindow: (): Promise<void> => ipcRenderer.invoke(SETTINGS_OPEN_WINDOW),
+    openWindow: (targetId?: string): Promise<void> =>
+      ipcRenderer.invoke(SETTINGS_OPEN_WINDOW, targetId),
+    onNavigateTarget: (callback: (targetId: string) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, targetId: string): void => {
+        callback(targetId)
+      }
+
+      ipcRenderer.on(SETTINGS_NAVIGATE_TARGET, handler)
+
+      return (): void => {
+        ipcRenderer.off(SETTINGS_NAVIGATE_TARGET, handler)
+      }
+    },
     syncSnapshot: (settings: AppSettings): Promise<void> =>
       ipcRenderer.invoke(SETTINGS_SYNC_SNAPSHOT, settings),
     onDidChange: (callback: (settings: AppSettings) => void): (() => void) => {

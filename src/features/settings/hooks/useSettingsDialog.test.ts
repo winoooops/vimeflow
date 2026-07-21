@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 import type { BackendApi } from '../../../lib/backend'
-import { useSettingsDialog } from './useSettingsDialog'
+import { requestSettingsOpen, useSettingsDialog } from './useSettingsDialog'
+import { SETTINGS_TARGET_IDS } from '../sections'
 
 const dispatchFromRecorder = (init: KeyboardEventInit): void => {
   const recorder = document.createElement('button')
@@ -123,10 +124,27 @@ describe('useSettingsDialog', () => {
     } as unknown as BackendApi
     const { result } = renderHook(() => useSettingsDialog())
 
-    act(() => result.current.open())
+    act(() => result.current.open(SETTINGS_TARGET_IDS.versionDiffViewStyle))
 
     expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(openWindow).toHaveBeenCalledWith(
+      SETTINGS_TARGET_IDS.versionDiffViewStyle
+    )
     expect(result.current.isOpen).toBe(false)
+  })
+
+  test('forwards targeted settings requests to the active opener', () => {
+    const openWindow = vi.fn().mockResolvedValue(undefined)
+    window.vimeflow = {
+      settings: { openWindow },
+    } as unknown as BackendApi
+    renderHook(() => useSettingsDialog())
+
+    act(() => requestSettingsOpen(SETTINGS_TARGET_IDS.versionDiffViewStyle))
+
+    expect(openWindow).toHaveBeenCalledWith(
+      SETTINGS_TARGET_IDS.versionDiffViewStyle
+    )
   })
 
   test('open keeps the renderer dialog in E2E when the native bridge is present', () => {

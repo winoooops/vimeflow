@@ -4,20 +4,11 @@ export {
   PriorityPlus,
 } from './PriorityPlus'
 
-export { Segmented } from './Segmented'
-
-export { Toggle } from './Toggle'
-
 export { FilePill, type FilePillProps } from './FilePill'
 
 export { ChangeStepper, type ChangeStepperProps } from './ChangeStepper'
 
 export { ToolWell, type ToolWellProps } from './ToolWell'
-
-export {
-  ViewSettingsDropdown,
-  type ViewSettingsDropdownProps,
-} from './ViewSettingsDropdown'
 
 export {
   DiffChipToolbar,

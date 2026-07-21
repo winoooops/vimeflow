@@ -41,6 +41,7 @@ const orderedFocusable = (dialog: HTMLElement): HTMLElement[] => {
 export const SettingsDialog = ({
   open,
   onClose,
+  targetId = null,
 }: SettingsDialogProps): ReactElement | null => {
   const [contentSessionKey, setContentSessionKey] = useState(0)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -161,7 +162,7 @@ export const SettingsDialog = ({
               />
             </div>
 
-            <SettingsContent key={contentSessionKey} />
+            <SettingsContent key={contentSessionKey} targetId={targetId} />
 
             {/* Footer */}
             <div className="flex h-7 shrink-0 items-center gap-2.5 border-t border-outline-variant/25 bg-surface-container-lowest px-3.5 font-mono text-[10px] text-on-surface-muted/80">

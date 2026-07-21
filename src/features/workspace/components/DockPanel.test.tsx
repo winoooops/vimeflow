@@ -1,9 +1,10 @@
 import {
   fireEvent,
-  render,
+  render as testingLibraryRender,
   screen,
   waitFor,
   within,
+  type RenderResult,
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
@@ -20,6 +21,10 @@ import type { ChangedFile, SelectedDiffFile } from '../../diff/types'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { javascript } from '@codemirror/lang-javascript'
 import type { Keybindings } from '../../keymap/useKeybindings'
+import { SettingsProvider } from '../../settings/SettingsProvider'
+
+const render = (ui: ReactElement): RenderResult =>
+  testingLibraryRender(ui, { wrapper: SettingsProvider })
 
 vi.mock('../../editor/hooks/useCodeMirror')
 vi.mock('../../editor/hooks/useVimMode')

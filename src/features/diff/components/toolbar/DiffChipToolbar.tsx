@@ -1,5 +1,4 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
-import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { Chip } from '@/components/Chip'
 import { Tooltip } from '@/components/Tooltip'
 import { IconButton } from '@/components/IconButton'
@@ -12,15 +11,8 @@ import {
   chordToShortcutInput,
 } from '@/features/keymap/displayKey'
 import type { Keybindings } from '@/features/keymap/useKeybindings'
-import { Dropdown, type DropdownOption } from '@/components/Dropdown'
 import { Menu } from '@/components/Menu'
 import { PriorityPlus } from './PriorityPlus'
-import { Segmented } from './Segmented'
-import {
-  ViewSettingsDropdown,
-  VIEW_INDICATOR_OPTIONS,
-  VIEW_OVERFLOW_OPTIONS,
-} from './ViewSettingsDropdown'
 import { FilePill } from './FilePill'
 import { ChangeStepper } from './ChangeStepper'
 import {
@@ -30,7 +22,6 @@ import {
   WELL_DISABLED_BUTTON_CLASSES,
 } from './ToolWell'
 import { ToolbarSeparator } from './ToolbarSeparator'
-import { CONFIG_CHIP_CLASSES, ConfigChipContent } from './ConfigChip'
 
 // Floating-UI popover confirmation for the Discard All action. Rendered as
 // a floating box anchored to the trigger so it escapes any overflow clipping
@@ -74,92 +65,17 @@ const DiscardAllConfirm = ({
   )
 }
 
-// Pierre option subtypes — pulled from `BaseDiffOptions` so a Pierre version
-// bump that widens / renames the enums is caught at type-check time rather
-// than producing a silent string-typed regression.
-type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
-type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
-type Overflow = NonNullable<BaseDiffOptions['overflow']>
-type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
-
 // Diff side the toolbar is rendering for. The `unstage` chip is only valid
 // on the staged view (per spec Section 4.7); on the unstaged view it is
 // omitted entirely rather than rendered disabled.
 export type DiffMode = 'staged' | 'unstaged'
-
-// Restricted theme set explicitly listed in spec Section 4.6. Pierre's own
-// `DiffsThemeNames` is a union with `(string & {})` so the actual values are
-// not enumerable from the type alone — we surface the eight names the spec
-// pins here so the dropdown has a finite, stable option list.
-const THEME_OPTIONS: readonly DropdownOption<DiffsThemeNames>[] = [
-  { value: 'pierre-dark', label: 'pierre-dark' },
-  { value: 'pierre-dark-soft', label: 'pierre-dark-soft' },
-  { value: 'pierre-light', label: 'pierre-light' },
-  { value: 'pierre-light-soft', label: 'pierre-light-soft' },
-  { value: 'catppuccin-mocha', label: 'catppuccin-mocha' },
-  { value: 'dracula', label: 'dracula' },
-  { value: 'github-dark', label: 'github-dark' },
-  { value: 'one-dark-pro', label: 'one-dark-pro' },
-]
-
-const LINE_DIFF_OPTIONS: readonly DropdownOption<LineDiffType>[] = [
-  {
-    value: 'word-alt',
-    label: 'Word-Alt',
-    description: 'Highlight entire words with enhanced algorithm',
-  },
-  {
-    value: 'word',
-    label: 'Word',
-    description: 'Highlight changed words within lines',
-  },
-  {
-    value: 'char',
-    label: 'Character',
-    description: 'Highlight individual character changes',
-  },
-  {
-    value: 'none',
-    label: 'None',
-    description: 'Show line-level changes only',
-  },
-]
-
-const DIFF_STYLE_OPTIONS: readonly {
-  value: DiffStyle
-  label: string
-  icon: string
-}[] = [
-  { value: 'split', label: 'Split', icon: 'vertical_split' },
-  { value: 'unified', label: 'Unified', icon: 'view_headline' },
-]
 
 export interface DiffChipToolbarProps {
   bindingFor: Keybindings['bindingFor']
   // Which side of the diff this toolbar is bound to. Drives whether the
   // `unstage` chip renders (staged view only).
   diffMode: DiffMode
-  // Pierre options — controlled-component pairs so the consumer (DiffPanelContent
-  // in Task 1.10) owns the state and drives both the toolbar chips and the
-  // <MultiFileDiff options=...> render from the same values.
-  diffStyle: DiffStyle
-  onDiffStyleChange: (next: DiffStyle) => void
-  theme: DiffsThemeNames
-  onThemeChange: (next: DiffsThemeNames) => void
-  lineDiffType: LineDiffType
-  onLineDiffTypeChange: (next: LineDiffType) => void
-  diffIndicators: DiffIndicators
-  onDiffIndicatorsChange: (next: DiffIndicators) => void
-  overflow: Overflow
-  onOverflowChange: (next: Overflow) => void
-  disableLineNumbers: boolean
-  onDisableLineNumbersChange: (next: boolean) => void
-  disableBackground: boolean
-  onDisableBackgroundChange: (next: boolean) => void
-  disableFileHeader: boolean
-  onDisableFileHeaderChange: (next: boolean) => void
-  stickyHeader: boolean
-  onStickyHeaderChange: (next: boolean) => void
+  onOpenSettings: () => void
   // Hunk navigation. `totalHunks` is optional — when omitted (or 0), the
   // stepper renders `0/0`. In PR1 prev/next are disabled placeholders;
   // PR3 wires the click handlers (the work was re-split: PR2 = staging,
@@ -216,7 +132,7 @@ export interface DiffChipToolbarProps {
 // Composed chip toolbar. Pure controlled component — all state lives in the
 // consumer. PriorityPlus measures the rendered chips and folds anything
 // beyond the first row into a portal-rendered `…` menu (last items overflow
-// first, so the view dropdown drops before the theme dropdown, etc.).
+// first, so Settings drops before actionable controls).
 //
 // File navigation (FilePill) is FUNCTIONAL from PR1 — it only changes which
 // file is selected, so no Rust backend is needed. Staging buttons (inside the
@@ -227,24 +143,7 @@ export interface DiffChipToolbarProps {
 export const DiffChipToolbar = ({
   bindingFor,
   diffMode,
-  diffStyle,
-  onDiffStyleChange,
-  theme,
-  onThemeChange,
-  lineDiffType,
-  onLineDiffTypeChange,
-  diffIndicators,
-  onDiffIndicatorsChange,
-  overflow,
-  onOverflowChange,
-  disableLineNumbers,
-  onDisableLineNumbersChange,
-  disableBackground,
-  onDisableBackgroundChange,
-  disableFileHeader,
-  onDisableFileHeaderChange,
-  stickyHeader,
-  onStickyHeaderChange,
+  onOpenSettings,
   totalHunks = 0,
   focusedHunkIndex = 0,
   onPrevHunk = undefined,
@@ -397,26 +296,12 @@ export const DiffChipToolbar = ({
   // stepper / tool-well collapses together, never spilling sub-buttons).
   //
   // Collapse order (lowest priority overflows FIRST):
-  //   View → Theme → Hi-lite → Change-stepper → Tool-well → File-pill → Segmented
+  //   Settings → Change-stepper → Tool-well → File-pill
   // Group hairlines (ToolbarSeparator) sit between the major clusters and are
   // overflow-safe: PriorityPlus trims a trailing separator and drops them from
   // the `…` tray, so a hairline never dangles or appears in the menu.
   const chips: ReactNode[] = [
-    // 1. split / unified segmented — top priority; the most-used control.
-    <Segmented
-      key="diff-style"
-      value={diffStyle}
-      options={['split', 'unified'] as const}
-      onChange={onDiffStyleChange}
-      icons={{ split: 'vertical_split', unified: 'view_headline' }}
-      shortcuts={{
-        split: shortcutFor('diff-view-toggle'),
-        unified: shortcutFor('diff-view-toggle'),
-      }}
-    />,
-    // hairline between the view-mode control and the navigation cluster.
-    <ToolbarSeparator key="sep-nav" />,
-    // 2. file pill — lavender (primary) file-nav group (prev arrow + basename
+    // 1. file pill — lavender (primary) file-nav group (prev arrow + basename
     // pill + N/M badge + next arrow). FUNCTIONAL: steps the selection through
     // the changed-files list; inert on a single file.
     <FilePill
@@ -431,7 +316,7 @@ export const DiffChipToolbar = ({
       nextShortcut={shortcutFor('diff-file-next')}
       nextAriaKeyshortcuts={ariaShortcutFor('diff-file-next')}
     />,
-    // 3. tool-well — staging group (stage / unstage / discard / discard-all) as
+    // 2. tool-well — staging group (stage / unstage / discard / discard-all) as
     // a flat ghost-icon group (one unit).
     <ToolWell
       key="tool-well"
@@ -446,7 +331,7 @@ export const DiffChipToolbar = ({
       discardAriaKeyshortcuts={ariaShortcutFor('diff-hunk-discard')}
       discardAllSlot={discardAllSlot}
     />,
-    // 4. change stepper — azure (secondary) hunk-nav group (data_object glyph
+    // 3. change stepper — azure (secondary) hunk-nav group (data_object glyph
     // + N/N + vertical up/down arrows). FUNCTIONAL in PR3.
     <ChangeStepper
       key="change-stepper"
@@ -459,73 +344,14 @@ export const DiffChipToolbar = ({
       nextShortcut={shortcutFor('diff-hunk-next')}
       nextAriaKeyshortcuts={ariaShortcutFor('diff-hunk-next')}
     />,
-    // hairline between the navigation cluster and the config chips.
-    <ToolbarSeparator key="sep-config" />,
-    // 5. highlight chip — `lineDiffType` Pierre option as a labelled config chip
-    // (small-caps key + value inside the control).
-    <Dropdown
-      key="highlight"
-      value={lineDiffType}
-      options={LINE_DIFF_OPTIONS}
-      onChange={onLineDiffTypeChange}
-      width={260}
-      renderTrigger={({ ref, props, current }): ReactElement => (
-        <Tooltip content="Intra-line highlight granularity">
-          <button
-            ref={ref}
-            type="button"
-            className={CONFIG_CHIP_CLASSES}
-            {...props}
-          >
-            <ConfigChipContent
-              icon="format_ink_highlighter"
-              label="Highlight"
-              value={current?.label ?? lineDiffType}
-            />
-          </button>
-        </Tooltip>
-      )}
-    />,
-    // 6. theme chip — `DiffsThemeNames` enumeration, with a palette lead icon.
-    <Dropdown
-      key="theme"
-      value={theme}
-      options={THEME_OPTIONS}
-      onChange={onThemeChange}
-      renderTrigger={({ ref, props, current }): ReactElement => (
-        <Tooltip content="Syntax theme">
-          <button
-            ref={ref}
-            type="button"
-            className={CONFIG_CHIP_CLASSES}
-            {...props}
-          >
-            <ConfigChipContent
-              icon="palette"
-              label="Theme"
-              value={current?.label ?? theme}
-            />
-          </button>
-        </Tooltip>
-      )}
-    />,
-    // 7. View ▾ gear chip — consolidates the indicators / overflow dropdowns
-    // and the four boolean toggle chips into a single portal-rendered popover
-    // (tune lead icon). Lowest priority → overflows first.
-    <ViewSettingsDropdown
-      key="view-settings"
-      diffIndicators={diffIndicators}
-      onDiffIndicatorsChange={onDiffIndicatorsChange}
-      overflow={overflow}
-      onOverflowChange={onOverflowChange}
-      disableLineNumbers={disableLineNumbers}
-      onDisableLineNumbersChange={onDisableLineNumbersChange}
-      disableBackground={disableBackground}
-      onDisableBackgroundChange={onDisableBackgroundChange}
-      disableFileHeader={disableFileHeader}
-      onDisableFileHeaderChange={onDisableFileHeaderChange}
-      stickyHeader={stickyHeader}
-      onStickyHeaderChange={onStickyHeaderChange}
+    <ToolbarSeparator key="sep-settings" />,
+    <IconButton
+      key="settings"
+      icon="settings"
+      label="open hunk view settings"
+      size="md"
+      variant="ghost"
+      onClick={onOpenSettings}
     />,
   ]
 
@@ -544,23 +370,6 @@ export const DiffChipToolbar = ({
   ): ReactNode => {
     const hidden = new Set(hiddenKeys)
     const sections: ReactNode[] = []
-
-    if (hidden.has('diff-style')) {
-      sections.push(
-        <Menu.Section key="diff-style" label="Diff view">
-          {DIFF_STYLE_OPTIONS.map((option) => (
-            <Menu.Checkbox
-              key={option.value}
-              icon={option.icon}
-              checked={diffStyle === option.value}
-              onChange={(): void => onDiffStyleChange(option.value)}
-            >
-              {option.label}
-            </Menu.Checkbox>
-          ))}
-        </Menu.Section>
-      )
-    }
 
     if (hidden.has('file-nav')) {
       sections.push(
@@ -660,95 +469,16 @@ export const DiffChipToolbar = ({
       )
     }
 
-    if (hidden.has('highlight')) {
+    if (hidden.has('settings')) {
       sections.push(
-        <Menu.Section key="highlight" label="Highlight">
-          {LINE_DIFF_OPTIONS.map((option) => (
-            <Menu.Checkbox
-              key={option.value}
-              icon="format_ink_highlighter"
-              checked={lineDiffType === option.value}
-              onChange={(): void => onLineDiffTypeChange(option.value)}
-            >
-              {option.label}
-            </Menu.Checkbox>
-          ))}
-        </Menu.Section>
-      )
-    }
-
-    if (hidden.has('theme')) {
-      sections.push(
-        <Menu.Section key="theme" label="Theme">
-          {THEME_OPTIONS.map((option) => (
-            <Menu.Checkbox
-              key={option.value}
-              icon="palette"
-              checked={theme === option.value}
-              onChange={(): void => onThemeChange(option.value)}
-            >
-              {option.label}
-            </Menu.Checkbox>
-          ))}
-        </Menu.Section>
-      )
-    }
-
-    if (hidden.has('view-settings')) {
-      sections.push(
-        <Menu.Section key="view-format" label="Indicators">
-          {VIEW_INDICATOR_OPTIONS.map((option) => (
-            <Menu.Checkbox
-              key={option.value}
-              icon="flag"
-              checked={diffIndicators === option.value}
-              onChange={(): void => onDiffIndicatorsChange(option.value)}
-            >
-              {option.label}
-            </Menu.Checkbox>
-          ))}
-        </Menu.Section>,
-        <Menu.Section key="view-overflow" label="Overflow">
-          {VIEW_OVERFLOW_OPTIONS.map((option) => (
-            <Menu.Checkbox
-              key={option.value}
-              icon="wrap_text"
-              checked={overflow === option.value}
-              onChange={(): void => onOverflowChange(option.value)}
-            >
-              {option.label}
-            </Menu.Checkbox>
-          ))}
-        </Menu.Section>,
-        <Menu.Section key="view-options" label="View options">
-          <Menu.Checkbox
-            icon="123"
-            checked={!disableLineNumbers}
-            onChange={(next): void => onDisableLineNumbersChange(!next)}
+        <Menu.Section key="settings" label="Settings">
+          <Menu.Row
+            label="Open hunk view settings"
+            nativeOverlayIcon="settings"
+            onSelect={onOpenSettings}
           >
-            Line numbers
-          </Menu.Checkbox>
-          <Menu.Checkbox
-            icon="format_paint"
-            checked={!disableBackground}
-            onChange={(next): void => onDisableBackgroundChange(!next)}
-          >
-            Background tint
-          </Menu.Checkbox>
-          <Menu.Checkbox
-            icon="description"
-            checked={!disableFileHeader}
-            onChange={(next): void => onDisableFileHeaderChange(!next)}
-          >
-            File header
-          </Menu.Checkbox>
-          <Menu.Checkbox
-            icon="push_pin"
-            checked={stickyHeader}
-            onChange={onStickyHeaderChange}
-          >
-            Sticky header
-          </Menu.Checkbox>
+            Open hunk view settings
+          </Menu.Row>
         </Menu.Section>
       )
     }
@@ -766,7 +496,7 @@ export const DiffChipToolbar = ({
       <div className="flex w-full items-center">
         <PriorityPlus
           maxRows={1}
-          remeasureKey={`${selectedFileName ?? ''}|${fileCounterText}|${hunkCounterText}|${theme}|${lineDiffType}|${diffMode}`}
+          remeasureKey={`${selectedFileName ?? ''}|${fileCounterText}|${hunkCounterText}|${diffMode}`}
           renderNativeOverflowMenu={renderNativeOverflowMenu}
         >
           {chips}

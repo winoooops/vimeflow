@@ -718,8 +718,12 @@ const setupApp = async (): Promise<void> => {
     windowChromeOptions: macosWindowChromeOptions,
   })
 
-  ipcMain.handle(SETTINGS_OPEN_WINDOW, (): void => {
-    settingsWindowController?.open()
+  ipcMain.handle(SETTINGS_OPEN_WINDOW, (_event, targetId: unknown): void => {
+    settingsWindowController?.open(
+      typeof targetId === 'string' && targetId.length <= 256
+        ? targetId
+        : undefined
+    )
   })
 
   ipcMain.handle(
