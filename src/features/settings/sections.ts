@@ -69,6 +69,7 @@ export const SETTINGS_TARGET_IDS = {
   appearanceColorScheme: 'appearance-color-scheme',
   appearanceUiFont: 'appearance-ui-font',
   appearanceReservoirSwell: 'appearance-reservoir-swell',
+  appearanceSessionIsland: 'appearance-session-island',
   terminalFontFamily: 'terminal-font-family',
   keymapPreset: 'keymap-preset',
   agentsManageAliases: 'agents-manage-aliases',
@@ -190,6 +191,13 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     section: 'appearance',
     label: 'Reservoir Swell',
     hint: 'Hover motion for the context reservoir waterline.',
+    subsection: 'Interface',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.appearanceSessionIsland,
+    section: 'appearance',
+    label: 'Session Island',
+    hint: 'Choose how open sessions appear in the centered top bar switcher.',
     subsection: 'Interface',
   },
   {

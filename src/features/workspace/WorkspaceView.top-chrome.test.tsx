@@ -2,6 +2,7 @@ import {
   render as rtlRender,
   screen,
   act,
+  waitFor,
   within,
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -19,6 +20,10 @@ import {
 import { SHOWN_LAYOUTS_STORAGE_KEY } from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
 import { SettingsProvider } from '../settings/SettingsProvider'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '../../test/mockResizeObserver'
 
 // WorkspaceView consumes useSettings (keymap preset, VIM-104); the provider
 // tolerates a missing window.vimeflow and falls back to DEFAULT_SETTINGS, so no
@@ -169,7 +174,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
   const setupSessionManager = async (
     sessions: Session[],
-    activeSessionId: string
+    activeSessionId: string | null
   ): Promise<void> => {
     mockSessionManager = {
       sessions,
@@ -329,6 +334,134 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(screen.queryByRole('tablist', { name: 'Open sessions' })).toBeNull()
   })
 
+  test('centers the open sessions in sidebar order without replacing layout chrome', () => {
+    render(<WorkspaceView />)
+
+    const island = screen.getByRole('navigation', { name: 'Open sessions' })
+    expect(island).toHaveClass(
+      'absolute',
+      'left-1/2',
+      '-translate-x-1/2',
+      'vf-app-no-drag'
+    )
+    expect(screen.getByTestId('layout-switcher')).toBeInTheDocument()
+    expect(
+      within(island)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label'))
+    ).toEqual([
+      'Switch to session 1: auth middleware refactor',
+      'Switch to session 2: feature work',
+    ])
+
+    expect(
+      within(island).getByRole('button', { current: 'page' })
+    ).toHaveAccessibleName('Switch to session 1: auth middleware refactor')
+  })
+
+  test('island selection uses the existing focus-restoring activation path', async () => {
+    const user = userEvent.setup()
+    render(<WorkspaceView />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'Switch to session 2: feature work' })
+    )
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-2'
+    )
+  })
+
+  test('keeps open indicators inactive when a Recent session is selected', async () => {
+    const recent = createMockSession('recent', 'completed work', {
+      status: 'completed',
+    })
+    await setupSessionManager([...mockSessions, recent], 'recent')
+    render(<WorkspaceView />)
+
+    const island = screen.getByRole('navigation', { name: 'Open sessions' })
+    expect(within(island).getAllByRole('button')).toHaveLength(2)
+    expect(within(island).queryByRole('button', { current: 'page' })).toBeNull()
+    expect(
+      within(island).queryByRole('button', { name: /completed work/i })
+    ).toBeNull()
+  })
+
+  test('excludes Recent sessions from sequential and MRU keyboard cycling', async () => {
+    const recent = createMockSession('recent', 'completed work', {
+      status: 'completed',
+    })
+    await setupSessionManager([...mockSessions, recent], 'recent')
+    mockSessionManager.mruSessionIds = ['recent', 'session-2', 'session-1']
+    render(<WorkspaceView />)
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          code: 'BracketRight',
+          key: '}',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-1'
+    )
+    vi.mocked(mockSessionManager.setActiveSessionId).mockClear()
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          code: 'Tab',
+          key: 'Tab',
+          ctrlKey: true,
+          bubbles: true,
+        })
+      )
+    })
+
+    const switcher = screen.getByRole('listbox', {
+      name: 'Session switcher',
+    })
+    const options = within(switcher).getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    expect(within(switcher).queryByText('completed work')).toBeNull()
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keyup', {
+          code: 'ControlLeft',
+          key: 'Control',
+          bubbles: true,
+        })
+      )
+    })
+
+    expect(mockSessionManager.setActiveSessionId).toHaveBeenCalledWith(
+      'session-2'
+    )
+  })
+
+  test('omits the island when no sessions are open', async () => {
+    await setupSessionManager(
+      [
+        createMockSession('recent', 'completed work', {
+          status: 'completed',
+        }),
+      ],
+      'recent'
+    )
+    render(<WorkspaceView />)
+
+    expect(
+      screen.queryByRole('navigation', { name: 'Open sessions' })
+    ).toBeNull()
+  })
+
   test('top chrome is an always-visible in-flow bar (no auto-hide, no pin)', () => {
     render(<WorkspaceView />)
 
@@ -353,6 +486,68 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     expect(chromeClasses).not.toContain('absolute')
   })
 
+  test('compacts the layout pillar below the 700px main-column threshold', async () => {
+    const user = userEvent.setup()
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+
+    try {
+      render(<WorkspaceView />)
+
+      const mainWorkspace = screen.getByTestId('workspace-main')
+
+      const observer = MockResizeObserver.instances.find((instance) =>
+        instance.observe.mock.calls.some(
+          ([element]) => element === mainWorkspace
+        )
+      )
+      if (!observer) {
+        throw new Error('Expected main workspace ResizeObserver')
+      }
+
+      act(() => {
+        observer.trigger({ width: 699, height: 700 })
+      })
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('img', { name: 'Current pane layout: Single' })
+        ).toBeInTheDocument()
+      })
+
+      expect(screen.queryByRole('button', { name: '3x2 grid' })).toBeNull()
+
+      expect(
+        screen.getByRole('button', { name: 'Configure displayed layouts' })
+      ).toBeInTheDocument()
+
+      await user.click(
+        screen.getByRole('button', { name: 'Configure displayed layouts' })
+      )
+
+      await user.click(
+        await screen.findByRole('menuitemcheckbox', { name: 'Quad' })
+      )
+
+      expect(mockSessionManager.setSessionLayout).toHaveBeenCalledWith(
+        'session-1',
+        'quad'
+      )
+
+      act(() => {
+        observer.trigger({ width: 700, height: 700 })
+      })
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: '3x2 grid' })
+        ).toBeInTheDocument()
+      })
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+
   test('macOS top chrome is draggable with the layout pillar cut out', () => {
     Object.defineProperty(navigator, 'platform', {
       value: 'MacIntel',
@@ -365,9 +560,31 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
 
     expect(screen.getByTestId('layout-switcher')).toHaveClass('vf-app-no-drag')
 
+    expect(screen.getByTestId('session-island')).toHaveClass('vf-app-no-drag')
+
     expect(screen.getByTestId('sidebar-toggle-fixed')).toHaveClass(
       'vf-app-no-drag'
     )
+  })
+
+  test('supported minimum width keeps the centered island clear of macOS controls', () => {
+    const supportedMainColumnWidthPx = 620
+    const macosLeftControlEndPx = 82 + 28
+    const tenItemLabelIslandWidthPx = 2 * 1 + 2 * 5 + 160 + 9 * 16 + 9 * 4
+    const flagOnNotificationWidthPx = 4 + 1 + 20
+
+    const defaultIslandLeftPx =
+      (supportedMainColumnWidthPx - tenItemLabelIslandWidthPx) / 2
+
+    const flagOnIslandLeftPx =
+      (supportedMainColumnWidthPx -
+        tenItemLabelIslandWidthPx -
+        flagOnNotificationWidthPx) /
+      2
+
+    expect(tenItemLabelIslandWidthPx).toBe(352)
+    expect(defaultIslandLeftPx).toBeGreaterThan(macosLeftControlEndPx)
+    expect(flagOnIslandLeftPx).toBeGreaterThan(macosLeftControlEndPx)
   })
 
   test('macOS collapsed activity rail keeps only its expand control clickable', async () => {

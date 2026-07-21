@@ -16,6 +16,7 @@ const hasForeignDialog = (): boolean =>
 
 export interface UseSessionSwitcherParams {
   orderedIds: readonly string[]
+  activeSessionId: string | null
   matches: (event: KeyboardEvent, id: CommandId) => boolean
   bindingFor: (id: CommandId) => Chord
   onCommit: (sessionId: string) => void
@@ -44,6 +45,7 @@ const holdCheckerFor = (chord: Chord): HoldChecker => {
 
 export const useSessionSwitcher = ({
   orderedIds,
+  activeSessionId,
   matches,
   bindingFor,
   onCommit,
@@ -58,6 +60,8 @@ export const useSessionSwitcher = ({
   selectedIndexRef.current = selectedIndex
   const orderedIdsRef = useRef(orderedIds)
   orderedIdsRef.current = orderedIds
+  const activeSessionIdRef = useRef(activeSessionId)
+  activeSessionIdRef.current = activeSessionId
   const matchesRef = useRef(matches)
   matchesRef.current = matches
   const bindingForRef = useRef(bindingFor)
@@ -184,7 +188,9 @@ export const useSessionSwitcher = ({
 
         const initialIndex =
           commandId === 'session-switch-next'
-            ? Math.min(1, ids.length - 1)
+            ? ids[0] === activeSessionIdRef.current
+              ? Math.min(1, ids.length - 1)
+              : 0
             : ids.length - 1
         selectedIdRef.current = ids[initialIndex] ?? null
         setSelectedIndex(initialIndex)

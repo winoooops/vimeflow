@@ -70,7 +70,9 @@ import { formatShortcut } from '@/lib/formatShortcut'
 import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
 import { cycleSession } from '@/features/sessions/utils/cycleSession'
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
+import { SessionIsland } from '@/features/sessions/components/SessionIsland'
 import { SessionSwitcher } from '@/features/sessions/components/SessionSwitcher'
+import { resolveSessionIslandDisplay } from '@/features/sessions/utils/sessionIslandDisplay'
 import {
   clampSize,
   useResizable,
@@ -131,10 +133,7 @@ import {
   isLiveStatus,
   isOpenSession,
 } from '@/features/sessions/utils/sessionStatus'
-import {
-  getVisibleSessions,
-  pickNextVisibleSessionId,
-} from '@/features/sessions/utils/pickNextVisibleSessionId'
+import { pickNextVisibleSessionId } from '@/features/sessions/utils/pickNextVisibleSessionId'
 import { closeSessionWithSuccessor } from '@/features/sessions/utils/closeSessionWithSuccessor'
 import { orderSwitcherSessionIds } from './utils/orderSwitcherSessionIds'
 import {
@@ -295,6 +294,11 @@ const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
 // in the collapsed rail, so the control reads as symmetric in both states.
 const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
+const SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX = 700
+const SESSION_ISLAND_COMPACT_BATCH_SIZE = 5
+
+const SESSION_ISLAND_NOTIFICATIONS_ENABLED =
+  import.meta.env.VITE_SESSION_ISLAND_NOTIFICATIONS === '1'
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
@@ -482,6 +486,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const [isCompactViewport, setIsCompactViewport] =
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
+  const [isLayoutSwitcherCompact, setIsLayoutSwitcherCompact] = useState(false)
 
   const [visibleLayoutIds, setVisibleLayoutIds] = useState<
     readonly PaneLayoutId[]
@@ -644,8 +649,14 @@ const WorkspaceViewContent = (): ReactElement => {
   // — adding a key there automatically extends this signature so the memo
   // rebuilds whenever a newly-readable field actually changes. JSON
   // encoding is collision-free regardless of separator characters in names.
-  const sessionsSignature = JSON.stringify(
+  const liveSessions = useMemo(() => sessions.filter(isOpenSession), [sessions])
+
+  const commandSessionsSignature = JSON.stringify(
     sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
+  )
+
+  const navigableSessionsSignature = JSON.stringify(
+    liveSessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
   )
 
   // `activePane` is declared further down (after `activeSession`); resolve
@@ -1152,6 +1163,12 @@ const WorkspaceViewContent = (): ReactElement => {
 
       const workspaceWidth =
         workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth
+
+      if (width > 0) {
+        setIsLayoutSwitcherCompact(
+          width < SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX
+        )
+      }
 
       if (
         !sidebarCollapsed &&
@@ -1967,6 +1984,7 @@ const WorkspaceViewContent = (): ReactElement => {
     () =>
       buildWorkspaceCommands({
         sessions,
+        navigableSessions: liveSessions,
         activeSessionId,
         activePanePtyId: activePanePtyIdForCommands,
         activePaneAgentType: activePaneAgentTypeForCommands,
@@ -2025,12 +2043,15 @@ const WorkspaceViewContent = (): ReactElement => {
         keybindingShortcut: (id) =>
           chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
       }),
-    // sessionsSignature captures every field the closures read; activity-only
-    // changes keep the signature stable so the memo (and downstream
-    // filteredResults / handler refs) do not churn during agent I/O.
+    // These signatures capture every session field the closures read.
+    // Activity-only changes keep them stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O. Keep the
+    // all-tabs and navigable-tabs signatures split: close/rename can target the
+    // visibly active just-exited tab, while navigation stays live-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      sessionsSignature,
+      commandSessionsSignature,
+      navigableSessionsSignature,
       activeSessionId,
       activePanePtyIdForCommands,
       activePaneAgentTypeForCommands,
@@ -2215,11 +2236,11 @@ const WorkspaceViewContent = (): ReactElement => {
     matches,
   })
 
-  // VIM-104: ⌘[ / ⌘] cycle to the previous / next session (Ctrl+⇧[ / Ctrl+⇧]
-  // on Linux). Mirrors the previous/next-session palette commands.
+  // VIM-104: ⌘[ / ⌘] cycle to the previous / next live session (Ctrl+⇧[ /
+  // Ctrl+⇧] on Linux). Recent sessions stay sidebar-only until resumed.
   const switchRelativeSession = useCallback(
     (delta: number): void => {
-      const nextSession = cycleSession(sessions, activeSessionId, delta)
+      const nextSession = cycleSession(liveSessions, activeSessionId, delta)
       if (nextSession === null) {
         notifyInfo('No open sessions')
 
@@ -2229,7 +2250,13 @@ const WorkspaceViewContent = (): ReactElement => {
       setActiveSessionId(nextSession.id)
       claimTerminal()
     },
-    [sessions, activeSessionId, setActiveSessionId, notifyInfo, claimTerminal]
+    [
+      liveSessions,
+      activeSessionId,
+      setActiveSessionId,
+      notifyInfo,
+      claimTerminal,
+    ]
   )
 
   const handlePrevSession = useCallback((): void => {
@@ -2248,19 +2275,14 @@ const WorkspaceViewContent = (): ReactElement => {
 
   // Ctrl+Tab MRU switcher: switchable set in MRU order, never-activated
   // sessions appended so every open session stays reachable.
-  const switchableSessions = useMemo(
-    () => getVisibleSessions(sessions, activeSessionId),
-    [activeSessionId, sessions]
-  )
-
   const switcherOrderedIds = useMemo(
     () =>
       orderSwitcherSessionIds(
         mruSessionIds,
-        switchableSessions.map((s) => s.id),
+        liveSessions.map((s) => s.id),
         activeSessionId
       ),
-    [activeSessionId, mruSessionIds, switchableSessions]
+    [activeSessionId, liveSessions, mruSessionIds]
   )
 
   const switcherEntries = useMemo(
@@ -2284,6 +2306,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const sessionSwitcher = useSessionSwitcher({
     orderedIds: switcherOrderedIds,
+    activeSessionId,
     matches,
     bindingFor,
     onCommit: handleSetActiveSessionId,
@@ -3394,6 +3417,20 @@ const WorkspaceViewContent = (): ReactElement => {
               }}
             />
           )}
+          <SessionIsland
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            displayMode={resolveSessionIslandDisplay(
+              settings.sessionIslandDisplay
+            )}
+            onSessionSelect={handleSetActiveSessionId}
+            maxVisibleSessions={
+              isLayoutSwitcherCompact
+                ? SESSION_ISLAND_COMPACT_BATCH_SIZE
+                : undefined
+            }
+            showNotifications={SESSION_ISLAND_NOTIFICATIONS_ENABLED}
+          />
           <span className="min-w-[10px] flex-1" />
 
           {/* Pills render in every layout, with the layout-display config
@@ -3407,6 +3444,7 @@ const WorkspaceViewContent = (): ReactElement => {
               onPick={handlePickLayout}
               labelSingleAsFocusAction
               nativeOverlayTooltips
+              compact={isLayoutSwitcherCompact}
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}
@@ -3422,6 +3460,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   onDuplicateCustomLayout={handleDuplicateCustomLayout}
                   onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
+                  compactSelectionMode={isLayoutSwitcherCompact}
                   nativeOverlay
                 />
               }

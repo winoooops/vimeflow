@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { Menu } from '@/components/Menu'
 import type { PaneLayoutId } from '../../../sessions/types'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '../../layout-registry'
@@ -10,6 +10,9 @@ import { builtInLayoutMenuItems } from './LayoutDisplayBuiltInLayouts'
 interface BuiltInLayoutsHarnessProps {
   activeLayoutId?: PaneLayoutId
   initialVisibleLayoutIds?: readonly PaneLayoutId[]
+  blockedLayoutIds?: readonly PaneLayoutId[]
+  onPickLayout?: (layoutId: PaneLayoutId) => boolean
+  compactSelectionMode?: boolean
 }
 
 const BuiltInLayoutsHarness = ({
@@ -22,6 +25,9 @@ const BuiltInLayoutsHarness = ({
     'quad',
     'grid3x2',
   ],
+  blockedLayoutIds = [],
+  onPickLayout = undefined,
+  compactSelectionMode = false,
 }: BuiltInLayoutsHarnessProps): ReactElement => {
   const [visibleLayoutIds, setVisibleLayoutIds] = useState(
     initialVisibleLayoutIds
@@ -36,8 +42,11 @@ const BuiltInLayoutsHarness = ({
             builtInLayouts: layouts,
             allLayouts: layouts,
             activeLayoutId,
+            blockedLayoutIds,
             visibleLayoutIds,
             onVisibleLayoutIdsChange: setVisibleLayoutIds,
+            onPickLayout,
+            compactSelectionMode,
           })}
         </Menu.Section>
       </Menu>
@@ -132,5 +141,85 @@ describe('builtInLayoutMenuItems', () => {
     expect(screen.getByLabelText('Visible layout ids')).toHaveTextContent(
       'single,vsplit,hsplit,quad'
     )
+  })
+
+  test('compact selection mode picks a built-in layout instead of changing visibility', async () => {
+    const user = userEvent.setup()
+    const onPickLayout = vi.fn(() => true)
+
+    render(
+      <BuiltInLayoutsHarness
+        activeLayoutId="vsplit"
+        initialVisibleLayoutIds={['single', 'vsplit']}
+        onPickLayout={onPickLayout}
+        compactSelectionMode
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Open built-in layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('menuitemcheckbox', { name: 'Quad' })
+    )
+
+    expect(onPickLayout).toHaveBeenCalledWith('quad')
+    expect(screen.getByLabelText('Visible layout ids')).toHaveTextContent(
+      'single,vsplit'
+    )
+  })
+
+  test('compact selection mode allows the required single layout to be picked', async () => {
+    const user = userEvent.setup()
+    const onPickLayout = vi.fn(() => true)
+
+    render(
+      <BuiltInLayoutsHarness
+        activeLayoutId="quad"
+        onPickLayout={onPickLayout}
+        compactSelectionMode
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Open built-in layouts' })
+    )
+
+    const singleLayout = await screen.findByRole('menuitemcheckbox', {
+      name: 'Single',
+    })
+
+    expect(singleLayout).not.toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(singleLayout)
+    expect(onPickLayout).toHaveBeenCalledWith('single')
+  })
+
+  test('compact selection mode keeps blocked layouts disabled', async () => {
+    const user = userEvent.setup()
+    const onPickLayout = vi.fn(() => true)
+
+    render(
+      <BuiltInLayoutsHarness
+        activeLayoutId="vsplit"
+        blockedLayoutIds={['quad']}
+        onPickLayout={onPickLayout}
+        compactSelectionMode
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Open built-in layouts' })
+    )
+
+    const quadLayout = await screen.findByRole('menuitemcheckbox', {
+      name: 'Quad',
+    })
+
+    expect(quadLayout).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(quadLayout)
+    expect(onPickLayout).not.toHaveBeenCalled()
   })
 })

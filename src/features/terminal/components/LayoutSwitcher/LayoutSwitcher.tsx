@@ -8,6 +8,7 @@ import {
 } from '../../layout-registry'
 import { LayoutGlyph } from './LayoutGlyph'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import { Tooltip } from '@/components/Tooltip'
 import { chordToShortcutInput } from '@/features/keymap/displayKey'
 import { useKeybindings } from '@/features/keymap/useKeybindings'
 
@@ -42,6 +43,8 @@ export interface LayoutSwitcherProps {
    */
   labelSingleAsFocusAction?: boolean
   nativeOverlayTooltips?: boolean
+  /** Replace the choices with a non-interactive active-layout readout. */
+  compact?: boolean
 }
 
 export const LayoutSwitcher = ({
@@ -56,6 +59,7 @@ export const LayoutSwitcher = ({
   vertical = false,
   labelSingleAsFocusAction = false,
   nativeOverlayTooltips = false,
+  compact = false,
 }: LayoutSwitcherProps): ReactElement => {
   const { bindingFor } = useKeybindings()
   const layoutIds = useMemo(() => layouts.map((layout) => layout.id), [layouts])
@@ -81,6 +85,13 @@ export const LayoutSwitcher = ({
       normalizedVisibleLayoutIds.includes(layoutId)
   )
 
+  const compactMode = compact && !vertical
+
+  // Compact mode is a non-interactive state readout. Use the layout name here;
+  // SINGLE_PANE_FOCUS_LABEL describes what the full-width button does on click.
+  const activeLayoutName =
+    layoutById.get(activeLayoutId)?.name ?? activeLayoutId
+
   return (
     <div
       data-testid="layout-switcher"
@@ -98,61 +109,80 @@ export const LayoutSwitcher = ({
           : 'inline-flex items-center'
       }`}
     >
-      <SegmentedControl
-        aria-label="Pane layout"
-        role="presentation"
-        variant="toolbarInline"
-        value={activeLayoutId}
-        options={renderedLayoutIds.map((layoutId) => {
-          const name = layoutById.get(layoutId)?.name ?? layoutId
-          const isSingleFocus = layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID
-
-          const disabled =
-            blockedLayoutIds.includes(layoutId) && layoutId !== activeLayoutId
-
-          const label = disabled
-            ? `Reduce panes to switch to ${name}`
-            : isSingleFocus && labelSingleAsFocusAction
-              ? SINGLE_PANE_FOCUS_LABEL
-              : name
-
-          return {
-            value: layoutId,
-            label: name,
-            // Drive both the accessible name and the tooltip from the same
-            // string so the reduce-panes explanation is reachable by screen
-            // readers and on hover when the layout is blocked.
-            ariaLabel: label,
-            tooltip: label,
-            shortcut:
-              isSingleFocus && labelSingleAsFocusAction
-                ? singlePaneFocusShortcut
-                : undefined,
-            disabled,
-          }
-        })}
-        onChange={onPick}
-        skipActiveReselect
-        nativeOverlayTooltips={nativeOverlayTooltips}
-        // Vertical mode fills the column as a grouped list: each row is a
-        // full-width glyph + name. Horizontal mode keeps the compact icon pill.
-        buttonClassName={
-          vertical
-            ? 'w-full h-8 justify-start gap-2 px-2 text-[12px] rounded-[7px]'
-            : undefined
-        }
-        renderOption={(layout) => (
-          <>
+      {compactMode ? (
+        <Tooltip
+          content={`Current pane layout: ${activeLayoutName}`}
+          placement="bottom"
+          nativeOverlay={nativeOverlayTooltips}
+        >
+          <span
+            role="img"
+            aria-label={`Current pane layout: ${activeLayoutName}`}
+            className="grid h-5 w-6 shrink-0 place-items-center rounded bg-primary/15 text-primary ring-1 ring-primary/45"
+          >
             <LayoutGlyph
-              layoutId={layout.value}
-              definition={layoutById.get(layout.value)?.definition}
+              layoutId={activeLayoutId}
+              definition={layoutById.get(activeLayoutId)?.definition}
             />
-            {vertical && (
-              <span className="truncate font-medium">{layout.label}</span>
-            )}
-          </>
-        )}
-      />
+          </span>
+        </Tooltip>
+      ) : (
+        <SegmentedControl
+          aria-label="Pane layout"
+          role="presentation"
+          variant="toolbarInline"
+          value={activeLayoutId}
+          options={renderedLayoutIds.map((layoutId) => {
+            const name = layoutById.get(layoutId)?.name ?? layoutId
+            const isSingleFocus = layoutId === SINGLE_PANE_FOCUS_LAYOUT_ID
+
+            const disabled =
+              blockedLayoutIds.includes(layoutId) && layoutId !== activeLayoutId
+
+            const label = disabled
+              ? `Reduce panes to switch to ${name}`
+              : isSingleFocus && labelSingleAsFocusAction
+                ? SINGLE_PANE_FOCUS_LABEL
+                : name
+
+            return {
+              value: layoutId,
+              label: name,
+              // Drive both the accessible name and the tooltip from the same
+              // string so the reduce-panes explanation is reachable by screen
+              // readers and on hover when the layout is blocked.
+              ariaLabel: label,
+              tooltip: label,
+              shortcut:
+                isSingleFocus && labelSingleAsFocusAction
+                  ? singlePaneFocusShortcut
+                  : undefined,
+              disabled,
+            }
+          })}
+          onChange={onPick}
+          skipActiveReselect
+          nativeOverlayTooltips={nativeOverlayTooltips}
+          // Vertical mode fills the column as a grouped list: each row is a
+          // full-width glyph + name. Horizontal mode keeps the compact icon pill.
+          buttonClassName={
+            vertical
+              ? 'w-full h-8 justify-start gap-2 px-2 text-[12px] rounded-[7px]'
+              : undefined
+          }
+          renderOption={(layout) => (
+            <>
+              <LayoutGlyph
+                layoutId={layout.value}
+                definition={layoutById.get(layout.value)?.definition}
+              />
+              {vertical && (
+                <span className="truncate font-medium">{layout.label}</span>
+              )}
+            </>
+          )}
+        />
+      )}
       {trailing !== undefined && (
         <>
           {/* Hairline divider seats the docked control as part of the same

@@ -91,6 +91,11 @@ describe('SETTINGS_TARGETS', () => {
           section: 'terminal',
           label: 'Terminal Font',
         }),
+        expect.objectContaining({
+          id: SETTINGS_TARGET_IDS.appearanceSessionIsland,
+          section: 'appearance',
+          label: 'Session Island',
+        }),
       ])
     )
   })

@@ -273,6 +273,25 @@ describe('buildWorkspaceCommands - happy paths', () => {
     expect(removeSession).toHaveBeenCalledWith('session-2')
   })
 
+  test(':close command can remove active tab outside the navigable set', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      navigableSessions: [mockSessions[0], mockSessions[2]],
+      activeSessionId: 'session-2',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    commands.find((c) => c.id === 'close')?.execute?.('')
+    expect(removeSession).toHaveBeenCalledWith('session-2')
+  })
+
   test(':burner command toggles the focused pane burner terminal', () => {
     const toggleBurner = vi.fn()
 
@@ -374,6 +393,25 @@ describe('buildWorkspaceCommands - happy paths', () => {
     renameCmd?.execute?.('new-name')
     expect(renameSession).toHaveBeenCalledWith('session-1', 'new-name')
     expect(setPaneUserLabel).not.toHaveBeenCalled()
+  })
+
+  test(':rename-session can rename active tab outside the navigable set', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      navigableSessions: [mockSessions[0], mockSessions[2]],
+      activeSessionId: 'session-2',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    commands.find((c) => c.id === 'rename-session')?.execute?.('done')
+    expect(renameSession).toHaveBeenCalledWith('session-2', 'done')
   })
 
   test(':rename-session sanitizes controls before renaming active session', () => {
@@ -1005,6 +1043,28 @@ describe('buildWorkspaceCommands - happy paths', () => {
 
     gotoCmd?.execute?.('feature')
     expect(setActiveSessionId).toHaveBeenCalledWith('session-2')
+  })
+
+  test(':goto command with name searches only the navigable set', () => {
+    const commands = buildWorkspaceCommands({
+      sessions: mockSessions,
+      navigableSessions: [mockSessions[0], mockSessions[2]],
+      activeSessionId: 'session-1',
+      createSession,
+      removeSession,
+      renameSession,
+      setPaneUserLabel,
+      renameAgentSession,
+      activePanePtyId: 'pty-active',
+      setActiveSessionId,
+      notifyInfo,
+    })
+
+    const gotoCmd = commands.find((c) => c.id === 'goto')
+
+    gotoCmd?.execute?.('feature')
+    expect(setActiveSessionId).not.toHaveBeenCalled()
+    expect(notifyInfo).toHaveBeenCalledWith("No tab matching 'feature'")
   })
 
   test(':goto command supports fuzzy abbreviation matching', () => {
@@ -1725,6 +1785,19 @@ describe('buildWorkspaceCommands - vim aliases (VIM-104 B1)', () => {
     expect(cmd?.label).toBe(':tabn')
 
     cmd?.execute?.('')
+    expect(setActiveSessionId).toHaveBeenCalledWith('session-1')
+  })
+
+  test(':tabn skips active tab outside the navigable set', () => {
+    const setActiveSessionId = vi.fn()
+
+    const commands = buildVimCommands({
+      navigableSessions: [mockSessions[0], mockSessions[2]],
+      activeSessionId: 'session-2',
+      setActiveSessionId,
+    })
+
+    commands.find((c) => c.id === 'vim-tabnext')?.execute?.('')
     expect(setActiveSessionId).toHaveBeenCalledWith('session-1')
   })
 
