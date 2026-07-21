@@ -3855,6 +3855,18 @@ describe('Panel', () => {
         within(fileCommentsPanel).getByText('Review the whole file')
       ).toBeInTheDocument()
 
+      const searchAnchor = screen.getByTestId('diff-search-anchor')
+
+      const searchButton = screen.getByRole('button', {
+        name: 'Search in diff',
+      })
+
+      expect(fileCommentsPanel.compareDocumentPosition(searchAnchor)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      expect(searchAnchor).toContainElement(searchButton)
+      expect(searchAnchor).toHaveClass('h-0')
+
       fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
       expect(
@@ -6977,6 +6989,7 @@ describe('Panel', () => {
       })
 
       const popup = await screen.findByRole('search')
+      expect(screen.getByTestId('diff-search-anchor')).toContainElement(popup)
       await waitFor(() => expect(popup).not.toHaveAttribute('inert'))
       await waitFor(() =>
         expect(

@@ -2745,32 +2745,6 @@ export const Panel = ({
             feedback.annotationsForFile(cwd, file.path, file.staged).length > 0
           }
         />
-        {diffSearchFileKey !== null ? (
-          <>
-            {!diffSearch.isOpen ? (
-              <DiffSearchButton
-                bindingFor={bindingFor}
-                fileHeaderVisible={fileHeaderVisible}
-                onOpen={diffSearch.open}
-              />
-            ) : null}
-            <DiffSearchPopup
-              bindingFor={bindingFor}
-              matches={matches}
-              open={diffSearch.isOpen}
-              fileHeaderVisible={fileHeaderVisible}
-              query={diffSearch.query}
-              matchCount={diffSearch.matchCount}
-              activeOrdinal={diffSearch.activeOrdinal}
-              confirming={keyboardConfirmAction !== null}
-              inputRef={diffSearch.inputRef}
-              onQueryChange={diffSearch.setQuery}
-              onCommit={diffSearch.commit}
-              onStep={diffSearch.step}
-              onClose={diffSearch.close}
-            />
-          </>
-        ) : null}
         <div
           ref={setDiffPaneElement}
           data-testid="diff-right-pane"
@@ -2911,6 +2885,37 @@ export const Panel = ({
             </div>
           ) : null}
           <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+          <div
+            data-testid="diff-search-anchor"
+            className="relative h-0 shrink-0"
+          >
+            {diffSearchFileKey !== null ? (
+              <>
+                {!diffSearch.isOpen ? (
+                  <DiffSearchButton
+                    bindingFor={bindingFor}
+                    fileHeaderVisible={fileHeaderVisible}
+                    onOpen={diffSearch.open}
+                  />
+                ) : null}
+                <DiffSearchPopup
+                  bindingFor={bindingFor}
+                  matches={matches}
+                  open={diffSearch.isOpen}
+                  fileHeaderVisible={fileHeaderVisible}
+                  query={diffSearch.query}
+                  matchCount={diffSearch.matchCount}
+                  activeOrdinal={diffSearch.activeOrdinal}
+                  confirming={keyboardConfirmAction !== null}
+                  inputRef={diffSearch.inputRef}
+                  onQueryChange={diffSearch.setQuery}
+                  onCommit={diffSearch.commit}
+                  onStep={diffSearch.step}
+                  onClose={diffSearch.close}
+                />
+              </>
+            ) : null}
+          </div>
           <PanelBody
             bindingFor={bindingFor}
             scrollBodyRef={diffScrollBodyRef}
