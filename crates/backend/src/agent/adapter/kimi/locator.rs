@@ -107,7 +107,7 @@ pub(crate) struct KimiLocator {
     // gated on user consent and runs at most once per new main-agent turn.
     usage: Arc<Mutex<UsageState>>,
     resume_evidence: Arc<Mutex<HashMap<String, SystemTime>>>,
-    process_start: Arc<Mutex<Option<Option<ProcessStartEvidence>>>>,
+    process_start: Arc<Mutex<Option<ProcessStartEvidence>>>,
 }
 
 /// Out-of-band kimi plan-usage state behind the locator's shared Arc. The
@@ -334,12 +334,12 @@ impl KimiLocator {
     /// platform process source is unavailable or cannot be parsed.
     fn process_start(&self) -> Option<ProcessStartEvidence> {
         if let Some(cached) = *self.process_start.lock().expect("process_start lock") {
-            return cached;
+            return Some(cached);
         }
 
-        let resolved = self.resolve_process_start();
+        let resolved = self.resolve_process_start()?;
         *self.process_start.lock().expect("process_start lock") = Some(resolved);
-        resolved
+        Some(resolved)
     }
 
     fn resolve_process_start(&self) -> Option<ProcessStartEvidence> {
@@ -1182,6 +1182,31 @@ mod tests {
 
         assert_eq!(second.at, first.at);
         assert_eq!(second.resume_floor, first.resume_floor);
+    }
+
+    #[test]
+    fn process_start_miss_is_retryable() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let proc_root = tempfile::tempdir().expect("proc root");
+        let pid = 4242u32;
+        let hz = clock_ticks_per_sec();
+        let btime = 1_700_000_000u64;
+        write_proc_btime(proc_root.path(), btime);
+
+        let locator = locator_with_proc(kimi_home.path(), pid, SystemTime::now(), proc_root.path());
+        assert!(
+            locator.process_start().is_none(),
+            "missing proc stat should not resolve process start"
+        );
+
+        write_proc_stat(proc_root.path(), pid, 50 * hz);
+        let retried = locator.process_start().expect("retried process start");
+
+        assert_eq!(
+            retried.at,
+            SystemTime::UNIX_EPOCH + Duration::from_secs(btime + 50)
+        );
+        assert_eq!(retried.resume_floor, retried.at);
     }
 
     #[test]
