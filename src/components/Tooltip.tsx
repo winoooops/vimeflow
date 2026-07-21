@@ -52,6 +52,7 @@ interface TooltipCommonProps {
   nativeOverlay?: boolean
   nativeOverlayPayload?: NativeOverlayActivityPopoverPayload
   nativeOverlayActions?: ReadonlyMap<string, NativeOverlayActionHandler>
+  onOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -134,6 +135,7 @@ export const Tooltip = ({
   nativeOverlay = false,
   nativeOverlayPayload = undefined,
   nativeOverlayActions = EMPTY_NATIVE_OVERLAY_ACTIONS,
+  onOpenChange = undefined,
   interactive = false,
   ariaLabel = undefined,
   bare = false,
@@ -146,12 +148,22 @@ export const Tooltip = ({
   const nativeSurfaceId = `tooltip:${useId()}`
 
   const [open, setOpen] = useState(false)
+  const lastNotifiedOpenRef = useRef(open)
 
   const [nativeFailed, setNativeFailed] = useState(false)
   const nativePopoverLifecycleRef = useRef(false)
 
   const transport = selectFloatingTransport(nativeOverlay)
   const nativeTooltipText = typeof content === 'string' ? content : null
+
+  useEffect(() => {
+    if (lastNotifiedOpenRef.current === open) {
+      return
+    }
+
+    lastNotifiedOpenRef.current = open
+    onOpenChange?.(open)
+  }, [onOpenChange, open])
 
   const formattedShortcut = useMemo(
     () => (shortcut === undefined ? undefined : formatShortcut(shortcut)),

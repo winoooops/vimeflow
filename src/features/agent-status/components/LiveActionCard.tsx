@@ -9,6 +9,9 @@ interface LiveActionCardProps {
   diff?: { added: number; removed: number } | null
   pathLabel?: string
   onActivate?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: globalThis.KeyboardEvent) => boolean
 }
 
 const SECTION_LABEL =
@@ -20,6 +23,9 @@ export const LiveActionCard = ({
   diff = null,
   pathLabel = undefined,
   onActivate = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
 }: LiveActionCardProps): ReactElement => {
   // Mirror the feed's label logic so meta tools show their name (not 'META')
   // and test-file edits keep their CREATED/UPDATED TEST wording.
@@ -106,6 +112,10 @@ export const LiveActionCard = ({
         now={now}
         ariaLabel={`${verb} live action details`}
         onActivate={onActivate}
+        onShowDiff={onActivate}
+        showDiffShortcut={showDiffShortcut}
+        showDiffAriaShortcut={showDiffAriaShortcut}
+        matchesShowDiffShortcut={matchesShowDiffShortcut}
       >
         {card}
       </ActivityDetailsTooltip>

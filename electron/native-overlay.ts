@@ -835,6 +835,16 @@ export class NativeOverlayController {
     )
   }
 
+  hasActiveShortcutBlockingOverlaySurface(parent: BrowserWindow): boolean {
+    const activeSurfaceId = this.overlays.get(parent.id)?.activeSurfaceId
+
+    if (activeSurfaceId === null || activeSurfaceId === undefined) {
+      return false
+    }
+
+    return this.surfaces.get(activeSurfaceId)?.kind !== 'popover'
+  }
+
   private readonly handleOpen = async (
     event: IpcMainInvokeEvent,
     payload: unknown

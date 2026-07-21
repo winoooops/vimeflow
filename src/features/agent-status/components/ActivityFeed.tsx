@@ -9,10 +9,18 @@ import {
 } from 'react'
 import { ActivityEvent } from './ActivityEvent'
 import { CollapsibleSection } from './CollapsibleSection'
+import type { ChangedFile } from '../../diff/types'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
+import { matchChangedFile } from '../utils/matchChangedFile'
 
 interface ActivityFeedProps {
   events: ActivityEventType[]
+  changedFiles?: ChangedFile[]
+  cwd?: string
+  onOpenDiff?: (file: ChangedFile) => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: globalThis.KeyboardEvent) => boolean
 }
 
 const TICK_MS = 1000
@@ -21,7 +29,15 @@ const TICK_MS = 1000
 // further back into the session without leaving the feed.
 const VISIBLE_WHEN_COLLAPSED = 10
 
-export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
+export const ActivityFeed = ({
+  events,
+  changedFiles = [],
+  cwd = '',
+  onOpenDiff = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
+}: ActivityFeedProps): ReactElement => {
   const [now, setNow] = useState<Date>(() => new Date())
   const [showAll, setShowAll] = useState<boolean>(false)
   const [activeEventId, setActiveEventId] = useState<string | null>(null)
@@ -134,29 +150,44 @@ export const ActivityFeed = ({ events }: ActivityFeedProps): ReactElement => {
               aria-hidden="true"
             />
             <div className="relative flex flex-col">
-              {visible.map((event, index) => (
-                <ActivityEvent
-                  key={event.id}
-                  event={event}
-                  now={now}
-                  rowRef={(element): void => {
-                    if (element) {
-                      eventRefs.current.set(event.id, element)
+              {visible.map((event, index) => {
+                const changedFile =
+                  event.kind === 'edit' || event.kind === 'write'
+                    ? matchChangedFile(changedFiles, event.body, cwd)
+                    : null
 
-                      return
+                return (
+                  <ActivityEvent
+                    key={event.id}
+                    event={event}
+                    now={now}
+                    rowRef={(element): void => {
+                      if (element) {
+                        eventRefs.current.set(event.id, element)
+
+                        return
+                      }
+
+                      eventRefs.current.delete(event.id)
+                    }}
+                    ariaPosInSet={index + 1}
+                    ariaSetSize={events.length}
+                    tabIndex={event.id === activeVisibleEventId ? 0 : -1}
+                    onFocus={(): void => setActiveEventId(event.id)}
+                    onKeyDown={(keyboardEvent): void =>
+                      handleEventKeyDown(keyboardEvent, index)
                     }
-
-                    eventRefs.current.delete(event.id)
-                  }}
-                  ariaPosInSet={index + 1}
-                  ariaSetSize={events.length}
-                  tabIndex={event.id === activeVisibleEventId ? 0 : -1}
-                  onFocus={(): void => setActiveEventId(event.id)}
-                  onKeyDown={(keyboardEvent): void =>
-                    handleEventKeyDown(keyboardEvent, index)
-                  }
-                />
-              ))}
+                    onShowDiff={
+                      changedFile === null || onOpenDiff === undefined
+                        ? undefined
+                        : (): void => onOpenDiff(changedFile)
+                    }
+                    showDiffShortcut={showDiffShortcut}
+                    showDiffAriaShortcut={showDiffAriaShortcut}
+                    matchesShowDiffShortcut={matchesShowDiffShortcut}
+                  />
+                )
+              })}
             </div>
           </div>
 
