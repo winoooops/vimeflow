@@ -171,7 +171,7 @@ const activityPopoverRequest: NativeOverlayRequest = {
   payload: {
     kind: 'popover',
     popover: 'activity',
-    ariaLabel: 'BASH activity details',
+    ariaLabel: 'BASH trace details',
     activateActionId: 'activity:activate',
     event: {
       id: 'activity-1',
@@ -180,6 +180,7 @@ const activityPopoverRequest: NativeOverlayRequest = {
       status: 'done',
       body: 'npm test',
       tool: 'Bash',
+      label: 'BASH',
       durationMs: 1200,
     },
   },
@@ -467,16 +468,16 @@ describe('NativeOverlayHost', () => {
     bridge.emitRender(activityPopoverRequest)
 
     const dialog = await screen.findByRole('dialog', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
     expect(dialog).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
     expect(within(dialog).getByText('npm test')).toBeInTheDocument()
     expect(
-      within(dialog).getByRole('button', { name: 'Copy activity details' })
+      within(dialog).getByRole('button', { name: 'Copy trace details' })
     ).toBeInTheDocument()
 
     const trigger = screen.getByRole('button', {
-      name: 'BASH activity details',
+      name: 'BASH trace details',
     })
 
     fireEvent.pointerDown(trigger)

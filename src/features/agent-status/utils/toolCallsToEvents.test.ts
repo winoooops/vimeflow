@@ -15,7 +15,7 @@ const recent = (overrides: Partial<RecentToolCall> = {}): RecentToolCall => ({
 
 describe('toolCallsToEvents', () => {
   test('null active + empty recent → empty array', () => {
-    expect(toolCallsToEvents(null, [])).toEqual([])
+    expect(toolCallsToEvents('claude-code', null, [])).toEqual([])
   })
 
   test('active only → one running event with startedAt as timestamp and toolUseId as id', () => {
@@ -25,13 +25,14 @@ describe('toolCallsToEvents', () => {
       startedAt: '2026-04-22T10:30:00Z',
       toolUseId: 'toolu_ACTIVE',
     }
-    const events = toolCallsToEvents(active, [])
+    const events = toolCallsToEvents('claude-code', active, [])
 
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
       id: 'toolu_ACTIVE',
       kind: 'edit',
       tool: 'Edit',
+      label: 'EDIT',
       body: 'src/foo.ts',
       status: 'running',
       timestamp: '2026-04-22T10:30:00Z',
@@ -40,7 +41,7 @@ describe('toolCallsToEvents', () => {
   })
 
   test('recent events are sorted by timestamp descending regardless of input order', () => {
-    const events = toolCallsToEvents(null, [
+    const events = toolCallsToEvents('claude-code', null, [
       recent({
         id: 'old',
         tool: 'Bash',
@@ -66,6 +67,7 @@ describe('toolCallsToEvents', () => {
 
   test('active is always first, even when a recent event has a newer timestamp', () => {
     const events = toolCallsToEvents(
+      'claude-code',
       {
         tool: 'Edit',
         args: 'src/foo.ts',
@@ -94,11 +96,11 @@ describe('toolCallsToEvents', () => {
     ['Bash', 'bash'],
     ['Grep', 'grep'],
     ['Glob', 'glob'],
-    ['WebFetch', 'meta'],
+    ['WebFetch', 'web'],
     ['Task', 'meta'],
     ['NotARealTool', 'meta'],
   ])('tool %s → kind %s', (tool, expectedKind) => {
-    const events = toolCallsToEvents(null, [recent({ tool })])
+    const events = toolCallsToEvents('claude-code', null, [recent({ tool })])
 
     expect(events[0].kind).toBe(expectedKind)
   })
@@ -107,7 +109,7 @@ describe('toolCallsToEvents', () => {
     // A stray unparseable timestamp shouldn't let Array.sort's NaN-comparator
     // behavior scramble the whole feed. Other entries stay in timestamp-desc
     // order; the malformed entry lands last.
-    const events = toolCallsToEvents(null, [
+    const events = toolCallsToEvents('claude-code', null, [
       recent({ id: 'old', timestamp: '2026-04-22T10:00:00Z' }),
       recent({ id: 'bad', timestamp: 'not-an-iso-string' }),
       recent({ id: 'new', timestamp: '2026-04-22T12:00:00Z' }),
@@ -117,7 +119,7 @@ describe('toolCallsToEvents', () => {
   })
 
   test('passes through status, duration, id, timestamp', () => {
-    const events = toolCallsToEvents(null, [
+    const events = toolCallsToEvents('claude-code', null, [
       recent({
         id: 'xyz',
         status: 'failed',
@@ -135,7 +137,7 @@ describe('toolCallsToEvents', () => {
   })
 
   test('propagates isTestFile from RecentToolCall to ActivityEvent', () => {
-    const events = toolCallsToEvents(null, [
+    const events = toolCallsToEvents('claude-code', null, [
       {
         id: 'tu_1',
         tool: 'Write',
@@ -151,7 +153,7 @@ describe('toolCallsToEvents', () => {
   })
 
   test('isTestFile defaults to false when not on RecentToolCall', () => {
-    const events = toolCallsToEvents(null, [
+    const events = toolCallsToEvents('claude-code', null, [
       {
         id: 'tu_2',
         tool: 'Read',

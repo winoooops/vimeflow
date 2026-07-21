@@ -5,6 +5,11 @@ import type { ActivityEvent } from '../types/activityEvent'
 
 export const useActivityEvents = (status: AgentStatus): ActivityEvent[] =>
   useMemo(
-    () => toolCallsToEvents(status.toolCalls.active, status.recentToolCalls),
-    [status.toolCalls.active, status.recentToolCalls]
+    () =>
+      toolCallsToEvents(
+        status.agentType,
+        status.toolCalls.active,
+        status.recentToolCalls
+      ),
+    [status.agentType, status.toolCalls.active, status.recentToolCalls]
   )

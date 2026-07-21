@@ -15,6 +15,7 @@ const event: ActivityEvent = {
   status: 'done',
   body: 'npm test',
   tool: 'Bash',
+  label: 'BASH',
   durationMs: 1200,
 }
 
@@ -26,7 +27,7 @@ const request: NativeOverlayActivityPopoverRequest = {
   payload: {
     kind: 'popover',
     popover: 'activity',
-    ariaLabel: 'BASH activity details',
+    ariaLabel: 'BASH trace details',
     event,
     activateActionId: 'activity:activate',
   },
@@ -43,7 +44,7 @@ describe('native activity popover hooks', () => {
     const { result } = renderHook(() =>
       useNativeActivityPopoverSource({
         event,
-        ariaLabel: 'BASH activity details',
+        ariaLabel: 'BASH trace details',
         onActivate,
       })
     )

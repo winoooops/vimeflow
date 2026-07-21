@@ -25,6 +25,7 @@ const doneEvent = (id: string, body: string): ActivityEventType => ({
   id,
   kind: 'edit',
   tool: 'Edit',
+  label: 'EDIT',
   body,
   timestamp: '2026-04-22T11:59:42Z', // 18s ago
   status: 'done',
@@ -32,17 +33,17 @@ const doneEvent = (id: string, body: string): ActivityEventType => ({
 })
 
 describe('ActivityFeed', () => {
-  test('renders a collapsible Activity header that is expanded by default', () => {
+  test('renders a collapsible Traces header that is expanded by default', () => {
     render(<ActivityFeed events={[]} />)
-    const toggle = screen.getByRole('button', { name: /activity/i })
+    const toggle = screen.getByRole('button', { name: /traces/i })
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
   })
 
-  test('renders "No activity yet" when events is empty', () => {
+  test('renders "No traces yet" when events is empty', () => {
     render(<ActivityFeed events={[]} />)
 
-    expect(screen.getByText('No activity yet')).toBeInTheDocument()
+    expect(screen.getByText('No traces yet')).toBeInTheDocument()
   })
 
   test('clicking the header collapses the feed body', async () => {
@@ -57,7 +58,7 @@ describe('ActivityFeed', () => {
 
     expect(screen.getByText('src/a.ts')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /activity/i }))
+    await user.click(screen.getByRole('button', { name: /traces/i }))
 
     expect(screen.queryByText('src/a.ts')).not.toBeInTheDocument()
 
@@ -67,13 +68,13 @@ describe('ActivityFeed', () => {
     vi.setSystemTime(fixedNow)
   })
 
-  test('shows the event count next to the Activity header', () => {
+  test('shows the event count next to the Traces header', () => {
     render(
       <ActivityFeed
         events={[doneEvent('a', 'src/a.ts'), doneEvent('b', 'src/b.ts')]}
       />
     )
-    const toggle = screen.getByRole('button', { name: /activity/i })
+    const toggle = screen.getByRole('button', { name: /traces/i })
 
     // CollapsibleSection renders `{count}` alongside the title.
     expect(toggle).toHaveTextContent('2')
@@ -82,7 +83,7 @@ describe('ActivityFeed', () => {
   test('does NOT render the empty-state text when events has entries', () => {
     render(<ActivityFeed events={[doneEvent('a', 'src/a.ts')]} />)
 
-    expect(screen.queryByText('No activity yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('No traces yet')).not.toBeInTheDocument()
   })
 
   test('renders events in given order', () => {
@@ -103,7 +104,7 @@ describe('ActivityFeed', () => {
     expect(articles[2]).toHaveTextContent('src/third.ts')
   })
 
-  test('uses roving tabindex for activity rows', () => {
+  test('uses roving tabindex for trace rows', () => {
     render(
       <ActivityFeed
         events={[
@@ -169,7 +170,7 @@ describe('ActivityFeed', () => {
     expect(articles[2]).toHaveAttribute('tabindex', '0')
   })
 
-  test('exposes activity rows as an ARIA feed', () => {
+  test('exposes trace rows as an ARIA feed', () => {
     render(
       <ActivityFeed
         events={[
@@ -179,7 +180,7 @@ describe('ActivityFeed', () => {
         ]}
       />
     )
-    const feed = screen.getByRole('feed', { name: 'Activity events' })
+    const feed = screen.getByRole('feed', { name: 'Agent traces' })
     const articles = screen.getAllByRole('article')
 
     expect(feed).toContainElement(articles[0])
@@ -281,7 +282,7 @@ describe('ActivityFeed', () => {
 
     // Session ends.
     rerender(<ActivityFeed events={[]} />)
-    expect(screen.getByText('No activity yet')).toBeInTheDocument()
+    expect(screen.getByText('No traces yet')).toBeInTheDocument()
 
     // New session fills up with 15 events — the expanded-state flag must
     // have been reset so the default 10-visible + '+ 5 earlier events'
@@ -304,6 +305,7 @@ describe('ActivityFeed', () => {
             id: 'active-Bash',
             kind: 'bash',
             tool: 'Bash',
+            label: 'BASH',
             body: 'pnpm test',
             timestamp: '2026-04-22T11:59:52Z', // 8s before fixedNow
             status: 'running',

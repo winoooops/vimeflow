@@ -13,6 +13,7 @@ const payload = {
     status: 'done',
     body: 'npm test',
     tool: 'Bash',
+    label: 'BASH',
     durationMs: 1200,
     bashResult: { passed: 4, total: 4 },
   },
@@ -21,6 +22,15 @@ const payload = {
 describe('isNativeOverlayActivityPopoverPayload', () => {
   test('accepts a serializable activity popover', () => {
     expect(isNativeOverlayActivityPopoverPayload(payload)).toBe(true)
+  })
+
+  test('accepts a semantic tool kind introduced by an agent profile', () => {
+    expect(
+      isNativeOverlayActivityPopoverPayload({
+        ...payload,
+        event: { ...payload.event, kind: 'external' },
+      })
+    ).toBe(true)
   })
 
   test('rejects malformed nested activity data', () => {
