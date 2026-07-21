@@ -7,6 +7,7 @@ export { isNativeActivityPopoverRequest } from '@/components/nativeOverlayActivi
 export { useNativeActivityPopoverHost } from '@/components/useNativeActivityPopoverHost'
 
 const ACTIVITY_ACTIVATE_ACTION = 'activity:activate'
+const ACTIVITY_SHOW_DIFF_ACTION = 'activity:show-diff'
 
 type NativeActivityAction = () => void
 
@@ -16,6 +17,9 @@ interface NativeActivityPopoverSourceOptions {
   event: ActivityEvent
   ariaLabel: string
   onActivate?: () => void
+  onShowDiff?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
 }
 
 interface NativeActivityPopoverSource {
@@ -27,6 +31,9 @@ export const useNativeActivityPopoverSource = ({
   event,
   ariaLabel,
   onActivate = undefined,
+  onShowDiff = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
 }: NativeActivityPopoverSourceOptions): NativeActivityPopoverSource => {
   const payload = useMemo<NativeOverlayActivityPopoverPayload>(
     () => ({
@@ -37,16 +44,37 @@ export const useNativeActivityPopoverSource = ({
       ...(onActivate === undefined
         ? {}
         : { activateActionId: ACTIVITY_ACTIVATE_ACTION }),
+      ...(onShowDiff === undefined
+        ? {}
+        : {
+            showDiffActionId: ACTIVITY_SHOW_DIFF_ACTION,
+            showDiffShortcut,
+            showDiffAriaShortcut,
+          }),
     }),
-    [ariaLabel, event, onActivate]
+    [
+      ariaLabel,
+      event,
+      onActivate,
+      onShowDiff,
+      showDiffAriaShortcut,
+      showDiffShortcut,
+    ]
   )
 
   const actions = useMemo<ReadonlyMap<string, NativeActivityAction>>(
     () =>
-      onActivate === undefined
+      onActivate === undefined && onShowDiff === undefined
         ? EMPTY_ACTIONS
-        : new Map([[ACTIVITY_ACTIVATE_ACTION, onActivate]]),
-    [onActivate]
+        : new Map([
+            ...(onActivate === undefined
+              ? []
+              : [[ACTIVITY_ACTIVATE_ACTION, onActivate] as const]),
+            ...(onShowDiff === undefined
+              ? []
+              : [[ACTIVITY_SHOW_DIFF_ACTION, onShowDiff] as const]),
+          ]),
+    [onActivate, onShowDiff]
   )
 
   return { payload, actions }

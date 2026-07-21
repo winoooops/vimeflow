@@ -113,6 +113,7 @@ interface GhosttyNativeParentDeps {
   resourcesPath?: string
   addon?: GhosttyNativeParentAddon
   inputBlocked?: (win: BrowserWindow) => boolean
+  shortcutInputBlocked?: (win: BrowserWindow) => boolean
 }
 
 interface GhosttyNativeSurfaceState {
@@ -377,6 +378,8 @@ export class GhosttyNativeParentController {
 
   private readonly inputBlocked: (win: BrowserWindow) => boolean
 
+  private readonly shortcutInputBlocked: (win: BrowserWindow) => boolean
+
   private addon: GhosttyNativeParentAddon | null
 
   private addonLoadFailed = false
@@ -398,6 +401,7 @@ export class GhosttyNativeParentController {
     )
     this.addon = deps.addon ?? null
     this.inputBlocked = deps.inputBlocked ?? ((): boolean => false)
+    this.shortcutInputBlocked = deps.shortcutInputBlocked ?? this.inputBlocked
   }
 
   registerIpc(): void {
@@ -947,7 +951,7 @@ export class GhosttyNativeParentController {
           return
         }
 
-        if (this.inputBlocked(win)) {
+        if (this.shortcutInputBlocked(win)) {
           return
         }
 

@@ -171,16 +171,19 @@ const activityPopoverRequest: NativeOverlayRequest = {
   payload: {
     kind: 'popover',
     popover: 'activity',
-    ariaLabel: 'BASH trace details',
+    ariaLabel: 'EDIT trace details',
     activateActionId: 'activity:activate',
+    showDiffActionId: 'activity:show-diff',
+    showDiffShortcut: '⌘G',
+    showDiffAriaShortcut: 'Meta+g',
     event: {
       id: 'activity-1',
-      kind: 'bash',
+      kind: 'edit',
       timestamp: '2026-07-10T12:00:00.000Z',
       status: 'done',
-      body: 'npm test',
-      tool: 'Bash',
-      label: 'BASH',
+      body: 'src/App.tsx',
+      tool: 'Edit',
+      label: 'EDIT',
       durationMs: 1200,
     },
   },
@@ -468,16 +471,16 @@ describe('NativeOverlayHost', () => {
     bridge.emitRender(activityPopoverRequest)
 
     const dialog = await screen.findByRole('dialog', {
-      name: 'BASH trace details',
+      name: 'EDIT trace details',
     })
     expect(dialog).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
-    expect(within(dialog).getByText('npm test')).toBeInTheDocument()
+    expect(within(dialog).getByText('App.tsx')).toBeInTheDocument()
     expect(
       within(dialog).getByRole('button', { name: 'Copy trace details' })
     ).toBeInTheDocument()
 
     const trigger = screen.getByRole('button', {
-      name: 'BASH trace details',
+      name: 'EDIT trace details',
     })
 
     fireEvent.pointerDown(trigger)
@@ -487,6 +490,15 @@ describe('NativeOverlayHost', () => {
     expect(bridge.action).toHaveBeenCalledWith({
       surfaceId: 'activity-popover-1',
       actionId: 'activity:activate',
+    })
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Show diff' })
+    )
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'activity-popover-1',
+      actionId: 'activity:show-diff',
     })
   })
 

@@ -1561,4 +1561,42 @@ describe('AgentStatusPanel — live action card', () => {
       expect.objectContaining({ path: 'a.ts' })
     )
   })
+
+  test('opens a completed trace diff from its tooltip footer', async () => {
+    const onOpenDiff = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <AgentStatusPanel
+        {...defaultProps}
+        cwd="/tmp/repo"
+        onOpenDiff={onOpenDiff}
+        agentStatus={{
+          ...activeAgentStatus,
+          toolCalls: {
+            total: 1,
+            byType: { Edit: 1 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'edit-complete',
+              tool: 'Edit',
+              args: 'a.ts',
+              status: 'done',
+              durationMs: 500,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+          ],
+        }}
+      />
+    )
+
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+    await user.click(await screen.findByRole('button', { name: 'Show diff' }))
+
+    expect(onOpenDiff).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'a.ts' })
+    )
+  })
 })
