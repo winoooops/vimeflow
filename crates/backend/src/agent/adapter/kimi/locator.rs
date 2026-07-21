@@ -14,12 +14,12 @@
 //!    A `workDir` matches when it equals `cwd` OR is a component-boundary
 //!    ancestor of it (kimi normalizes a worktree / subdirectory cwd to the
 //!    repo root). Among matches the longest (deepest) workDir wins, then the
-//!    process-owned session on Linux. A resumed Linux session is identified by
+//!    process-owned session. A resumed session is identified by
 //!    the `session resume` diagnostic written at process startup because its
-//!    original wire creation time predates the process. On macOS, where `/proc`
-//!    cannot prove ownership, same-workDir ties use newest on-disk session
-//!    activity so a resumed session keeps winning after kimi appends a later
-//!    empty index row.
+//!    original wire creation time predates the process. When the platform
+//!    process start is unavailable, same-workDir ties use newest on-disk
+//!    session activity so a resumed session keeps winning after kimi appends a
+//!    later empty index row.
 //! 4. exact-bucket sha256 scan: last-resort newest `session_*` under
 //!    this cwd's `wd_<basename>_<hex>` bucket, gated on a `pty_start`
 //!    mtime freshness check (no append ordering to tell current from
@@ -31,6 +31,8 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -320,28 +322,52 @@ impl KimiLocator {
     /// Wall-clock start time of the detected kimi process, from
     /// `<proc_root>/<pid>/stat` field 22 (`starttime`, ticks since boot)
     /// anchored on the system boot epoch (`btime` in `<proc_root>/stat`).
-    /// `None` when proc is unavailable (macOS) or the files don't parse, so
-    /// callers skip the per-process discriminator and keep newest-index.
+    /// On macOS, derives the same value from `ps etime`. `None` when the
+    /// platform process source is unavailable or cannot be parsed.
     fn process_start(&self) -> Option<SystemTime> {
-        let proc_root = self.proc_root.as_deref()?;
-        let stat = std::fs::read_to_string(proc_root.join(self.agent_pid.to_string()).join("stat"))
-            .ok()?;
-        // `comm` (field 2) is parenthesized and may contain spaces or
-        // parens, so parse the fields AFTER the last ')'. There, index 19 is
-        // overall field 22 (`starttime`): fields 3.. start at index 0.
-        let starttime_ticks: u64 = stat
-            .rsplit_once(')')?
-            .1
-            .split_whitespace()
-            .nth(19)?
-            .parse()
-            .ok()?;
-        let since_boot_ms = starttime_ticks.checked_mul(1000)? / clock_ticks_per_sec();
-        Some(
-            SystemTime::UNIX_EPOCH
-                + Duration::from_secs(read_btime(proc_root)?)
-                + Duration::from_millis(since_boot_ms),
-        )
+        if let Some(proc_root) = self.proc_root.as_deref() {
+            let stat =
+                std::fs::read_to_string(proc_root.join(self.agent_pid.to_string()).join("stat"))
+                    .ok()?;
+            // `comm` (field 2) is parenthesized and may contain spaces or
+            // parens, so parse the fields AFTER the last ')'. There, index 19 is
+            // overall field 22 (`starttime`): fields 3.. start at index 0.
+            let starttime_ticks: u64 = stat
+                .rsplit_once(')')?
+                .1
+                .split_whitespace()
+                .nth(19)?
+                .parse()
+                .ok()?;
+            let since_boot_ms = starttime_ticks.checked_mul(1000)? / clock_ticks_per_sec();
+            return Some(
+                SystemTime::UNIX_EPOCH
+                    + Duration::from_secs(read_btime(proc_root)?)
+                    + Duration::from_millis(since_boot_ms),
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // ponytail: `ps etime` is second-granularity; use libproc if
+            // simultaneous sub-second Kimi launches become a real case.
+            let output = Command::new("ps")
+                .arg("-p")
+                .arg(self.agent_pid.to_string())
+                .args(["-o", "etime="])
+                .output()
+                .ok()?;
+            if !output.status.success() {
+                return None;
+            }
+            return process_start_from_elapsed(
+                String::from_utf8_lossy(&output.stdout).trim(),
+                SystemTime::now(),
+            );
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        None
     }
 
     /// proc-fd primary: while Kimi is flushing its session's
@@ -397,10 +423,10 @@ impl KimiLocator {
     /// worktree / subdirectory cwd to the repo root), binding it
     /// unconditionally. Among all matching entries the winner is the LONGEST
     /// `workDir` (most specific / deepest ancestor beats a shallower one),
-    /// then by process ownership when `/proc` is available. On macOS, where
-    /// process ownership is unavailable, same-`workDir` ties use newest
-    /// on-disk session activity rather than raw append order; kimi resume can
-    /// keep writing to an earlier index row after appending a later idle row.
+    /// then by process ownership when the platform exposes a start time. When
+    /// process ownership is unavailable, same-`workDir` ties use newest on-disk
+    /// session activity rather than raw append order; kimi resume can keep
+    /// writing to an earlier index row after appending a later idle row.
     ///
     /// No freshness gate runs here: the authoritative newest-index match
     /// must never be rejected just because it is idle (the bug that left
@@ -417,9 +443,9 @@ impl KimiLocator {
         // kimi process owns — created at/after the process started (codex's
         // per-process discriminator, resolved via the session's metadata
         // `created_at`) — so a frozen same-cwd session left by an EARLIER run
-        // can't win the tie-break. When the process start is unknown (macOS /
-        // no proc) nothing is "owned", so selection falls back to newest
-        // activity among matches.
+        // can't win the tie-break. When the process start is unknown, nothing
+        // is "owned", so selection falls back to newest activity among
+        // matches.
         let process_start = self.process_start();
         let mut matches: Vec<IndexCandidate> = Vec::new();
         for (index_order, line) in raw.lines().enumerate() {
@@ -474,7 +500,8 @@ impl KimiLocator {
         // provides wire `created_at`; a resumed session keeps its old creation
         // time but emits a startup `session resume` diagnostic. The latter
         // still works when Kimi closes wire.jsonl after each flush and proc-fd
-        // is empty. With no proc (macOS), retain newest activity ranking.
+        // is empty. Without a platform process start, retain newest activity
+        // ranking.
         let (entry, session_dir) = match process_start {
             Some(start) => matches
                 .into_iter()
@@ -737,6 +764,36 @@ fn resumed_in_own_window(resumed: SystemTime, start: SystemTime) -> bool {
 fn abs_duration(a: SystemTime, b: SystemTime) -> Duration {
     a.duration_since(b)
         .unwrap_or_else(|_| b.duration_since(a).unwrap_or_default())
+}
+
+/// Convert `ps -o etime=` (`[[dd-]hh:]mm:ss`) into a wall-clock start time.
+fn process_start_from_elapsed(raw: &str, now: SystemTime) -> Option<SystemTime> {
+    let (days, time) = raw
+        .split_once('-')
+        .map(|(days, time)| (days.parse::<u64>().ok(), time))
+        .unwrap_or((Some(0), raw));
+    let days = days?;
+    let parts = time
+        .split(':')
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [minutes, seconds] => (0, *minutes, *seconds),
+        [hours, minutes, seconds] => (*hours, *minutes, *seconds),
+        _ => return None,
+    };
+    if hours >= 24 || minutes >= 60 || seconds >= 60 {
+        return None;
+    }
+    let elapsed = days
+        .checked_mul(24)?
+        .checked_add(hours)?
+        .checked_mul(60)?
+        .checked_add(minutes)?
+        .checked_mul(60)?
+        .checked_add(seconds)?;
+    now.checked_sub(Duration::from_secs(elapsed))
 }
 
 /// A session's creation time, read from the first `metadata` event in its
@@ -1042,6 +1099,40 @@ mod tests {
     }
 
     #[test]
+    fn elapsed_process_time_resolves_start_time() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(400_000);
+
+        assert_eq!(
+            process_start_from_elapsed("01:02", now),
+            Some(now - Duration::from_secs(62))
+        );
+        assert_eq!(
+            process_start_from_elapsed("02:03:04", now),
+            Some(now - Duration::from_secs(7_384))
+        );
+        assert_eq!(
+            process_start_from_elapsed("3-04:05:06", now),
+            Some(now - Duration::from_secs(273_906))
+        );
+        assert_eq!(process_start_from_elapsed("not-a-duration", now), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_process_start_reads_live_proc() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let locator = locator_with_proc(
+            kimi_home.path(),
+            std::process::id(),
+            SystemTime::now(),
+            Path::new("/proc"),
+        );
+
+        let started = locator.process_start().expect("live process start");
+        assert!(started <= SystemTime::now());
+    }
+
+    #[test]
     fn resolves_status_path_and_session_id_from_index() {
         let kimi_home = tempfile::tempdir().expect("kimi home");
         let work = tempfile::tempdir().expect("work dir");
@@ -1227,6 +1318,38 @@ mod tests {
             "active resumed session must beat a later idle index row on macOS"
         );
         assert_eq!(located.agent_session_id.as_deref(), Some("session_resumed"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_index_binds_session_owned_by_live_process() {
+        let kimi_home = tempfile::tempdir().expect("kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let locator = locator_with(kimi_home.path(), std::process::id(), SystemTime::now());
+        let process_start = locator.process_start().expect("macOS process start");
+        let process_start_ms = u64::try_from(
+            process_start
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("process started after epoch")
+                .as_millis(),
+        )
+        .expect("process start fits u64");
+
+        let ours_dir = session_under(kimi_home.path(), "wd_a", "session_ours");
+        let ours_wire = write_wire_created(&ours_dir, process_start_ms);
+        let other_dir = session_under(kimi_home.path(), "wd_a", "session_other");
+        write_wire_created(&other_dir, process_start_ms + 10_000);
+        write_index(
+            kimi_home.path(),
+            &[
+                ("session_ours", &ours_dir, work.path()),
+                ("session_other", &other_dir, work.path()),
+            ],
+        );
+
+        let located = locator.locate(work.path(), "pty-1").expect("ours resolves");
+        assert_eq!(located.status_path, ours_wire);
+        assert_eq!(located.agent_session_id.as_deref(), Some("session_ours"));
     }
 
     /// Linux regression for Kimi 0.27: resumed sessions keep their original

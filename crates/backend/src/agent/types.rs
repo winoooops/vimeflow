@@ -263,12 +263,15 @@ impl std::error::Error for RenameAgentSessionError {}
 ///   intentionally ignores that field because it's pinned to the
 ///   session-start value and would cause false reverts after a
 ///   mid-session `exec_command.workdir` transition.
+/// - **Kimi Code** writes `args.cwd` on Bash tool calls that select an
+///   explicit working directory. Each change is emitted, including a later
+///   call that deliberately returns to the main checkout.
 ///
-/// In both cases this is the authoritative signal for "where the agent
+/// In each case this is the authoritative signal for "where the agent
 /// currently is" — it picks up tool-call-driven moves like Claude's
-/// `EnterWorktree` and codex's "switch to worktree" navigation that
-/// intentionally do NOT mutate the interactive shell's `$PWD`, so
-/// neither OSC 7 nor PTY text patterns can catch them.
+/// `EnterWorktree`, Codex's "switch to worktree" navigation, and Kimi's
+/// per-command cwd that intentionally do NOT mutate the interactive shell's
+/// `$PWD`, so neither OSC 7 nor PTY text patterns can catch them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
