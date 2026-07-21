@@ -196,6 +196,52 @@ fn tokenize_javascript(input: &str) -> Vec<JavascriptToken<'_>> {
     tokens
 }
 
+fn single_code_mode_tool(input: &str) -> Option<String> {
+    let tokens = tokenize_javascript(input);
+    let mut tool = None;
+
+    for index in 0..tokens.len() {
+        let is_tool_call = identifier_at(&tokens, index) == Some("tools")
+            && is_punctuation(&tokens, index + 1, b'.')
+            && identifier_at(&tokens, index + 2).is_some()
+            && is_punctuation(&tokens, index + 3, b'(');
+        if !is_tool_call {
+            continue;
+        }
+
+        let candidate = identifier_at(&tokens, index + 2)?;
+        match tool {
+            Some(current) if current != candidate => return None,
+            Some(_) => {}
+            None => tool = Some(candidate),
+        }
+    }
+
+    tool.map(str::to_string)
+}
+
+fn tool_call_name(payload: &CodexPayloadDto) -> String {
+    let name = payload.name.as_deref().unwrap_or("unknown");
+    if name == "exec" {
+        if let Some(tool) = payload.input.as_deref().and_then(single_code_mode_tool) {
+            return tool;
+        }
+    }
+
+    match payload
+        .namespace
+        .as_deref()
+        .filter(|namespace| !namespace.is_empty())
+    {
+        Some(namespace) => format!(
+            "{}__{}",
+            namespace.trim_end_matches('_'),
+            name.trim_start_matches('_')
+        ),
+        None => name.to_string(),
+    }
+}
+
 fn identifier_at<'a>(tokens: &[JavascriptToken<'a>], index: usize) -> Option<&'a str> {
     match tokens.get(index) {
         Some(JavascriptToken::Identifier(identifier)) => Some(*identifier),
@@ -1003,7 +1049,7 @@ fn start_function_call(
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
-    let tool = payload.name.as_deref().unwrap_or("unknown").to_string();
+    let tool = tool_call_name(payload);
     let args = summarize_function_call_args(payload.arguments.as_deref());
     let cmd = function_call_cmd(payload.arguments.as_deref());
     let test_match = cmd
@@ -1058,7 +1104,7 @@ fn start_custom_tool_call(
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
-    let tool = payload.name.as_deref().unwrap_or("unknown").to_string();
+    let tool = tool_call_name(payload);
     let args = summarize_custom_tool_input(payload.input.as_deref());
     let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
 
@@ -1071,7 +1117,7 @@ fn start_custom_tool_call(
             args: args.clone(),
             is_test_file,
             test_match: None,
-            completion_mode: if tool == "apply_patch" {
+            completion_mode: if payload.name.as_deref() == Some("apply_patch") {
                 CompletionMode::PatchApplyEnd
             } else {
                 CompletionMode::Output
@@ -1617,6 +1663,48 @@ mod tests {
     }
 
     #[test]
+    fn codex_live_emits_code_mode_and_namespaced_tool_names() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        decoder.on_caught_up();
+
+        decoder.decode_line(
+            &json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "c1",
+                    "input": "const result = await tools.exec_command({ cmd: 'git status' })"
+                }
+            })
+            .to_string(),
+        );
+        decoder.decode_line(
+            &json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "send_message",
+                    "namespace": "collaboration",
+                    "call_id": "c2",
+                    "arguments": "{}"
+                }
+            })
+            .to_string(),
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[0].1["tool"], "exec_command");
+        assert_eq!(tool_calls[1].1["tool"], "collaboration__send_message");
+    }
+
+    #[test]
     fn codex_replay_flushes_in_flight_tool_call_at_catch_up() {
         let sink = Arc::new(FakeEventSink::new());
         let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
@@ -1986,6 +2074,54 @@ mod tests {
         assert!(custom_tool_output_failed(Some(
             "{\"output\":\"nope\",\"metadata\":{\"exit_code\":1}}"
         )));
+    }
+
+    #[test]
+    fn tool_call_name_preserves_direct_namespace() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "function_call",
+            "name": "send_message",
+            "namespace": "collaboration"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "collaboration__send_message");
+    }
+
+    #[test]
+    fn tool_call_name_uses_single_code_mode_nested_tool() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "const first = await tools.exec_command({ cmd: 'pwd' })\nconst second = await tools.exec_command({ cmd: 'git status' })"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "exec_command");
+    }
+
+    #[test]
+    fn tool_call_name_keeps_mixed_code_mode_cells_as_exec() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "const result = await tools.exec_command({ cmd: 'pwd' })\ntext(await tools.mcp__linear__save_issue({ id: 'VIM-365' }))"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "exec");
+    }
+
+    #[test]
+    fn tool_call_name_ignores_code_and_comments_that_mention_tools() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "// tools.apply_patch('not a call')\nconst example = \"tools.update_plan({})\"\nawait tools.web__run({ search_query: [{ q: 'Codex' }] })"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "web__run");
     }
 
     // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----

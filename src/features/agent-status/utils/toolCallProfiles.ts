@@ -1,6 +1,7 @@
 import type { AgentStatus } from '../types'
 import type { ToolActivityEventKind } from '../types/activityEvent'
 import { CLAUDE_CODE_TOOL_CALL_PROFILE } from './claudeCodeToolCallProfile'
+import { CODEX_TOOL_CALL_PROFILE } from './codexToolCallProfile'
 
 export interface ToolCallPresentation {
   readonly kind: ToolActivityEventKind
@@ -10,6 +11,7 @@ export interface ToolCallPresentation {
 export interface AgentToolCallProfile {
   readonly tools: Readonly<Partial<Record<string, ToolCallPresentation>>>
   readonly aliases?: Readonly<Partial<Record<string, ToolCallPresentation>>>
+  readonly infer?: (tool: string) => ToolCallPresentation | undefined
 }
 
 const baseTools = {
@@ -37,6 +39,7 @@ const AGENT_TOOL_CALL_PROFILES: Partial<
   Record<ProfileAgentType, AgentToolCallProfile>
 > = {
   'claude-code': CLAUDE_CODE_TOOL_CALL_PROFILE,
+  codex: CODEX_TOOL_CALL_PROFILE,
 }
 
 const formatToolSegment = (segment: string): string =>
@@ -76,6 +79,7 @@ export const classifyToolCall = (
     getOwnPresentation(profile?.tools, tool) ??
     getOwnPresentation(profile?.aliases, tool) ??
     getOwnPresentation(BASE_TOOL_CALL_PROFILE.tools, tool) ??
+    profile?.infer?.(tool) ??
     inferExternalTool(tool) ?? {
       kind: 'meta',
       label: tool.toUpperCase(),
