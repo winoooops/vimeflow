@@ -56,7 +56,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 9        | 3    | 2026-07-13   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 88       | 42   | 2026-07-09   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 89       | 43   | 2026-07-21   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 6    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 95       | 90   | 2026-07-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
@@ -103,7 +103,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 7        | 4    | 2026-07-05   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 8        | 5    | 2026-07-21   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 2    | 2026-06-18   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |

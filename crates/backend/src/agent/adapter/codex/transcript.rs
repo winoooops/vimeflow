@@ -1107,6 +1107,13 @@ fn start_custom_tool_call(
     let tool = tool_call_name(payload);
     let args = summarize_custom_tool_input(payload.input.as_deref());
     let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
+    let completion_mode = if payload.name.as_deref() == Some("apply_patch") {
+        CompletionMode::PatchApplyEnd
+    } else if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
+        CompletionMode::ExecCommandEnd
+    } else {
+        CompletionMode::Output
+    };
 
     in_flight.insert(
         call_id.to_string(),
@@ -1117,11 +1124,7 @@ fn start_custom_tool_call(
             args: args.clone(),
             is_test_file,
             test_match: None,
-            completion_mode: if payload.name.as_deref() == Some("apply_patch") {
-                CompletionMode::PatchApplyEnd
-            } else {
-                CompletionMode::Output
-            },
+            completion_mode,
         },
     );
 
@@ -3061,6 +3064,84 @@ mod tests {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_code_mode_exec_waits_for_exec_command_end() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_cmd","input":"const result = await tools.exec_command({ cmd: 'false' })"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_cmd","output":"Chunk ID: abc\nWall time: 0.0100 seconds\nProcess exited with code 1\nOutput:\n"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "custom_tool_call_output must not finalize promoted code-mode exec_command"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","false"],"aggregated_output":"","exit_code":1,"duration":{"secs":0,"nanos":10000000},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[0].1["tool"], "exec_command");
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["tool"], "exec_command");
         assert_eq!(tool_calls[1].1["status"], "failed");
         assert!(in_flight.is_empty());
     }

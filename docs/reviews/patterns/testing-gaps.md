@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-07-09
-ref_count: 42
+last_updated: 2026-07-21
+ref_count: 43
 ---
 
 # Testing Gaps
@@ -867,4 +867,17 @@ filesystem scope restrictions).
 - **Fix:** Patch only `navigator.userAgent` and `navigator.platform` via
   `Object.defineProperty`, preserving the existing Navigator object and its
   prototype-backed APIs.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 89. Set uniqueness test used a nonexistent length property
+
+- **Source:** github-claude | PR #720 round 1 | 2026-07-21
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/utils/codexToolCallProfile.test.ts`
+- **Finding:** The Codex built-in tool registry test attempted to assert
+  uniqueness with `expect(new Set(CODEX_BUILT_IN_TOOLS)).toHaveLength(55)`.
+  `Set` exposes `.size`, not `.length`, so the assertion did not reliably
+  verify that the pinned registry contained 55 unique entries.
+- **Fix:** Changed the uniqueness assertion to compare
+  `new Set(CODEX_BUILT_IN_TOOLS).size` to the expected registry count.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

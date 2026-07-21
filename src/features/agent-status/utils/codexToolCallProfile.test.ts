@@ -12,7 +12,7 @@ describe('Codex tool-call profile', () => {
       checkedAt: '2026-07-21',
     })
     expect(CODEX_BUILT_IN_TOOLS).toHaveLength(55)
-    expect(new Set(CODEX_BUILT_IN_TOOLS)).toHaveLength(55)
+    expect(new Set(CODEX_BUILT_IN_TOOLS).size).toBe(55)
   })
 
   test('resolves every pinned built-in to a non-empty label', () => {
