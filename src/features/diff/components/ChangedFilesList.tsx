@@ -16,6 +16,7 @@ export interface ChangedFilesListProps {
   selectedFile: { path: string; staged: boolean } | null
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
+  hasReviewComments?: (file: ChangedFile) => boolean
   pinned?: boolean
   onTogglePinned?: () => void
   scrollState?: ChangedFilesListScrollState
@@ -38,12 +39,14 @@ interface ChangedFilesListSurfaceProps {
   onTogglePinned: () => void
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment: (file: ChangedFile, anchor: HTMLElement) => void
+  hasReviewComments?: (file: ChangedFile) => boolean
 }
 
 interface ChangedFileItemProps {
   commentAriaKeyshortcuts: string
   commentShortcut: ShortcutInput
   file: ChangedFile
+  hasReviewComments: boolean
   selected: boolean
   selectionKey: string | null
   initialSelectionKeyRef: RefObject<string | null>
@@ -52,6 +55,8 @@ interface ChangedFileItemProps {
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
 }
+
+const hasNoReviewComments = (): boolean => false
 
 const getDisplayName = (path: string): string => {
   const trimmedPath = path.replace(/\/+$/u, '')
@@ -118,6 +123,7 @@ const ChangedFileItem = ({
   commentAriaKeyshortcuts,
   commentShortcut,
   file,
+  hasReviewComments,
   selected,
   selectionKey,
   initialSelectionKeyRef,
@@ -169,7 +175,11 @@ const ChangedFileItem = ({
     <div
       ref={itemRef}
       className={`flex items-center gap-2 rounded-md px-[9px] py-[7px] text-left transition-colors ${
-        selected ? 'bg-primary/15' : 'hover:bg-surface-container-high/60'
+        selected
+          ? 'bg-primary/15'
+          : hasReviewComments
+            ? 'bg-primary/[0.08] hover:bg-primary/[0.13]'
+            : 'hover:bg-surface-container-high/60'
       }`}
     >
       <button
@@ -197,6 +207,14 @@ const ChangedFileItem = ({
             </span>
           ) : null}
         </span>
+        {hasReviewComments ? (
+          <span
+            aria-label={`Review comments or threads on ${fileName}`}
+            className="material-symbols-outlined shrink-0 text-[14px] leading-none text-primary"
+          >
+            forum
+          </span>
+        ) : null}
         <div className="flex shrink-0 items-center gap-1.5 font-code text-[10px]">
           {(file.insertions ?? 0) > 0 && (
             <span className="text-vcs-added">+{file.insertions}</span>
@@ -299,6 +317,7 @@ export const ChangedFilesList = ({
   selectedFile,
   onSelectFile,
   onAddFileComment = undefined,
+  hasReviewComments = hasNoReviewComments,
   pinned = false,
   onTogglePinned = undefined,
   scrollState = undefined,
@@ -355,6 +374,7 @@ export const ChangedFilesList = ({
             commentAriaKeyshortcuts={commentAriaKeyshortcuts}
             commentShortcut={commentShortcutInput}
             file={file}
+            hasReviewComments={hasReviewComments(file)}
             selectionKey={selectionKey}
             initialSelectionKeyRef={initialSelectionKeyRef}
             hasObservedPostMountSelectionRef={hasObservedPostMountSelectionRef}
@@ -391,6 +411,7 @@ export const ChangedFilesListSurface = ({
   onTogglePinned,
   onSelectFile,
   onAddFileComment,
+  hasReviewComments = hasNoReviewComments,
 }: ChangedFilesListSurfaceProps): ReactElement => {
   const surfaceSelectionKey = getSelectionKey(selectedFile)
   const initialSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
@@ -430,6 +451,7 @@ export const ChangedFilesListSurface = ({
       }}
       onSelectFile={onSelectFile}
       onAddFileComment={onAddFileComment}
+      hasReviewComments={hasReviewComments}
     />
   )
 

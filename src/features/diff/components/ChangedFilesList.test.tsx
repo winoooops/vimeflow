@@ -215,6 +215,28 @@ describe('ChangedFilesList', () => {
     expect(activeFile).toHaveAttribute('aria-current', 'page')
   })
 
+  test('highlights only files with review comments or threads', () => {
+    render(
+      <ChangedFilesList
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+        hasReviewComments={(file): boolean =>
+          file.path === 'src/utils/api-helper.rs' && file.staged
+        }
+      />
+    )
+
+    expect(
+      screen.getByLabelText('Review comments or threads on api-helper.rs')
+    ).toHaveClass('text-primary')
+
+    expect(
+      screen.queryByLabelText('Review comments or threads on NavBar.tsx')
+    ).not.toBeInTheDocument()
+  })
+
   test('pin button toggles the pinned state when provided', async () => {
     const user = userEvent.setup()
     const onTogglePinned = vi.fn()

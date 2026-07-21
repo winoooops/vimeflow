@@ -3692,6 +3692,14 @@ describe('Panel', () => {
       expect(
         within(annotationSlot).getByText('Great change!')
       ).toBeInTheDocument()
+
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+      expect(
+        within(screen.getByTestId('changed-files-pane')).getByLabelText(
+          'Review comments or threads on foo.ts'
+        )
+      ).toBeInTheDocument()
     })
 
     test('shows a changed-file cue for adding a file-level comment', async (): Promise<void> => {

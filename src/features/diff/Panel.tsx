@@ -2740,6 +2740,10 @@ export const Panel = ({
           onTogglePinned={toggleFilesListPinned}
           onSelectFile={handleSelectDiffFileFromList}
           onAddFileComment={handleAddFileComment}
+          hasReviewComments={(file): boolean =>
+            !reviewControlsPaused &&
+            feedback.annotationsForFile(cwd, file.path, file.staged).length > 0
+          }
         />
         {diffSearchFileKey !== null ? (
           <>
