@@ -87,6 +87,8 @@ import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 import { DIFF_RANGE_BAR_UNSAFE_CSS } from './rangeBar/diffRangeBars'
 import { useKeybindings } from '../keymap/useKeybindings'
 import { chordToAriaShortcut, chordToShortcutInput } from '../keymap/displayKey'
+import { requestSettingsOpen } from '../settings/hooks/useSettingsDialog'
+import { SETTINGS_TARGET_IDS } from '../settings/sections'
 
 // One stable <style> injected into pierre's shadow tree: the search highlight
 // plus the persistent range-comment gutter bar (VIM-273). A module constant so
@@ -106,6 +108,9 @@ const isDiffNativeFocusTarget = (target: Element): boolean =>
 // motion to signal intent. Wire to Settings later.
 const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
 const EMPTY_REVIEW_ANNOTATIONS: DiffLineAnnotation<ReviewComment>[] = []
+
+const openHunkViewSettings = (): void =>
+  requestSettingsOpen(SETTINGS_TARGET_IDS.versionDiffViewStyle)
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -1528,7 +1533,6 @@ export const Panel = ({
   ])
 
   const {
-    toolbarSettingsProps,
     multiFileDiffOptions,
     renderKey,
     renderSyncError,
@@ -2600,7 +2604,7 @@ export const Panel = ({
   }
 
   // Empty state (no changes): keep a DORMANT toolbar (only the settings
-  // dropdowns stay live — nav arrows, tool-well + actions render disabled /
+  // button stays live — nav arrows, tool-well + actions render disabled /
   // placeholder) above a calm "no changes" panel, so the chrome stays put when
   // a diff appears instead of collapsing + re-expanding.
   if (effectiveFiles.length === 0) {
@@ -2614,9 +2618,9 @@ export const Panel = ({
       >
         <Notifier
           toolbarProps={{
-            ...toolbarSettingsProps,
             bindingFor,
             diffMode: 'unstaged',
+            onOpenSettings: openHunkViewSettings,
             currentFileIndex: -1,
             totalFiles: 0,
             feedbackCount: pendingFeedbackCount,
@@ -2673,9 +2677,9 @@ export const Panel = ({
     >
       <Notifier
         toolbarProps={{
-          ...toolbarSettingsProps,
           bindingFor,
           diffMode: selectedFileStaged ? 'staged' : 'unstaged',
+          onOpenSettings: openHunkViewSettings,
           totalHunks: hunkCount,
           focusedHunkIndex: clampedHunkIndex,
           onPrevHunk,

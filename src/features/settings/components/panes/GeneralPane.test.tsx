@@ -16,6 +16,7 @@ const TestWrapper = ({ children }: TestWrapperProps): ReactElement => (
 )
 
 const createLoadedSettings = (): AppSettings => ({
+  ...DEFAULT_SETTINGS,
   version: 1,
   closeWithNoTabs: 'close',
   onLastWindowClosed: 'quit',

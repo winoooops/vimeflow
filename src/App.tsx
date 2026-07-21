@@ -44,6 +44,9 @@ const isSettingsWindow = (): boolean =>
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('window') === 'settings'
 
+const settingsWindowTargetId = (): string | null =>
+  new URLSearchParams(window.location.search).get('settingsTarget')
+
 const SettingsWindowShell = (): ReactElement => {
   const reserveWindowControls = isMacPlatform()
 
@@ -70,7 +73,7 @@ const SettingsWindowShell = (): ReactElement => {
           </div>
         )}
         <div className="flex min-h-0 flex-1">
-          <SettingsContent />
+          <SettingsContent targetId={settingsWindowTargetId()} />
         </div>
       </main>
     </SettingsProvider>

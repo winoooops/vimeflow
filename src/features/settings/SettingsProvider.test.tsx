@@ -8,6 +8,7 @@ import { useSettings } from './hooks/useSettings'
 import { DEFAULT_SETTINGS } from './store/settingsDefaults'
 
 const createLoadedSettings = (): AppSettings => ({
+  ...DEFAULT_SETTINGS,
   version: 1,
   closeWithNoTabs: 'close',
   onLastWindowClosed: 'quit',

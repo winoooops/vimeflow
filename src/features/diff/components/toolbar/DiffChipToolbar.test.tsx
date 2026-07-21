@@ -1,7 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import type { BaseDiffOptions, DiffsThemeNames } from '@pierre/diffs'
 import { getCommand } from '@/features/keymap/catalog'
 import { resolveDefault } from '@/features/keymap/resolve'
 import type { Keybindings } from '@/features/keymap/useKeybindings'
@@ -105,11 +104,6 @@ const fireResize = (): void => {
   })
 }
 
-type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
-type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
-type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
-type Overflow = NonNullable<BaseDiffOptions['overflow']>
-
 const defaultBindingFor: Keybindings['bindingFor'] = (id) =>
   resolveDefault(getCommand(id), false)
 
@@ -119,24 +113,7 @@ const renderToolbar = (
   const baseProps: DiffChipToolbarProps = {
     bindingFor: defaultBindingFor,
     diffMode: 'unstaged',
-    diffStyle: 'split',
-    onDiffStyleChange: vi.fn<(next: DiffStyle) => void>(),
-    theme: 'pierre-dark' as DiffsThemeNames,
-    onThemeChange: vi.fn<(next: DiffsThemeNames) => void>(),
-    lineDiffType: 'word',
-    onLineDiffTypeChange: vi.fn<(next: LineDiffType) => void>(),
-    diffIndicators: 'classic',
-    onDiffIndicatorsChange: vi.fn<(next: DiffIndicators) => void>(),
-    overflow: 'scroll',
-    onOverflowChange: vi.fn<(next: Overflow) => void>(),
-    disableLineNumbers: false,
-    onDisableLineNumbersChange: vi.fn<(next: boolean) => void>(),
-    disableBackground: false,
-    onDisableBackgroundChange: vi.fn<(next: boolean) => void>(),
-    disableFileHeader: false,
-    onDisableFileHeaderChange: vi.fn<(next: boolean) => void>(),
-    stickyHeader: true,
-    onStickyHeaderChange: vi.fn<(next: boolean) => void>(),
+    onOpenSettings: vi.fn<() => void>(),
     totalHunks: 3,
     focusedHunkIndex: 0,
     onPrevFile: vi.fn<() => void>(),
@@ -248,13 +225,9 @@ describe('DiffChipToolbar', () => {
     // The redesign reshapes the flat chips into grouped pills: the file-nav
     // group is a lavender FilePill (prev arrow + basename + N/M badge + next
     // arrow), hunk-nav is an azure ChangeStepper (data_object + N/N + vertical
-    // arrows), and the staging buttons live inside the ToolWell. The View ▾
-    // dropdown stays consolidated.
+    // arrows), and the staging buttons live inside the ToolWell. Hunk display
+    // controls are represented by a single Settings button.
     renderToolbar({ diffMode: 'unstaged', selectedFileName: 'src/App.tsx' })
-
-    // Segmented: split / unified.
-    expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'unified' })).toBeInTheDocument()
 
     // File pill (PR1: FUNCTIONAL) — arrows + basename + counter.
     expect(
@@ -315,39 +288,12 @@ describe('DiffChipToolbar', () => {
       screen.queryByRole('button', { name: /unstage/i })
     ).not.toBeInTheDocument()
 
-    // Config chips — the small-caps key + value both surface on the chip
-    // itself (e.g. "Highlight" + "Word"), not as an external caption.
     expect(
-      screen.getByRole('button', { name: /highlight.*word/i })
-    ).toBeInTheDocument() // highlight chip
-
-    expect(
-      screen.getByRole('button', { name: /pierre-dark/i })
-    ).toBeInTheDocument() // theme
-
-    // Consolidated View ▾ chip replaces the two dropdowns + four toggles.
-    expect(
-      screen.getByRole('button', { name: /view settings/i })
+      screen.getByRole('button', { name: /open hunk view settings/i })
     ).toBeInTheDocument()
 
-    // The standalone chips that used to live on the bar must NOT render
-    // anymore — they only appear inside the View ▾ popover (verified in
-    // ViewSettingsDropdown.test.tsx). Searching for the trigger by the
-    // pre-consolidation accessible names should now miss the toolbar.
     expect(
-      screen.queryByRole('button', { name: /^classic$/i })
-    ).not.toBeInTheDocument()
-
-    expect(
-      screen.queryByRole('button', { name: /^scroll$/i })
-    ).not.toBeInTheDocument()
-
-    expect(
-      screen.queryByRole('button', { name: /^line numbers$/i })
-    ).not.toBeInTheDocument()
-
-    expect(
-      screen.queryByRole('button', { name: /^sticky header$/i })
+      screen.queryByRole('button', { name: /^view settings$/i })
     ).not.toBeInTheDocument()
   })
 
@@ -451,92 +397,16 @@ describe('DiffChipToolbar', () => {
     expect(hunkCounter).toHaveTextContent('data_object')
   })
 
-  test('clicking split / unified fires onDiffStyleChange with the new value', async () => {
+  test('opens the hunk view settings section', async () => {
     const user = userEvent.setup()
-    const onDiffStyleChange = vi.fn<(next: DiffStyle) => void>()
+    const onOpenSettings = vi.fn<() => void>()
 
-    renderToolbar({ diffStyle: 'split', onDiffStyleChange })
+    renderToolbar({ onOpenSettings })
+    await user.click(
+      screen.getByRole('button', { name: /open hunk view settings/i })
+    )
 
-    await user.click(screen.getByRole('button', { name: 'unified' }))
-    expect(onDiffStyleChange).toHaveBeenCalledTimes(1)
-    expect(onDiffStyleChange).toHaveBeenCalledWith('unified')
-  })
-
-  test('selecting a theme dropdown option fires onThemeChange', async () => {
-    const user = userEvent.setup()
-    const onThemeChange = vi.fn<(next: DiffsThemeNames) => void>()
-
-    renderToolbar({ onThemeChange })
-
-    await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
-    const menu = await screen.findByRole('menu')
-    await user.click(within(menu).getByRole('menuitem', { name: /dracula/i }))
-
-    expect(onThemeChange).toHaveBeenCalledTimes(1)
-    expect(onThemeChange).toHaveBeenCalledWith('dracula')
-  })
-
-  test('selecting a highlight dropdown option fires onLineDiffTypeChange', async () => {
-    const user = userEvent.setup()
-    const onLineDiffTypeChange = vi.fn<(next: LineDiffType) => void>()
-
-    renderToolbar({ onLineDiffTypeChange })
-
-    await user.click(screen.getByRole('button', { name: /highlight.*word/i }))
-    const menu = await screen.findByRole('menu')
-    await user.click(within(menu).getByRole('menuitem', { name: /^Character/ }))
-
-    expect(onLineDiffTypeChange).toHaveBeenCalledTimes(1)
-    expect(onLineDiffTypeChange).toHaveBeenCalledWith('char')
-  })
-
-  test('opening the View ▾ chip reveals the consolidated controls', async () => {
-    const user = userEvent.setup()
-    renderToolbar()
-
-    await user.click(screen.getByRole('button', { name: /view settings/i }))
-
-    // All six row labels are present inside the portal-rendered popover.
-    expect(await screen.findByText('Indicators')).toBeInTheDocument()
-    expect(screen.getByText('Overflow')).toBeInTheDocument()
-    expect(screen.getByText('Line numbers')).toBeInTheDocument()
-    expect(screen.getByText('Background tint')).toBeInTheDocument()
-    expect(screen.getByText('File header')).toBeInTheDocument()
-    expect(screen.getByText('Sticky header')).toBeInTheDocument()
-  })
-
-  test('clicking the Line numbers row inside View ▾ inverts the disable flag', async () => {
-    const user = userEvent.setup()
-    const onDisableLineNumbersChange = vi.fn<(next: boolean) => void>()
-
-    renderToolbar({
-      disableLineNumbers: false,
-      onDisableLineNumbersChange,
-    })
-
-    await user.click(screen.getByRole('button', { name: /view settings/i }))
-
-    const row = await screen.findByRole('menuitemcheckbox', {
-      name: /line numbers/i,
-    })
-    await user.click(row)
-
-    expect(onDisableLineNumbersChange).toHaveBeenCalledTimes(1)
-    expect(onDisableLineNumbersChange).toHaveBeenCalledWith(true)
-  })
-
-  test('disabled staging chips do not fire any callback when clicked', async () => {
-    const user = userEvent.setup()
-    const onDiffStyleChange = vi.fn<(next: DiffStyle) => void>()
-
-    // We don't pass click handlers to the aria-disabled placeholder chips —
-    // they don't exist as props without onStage/onDiscard. Clicking them is a
-    // no-op, so the diff-style segmented callback stays at zero calls.
-    renderToolbar({ onDiffStyleChange })
-
-    await user.click(screen.getByRole('button', { name: /^stage$/i }))
-    await user.click(screen.getByRole('button', { name: /^discard$/i }))
-    expect(onDiffStyleChange).not.toHaveBeenCalled()
+    expect(onOpenSettings).toHaveBeenCalledOnce()
   })
 
   test('staging chips render with the disabled-placeholder styling when no handlers provided', () => {
@@ -928,15 +798,10 @@ describe('DiffChipToolbar', () => {
   test('PriorityPlus collapses the lower-priority groups into the overflow menu at a narrow width', () => {
     renderToolbar({ diffMode: 'unstaged' })
 
-    // The redesign mounts 7 grouped chips into PriorityPlus (segmented, file
-    // pill, tool-well, change stepper, highlight, theme, view). Lay the first
-    // four on row 0 and the trailing three on row 1 so the measurement loop
-    // folds the lowest-priority groups (highlight → theme → view) into the
-    // `…` menu first. Each wrapper is 60 px wide with 12 px gaps; the container
-    // is wide enough that the last visible group leaves room for the overflow
-    // chip on row 0 (no cutoff pull-back).
+    // File navigation, change actions, and hunk navigation stay visible while
+    // the trailing settings button folds into overflow.
     const layouts: ItemLayout[] = []
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 5; i++) {
       const row = i < 4 ? 0 : 1
       const colIndex = row === 0 ? i : i - 4
       layouts.push({
@@ -956,10 +821,7 @@ describe('DiffChipToolbar', () => {
     })
     expect(overflowChip).toBeInTheDocument()
 
-    // Visible row holds the highest-priority groups: the segmented control and
-    // the functional file pill stay on the bar.
-    expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument()
-
+    // The functional file pill stays on the bar.
     expect(
       screen.getByRole('button', { name: /previous file/i })
     ).toBeInTheDocument()
@@ -982,7 +844,7 @@ describe('DiffChipToolbar', () => {
     })
 
     const layouts: ItemLayout[] = []
-    for (let index = 0; index < 9; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       layouts.push({
         offsetTop: index === 0 ? 0 : 30,
         offsetHeight: 24,
@@ -994,9 +856,7 @@ describe('DiffChipToolbar', () => {
     stubLayout(priorityPlusRoot(), layouts, 600)
     fireResize()
 
-    await user.click(
-      screen.getByRole('button', { name: /show 7 more controls/i })
-    )
+    await user.click(screen.getByRole('button', { name: /more controls/i }))
 
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
     expect(
@@ -1008,15 +868,10 @@ describe('DiffChipToolbar', () => {
     expect(request.kind).toBe('menu')
     expect(request.placement).toBe('bottom-end')
     expect(request.payload.sections?.map((section) => section.label)).toEqual([
-      'Diff view',
       'File 2/9',
       'Changes',
       'Hunks 2/3',
-      'Highlight',
-      'Theme',
-      'Indicators',
-      'Overflow',
-      'View options',
+      'Settings',
     ])
 
     const stage = request.payload.sections
@@ -1050,7 +905,7 @@ describe('DiffChipToolbar', () => {
     })
 
     const layouts: ItemLayout[] = []
-    for (let index = 0; index < 9; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       layouts.push({
         offsetTop: index === 0 ? 0 : 30,
         offsetHeight: 24,
@@ -1062,9 +917,7 @@ describe('DiffChipToolbar', () => {
     stubLayout(priorityPlusRoot(), layouts, 600)
     fireResize()
 
-    await user.click(
-      screen.getByRole('button', { name: /show 7 more controls/i })
-    )
+    await user.click(screen.getByRole('button', { name: /more controls/i }))
 
     await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
 

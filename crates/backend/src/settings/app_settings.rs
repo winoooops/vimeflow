@@ -33,6 +33,15 @@ pub struct AppSettings {
     pub terminal_font_family: String,
     pub reservoir_swell: String,
     pub session_island_display: String,
+    pub diff_view_style: String,
+    pub diff_theme: String,
+    pub diff_line_diff_type: String,
+    pub diff_indicators: String,
+    pub diff_overflow: String,
+    pub diff_show_line_numbers: bool,
+    pub diff_background_tint: bool,
+    pub diff_file_header: bool,
+    pub diff_sticky_header: bool,
     pub keymap_preset: String,
     pub agent_shim_enabled: bool,
     #[serde(default, deserialize_with = "lenient_string_map")]
@@ -76,6 +85,15 @@ impl Default for AppSettings {
             terminal_font_family: "JetBrains Mono".into(),
             reservoir_swell: "soft-mound".into(),
             session_island_display: "dots".into(),
+            diff_view_style: "split".into(),
+            diff_theme: "auto".into(),
+            diff_line_diff_type: "word".into(),
+            diff_indicators: "classic".into(),
+            diff_overflow: "scroll".into(),
+            diff_show_line_numbers: true,
+            diff_background_tint: true,
+            diff_file_header: true,
+            diff_sticky_header: true,
             keymap_preset: "vimeflow".into(),
             agent_shim_enabled: true,
             custom_keybindings: HashMap::new(),
@@ -103,10 +121,17 @@ impl AppSettings {
             ("terminalFontFamily", self.terminal_font_family.as_str()),
             ("reservoirSwell", self.reservoir_swell.as_str()),
             ("sessionIslandDisplay", self.session_island_display.as_str()),
+            ("diffViewStyle", self.diff_view_style.as_str()),
+            ("diffTheme", self.diff_theme.as_str()),
+            ("diffLineDiffType", self.diff_line_diff_type.as_str()),
+            ("diffIndicators", self.diff_indicators.as_str()),
+            ("diffOverflow", self.diff_overflow.as_str()),
             ("keymapPreset", self.keymap_preset.as_str()),
         ] {
             if value.chars().count() > MAX_SETTINGS_STRING_CHARS {
-                return Err(format!("{field} exceeds {MAX_SETTINGS_STRING_CHARS} characters"));
+                return Err(format!(
+                    "{field} exceeds {MAX_SETTINGS_STRING_CHARS} characters"
+                ));
             }
         }
 
@@ -231,6 +256,15 @@ mod tests {
             terminal_font_family: "Iosevka".into(),
             reservoir_swell: "trailing".into(),
             session_island_display: "numbers".into(),
+            diff_view_style: "unified".into(),
+            diff_theme: "dracula".into(),
+            diff_line_diff_type: "char".into(),
+            diff_indicators: "bars".into(),
+            diff_overflow: "wrap".into(),
+            diff_show_line_numbers: false,
+            diff_background_tint: false,
+            diff_file_header: false,
+            diff_sticky_header: false,
             keymap_preset: "vim".into(),
             agent_shim_enabled: false,
             custom_keybindings: HashMap::from([(
@@ -258,6 +292,15 @@ mod tests {
         assert_eq!(s.terminal_font_family, "JetBrains Mono");
         assert_eq!(s.reservoir_swell, "soft-mound");
         assert_eq!(s.session_island_display, "dots");
+        assert_eq!(s.diff_view_style, "split");
+        assert_eq!(s.diff_theme, "auto");
+        assert_eq!(s.diff_line_diff_type, "word");
+        assert_eq!(s.diff_indicators, "classic");
+        assert_eq!(s.diff_overflow, "scroll");
+        assert!(s.diff_show_line_numbers);
+        assert!(s.diff_background_tint);
+        assert!(s.diff_file_header);
+        assert!(s.diff_sticky_header);
         assert_eq!(s.keymap_preset, "vimeflow");
         assert!(s.agent_shim_enabled);
         assert!(s.custom_keybindings.is_empty());
@@ -289,6 +332,12 @@ mod tests {
         );
         assert!(
             json.contains("\"sessionIslandDisplay\":\"dots\""),
+            "json: {json}"
+        );
+        assert!(json.contains("\"diffViewStyle\":\"split\""), "json: {json}");
+        assert!(json.contains("\"diffTheme\":\"auto\""), "json: {json}");
+        assert!(
+            json.contains("\"diffShowLineNumbers\":true"),
             "json: {json}"
         );
         assert!(json.contains("\"agentShimEnabled\":true"), "json: {json}");
@@ -359,6 +408,9 @@ mod tests {
         assert_eq!(loaded.terminal_font_family, "JetBrains Mono");
         assert_eq!(loaded.reservoir_swell, "soft-mound");
         assert_eq!(loaded.session_island_display, "dots");
+        assert_eq!(loaded.diff_view_style, "split");
+        assert_eq!(loaded.diff_theme, "auto");
+        assert!(loaded.diff_show_line_numbers);
         assert_eq!(loaded.keymap_preset, "vimeflow");
         assert!(loaded.custom_keybindings.is_empty());
     }
@@ -416,10 +468,8 @@ mod tests {
 
         assert!(settings.validate_ipc_payload().is_err());
 
-        settings.custom_keybindings = HashMap::from([(
-            "command".to_string(),
-            "x".repeat(MAX_KEYBINDING_CHARS + 1),
-        )]);
+        settings.custom_keybindings =
+            HashMap::from([("command".to_string(), "x".repeat(MAX_KEYBINDING_CHARS + 1))]);
         assert!(settings.validate_ipc_payload().is_err());
     }
 

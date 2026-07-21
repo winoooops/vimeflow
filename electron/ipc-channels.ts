@@ -15,6 +15,8 @@ export const SETTINGS_OPEN_FILE = 'settings:open-file'
 
 export const SETTINGS_OPEN_WINDOW = 'settings:open-window'
 
+export const SETTINGS_NAVIGATE_TARGET = 'settings:navigate-target'
+
 export const SETTINGS_SYNC_SNAPSHOT = 'settings:sync-snapshot'
 
 export const SETTINGS_CHANGED = 'settings:changed'

@@ -3709,6 +3709,7 @@ const WorkspaceViewContent = (): ReactElement => {
       <SettingsDialog
         open={settingsDialog.isOpen}
         onClose={settingsDialog.close}
+        targetId={settingsDialog.targetId}
       />
     </div>
   )
