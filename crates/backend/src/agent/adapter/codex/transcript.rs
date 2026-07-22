@@ -270,33 +270,40 @@ fn find_object_end(tokens: &[JavascriptToken<'_>], opening: usize) -> Option<usi
     None
 }
 
-fn extract_object_workdir(
+fn property_name_matches(token: &JavascriptToken<'_>, property_names: &[&str]) -> bool {
+    match token {
+        JavascriptToken::Identifier(name) => property_names.contains(name),
+        JavascriptToken::String(key, _) => decode_javascript_string(key)
+            .as_deref()
+            .is_some_and(|name| property_names.contains(&name)),
+        JavascriptToken::Punctuation(_) => false,
+    }
+}
+
+fn extract_object_string_property(
     tokens: &[JavascriptToken<'_>],
     opening: usize,
     closing: usize,
     bindings: &HashMap<&str, String>,
+    property_names: &[&str],
 ) -> Option<String> {
     let mut stack = Vec::new();
-    let mut workdir = None;
+    let mut value = None;
 
     for index in opening + 1..closing {
         if stack.is_empty() {
             let is_property_key = index == opening + 1 || is_punctuation(tokens, index - 1, b',');
-            let is_workdir_key = is_property_key
-                && match tokens.get(index) {
-                    Some(JavascriptToken::Identifier("workdir")) => true,
-                    Some(JavascriptToken::String(key, _)) => {
-                        decode_javascript_string(key).as_deref() == Some("workdir")
-                    }
-                    _ => false,
-                };
-            if is_workdir_key {
+            let is_target_key = is_property_key
+                && tokens
+                    .get(index)
+                    .is_some_and(|token| property_name_matches(token, property_names));
+            if is_target_key {
                 if is_punctuation(tokens, index + 1, b':') {
                     let value_index = index + 2;
                     let value_is_complete =
                         value_index + 1 == closing || is_punctuation(tokens, value_index + 1, b',');
                     if value_is_complete {
-                        workdir = match tokens.get(value_index) {
+                        value = match tokens.get(value_index) {
                             Some(JavascriptToken::String(value, _)) => {
                                 decode_javascript_string(value)
                             }
@@ -307,7 +314,8 @@ fn extract_object_workdir(
                 } else if matches!(tokens.get(index), Some(JavascriptToken::Identifier(_)))
                     && (index + 1 == closing || is_punctuation(tokens, index + 1, b','))
                 {
-                    workdir = bindings.get("workdir").cloned();
+                    value =
+                        identifier_at(tokens, index).and_then(|name| bindings.get(name).cloned());
                 }
             }
         }
@@ -321,7 +329,45 @@ fn extract_object_workdir(
         }
     }
 
-    stack.is_empty().then_some(workdir).flatten()
+    stack.is_empty().then_some(value).flatten()
+}
+
+fn extract_object_workdir(
+    tokens: &[JavascriptToken<'_>],
+    opening: usize,
+    closing: usize,
+    bindings: &HashMap<&str, String>,
+) -> Option<String> {
+    extract_object_string_property(tokens, opening, closing, bindings, &["workdir"])
+}
+
+fn record_const_string_binding<'a>(
+    input: &str,
+    tokens: &[JavascriptToken<'a>],
+    index: usize,
+    bindings: &mut HashMap<&'a str, String>,
+) {
+    if identifier_at(tokens, index) != Some("const") {
+        return;
+    }
+
+    let (Some(name), Some(JavascriptToken::String(value, value_end))) =
+        (identifier_at(tokens, index + 1), tokens.get(index + 3))
+    else {
+        return;
+    };
+
+    let complete = is_punctuation(tokens, index + 2, b'=')
+        && (index + 4 == tokens.len()
+            || is_punctuation(tokens, index + 4, b';')
+            || is_punctuation(tokens, index + 4, b',')
+            || (identifier_at(tokens, index + 4).is_some()
+                && has_javascript_line_terminator(input, *value_end)));
+    if complete {
+        if let Some(value) = decode_javascript_string(value) {
+            bindings.insert(name, value);
+        }
+    }
 }
 
 fn extract_custom_exec_workdir(input: &str) -> Option<String> {
@@ -333,23 +379,7 @@ fn extract_custom_exec_workdir(input: &str) -> Option<String> {
     let mut index = 0;
 
     while index < tokens.len() {
-        if identifier_at(&tokens, index) == Some("const") {
-            if let (Some(name), Some(JavascriptToken::String(value, value_end))) =
-                (identifier_at(&tokens, index + 1), tokens.get(index + 3))
-            {
-                let complete = is_punctuation(&tokens, index + 2, b'=')
-                    && (index + 4 == tokens.len()
-                        || is_punctuation(&tokens, index + 4, b';')
-                        || is_punctuation(&tokens, index + 4, b',')
-                        || (identifier_at(&tokens, index + 4).is_some()
-                            && has_javascript_line_terminator(input, *value_end)));
-                if complete {
-                    if let Some(value) = decode_javascript_string(value) {
-                        bindings.insert(name, value);
-                    }
-                }
-            }
-        }
+        record_const_string_binding(input, &tokens, index, &mut bindings);
 
         let is_exec_call = identifier_at(&tokens, index) == Some("tools")
             && is_punctuation(&tokens, index + 1, b'.')
@@ -372,6 +402,44 @@ fn extract_custom_exec_workdir(input: &str) -> Option<String> {
     }
 
     last_workdir
+}
+
+fn extract_custom_exec_command_args(input: &str) -> Option<String> {
+    let tokens = tokenize_javascript(input);
+    let mut bindings = HashMap::new();
+    let mut command = None;
+    let mut index = 0;
+
+    while index < tokens.len() {
+        record_const_string_binding(input, &tokens, index, &mut bindings);
+
+        let is_exec_call = identifier_at(&tokens, index) == Some("tools")
+            && is_punctuation(&tokens, index + 1, b'.')
+            && identifier_at(&tokens, index + 2) == Some("exec_command")
+            && is_punctuation(&tokens, index + 3, b'(')
+            && is_punctuation(&tokens, index + 4, b'{');
+        if is_exec_call {
+            let opening = index + 4;
+            if let Some(closing) = find_object_end(&tokens, opening) {
+                if let Some(candidate) =
+                    extract_object_string_property(
+                        &tokens,
+                        opening,
+                        closing,
+                        &bindings,
+                        &["cmd", "command"],
+                    )
+                    .filter(|candidate| !candidate.is_empty())
+                {
+                    command = Some(candidate);
+                }
+                index = closing;
+            }
+        }
+        index += 1;
+    }
+
+    command
 }
 
 /// Pull the mid-session workdir off either Codex execution-call schema.
@@ -1105,7 +1173,7 @@ fn start_custom_tool_call(
         return;
     };
     let tool = tool_call_name(payload);
-    let args = summarize_custom_tool_input(payload.input.as_deref());
+    let args = summarize_custom_tool_args(payload, &tool);
     let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
     let completion_mode = if tool == "apply_patch" {
         CompletionMode::PatchApplyEnd
@@ -1403,6 +1471,16 @@ fn summarize_custom_tool_input(input: Option<&str>) -> String {
         return truncate_string(&first_path, MAX_ARGS_LEN);
     }
     truncate_string(input, MAX_ARGS_LEN)
+}
+
+fn summarize_custom_tool_args(payload: &CodexPayloadDto, tool: &str) -> String {
+    if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
+        if let Some(cmd) = payload.input.as_deref().and_then(extract_custom_exec_command_args) {
+            return truncate_string(&cmd, MAX_ARGS_LEN);
+        }
+    }
+
+    summarize_custom_tool_input(payload.input.as_deref())
 }
 
 fn custom_tool_is_test_file(input: Option<&str>) -> bool {
@@ -2069,6 +2147,26 @@ mod tests {
                 "{\"cmd\":\"cargo test --workspace --all-features\",\"workdir\":\"/tmp/ws\"}"
             )),
             "cargo test --workspace --all-features"
+        );
+    }
+
+    #[test]
+    fn extract_custom_exec_command_args_reads_nested_cmd() {
+        assert_eq!(
+            extract_custom_exec_command_args(
+                "const result = await tools.exec_command({ cmd: 'git status' })"
+            ),
+            Some("git status".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_exec_command_args_reads_nested_command_alias() {
+        assert_eq!(
+            extract_custom_exec_command_args(
+                "const command = 'npm test'\nawait tools.exec_command({ command })"
+            ),
+            Some("npm test".to_string())
         );
     }
 
@@ -3140,8 +3238,10 @@ mod tests {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[0].1["tool"], "exec_command");
+        assert_eq!(tool_calls[0].1["args"], "false");
         assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
         assert_eq!(tool_calls[1].1["tool"], "exec_command");
+        assert_eq!(tool_calls[1].1["args"], "false");
         assert_eq!(tool_calls[1].1["status"], "failed");
         assert!(in_flight.is_empty());
     }

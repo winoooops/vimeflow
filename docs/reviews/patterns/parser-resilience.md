@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-20
+last_updated: 2026-07-22
 ref_count: 13
 ---
 
@@ -355,4 +355,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/review.rs`, `src/features/diff/hooks/useAgentReview.ts`
 - **Finding:** Omitting malformed entries compacted the valid findings array, and the frontend rebuilt reply-thread ordinals from that compacted position. A later `target: "finding"` reply still used the finding's original position in the review block, so it could attach to the wrong finding or disappear.
 - **Fix:** Preserve the original 1-based array position as a typed `ordinal` while validating each finding, carry it through the generated binding, and key frontend thread targets from that value. Regression coverage places an invalid entry before a valid finding and verifies the valid thread remains addressable as finding 2.
+- **Commit:** same commit as this entry
+
+### 26. Promoted code-mode exec commands kept opaque wrapper arguments
+
+- **Source:** github-codex-connector | PR #720 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex code-mode `custom_tool_call` records that contained only `tools.exec_command(...)` were promoted to `exec_command`, but their activity-card args still came from the raw JavaScript cell input. The UI rendered a Bash activity with a `$` prompt followed by wrapper code such as `const result = await tools.exec_command({ cmd: 'git status' })` instead of the actual shell command.
+- **Fix:** Reused the JavaScript token walker to extract literal `cmd` or `command` fields from nested `tools.exec_command({...})` calls, including simple string const aliases, before falling back to the raw custom input summary. Regression coverage pins direct parser extraction and verifies promoted code-mode exec events emit `args: "false"` for both running and completed activity events.
 - **Commit:** same commit as this entry
