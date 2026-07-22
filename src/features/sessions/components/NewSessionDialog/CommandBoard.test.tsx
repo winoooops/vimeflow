@@ -42,4 +42,23 @@ describe('CommandBoard', () => {
     await user.click(screen.getByRole('menuitem', { name: /codex cli/i }))
     expect(onAssign).toHaveBeenCalledWith(1, 'codex')
   })
+
+  test('shell-assigned pane renders the shell brand SVG', () => {
+    render(
+      <CommandBoard
+        layout={LAYOUTS.vsplit}
+        assign={['claude', 'shell']}
+        commands={commands}
+        onAssign={vi.fn()}
+      />
+    )
+
+    const paneButtons = screen.getAllByRole('button', {
+      name: /choose command for pane/i,
+    })
+    // eslint-disable-next-line testing-library/no-node-access -- verifying brand SVG render
+    const shellMark = paneButtons[1].querySelector('svg')
+
+    expect(shellMark).toBeInTheDocument()
+  })
 })

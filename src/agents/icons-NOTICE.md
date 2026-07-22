@@ -9,6 +9,11 @@ marks in `brandIcons.tsx` are vendored (mono variant) from **@lobehub/icons**
 - Source: https://github.com/lobehub/lobe-icons
 - SPDX-License-Identifier: MIT
 
+## In-house marks
+
+The Shell terminal mark in `brandIcons.tsx` is drawn in-house for vimeflow and
+is not vendored from Lobe Icons.
+
 ## License (Lobe Icons)
 
 ```

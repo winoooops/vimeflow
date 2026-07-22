@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { AGENTS } from '@/agents/registry'
+import { AGENTS, type AgentDef } from '@/agents/registry'
 import { AgentGlyph } from './AgentGlyph'
 
 test('renders the brand SVG for an agent that defines an Icon', () => {
@@ -19,8 +19,18 @@ test('mono brand mark inherits currentColor for theme adaptation', () => {
   expect(svg?.getAttribute('fill')).toBe('currentColor')
 })
 
-test('falls back to the unicode glyph for an agent without an Icon', () => {
+test('renders the brand SVG for the shell agent', () => {
   const { container } = render(<AgentGlyph agent={AGENTS.shell} />)
+  // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- verifying brand SVG render
+  const svg = container.querySelector('svg')
+
+  expect(svg).toBeInTheDocument()
+  expect(svg?.getAttribute('fill')).toBe('currentColor')
+})
+
+test('falls back to the unicode glyph for an agent without an Icon', () => {
+  const agentWithoutIcon: AgentDef = { ...AGENTS.shell, Icon: undefined }
+  const { container } = render(<AgentGlyph agent={agentWithoutIcon} />)
   // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access -- asserting no SVG in fallback
   const svg = container.querySelector('svg')
 

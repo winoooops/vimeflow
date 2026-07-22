@@ -3,7 +3,6 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Tabs } from './Tabs'
 import type { Session } from '../types'
-import { AGENTS } from '../../../agents/registry'
 
 const buildSession = (overrides: Partial<Session> = {}): Session => ({
   id: 'sess-1',
@@ -238,11 +237,14 @@ describe('Tabs', () => {
     const codexChip = within(activeTab).getByTestId('agent-glyph-chip')
     // eslint-disable-next-line testing-library/no-node-access -- codex renders an svg brand mark
     const codexMark = codexChip.querySelector('svg')
+    const shellChip = within(inactiveTab).getByTestId('agent-glyph-chip')
+    // eslint-disable-next-line testing-library/no-node-access -- shell renders an svg brand mark
+    const shellMark = shellChip.querySelector('svg')
 
     expect(codexMark).toBeInTheDocument()
-    expect(
-      within(inactiveTab).getByText(AGENTS.shell.glyph)
-    ).toBeInTheDocument()
+    expect(shellMark).toBeInTheDocument()
+    // Different sessions render different agent chips from their own agentType.
+    expect(shellChip.innerHTML).not.toBe(codexChip.innerHTML)
   })
 
   test('null activeSessionId falls back to the first visible tab (roving entry)', () => {
