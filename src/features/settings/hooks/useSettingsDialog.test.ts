@@ -44,6 +44,44 @@ describe('useSettingsDialog', () => {
     expect(result.current.isOpen).toBe(true)
   })
 
+  test('open with a target sets targetId', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open('keymap-preset'))
+
+    expect(result.current.isOpen).toBe(true)
+    expect(result.current.targetId).toBe('keymap-preset')
+  })
+
+  test('open without a target leaves targetId null', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open())
+
+    expect(result.current.isOpen).toBe(true)
+    expect(result.current.targetId).toBeNull()
+  })
+
+  test('close preserves targetId', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open('appearance-color-scheme'))
+    act(() => result.current.close())
+
+    expect(result.current.isOpen).toBe(false)
+    expect(result.current.targetId).toBe('appearance-color-scheme')
+  })
+
+  test('toggle resets targetId when opening', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open('general-close-with-no-tabs'))
+    act(() => result.current.toggle())
+
+    expect(result.current.isOpen).toBe(false)
+    expect(result.current.targetId).toBe('general-close-with-no-tabs')
+  })
+
   test('close sets isOpen to false', () => {
     const { result } = renderHook(() => useSettingsDialog())
 

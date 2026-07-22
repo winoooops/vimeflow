@@ -16,6 +16,12 @@ import {
 } from '../../terminal/layout-registry'
 import { themeService } from '../../../theme'
 import type { CommandId } from '../../keymap/catalog'
+import {
+  AVAILABLE_SETTINGS_SECTIONS,
+  type AvailableSettingsSectionId,
+  SETTINGS_TARGET_IDS,
+} from '@/features/settings/sections'
+import type { SettingsTargetId } from '@/features/settings/types'
 
 export type DockPositionCommandArg = 'bottom' | 'top' | 'left' | 'right'
 
@@ -26,6 +32,18 @@ const aliasMatch =
   (...forms: string[]) =>
   (query: string): number =>
     forms.reduce((best, form) => Math.max(best, fuzzyMatch(query, form)), 0)
+
+// Map each settings section to a representative target so the dialog opens
+// scrolled to a real control, not just the section header.
+const SECTION_TARGET_IDS: Record<AvailableSettingsSectionId, SettingsTargetId> =
+  {
+    general: SETTINGS_TARGET_IDS.generalCloseWithNoTabs,
+    appearance: SETTINGS_TARGET_IDS.appearanceColorScheme,
+    keymap: SETTINGS_TARGET_IDS.keymapPreset,
+    agents: SETTINGS_TARGET_IDS.agentsManageAliases,
+    terminal: SETTINGS_TARGET_IDS.terminalFontFamily,
+    version: SETTINGS_TARGET_IDS.versionDiffViewStyle,
+  }
 
 // Single source of truth for which Session fields a workspace command may
 // read. `WorkspaceTab` derives its shape from this list, and the workspace's
@@ -134,6 +152,8 @@ export interface WorkspaceCommandDeps {
   focusTerminal?: () => void
   // Open a file in the dock editor by absolute path.
   openFile?: (path: string) => void
+  // Open the settings dialog, optionally jumped to a settings target.
+  openSettings?: (targetId?: SettingsTargetId) => void
   // Resolved registry display tokens for commands with a live accelerator.
   keybindingShortcut?: (id: CommandId) => string[]
 }
@@ -213,6 +233,7 @@ export const buildWorkspaceCommands = (
     showSidebarTab,
     focusTerminal,
     openFile,
+    openSettings,
     keybindingShortcut,
   } = deps
 
@@ -494,6 +515,36 @@ export const buildWorkspaceCommands = (
 
           openFile(path)
         },
+      }
+    : undefined
+
+  const settingsCommand: Command | undefined = openSettings
+    ? {
+        id: 'settings',
+        label: ':settings',
+        description: 'Settings',
+        hint: 'open the settings dialog',
+        icon: 'settings',
+        children: [
+          {
+            id: 'settings-open',
+            label: 'Open Settings',
+            description: 'Open the settings dialog',
+            icon: 'settings',
+            execute: (): void => {
+              openSettings()
+            },
+          },
+          ...AVAILABLE_SETTINGS_SECTIONS.map((section) => ({
+            id: `settings-${section.id}`,
+            label: section.label,
+            description: `Open ${section.label} settings`,
+            icon: section.icon,
+            execute: (): void => {
+              openSettings(SECTION_TARGET_IDS[section.id])
+            },
+          })),
+        ],
       }
     : undefined
 
@@ -805,6 +856,7 @@ export const buildWorkspaceCommands = (
     ...(showFilesCommand ? [showFilesCommand] : []),
     ...(focusTerminalCommand ? [focusTerminalCommand] : []),
     ...(openFileCommand ? [openFileCommand] : []),
+    ...(settingsCommand ? [settingsCommand] : []),
   ]
 
   if (keymapPreset !== 'vim') {

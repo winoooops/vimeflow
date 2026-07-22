@@ -1980,6 +1980,8 @@ const WorkspaceViewContent = (): ReactElement => {
     [setSessionLayout]
   )
 
+  const settingsDialog = useSettingsDialog()
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -2040,6 +2042,9 @@ const WorkspaceViewContent = (): ReactElement => {
           setTimeout(() => claimTerminal(), 0)
         },
         openFile: requestOpenFile,
+        openSettings: (targetId) => {
+          settingsDialog.open(targetId)
+        },
         keybindingShortcut: (id) =>
           chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
       }),
@@ -2087,6 +2092,7 @@ const WorkspaceViewContent = (): ReactElement => {
       setCompactSidebarOpen,
       claimTerminal,
       requestOpenFile,
+      settingsDialog.open,
       bindingFor,
       preferModifier,
     ]
@@ -2126,8 +2132,6 @@ const WorkspaceViewContent = (): ReactElement => {
     [matches]
   )
 
-  const settingsDialog = useSettingsDialog()
-
   const commandPalette = useCommandPalette(workspaceCommands, {
     enabled:
       !showUnsavedDialog && !settingsDialog.isOpen && !newSessionDialog.open,
@@ -2156,7 +2160,8 @@ const WorkspaceViewContent = (): ReactElement => {
       wasOpen &&
       !commandPalette.state.isOpen &&
       !showUnsavedDialog &&
-      !newSessionDialog.open
+      !newSessionDialog.open &&
+      !settingsDialog.isOpen
     ) {
       requestFocus(
         activeContainerId === TERMINAL_CONTAINER_ID ? 'terminal' : dockTab
@@ -2169,6 +2174,7 @@ const WorkspaceViewContent = (): ReactElement => {
     requestFocus,
     showUnsavedDialog,
     newSessionDialog.open,
+    settingsDialog.isOpen,
   ])
 
   usePaneShortcuts({

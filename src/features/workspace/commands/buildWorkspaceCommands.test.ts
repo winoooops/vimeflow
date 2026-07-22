@@ -14,6 +14,8 @@ import {
   SINGLE_PANE_FOCUS_LAYOUT_ID,
 } from '../../terminal/layout-registry'
 import { themeService, themeToScheme } from '../../../theme'
+import { AVAILABLE_SETTINGS_SECTIONS } from '@/features/settings/sections'
+import type { SettingsTargetId } from '@/features/settings/types'
 
 // TODO(VIM-339): Cover the command/settings flow once terminal fonts can be
 // persisted and hot-swapped across native Ghostty and the xterm fallback.
@@ -2045,6 +2047,53 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
     expect(focusTerminal).toHaveBeenCalledOnce()
   })
 
+  test(':settings is a namespace with an Open Settings entry', () => {
+    const openSettings = vi.fn<(targetId?: SettingsTargetId) => void>()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), openSettings })
+
+    const settingsCmd = commands.find((c) => c.id === 'settings')
+    expect(settingsCmd?.label).toBe(':settings')
+    expect(settingsCmd?.children?.[0]?.id).toBe('settings-open')
+
+    settingsCmd?.children?.[0]?.execute?.('')
+    expect(openSettings).toHaveBeenCalledWith()
+  })
+
+  test(':settings lists available settings sections as children', () => {
+    const openSettings = vi.fn<(targetId?: SettingsTargetId) => void>()
+    const commands = buildWorkspaceCommands({ ...baseDeps(), openSettings })
+
+    const settingsCmd = commands.find((c) => c.id === 'settings')
+    expect(settingsCmd?.children).toHaveLength(
+      AVAILABLE_SETTINGS_SECTIONS.length + 1
+    )
+
+    const children = settingsCmd?.children ?? []
+    for (const section of AVAILABLE_SETTINGS_SECTIONS) {
+      const child = children.find((c) => c.id === `settings-${section.id}`)
+      expect(child?.label).toBe(section.label)
+      expect(child?.description).toContain(section.label)
+
+      child?.execute?.('')
+    }
+
+    const targetIds = openSettings.mock.calls.map(
+      ([targetId]): SettingsTargetId | undefined => targetId
+    )
+    expect(targetIds).toHaveLength(AVAILABLE_SETTINGS_SECTIONS.length)
+    expect(targetIds).not.toContain(undefined)
+    expect(targetIds).not.toContain(null)
+    expect(openSettings).toHaveBeenCalledTimes(
+      AVAILABLE_SETTINGS_SECTIONS.length
+    )
+  })
+
+  test(':settings is omitted when openSettings is absent', () => {
+    const commands = buildWorkspaceCommands(baseDeps())
+
+    expect(commands.find((c) => c.id === 'settings')).toBeUndefined()
+  })
+
   test(':open-file opens an absolute path, preserving spaces', () => {
     const openFile = vi.fn()
     const commands = buildWorkspaceCommands({ ...baseDeps(), openFile })
@@ -2083,6 +2132,7 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
       'show-files',
       'focus-terminal',
       'open-file',
+      'settings',
     ]
 
     for (const id of omitted) {
