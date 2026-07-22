@@ -208,12 +208,17 @@ const ChangedFileItem = ({
           ) : null}
         </span>
         {hasReviewComments ? (
-          <span
-            aria-label={`Review comments or threads on ${fileName}`}
-            className="material-symbols-outlined shrink-0 text-[14px] leading-none text-primary"
-          >
-            forum
-          </span>
+          <>
+            <span className="sr-only">
+              Review comments or threads on {fileName}
+            </span>
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined shrink-0 text-[14px] leading-none text-primary"
+            >
+              forum
+            </span>
+          </>
         ) : null}
         <div className="flex shrink-0 items-center gap-1.5 font-code text-[10px]">
           {(file.insertions ?? 0) > 0 && (

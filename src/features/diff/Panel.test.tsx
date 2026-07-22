@@ -3695,11 +3695,14 @@ describe('Panel', () => {
 
       fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
-      expect(
-        within(screen.getByTestId('changed-files-pane')).getByLabelText(
-          'Review comments or threads on foo.ts'
-        )
-      ).toBeInTheDocument()
+      const changedFilesPane = screen.getByTestId('changed-files-pane')
+
+      const fileRow = within(changedFilesPane).getByRole('button', {
+        name: /Review comments or threads on foo\.ts/i,
+      })
+      const reviewIcon = within(fileRow).getByText('forum')
+
+      expect(reviewIcon).toHaveAttribute('aria-hidden', 'true')
     })
 
     test('shows a changed-file cue for adding a file-level comment', async (): Promise<void> => {
@@ -3856,12 +3859,17 @@ describe('Panel', () => {
       ).toBeInTheDocument()
 
       const searchAnchor = screen.getByTestId('diff-search-anchor')
+      const reviewSurfaces = screen.getByTestId('diff-review-surfaces')
 
       const searchButton = screen.getByRole('button', {
         name: 'Search in diff',
       })
 
       expect(fileCommentsPanel.compareDocumentPosition(searchAnchor)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      expect(reviewSurfaces).toContainElement(fileCommentsPanel)
+      expect(reviewSurfaces.compareDocumentPosition(searchAnchor)).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING
       )
       expect(searchAnchor).toContainElement(searchButton)
@@ -3877,6 +3885,7 @@ describe('Panel', () => {
 
       expect(fileCommentsPanel).not.toHaveClass('max-h-56')
       expect(commentList).not.toHaveClass('overflow-y-auto')
+      expect(reviewSurfaces).toHaveClass('max-h-[40%]', 'overflow-y-auto')
     })
 
     test('keyboard Shift+U edits the selected file-level comment', async (): Promise<void> => {

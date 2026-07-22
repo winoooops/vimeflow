@@ -2798,93 +2798,98 @@ export const Panel = ({
               onCancel={cancelCommentEditor}
             />
           </Popover>
-          {selectedFileEntry !== undefined &&
-          fileCommentsForSelectedFile.length > 0 ? (
-            <div
-              data-testid="file-level-comments-panel"
-              className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
-            >
-              <div className="px-2 text-xs font-medium text-on-surface-variant">
-                Commented on file
-              </div>
+          <div
+            data-testid="diff-review-surfaces"
+            className="min-h-0 max-h-[40%] shrink-0 overflow-y-auto"
+          >
+            {selectedFileEntry !== undefined &&
+            fileCommentsForSelectedFile.length > 0 ? (
               <div
-                data-testid="file-level-comments-list"
-                className="flex flex-col gap-1 pr-1"
+                data-testid="file-level-comments-panel"
+                className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
               >
-                {fileThreads.collapsed.map((annotation) => {
-                  const fileGroupKey = threadGroupKey(annotation)
+                <div className="px-2 text-xs font-medium text-on-surface-variant">
+                  Commented on file
+                </div>
+                <div
+                  data-testid="file-level-comments-list"
+                  className="flex flex-col gap-1 pr-1"
+                >
+                  {fileThreads.collapsed.map((annotation) => {
+                    const fileGroupKey = threadGroupKey(annotation)
 
-                  const fileGroup =
-                    fileGroupKey === undefined
-                      ? undefined
-                      : fileThreads.groups.get(fileGroupKey)
+                    const fileGroup =
+                      fileGroupKey === undefined
+                        ? undefined
+                        : fileThreads.groups.get(fileGroupKey)
 
-                  if (fileGroup !== undefined) {
+                    if (fileGroup !== undefined) {
+                      return (
+                        <ReviewThreadCard
+                          key={`thread:${fileGroup.threadId}`}
+                          group={fileGroup}
+                          anchorLabel={threadAnchorLabel(
+                            fileGroup.turns[0] ?? annotation
+                          )}
+                          actions={
+                            feedbackDispatch === undefined
+                              ? undefined
+                              : bindThreadCardActions(
+                                  threadProps,
+                                  fileGroup.threadId
+                                )
+                          }
+                        />
+                      )
+                    }
+
                     return (
-                      <ReviewThreadCard
-                        key={`thread:${fileGroup.threadId}`}
-                        group={fileGroup}
-                        anchorLabel={threadAnchorLabel(
-                          fileGroup.turns[0] ?? annotation
+                      <ReviewCommentRow
+                        key={annotation.metadata.id}
+                        comment={annotation.metadata}
+                        editShortcut={chordToShortcutInput(
+                          bindingFor('diff-file-comment-update')
                         )}
-                        actions={
-                          feedbackDispatch === undefined
-                            ? undefined
-                            : bindThreadCardActions(
-                                threadProps,
-                                fileGroup.threadId
-                              )
-                        }
+                        editAriaKeyshortcuts={chordToAriaShortcut(
+                          bindingFor('diff-file-comment-update')
+                        )}
+                        deleteShortcut={null}
+                        deleteAriaKeyshortcuts={null}
+                        onSendNow={(): void => {
+                          setFinishOpen(false)
+                          setReplyDispatchThreadId(null)
+                          setSendNowCommentId(annotation.metadata.id)
+                        }}
+                        onEdit={(): void => {
+                          setFileCommentAnchorPoint(null)
+                          setAnnotationTarget({
+                            scope: 'file',
+                            filePath: selectedFileEntry.path,
+                            staged: selectedFileEntry.staged,
+                            editId: annotation.metadata.id,
+                          })
+                          setCommentDraftText(annotation.metadata.text, false)
+                          setCommentCategory(
+                            reviewCommentCategory(annotation.metadata)
+                          )
+                        }}
+                        onDelete={(): void => {
+                          focusDiffRoot()
+                          feedback.removeAnnotation(
+                            cwd,
+                            selectedFileEntry.path,
+                            selectedFileEntry.staged,
+                            annotation.metadata.id
+                          )
+                        }}
                       />
                     )
-                  }
-
-                  return (
-                    <ReviewCommentRow
-                      key={annotation.metadata.id}
-                      comment={annotation.metadata}
-                      editShortcut={chordToShortcutInput(
-                        bindingFor('diff-file-comment-update')
-                      )}
-                      editAriaKeyshortcuts={chordToAriaShortcut(
-                        bindingFor('diff-file-comment-update')
-                      )}
-                      deleteShortcut={null}
-                      deleteAriaKeyshortcuts={null}
-                      onSendNow={(): void => {
-                        setFinishOpen(false)
-                        setReplyDispatchThreadId(null)
-                        setSendNowCommentId(annotation.metadata.id)
-                      }}
-                      onEdit={(): void => {
-                        setFileCommentAnchorPoint(null)
-                        setAnnotationTarget({
-                          scope: 'file',
-                          filePath: selectedFileEntry.path,
-                          staged: selectedFileEntry.staged,
-                          editId: annotation.metadata.id,
-                        })
-                        setCommentDraftText(annotation.metadata.text, false)
-                        setCommentCategory(
-                          reviewCommentCategory(annotation.metadata)
-                        )
-                      }}
-                      onDelete={(): void => {
-                        focusDiffRoot()
-                        feedback.removeAnnotation(
-                          cwd,
-                          selectedFileEntry.path,
-                          selectedFileEntry.staged,
-                          annotation.metadata.id
-                        )
-                      }}
-                    />
-                  )
-                })}
+                  })}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+            ) : null}
+            <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+          </div>
           <div
             data-testid="diff-search-anchor"
             className="relative h-0 shrink-0"
