@@ -1,7 +1,10 @@
 # Shell Pane Glyph — Design
 
 **Status:** Approved by the user on 2026-07-22 (visual direction "C — solid tile" selected
-from rendered mockups in the brainstorming visual companion).
+from rendered mockups in the brainstorming visual companion). Revised 2026-07-22 after
+Codex review of the implementation plan: §3 and §7 incorrectly described the New Session
+dialog as unicode-only; it renders brand SVGs for agents, and the user approved shell
+gaining the SVG mark there too.
 
 ## 1. Purpose
 
@@ -49,8 +52,12 @@ In `src/agents/registry.ts`, set `Icon: Shell` on the shell entry.
 `glyph: '$'` stays unchanged:
 
 - It remains the text fallback inside `AgentGlyph` for any agent without an `Icon`.
-- It is what the New Session dialog's CommandBoard renders — that dialog shows raw unicode
-  glyphs for every agent (`∴ ◇ ☾ ◈ $`), an established separate style.
+- It remains the `CommandDef.glyph` fallback in the New Session dialog, rendered only
+  when a command has neither `Icon` nor `materialIcon` (`CommandBoard.tsx`'s
+  `CommandGlyph` prefers the brand SVG). With `Icon: Shell` set, the dialog renders the
+  new mark for shell — the same treatment the other four agents already get there
+  (`commands.ts` copies `AGENTS[id].Icon` into every command). This is intended and
+  user-approved: shell joins the family instead of keeping a special-case text glyph.
 - `src/agents/registry.test.ts` pins `AGENTS.shell.glyph === '$'` and a length of 1.
 
 ## 4. Consumers
@@ -75,6 +82,10 @@ Written first (TDD):
   currently uses `AGENTS.shell`; re-point it to a synthetic agent object without an `Icon`
   (the fallback contract stays supported), and add an assertion that `AGENTS.shell` now
   renders an SVG.
+- `src/features/sessions/components/NewSessionDialog/commands.test.ts`: pin
+  `COMMANDS.shell.Icon` as defined, mirroring the existing claude assertion.
+- `src/features/sessions/components/NewSessionDialog/CommandBoard.test.tsx`: pin that a
+  shell-assigned pane renders an SVG mark (not the text `$`).
 
 ## 6. Docs
 
@@ -84,5 +95,4 @@ vendored from Lobe Icons, so the attribution file stays accurate.
 ## 7. Non-goals
 
 - No changes to the other four brand marks or their accent tokens.
-- No changes to the New Session dialog's unicode-glyph style.
 - No new glyph consumers; no chip layout changes.
