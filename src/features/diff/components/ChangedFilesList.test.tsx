@@ -1,6 +1,6 @@
 import { describe, test, expect, vi } from 'vitest'
 import { StrictMode } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { getCommand, type CommandId } from '@/features/keymap/catalog'
 import type { Keybindings } from '@/features/keymap/useKeybindings'
@@ -213,6 +213,34 @@ describe('ChangedFilesList', () => {
     })
 
     expect(activeFile).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('highlights only files with review comments or threads', () => {
+    render(
+      <ChangedFilesList
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={null}
+        onSelectFile={vi.fn()}
+        hasReviewComments={(file): boolean =>
+          file.path === 'src/utils/api-helper.rs' && file.staged
+        }
+      />
+    )
+
+    const fileWithReviewComments = screen.getByRole('button', {
+      name: /Review comments or threads on api-helper\.rs/i,
+    })
+    const reviewIcon = within(fileWithReviewComments).getByText('forum')
+
+    expect(reviewIcon).toHaveClass('text-primary')
+    expect(reviewIcon).toHaveAttribute('aria-hidden', 'true')
+
+    expect(
+      screen.queryByRole('button', {
+        name: /Review comments or threads on NavBar\.tsx/i,
+      })
+    ).not.toBeInTheDocument()
   })
 
   test('pin button toggles the pinned state when provided', async () => {
