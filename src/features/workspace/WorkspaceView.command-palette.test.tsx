@@ -763,16 +763,14 @@ describe('WorkspaceView - Command Palette Integration', () => {
     expect(mockSessionManager.updatePaneAgentType).not.toHaveBeenCalled()
   })
 
-  test('hides status bar context and turns when selected pane has no active agent', () => {
+  test('hides status bar turns when selected pane has no active agent', () => {
     render(<WorkspaceView />)
 
-    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('status-bar-cache')).not.toBeInTheDocument()
     expect(screen.getByTestId('status-bar-palette')).toBeInTheDocument()
   })
 
-  test('shows status bar context and turns for the selected pane active agent', async () => {
+  test('shows status bar turns for the selected pane active agent', async () => {
     const { useAgentStatus } =
       await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
@@ -806,11 +804,10 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    expect(screen.getByTestId('status-bar-context')).toHaveTextContent('66%')
     expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('28 turns')
   })
 
-  test('hides status bar context and turns for active agent status from another pane', async () => {
+  test('hides status bar turns for active agent status from another pane', async () => {
     const { useAgentStatus } =
       await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
@@ -832,11 +829,10 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
   })
 
-  test('hides the status bar context before the first contextWindow payload', async () => {
+  test('shows status bar turns before the first contextWindow payload', async () => {
     const { useAgentStatus } =
       await import('@/features/agent-status/hooks/useAgentStatus')
     vi.mocked(useAgentStatus).mockReturnValue(
@@ -853,10 +849,9 @@ describe('WorkspaceView - Command Palette Integration', () => {
 
     render(<WorkspaceView />)
 
-    // Turns render (agent active on the selected pane) but the context segment
-    // is omitted rather than shown as a misleading 😊0%.
+    // Turns render as soon as the agent is active on the selected pane; the
+    // turn count does not wait for the first contextWindow payload.
     expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('12 turns')
-    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
   })
 
   test('shows a <1m duration for a sub-minute agent session', async () => {
