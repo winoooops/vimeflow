@@ -2,8 +2,8 @@
 id: responsive-control-affordances
 category: a11y
 created: 2026-07-20
-last_updated: 2026-07-20
-ref_count: 0
+last_updated: 2026-07-22
+ref_count: 1
 ---
 
 # Responsive Control Affordances
@@ -72,4 +72,17 @@ they intercept pointer events over right- or left-aligned controls.
 - **Fix:** Reused the same compact menu change as the product fix: built-in
   checkbox rows now call the layout picker in compact mode, restoring a
   React-observable selection path for the native overlay action.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Compact agent chrome dropped budget telemetry
+
+- **Source:** github-codex-connector | PR #728 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/StatusBar.tsx`
+- **Finding:** Removing the status-bar context and cache segments also removed
+  the only visible context-window and cache-hit readings on compact viewports,
+  where the right-side status panel and rail are not mounted.
+- **Fix:** Added compact context and cache pills to `AgentStatusCard`, wired
+  the existing `WorkspaceView` agent-status readings into the card, and covered
+  both the card rendering and lifted-prop wiring with regression tests.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

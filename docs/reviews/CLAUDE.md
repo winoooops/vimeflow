@@ -60,7 +60,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 6    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 98       | 92   | 2026-07-20   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 101      | 90   | 2026-07-22   |
-| [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 4        | 0    | 2026-07-20   |
+| [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 1    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 88   | 2026-07-19   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |

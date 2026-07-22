@@ -169,17 +169,31 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
   })
 
-  test('renders only the turn count from the old metrics row', () => {
+  test('renders compact context and cache metrics with the turn count', () => {
     render(
-      <AgentStatusCard title="m" elapsed="2m" turns={12} contextPct={64} />
+      <AgentStatusCard
+        title="m"
+        elapsed="2m"
+        turns={12}
+        contextPct={64}
+        cacheHitPct={75}
+      />
     )
 
     expect(screen.queryByText('schedule')).not.toBeInTheDocument()
     expect(screen.queryByText('2m')).not.toBeInTheDocument()
     expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
-    expect(screen.queryByText('64%')).not.toBeInTheDocument()
     expect(screen.getByText('forum')).toBeInTheDocument()
     expect(screen.getByText('12 turns')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-card-budget-metrics')).toHaveTextContent(
+      'ctx64%cache75%'
+    )
+  })
+
+  test('omits compact budget metrics when no readings are available', () => {
+    render(<AgentStatusCard title="m" turns={12} />)
+
+    expect(screen.queryByTestId('agent-card-budget-metrics')).toBeNull()
   })
 
   test('renders 5-hour and weekly usage bars when provided', () => {

@@ -3278,6 +3278,10 @@ const WorkspaceViewContent = (): ReactElement => {
                   title={sidebarCardTitle}
                   isShell={sidebarCardIsShell}
                   turns={sidebarCardTurns}
+                  contextPct={agentStatus.contextWindow?.usedPercentage ?? null}
+                  cacheHitPct={cacheHitPercentage(
+                    agentStatus.contextWindow?.currentUsage
+                  )}
                   fiveHourPct={sidebarCardFiveHourPct}
                   weekPct={sidebarCardWeekPct}
                   isKimi={sidebarCardIsKimi}
