@@ -1107,7 +1107,7 @@ fn start_custom_tool_call(
     let tool = tool_call_name(payload);
     let args = summarize_custom_tool_input(payload.input.as_deref());
     let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
-    let completion_mode = if payload.name.as_deref() == Some("apply_patch") {
+    let completion_mode = if tool == "apply_patch" {
         CompletionMode::PatchApplyEnd
     } else if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
         CompletionMode::ExecCommandEnd
@@ -3304,6 +3304,93 @@ mod tests {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["toolUseId"], "call_patch");
+        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_code_mode_apply_patch_waits_for_patch_apply_end() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_patch","input":"await tools.apply_patch(\"*** Begin Patch\\n*** Update File: foo.ts\\n*** End Patch\")"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_patch","output":"done"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let tool_calls_after_output: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(
+            tool_calls_after_output.len(),
+            1,
+            "custom_tool_call_output must not finalize code-mode apply_patch"
+        );
+        assert!(
+            in_flight.contains_key("call_patch"),
+            "code-mode apply_patch must stay in-flight until patch_apply_end"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call_patch","success":false}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_patch");
+        assert_eq!(tool_calls[1].1["tool"], "apply_patch");
         assert_eq!(tool_calls[1].1["status"], "failed");
         assert!(in_flight.is_empty());
     }

@@ -138,3 +138,19 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   arrives. Added a regression test proving a failed nested exec stays in-flight
   through `custom_tool_call_output` and emits failed on `exec_command_end`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Promoted code-mode apply_patch finalized before patch_apply_end
+
+- **Source:** github-codex-connector | PR #720 round 2 | 2026-07-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Code-mode `exec` calls that contained only a nested
+  `tools.apply_patch(...)` were promoted to the `apply_patch` UI label, but
+  completion-mode selection still checked the raw payload name. A
+  `custom_tool_call_output` could remove the in-flight call before
+  `patch_apply_end` reported the authoritative patch success or failure.
+- **Fix:** Selected `CompletionMode::PatchApplyEnd` from the resolved semantic
+  tool name so both direct and code-mode-promoted `apply_patch` calls wait for
+  `patch_apply_end`. Added a regression test proving the promoted call remains
+  pending through generic output and emits failed when `patch_apply_end` fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
