@@ -28,6 +28,8 @@ describe('OpenCode tool-call profile', () => {
   test.each([
     ['bash', 'bash', 'BASH'],
     ['read', 'read', 'READ'],
+    ['glob', 'glob', 'GLOB'],
+    ['grep', 'grep', 'GREP'],
     ['edit', 'edit', 'EDIT'],
     ['write', 'write', 'WRITE'],
     ['apply_patch', 'edit', 'PATCH'],
