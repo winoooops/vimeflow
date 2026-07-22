@@ -90,10 +90,36 @@ fn decode_javascript_string(literal: &str) -> Option<String> {
     }
     let inner = &literal[1..literal.len() - 1];
     match quote {
-        b'\'' => Some(inner.replace("\\'", "'").replace("\\\\", "\\")),
-        b'`' if !inner.contains("${") => Some(inner.replace("\\`", "`").replace("\\\\", "\\")),
+        b'\'' => decode_javascript_escaped_string(inner, b'\''),
+        b'`' if !inner.contains("${") => decode_javascript_escaped_string(inner, b'`'),
         _ => None,
     }
+}
+
+fn decode_javascript_escaped_string(inner: &str, quote: u8) -> Option<String> {
+    let quote = char::from(quote);
+    let mut output = String::new();
+    let mut chars = inner.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+
+        let escaped = chars.next()?;
+        match escaped {
+            ch if ch == quote => output.push(ch),
+            '\\' => output.push('\\'),
+            'n' => output.push('\n'),
+            'r' => output.push('\r'),
+            't' => output.push('\t'),
+            '0' => output.push('\0'),
+            other => output.push(other),
+        }
+    }
+
+    Some(output)
 }
 
 enum JavascriptToken<'a> {
@@ -196,6 +222,52 @@ fn tokenize_javascript(input: &str) -> Vec<JavascriptToken<'_>> {
     tokens
 }
 
+fn single_code_mode_tool(input: &str) -> Option<String> {
+    let tokens = tokenize_javascript(input);
+    let mut tool = None;
+
+    for index in 0..tokens.len() {
+        let is_tool_call = identifier_at(&tokens, index) == Some("tools")
+            && is_punctuation(&tokens, index + 1, b'.')
+            && identifier_at(&tokens, index + 2).is_some()
+            && is_punctuation(&tokens, index + 3, b'(');
+        if !is_tool_call {
+            continue;
+        }
+
+        let candidate = identifier_at(&tokens, index + 2)?;
+        match tool {
+            Some(current) if current != candidate => return None,
+            Some(_) => {}
+            None => tool = Some(candidate),
+        }
+    }
+
+    tool.map(str::to_string)
+}
+
+fn tool_call_name(payload: &CodexPayloadDto) -> String {
+    let name = payload.name.as_deref().unwrap_or("unknown");
+    if name == "exec" {
+        if let Some(tool) = payload.input.as_deref().and_then(single_code_mode_tool) {
+            return tool;
+        }
+    }
+
+    match payload
+        .namespace
+        .as_deref()
+        .filter(|namespace| !namespace.is_empty())
+    {
+        Some(namespace) => format!(
+            "{}__{}",
+            namespace.trim_end_matches('_'),
+            name.trim_start_matches('_')
+        ),
+        None => name.to_string(),
+    }
+}
+
 fn identifier_at<'a>(tokens: &[JavascriptToken<'a>], index: usize) -> Option<&'a str> {
     match tokens.get(index) {
         Some(JavascriptToken::Identifier(identifier)) => Some(*identifier),
@@ -224,33 +296,40 @@ fn find_object_end(tokens: &[JavascriptToken<'_>], opening: usize) -> Option<usi
     None
 }
 
-fn extract_object_workdir(
+fn property_name_matches(token: &JavascriptToken<'_>, property_names: &[&str]) -> bool {
+    match token {
+        JavascriptToken::Identifier(name) => property_names.contains(name),
+        JavascriptToken::String(key, _) => decode_javascript_string(key)
+            .as_deref()
+            .is_some_and(|name| property_names.contains(&name)),
+        JavascriptToken::Punctuation(_) => false,
+    }
+}
+
+fn extract_object_string_property(
     tokens: &[JavascriptToken<'_>],
     opening: usize,
     closing: usize,
     bindings: &HashMap<&str, String>,
+    property_names: &[&str],
 ) -> Option<String> {
     let mut stack = Vec::new();
-    let mut workdir = None;
+    let mut value = None;
 
     for index in opening + 1..closing {
         if stack.is_empty() {
             let is_property_key = index == opening + 1 || is_punctuation(tokens, index - 1, b',');
-            let is_workdir_key = is_property_key
-                && match tokens.get(index) {
-                    Some(JavascriptToken::Identifier("workdir")) => true,
-                    Some(JavascriptToken::String(key, _)) => {
-                        decode_javascript_string(key).as_deref() == Some("workdir")
-                    }
-                    _ => false,
-                };
-            if is_workdir_key {
+            let is_target_key = is_property_key
+                && tokens
+                    .get(index)
+                    .is_some_and(|token| property_name_matches(token, property_names));
+            if is_target_key {
                 if is_punctuation(tokens, index + 1, b':') {
                     let value_index = index + 2;
                     let value_is_complete =
                         value_index + 1 == closing || is_punctuation(tokens, value_index + 1, b',');
                     if value_is_complete {
-                        workdir = match tokens.get(value_index) {
+                        value = match tokens.get(value_index) {
                             Some(JavascriptToken::String(value, _)) => {
                                 decode_javascript_string(value)
                             }
@@ -261,7 +340,8 @@ fn extract_object_workdir(
                 } else if matches!(tokens.get(index), Some(JavascriptToken::Identifier(_)))
                     && (index + 1 == closing || is_punctuation(tokens, index + 1, b','))
                 {
-                    workdir = bindings.get("workdir").cloned();
+                    value =
+                        identifier_at(tokens, index).and_then(|name| bindings.get(name).cloned());
                 }
             }
         }
@@ -275,7 +355,45 @@ fn extract_object_workdir(
         }
     }
 
-    stack.is_empty().then_some(workdir).flatten()
+    stack.is_empty().then_some(value).flatten()
+}
+
+fn extract_object_workdir(
+    tokens: &[JavascriptToken<'_>],
+    opening: usize,
+    closing: usize,
+    bindings: &HashMap<&str, String>,
+) -> Option<String> {
+    extract_object_string_property(tokens, opening, closing, bindings, &["workdir"])
+}
+
+fn record_const_string_binding<'a>(
+    input: &str,
+    tokens: &[JavascriptToken<'a>],
+    index: usize,
+    bindings: &mut HashMap<&'a str, String>,
+) {
+    if identifier_at(tokens, index) != Some("const") {
+        return;
+    }
+
+    let (Some(name), Some(JavascriptToken::String(value, value_end))) =
+        (identifier_at(tokens, index + 1), tokens.get(index + 3))
+    else {
+        return;
+    };
+
+    let complete = is_punctuation(tokens, index + 2, b'=')
+        && (index + 4 == tokens.len()
+            || is_punctuation(tokens, index + 4, b';')
+            || is_punctuation(tokens, index + 4, b',')
+            || (identifier_at(tokens, index + 4).is_some()
+                && has_javascript_line_terminator(input, *value_end)));
+    if complete {
+        if let Some(value) = decode_javascript_string(value) {
+            bindings.insert(name, value);
+        }
+    }
 }
 
 fn extract_custom_exec_workdir(input: &str) -> Option<String> {
@@ -287,23 +405,7 @@ fn extract_custom_exec_workdir(input: &str) -> Option<String> {
     let mut index = 0;
 
     while index < tokens.len() {
-        if identifier_at(&tokens, index) == Some("const") {
-            if let (Some(name), Some(JavascriptToken::String(value, value_end))) =
-                (identifier_at(&tokens, index + 1), tokens.get(index + 3))
-            {
-                let complete = is_punctuation(&tokens, index + 2, b'=')
-                    && (index + 4 == tokens.len()
-                        || is_punctuation(&tokens, index + 4, b';')
-                        || is_punctuation(&tokens, index + 4, b',')
-                        || (identifier_at(&tokens, index + 4).is_some()
-                            && has_javascript_line_terminator(input, *value_end)));
-                if complete {
-                    if let Some(value) = decode_javascript_string(value) {
-                        bindings.insert(name, value);
-                    }
-                }
-            }
-        }
+        record_const_string_binding(input, &tokens, index, &mut bindings);
 
         let is_exec_call = identifier_at(&tokens, index) == Some("tools")
             && is_punctuation(&tokens, index + 1, b'.')
@@ -326,6 +428,71 @@ fn extract_custom_exec_workdir(input: &str) -> Option<String> {
     }
 
     last_workdir
+}
+
+fn extract_custom_exec_command_args(input: &str) -> Option<String> {
+    let tokens = tokenize_javascript(input);
+    let mut bindings = HashMap::new();
+    let mut command = None;
+    let mut index = 0;
+
+    while index < tokens.len() {
+        record_const_string_binding(input, &tokens, index, &mut bindings);
+
+        let is_exec_call = identifier_at(&tokens, index) == Some("tools")
+            && is_punctuation(&tokens, index + 1, b'.')
+            && identifier_at(&tokens, index + 2) == Some("exec_command")
+            && is_punctuation(&tokens, index + 3, b'(')
+            && is_punctuation(&tokens, index + 4, b'{');
+        if is_exec_call {
+            let opening = index + 4;
+            if let Some(closing) = find_object_end(&tokens, opening) {
+                if let Some(candidate) =
+                    extract_object_string_property(
+                        &tokens,
+                        opening,
+                        closing,
+                        &bindings,
+                        &["cmd", "command"],
+                    )
+                    .filter(|candidate| !candidate.is_empty())
+                {
+                    command = Some(candidate);
+                }
+                index = closing;
+            }
+        }
+        index += 1;
+    }
+
+    command
+}
+
+fn extract_custom_apply_patch_input(input: &str) -> Option<String> {
+    let tokens = tokenize_javascript(input);
+    let mut bindings = HashMap::new();
+    let mut patch = None;
+    let mut index = 0;
+
+    while index < tokens.len() {
+        record_const_string_binding(input, &tokens, index, &mut bindings);
+
+        let is_patch_call = identifier_at(&tokens, index) == Some("tools")
+            && is_punctuation(&tokens, index + 1, b'.')
+            && identifier_at(&tokens, index + 2) == Some("apply_patch")
+            && is_punctuation(&tokens, index + 3, b'(');
+        if is_patch_call {
+            patch = match tokens.get(index + 4) {
+                Some(JavascriptToken::String(value, _)) => decode_javascript_string(value),
+                Some(JavascriptToken::Identifier(name)) => bindings.get(name).cloned(),
+                _ => None,
+            }
+            .filter(|candidate| !candidate.is_empty());
+        }
+        index += 1;
+    }
+
+    patch
 }
 
 /// Pull the mid-session workdir off either Codex execution-call schema.
@@ -1003,7 +1170,7 @@ fn start_function_call(
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
-    let tool = payload.name.as_deref().unwrap_or("unknown").to_string();
+    let tool = tool_call_name(payload);
     let args = summarize_function_call_args(payload.arguments.as_deref());
     let cmd = function_call_cmd(payload.arguments.as_deref());
     let test_match = cmd
@@ -1058,9 +1225,16 @@ fn start_custom_tool_call(
     let Some(call_id) = payload.call_id.as_deref() else {
         return;
     };
-    let tool = payload.name.as_deref().unwrap_or("unknown").to_string();
-    let args = summarize_custom_tool_input(payload.input.as_deref());
-    let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
+    let tool = tool_call_name(payload);
+    let args = summarize_custom_tool_args(payload, &tool);
+    let is_test_file = custom_tool_is_test_file(payload, &tool);
+    let completion_mode = if tool == "apply_patch" {
+        CompletionMode::PatchApplyEnd
+    } else if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
+        CompletionMode::ExecCommandEnd
+    } else {
+        CompletionMode::Output
+    };
 
     in_flight.insert(
         call_id.to_string(),
@@ -1071,11 +1245,7 @@ fn start_custom_tool_call(
             args: args.clone(),
             is_test_file,
             test_match: None,
-            completion_mode: if tool == "apply_patch" {
-                CompletionMode::PatchApplyEnd
-            } else {
-                CompletionMode::Output
-            },
+            completion_mode,
         },
     );
 
@@ -1356,10 +1526,34 @@ fn summarize_custom_tool_input(input: Option<&str>) -> String {
     truncate_string(input, MAX_ARGS_LEN)
 }
 
-fn custom_tool_is_test_file(input: Option<&str>) -> bool {
-    let input = input.unwrap_or_default();
+fn custom_tool_patch_paths(payload: &CodexPayloadDto, tool: &str) -> Vec<String> {
+    let input = payload.input.as_deref().unwrap_or_default();
+
+    if payload.name.as_deref() == Some("exec") && tool == "apply_patch" {
+        return extract_custom_apply_patch_input(input)
+            .map(|patch| extract_patch_paths(&patch))
+            .unwrap_or_default();
+    }
 
     extract_patch_paths(input)
+}
+
+fn summarize_custom_tool_args(payload: &CodexPayloadDto, tool: &str) -> String {
+    if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
+        if let Some(cmd) = payload.input.as_deref().and_then(extract_custom_exec_command_args) {
+            return truncate_string(&cmd, MAX_ARGS_LEN);
+        }
+    }
+
+    if let Some(first_path) = custom_tool_patch_paths(payload, tool).into_iter().next() {
+        return truncate_string(&first_path, MAX_ARGS_LEN);
+    }
+
+    summarize_custom_tool_input(payload.input.as_deref())
+}
+
+fn custom_tool_is_test_file(payload: &CodexPayloadDto, tool: &str) -> bool {
+    custom_tool_patch_paths(payload, tool)
         .into_iter()
         .any(|path| is_test_file(&path))
 }
@@ -1614,6 +1808,48 @@ mod tests {
         assert_eq!(sink.count("agent-tool-call"), 2);
         // Still exactly one summary (boundary is one-shot).
         assert_eq!(sink.count("agent-replay-summary"), 1);
+    }
+
+    #[test]
+    fn codex_live_emits_code_mode_and_namespaced_tool_names() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        decoder.on_caught_up();
+
+        decoder.decode_line(
+            &json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "c1",
+                    "input": "const result = await tools.exec_command({ cmd: 'git status' })"
+                }
+            })
+            .to_string(),
+        );
+        decoder.decode_line(
+            &json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "send_message",
+                    "namespace": "collaboration",
+                    "call_id": "c2",
+                    "arguments": "{}"
+                }
+            })
+            .to_string(),
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[0].1["tool"], "exec_command");
+        assert_eq!(tool_calls[1].1["tool"], "collaboration__send_message");
     }
 
     #[test]
@@ -1982,10 +2218,108 @@ mod tests {
     }
 
     #[test]
+    fn extract_custom_exec_command_args_reads_nested_cmd() {
+        assert_eq!(
+            extract_custom_exec_command_args(
+                "const result = await tools.exec_command({ cmd: 'git status' })"
+            ),
+            Some("git status".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_exec_command_args_reads_nested_command_alias() {
+        assert_eq!(
+            extract_custom_exec_command_args(
+                "const command = 'npm test'\nawait tools.exec_command({ command })"
+            ),
+            Some("npm test".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_decodes_string_argument() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "await tools.apply_patch(\"*** Begin Patch\\n*** Update File: src/App.test.tsx\\n*** End Patch\")"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/App.test.tsx\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_reads_const_alias() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "const patch = '*** Begin Patch\\n*** Update File: src/App.test.tsx\\n*** End Patch'\ntext(await tools.apply_patch(patch))"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/App.test.tsx\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_preserves_non_ascii_paths() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "const patch = '*** Begin Patch\\n*** Update File: src/é.test.ts\\n*** End Patch'\nawait tools.apply_patch(patch)"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/é.test.ts\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
     fn custom_tool_output_failed_reads_metadata_exit_code() {
         assert!(custom_tool_output_failed(Some(
             "{\"output\":\"nope\",\"metadata\":{\"exit_code\":1}}"
         )));
+    }
+
+    #[test]
+    fn tool_call_name_preserves_direct_namespace() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "function_call",
+            "name": "send_message",
+            "namespace": "collaboration"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "collaboration__send_message");
+    }
+
+    #[test]
+    fn tool_call_name_uses_single_code_mode_nested_tool() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "const first = await tools.exec_command({ cmd: 'pwd' })\nconst second = await tools.exec_command({ cmd: 'git status' })"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "exec_command");
+    }
+
+    #[test]
+    fn tool_call_name_keeps_mixed_code_mode_cells_as_exec() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "const result = await tools.exec_command({ cmd: 'pwd' })\ntext(await tools.mcp__linear__save_issue({ id: 'VIM-365' }))"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "exec");
+    }
+
+    #[test]
+    fn tool_call_name_ignores_code_and_comments_that_mention_tools() {
+        let payload: CodexPayloadDto = serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "name": "exec",
+            "input": "// tools.apply_patch('not a call')\nconst example = \"tools.update_plan({})\"\nawait tools.web__run({ search_query: [{ q: 'Codex' }] })"
+        }))
+        .unwrap();
+
+        assert_eq!(tool_call_name(&payload), "web__run");
     }
 
     // ---- extract_session_cwd unit tests (v2: session_meta ONLY) ----
@@ -2930,6 +3264,86 @@ mod tests {
     }
 
     #[test]
+    fn process_line_code_mode_exec_waits_for_exec_command_end() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_cmd","input":"const result = await tools.exec_command({ cmd: 'false' })"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_cmd","output":"Chunk ID: abc\nWall time: 0.0100 seconds\nProcess exited with code 1\nOutput:\n"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        assert!(
+            in_flight.contains_key("call_cmd"),
+            "custom_tool_call_output must not finalize promoted code-mode exec_command"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"exec_command_end","call_id":"call_cmd","command":["/bin/bash","-lc","false"],"aggregated_output":"","exit_code":1,"duration":{"secs":0,"nanos":10000000},"status":"completed"}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[0].1["tool"], "exec_command");
+        assert_eq!(tool_calls[0].1["args"], "false");
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_cmd");
+        assert_eq!(tool_calls[1].1["tool"], "exec_command");
+        assert_eq!(tool_calls[1].1["args"], "false");
+        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
     fn process_line_function_call_output_without_exit_code_keeps_exec_command_pending() {
         let sink = Arc::new(FakeEventSink::new());
         let events: Arc<dyn EventSink> = sink.clone();
@@ -3088,6 +3502,98 @@ mod tests {
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["toolUseId"], "call_patch");
         assert_eq!(tool_calls[1].1["status"], "failed");
+        assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn process_line_code_mode_apply_patch_waits_for_patch_apply_end() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut emitter = TestRunEmitter::new(events.clone());
+        let mut in_flight = empty_in_flight();
+        let mut num_turns = 0u32;
+        let mut last_cwd: Option<String> = None;
+
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_patch","input":"await tools.apply_patch(\"*** Begin Patch\\n*** Update File: src/App.test.tsx\\n*** End Patch\")"}}"#;
+        process_line(
+            start,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let output = r#"{"timestamp":"2026-06-15T10:00:02Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_patch","output":"done"}}"#;
+        process_line(
+            output,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let tool_calls_after_output: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(
+            tool_calls_after_output.len(),
+            1,
+            "custom_tool_call_output must not finalize code-mode apply_patch"
+        );
+        assert_eq!(tool_calls_after_output[0].1["tool"], "apply_patch");
+        assert_eq!(tool_calls_after_output[0].1["args"], "src/App.test.tsx");
+        assert_eq!(tool_calls_after_output[0].1["isTestFile"], true);
+        assert!(
+            in_flight.contains_key("call_patch"),
+            "code-mode apply_patch must stay in-flight until patch_apply_end"
+        );
+
+        let end = r#"{"timestamp":"2026-06-15T10:00:03Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call_patch","success":false}}"#;
+        process_line(
+            end,
+            "sid",
+            None,
+            &events,
+            &mut emitter,
+            &mut in_flight,
+            &mut num_turns,
+            &mut last_cwd,
+            &mut String::new(),
+            &mut None,
+            &mut None,
+            &mut ReplayActivity::default(),
+            true,
+        );
+
+        let tool_calls: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(n, _)| n == "agent-tool-call")
+            .collect();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(tool_calls[1].1["toolUseId"], "call_patch");
+        assert_eq!(tool_calls[1].1["tool"], "apply_patch");
+        assert_eq!(tool_calls[1].1["args"], "src/App.test.tsx");
+        assert_eq!(tool_calls[1].1["status"], "failed");
+        assert_eq!(tool_calls[1].1["isTestFile"], true);
         assert!(in_flight.is_empty());
     }
 
