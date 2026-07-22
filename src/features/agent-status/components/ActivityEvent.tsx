@@ -16,6 +16,7 @@ import {
   computeActivityAgo,
 } from '@/components/NativeOverlayActivityCard'
 import { Tooltip } from '@/components/Tooltip'
+import { TERMINAL_CONTAINER_ID } from '@/features/workspace/containerIds'
 import { useNativeActivityPopoverSource } from '../hooks/useNativeActivityPopover'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
@@ -68,6 +69,22 @@ interface ActivityDetailsTooltipProps {
   children: ReactElement
 }
 
+const isEditorOrTerminalTarget = (element: Element): boolean =>
+  element.closest('.cm-editor') !== null ||
+  element.closest(`[data-container-id="${TERMINAL_CONTAINER_ID}"]`) !== null
+
+const isGuardedShortcutSurface = (event: KeyboardEvent): boolean => {
+  const target = event.target instanceof Element ? event.target : null
+
+  const activeElement =
+    document.activeElement instanceof Element ? document.activeElement : null
+
+  return (
+    (target !== null && isEditorOrTerminalTarget(target)) ||
+    (activeElement !== null && isEditorOrTerminalTarget(activeElement))
+  )
+}
+
 export const ActivityDetailsTooltip = ({
   event,
   now,
@@ -100,7 +117,11 @@ export const ActivityDetailsTooltip = ({
     }
 
     const handleKeyDown = (keyboardEvent: KeyboardEvent): void => {
-      if (keyboardEvent.repeat || !matchesShowDiffShortcut(keyboardEvent)) {
+      if (
+        keyboardEvent.repeat ||
+        isGuardedShortcutSurface(keyboardEvent) ||
+        !matchesShowDiffShortcut(keyboardEvent)
+      ) {
         return
       }
 

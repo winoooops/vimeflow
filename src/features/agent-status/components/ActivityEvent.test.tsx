@@ -1,6 +1,7 @@
 import { afterEach, describe, test, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { TERMINAL_CONTAINER_ID } from '@/features/workspace/containerIds'
 import { ActivityEvent } from './ActivityEvent'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
@@ -979,6 +980,89 @@ describe('ActivityEvent — structured tooltip', () => {
 
     expect(matchesShowDiffShortcut).toHaveBeenCalledOnce()
     expect(onShowDiff).toHaveBeenCalledTimes(2)
+  })
+
+  test('leaves the tooltip shortcut to CodeMirror when editor focus is active', async () => {
+    const onShowDiff = vi.fn()
+
+    const matchesShowDiffShortcut = vi.fn(
+      (event: KeyboardEvent): boolean => event.metaKey && event.code === 'KeyG'
+    )
+    const editor = document.createElement('div')
+    editor.className = 'cm-editor'
+    editor.tabIndex = -1
+    document.body.appendChild(editor)
+
+    try {
+      render(
+        <ActivityEvent
+          event={toolEvent({
+            kind: 'edit',
+            tool: 'Edit',
+            body: 'src/components/Button.tsx',
+            status: 'done',
+          })}
+          now={now}
+          onShowDiff={onShowDiff}
+          showDiffShortcut="⌘G"
+          showDiffAriaShortcut="Meta+g"
+          matchesShowDiffShortcut={matchesShowDiffShortcut}
+        />
+      )
+
+      editor.focus()
+      fireEvent.mouseEnter(screen.getByRole('article', { name: 'EDIT' }))
+      await screen.findByRole('dialog', { name: 'EDIT trace details' })
+
+      fireEvent.keyDown(document, { key: 'g', code: 'KeyG', metaKey: true })
+
+      expect(matchesShowDiffShortcut).not.toHaveBeenCalled()
+      expect(onShowDiff).not.toHaveBeenCalled()
+    } finally {
+      document.body.removeChild(editor)
+    }
+  })
+
+  test('leaves the tooltip shortcut to the terminal when terminal focus is active', async () => {
+    const onShowDiff = vi.fn()
+
+    const matchesShowDiffShortcut = vi.fn(
+      (event: KeyboardEvent): boolean => event.ctrlKey && event.code === 'KeyG'
+    )
+    const terminalZone = document.createElement('div')
+    terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
+    const xtermTextarea = document.createElement('textarea')
+    terminalZone.appendChild(xtermTextarea)
+    document.body.appendChild(terminalZone)
+
+    try {
+      render(
+        <ActivityEvent
+          event={toolEvent({
+            kind: 'edit',
+            tool: 'Edit',
+            body: 'src/components/Button.tsx',
+            status: 'done',
+          })}
+          now={now}
+          onShowDiff={onShowDiff}
+          showDiffShortcut="Ctrl+G"
+          showDiffAriaShortcut="Control+g"
+          matchesShowDiffShortcut={matchesShowDiffShortcut}
+        />
+      )
+
+      xtermTextarea.focus()
+      fireEvent.mouseEnter(screen.getByRole('article', { name: 'EDIT' }))
+      await screen.findByRole('dialog', { name: 'EDIT trace details' })
+
+      fireEvent.keyDown(document, { key: 'g', code: 'KeyG', ctrlKey: true })
+
+      expect(matchesShowDiffShortcut).not.toHaveBeenCalled()
+      expect(onShowDiff).not.toHaveBeenCalled()
+    } finally {
+      document.body.removeChild(terminalZone)
+    }
   })
 
   test('user card renders body as plain text', async () => {
