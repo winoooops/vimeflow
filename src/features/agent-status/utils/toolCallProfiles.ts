@@ -3,6 +3,7 @@ import type { ToolActivityEventKind } from '../types/activityEvent'
 import { CLAUDE_CODE_TOOL_CALL_PROFILE } from './claudeCodeToolCallProfile'
 import { CODEX_TOOL_CALL_PROFILE } from './codexToolCallProfile'
 import { KIMI_CODE_TOOL_CALL_PROFILE } from './kimiCodeToolCallProfile'
+import { OPEN_CODE_TOOL_CALL_PROFILE } from './openCodeToolCallProfile'
 
 export interface ToolCallPresentation {
   readonly kind: ToolActivityEventKind
@@ -42,6 +43,7 @@ const AGENT_TOOL_CALL_PROFILES: Partial<
   'claude-code': CLAUDE_CODE_TOOL_CALL_PROFILE,
   codex: CODEX_TOOL_CALL_PROFILE,
   kimi: KIMI_CODE_TOOL_CALL_PROFILE,
+  opencode: OPEN_CODE_TOOL_CALL_PROFILE,
 }
 
 const formatToolSegment = (segment: string): string =>
