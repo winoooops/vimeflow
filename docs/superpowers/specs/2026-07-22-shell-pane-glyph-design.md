@@ -29,9 +29,18 @@ knocks the prompt shapes out of the tile:
 
 Pure fill, no strokes, no hardcoded colors. The tile inherits the shell accent
 (`--color-agent-shell-accent`) from the chip's `color`, and the chip's `accentDim` tint
-shows through the knocked-out prompt. The path data is copied from the approved mockup
-(`.superpowers/brainstorm/96809-1784733564/content/shell-glyph.html`, `#sh-c`) and may be
-fine-tuned during implementation; visual proportions are a dial, not a contract.
+shows through the knocked-out prompt.
+
+The path data, copied from the approved mockup (variant `#sh-c`):
+
+```
+M6 4.2h12a3.4 3.4 0 013.4 3.4v8.8a3.4 3.4 0 01-3.4 3.4H6a3.4 3.4 0 01-3.4-3.4V7.6A3.4 3.4 0 016 4.2z
+M6.9 8.7h1.9l4.1 3.3-4.1 3.3H6.9l4.1-3.3z
+M13.5 14.3h4.1v1.7h-4.1z
+```
+
+(Sub-paths joined into one `d` attribute.) The proportions may be fine-tuned during
+implementation; visual proportions are a dial, not a contract.
 
 ## 3. Registry wiring
 
