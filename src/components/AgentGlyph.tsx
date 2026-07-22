@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
-import type { Agent } from '@/agents/registry'
+import type { AgentDef } from '@/agents/registry'
 
 interface AgentGlyphProps {
-  agent: Agent
+  agent: AgentDef
   size?: number
 }
 
