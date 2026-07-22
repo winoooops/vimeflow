@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { KEYMAP_CAPTURE_TARGET_ATTRIBUTE } from '../../keymap/capture'
 import type { BackendApi } from '../../../lib/backend'
-import { useSettingsDialog } from './useSettingsDialog'
+import { requestSettingsOpen, useSettingsDialog } from './useSettingsDialog'
+import { SETTINGS_TARGET_IDS } from '../sections'
 
 const dispatchFromRecorder = (init: KeyboardEventInit): void => {
   const recorder = document.createElement('button')
@@ -43,42 +44,42 @@ describe('useSettingsDialog', () => {
     expect(result.current.isOpen).toBe(true)
   })
 
-  test('open with a section sets targetSectionId', () => {
+  test('open with a target sets targetId', () => {
     const { result } = renderHook(() => useSettingsDialog())
 
-    act(() => result.current.open('keymap'))
+    act(() => result.current.open('keymap-preset'))
 
     expect(result.current.isOpen).toBe(true)
-    expect(result.current.targetSectionId).toBe('keymap')
+    expect(result.current.targetId).toBe('keymap-preset')
   })
 
-  test('open without a section leaves targetSectionId null', () => {
+  test('open without a target leaves targetId null', () => {
     const { result } = renderHook(() => useSettingsDialog())
 
     act(() => result.current.open())
 
     expect(result.current.isOpen).toBe(true)
-    expect(result.current.targetSectionId).toBeNull()
+    expect(result.current.targetId).toBeNull()
   })
 
-  test('close resets targetSectionId', () => {
+  test('close preserves targetId', () => {
     const { result } = renderHook(() => useSettingsDialog())
 
-    act(() => result.current.open('appearance'))
+    act(() => result.current.open('appearance-color-scheme'))
     act(() => result.current.close())
 
     expect(result.current.isOpen).toBe(false)
-    expect(result.current.targetSectionId).toBeNull()
+    expect(result.current.targetId).toBe('appearance-color-scheme')
   })
 
-  test('toggle resets targetSectionId', () => {
+  test('toggle resets targetId when opening', () => {
     const { result } = renderHook(() => useSettingsDialog())
 
-    act(() => result.current.open('general'))
+    act(() => result.current.open('general-close-with-no-tabs'))
     act(() => result.current.toggle())
 
     expect(result.current.isOpen).toBe(false)
-    expect(result.current.targetSectionId).toBeNull()
+    expect(result.current.targetId).toBe('general-close-with-no-tabs')
   })
 
   test('close sets isOpen to false', () => {
@@ -161,10 +162,27 @@ describe('useSettingsDialog', () => {
     } as unknown as BackendApi
     const { result } = renderHook(() => useSettingsDialog())
 
-    act(() => result.current.open())
+    act(() => result.current.open(SETTINGS_TARGET_IDS.versionDiffViewStyle))
 
     expect(openWindow).toHaveBeenCalledTimes(1)
+    expect(openWindow).toHaveBeenCalledWith(
+      SETTINGS_TARGET_IDS.versionDiffViewStyle
+    )
     expect(result.current.isOpen).toBe(false)
+  })
+
+  test('forwards targeted settings requests to the active opener', () => {
+    const openWindow = vi.fn().mockResolvedValue(undefined)
+    window.vimeflow = {
+      settings: { openWindow },
+    } as unknown as BackendApi
+    renderHook(() => useSettingsDialog())
+
+    act(() => requestSettingsOpen(SETTINGS_TARGET_IDS.versionDiffViewStyle))
+
+    expect(openWindow).toHaveBeenCalledWith(
+      SETTINGS_TARGET_IDS.versionDiffViewStyle
+    )
   })
 
   test('open keeps the renderer dialog in E2E when the native bridge is present', () => {

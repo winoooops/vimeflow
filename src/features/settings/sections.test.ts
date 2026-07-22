@@ -49,6 +49,7 @@ describe('SETTINGS_SECTIONS', () => {
       'keymap',
       'agents',
       'terminal',
+      'version',
     ])
 
     expect(AVAILABLE_SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
@@ -57,6 +58,7 @@ describe('SETTINGS_SECTIONS', () => {
       'keymap',
       'agents',
       'terminal',
+      'version',
     ])
   })
 })
@@ -95,6 +97,11 @@ describe('SETTINGS_TARGETS', () => {
           id: SETTINGS_TARGET_IDS.appearanceSessionIsland,
           section: 'appearance',
           label: 'Session Island',
+        }),
+        expect.objectContaining({
+          id: SETTINGS_TARGET_IDS.versionDiffViewStyle,
+          section: 'version',
+          label: 'Diff Layout',
         }),
       ])
     )
@@ -140,6 +147,12 @@ describe('SETTINGS_SUBSECTIONS', () => {
           label: 'Typography',
           targetId: SETTINGS_TARGET_IDS.terminalFontFamily,
           targetIds: [SETTINGS_TARGET_IDS.terminalFontFamily],
+        }),
+        expect.objectContaining({
+          id: 'version-hunk-appearance',
+          section: 'version',
+          label: 'Hunk Appearance',
+          targetId: SETTINGS_TARGET_IDS.versionDiffViewStyle,
         }),
       ])
     )

@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron'
 import { SettingsWindowController, settingsWindowUrl } from './settings-window'
+import { SETTINGS_NAVIGATE_TARGET } from './ipc-channels'
 
 type WindowEventName = 'closed' | 'ready-to-show'
 
@@ -9,6 +10,7 @@ class FakeSettingsWindow {
     getURL: vi.fn(() => 'vimeflow://app/index.html?window=settings'),
     on: vi.fn(),
     setWindowOpenHandler: vi.fn(),
+    send: vi.fn(),
   }
 
   readonly focus = vi.fn()
@@ -91,6 +93,12 @@ describe('settingsWindowUrl', () => {
       'file:///app/dist/index.html?window=settings'
     )
   })
+
+  test('includes a requested settings target', () => {
+    expect(settingsWindowUrl(location, 'version-diff-view-style')).toBe(
+      'file:///app/dist/index.html?window=settings&settingsTarget=version-diff-view-style'
+    )
+  })
 })
 
 describe('SettingsWindowController', () => {
@@ -166,6 +174,60 @@ describe('SettingsWindowController', () => {
     expect(windows[0].restore).toHaveBeenCalledTimes(1)
     expect(windows[0].show).toHaveBeenCalledTimes(2)
     expect(windows[0].focus).toHaveBeenCalledTimes(1)
+  })
+
+  test('navigates an existing settings window to the requested target', () => {
+    const windows: FakeSettingsWindow[] = []
+
+    const controller = new SettingsWindowController({
+      createWindow: (options): BrowserWindow => {
+        const win = new FakeSettingsWindow(options)
+        windows.push(win)
+
+        return win as unknown as BrowserWindow
+      },
+      location,
+      preloadPath: '/dist-electron/preload.mjs',
+      openExternalUrl: vi.fn(),
+    })
+
+    controller.open()
+    windows[0].emit('ready-to-show')
+    controller.open('version-diff-view-style')
+
+    expect(windows[0].webContents.send).toHaveBeenCalledWith(
+      SETTINGS_NAVIGATE_TARGET,
+      'version-diff-view-style'
+    )
+  })
+
+  test('buffers target navigation until the settings window is ready', () => {
+    const windows: FakeSettingsWindow[] = []
+
+    const controller = new SettingsWindowController({
+      createWindow: (options): BrowserWindow => {
+        const win = new FakeSettingsWindow(options)
+        windows.push(win)
+
+        return win as unknown as BrowserWindow
+      },
+      location,
+      preloadPath: '/dist-electron/preload.mjs',
+      openExternalUrl: vi.fn(),
+    })
+
+    controller.open()
+    controller.open('version-diff-view-style')
+
+    expect(windows[0].webContents.send).not.toHaveBeenCalled()
+
+    windows[0].emit('ready-to-show')
+
+    expect(windows[0].webContents.send).toHaveBeenCalledOnce()
+    expect(windows[0].webContents.send).toHaveBeenCalledWith(
+      SETTINGS_NAVIGATE_TARGET,
+      'version-diff-view-style'
+    )
   })
 
   test('does not show an existing settings window before it is ready', () => {

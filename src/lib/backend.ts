@@ -23,7 +23,8 @@ export interface SettingsBridge {
   save: (settings: AppSettings) => Promise<void>
   listSystemFonts?: () => Promise<SystemFont[]>
   openFile: () => Promise<void>
-  openWindow?: () => Promise<void>
+  openWindow?: (targetId?: string) => Promise<void>
+  onNavigateTarget?: (callback: (targetId: string) => void) => UnlistenFn
   syncSnapshot: (settings: AppSettings) => Promise<void>
   onDidChange?: (callback: (settings: AppSettings) => void) => UnlistenFn
 }

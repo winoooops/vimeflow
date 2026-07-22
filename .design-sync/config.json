@@ -1,0 +1,32 @@
+{
+  "projectId": "aee5efed-3941-4a76-8adb-5e31ba88da5f",
+  "shape": "package",
+  "pkg": "vibm",
+  "globalName": "Vimeflow",
+  "buildCmd": "npx vite build && cp dist/assets/index-*.css dist/assets/app-styles.css",
+  "entry": ".design-sync/entry.ts",
+  "srcDir": "src/components",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/assets/app-styles.css",
+  "guidelinesGlob": ["docs/design/UNIFIED.md", "docs/design/DESIGN.md"],
+  "componentSrcMap": {
+    "AgentGlyph": "src/components/AgentGlyph.tsx",
+    "Button": "src/components/Button.tsx",
+    "Chip": "src/components/Chip.tsx",
+    "Dialog": "src/components/Dialog.tsx",
+    "Dropdown": "src/components/Dropdown.tsx",
+    "GlassSurface": "src/components/GlassSurface.tsx",
+    "IconButton": "src/components/IconButton.tsx",
+    "Menu": "src/components/Menu.tsx",
+    "Popover": "src/components/Popover.tsx",
+    "ProgressBar": "src/components/ProgressBar.tsx",
+    "ResizeHandle": "src/components/ResizeHandle.tsx",
+    "SegmentedControl": "src/components/SegmentedControl.tsx",
+    "StatusBar": "src/components/StatusBar.tsx",
+    "Toggle": "src/components/Toggle.tsx",
+    "ToolbarButton": "src/components/ToolbarButton.tsx",
+    "Tooltip": "src/components/Tooltip.tsx",
+    "Sidebar": "src/components/sidebar/Sidebar.tsx",
+    "SidebarTabs": "src/components/sidebar/SidebarTabs.tsx"
+  }
+}

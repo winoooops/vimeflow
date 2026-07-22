@@ -1,11 +1,10 @@
 /**
- * Owns diff-toolbar settings and the Pierre render options derived from them.
+ * Maps persisted diff settings into Pierre render options.
  *
  * Panel should not need to know how toolbar controls map to Pierre's
  * worker pool or responsive width bands. This hook keeps those rules together:
- * it stores the controlled toolbar values, coerces split view when the pane is
- * too narrow, syncs pool-owned options before remounting Pierre, and exposes the
- * exact props needed by DiffChipToolbar and MultiFileDiff.
+ * it coerces split view when the pane is too narrow and syncs pool-owned
+ * options before remounting Pierre.
  */
 import {
   useCallback,
@@ -16,55 +15,30 @@ import {
   useState,
 } from 'react'
 import { useWorkerPool } from '@pierre/diffs/react'
-import type {
-  BaseDiffOptions,
-  DiffsThemeNames,
-  FileDiffOptions,
-} from '@pierre/diffs'
+import type { DiffsThemeNames, FileDiffOptions } from '@pierre/diffs'
 import { useTheme } from '../../../theme'
-import { pierreThemeForKind } from '../pierreTheme'
 import { enqueuePoolWrite } from '../services/workerPoolWrites'
-import {
-  DIFF_MIN_WIDTH_PX,
-  SPLIT_MIN_WIDTH_PX,
-  type DiffChipToolbarProps,
-} from '../components/toolbar'
+import { DIFF_MIN_WIDTH_PX, SPLIT_MIN_WIDTH_PX } from '../components/toolbar'
 import { type ReviewComment } from './useFeedbackBatch'
+import { useSettings } from '../../settings/hooks/useSettings'
+import {
+  resolveDiffIndicators,
+  resolveDiffLineDiffType,
+  resolveDiffOverflow,
+  resolveDiffStyle,
+  resolveDiffTheme,
+  type DiffLineDiffType,
+  type DiffStyle,
+} from '../diffViewSettings'
 
-export type DiffStyle = NonNullable<BaseDiffOptions['diffStyle']>
-type DiffIndicators = NonNullable<BaseDiffOptions['diffIndicators']>
-type Overflow = NonNullable<BaseDiffOptions['overflow']>
-type LineDiffType = NonNullable<BaseDiffOptions['lineDiffType']>
-
-export type DiffToolbarSettingsProps = Pick<
-  DiffChipToolbarProps,
-  | 'diffStyle'
-  | 'onDiffStyleChange'
-  | 'theme'
-  | 'onThemeChange'
-  | 'lineDiffType'
-  | 'onLineDiffTypeChange'
-  | 'diffIndicators'
-  | 'onDiffIndicatorsChange'
-  | 'overflow'
-  | 'onOverflowChange'
-  | 'disableLineNumbers'
-  | 'onDisableLineNumbersChange'
-  | 'disableBackground'
-  | 'onDisableBackgroundChange'
-  | 'disableFileHeader'
-  | 'onDisableFileHeaderChange'
-  | 'stickyHeader'
-  | 'onStickyHeaderChange'
->
+export type { DiffStyle } from '../diffViewSettings'
 
 interface PoolRenderOptions {
   theme: DiffsThemeNames
-  lineDiffType: LineDiffType
+  lineDiffType: DiffLineDiffType
 }
 
 export interface UseToolbarStateReturn {
-  toolbarSettingsProps: DiffToolbarSettingsProps
   multiFileDiffOptions: FileDiffOptions<ReviewComment>
   renderKey: string
   renderSyncError: string | null
@@ -75,30 +49,13 @@ export interface UseToolbarStateReturn {
 }
 
 export const useToolbarState = (): UseToolbarStateReturn => {
-  const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
-
+  const { settings, update } = useSettings()
   const workspaceTheme = useTheme()
-
-  const [theme, setTheme] = useState<DiffsThemeNames>(() =>
-    pierreThemeForKind(workspaceTheme.kind)
-  )
-
-  // Workspace theme switch resets the diff theme to the mapped default,
-  // overriding any session-level dropdown choice.
-  useEffect(() => {
-    setTheme(pierreThemeForKind(workspaceTheme.kind))
-  }, [workspaceTheme.kind])
-
-  const [lineDiffType, setLineDiffType] = useState<LineDiffType>('word')
-
-  const [diffIndicators, setDiffIndicators] =
-    useState<DiffIndicators>('classic')
-
-  const [overflowOpt, setOverflowOpt] = useState<Overflow>('scroll')
-  const [disableLineNumbers, setDisableLineNumbers] = useState(false)
-  const [disableBackground, setDisableBackground] = useState(false)
-  const [disableFileHeader, setDisableFileHeader] = useState(false)
-  const [stickyHeader, setStickyHeader] = useState(true)
+  const diffStyle = resolveDiffStyle(settings.diffViewStyle)
+  const theme = resolveDiffTheme(settings.diffTheme, workspaceTheme.kind)
+  const lineDiffType = resolveDiffLineDiffType(settings.diffLineDiffType)
+  const diffIndicators = resolveDiffIndicators(settings.diffIndicators)
+  const overflowOpt = resolveDiffOverflow(settings.diffOverflow)
 
   // Pool-owned render options are committed only after the worker pool accepts
   // them. Pierre reads theme and lineDiffType from the pool, not just from props.
@@ -208,55 +165,15 @@ export const useToolbarState = (): UseToolbarStateReturn => {
   const effectiveDiffStyle: DiffStyle = splitForced ? 'unified' : diffStyle
   const tooNarrow = hasMeasuredPane && paneWidth < DIFF_MIN_WIDTH_PX
 
-  const handleDiffStyleChange = useCallback(
-    (next: DiffStyle): void => {
-      if (splitForced && next === 'unified') {
-        return
-      }
-
-      setDiffStyle(next)
-    },
-    [splitForced]
-  )
-
   const toggleDiffStyle = useCallback((): void => {
-    handleDiffStyleChange(diffStyle === 'split' ? 'unified' : 'split')
-  }, [diffStyle, handleDiffStyleChange])
+    const next: DiffStyle = diffStyle === 'split' ? 'unified' : 'split'
 
-  const toolbarSettingsProps = useMemo<DiffToolbarSettingsProps>(
-    () => ({
-      diffStyle: effectiveDiffStyle,
-      onDiffStyleChange: handleDiffStyleChange,
-      theme,
-      onThemeChange: setTheme,
-      lineDiffType,
-      onLineDiffTypeChange: setLineDiffType,
-      diffIndicators,
-      onDiffIndicatorsChange: setDiffIndicators,
-      overflow: overflowOpt,
-      onOverflowChange: setOverflowOpt,
-      disableLineNumbers,
-      onDisableLineNumbersChange: setDisableLineNumbers,
-      disableBackground,
-      onDisableBackgroundChange: setDisableBackground,
-      disableFileHeader,
-      onDisableFileHeaderChange: setDisableFileHeader,
-      stickyHeader,
-      onStickyHeaderChange: setStickyHeader,
-    }),
-    [
-      effectiveDiffStyle,
-      handleDiffStyleChange,
-      theme,
-      lineDiffType,
-      diffIndicators,
-      overflowOpt,
-      disableLineNumbers,
-      disableBackground,
-      disableFileHeader,
-      stickyHeader,
-    ]
-  )
+    if (splitForced && next === 'unified') {
+      return
+    }
+
+    update({ diffViewStyle: next })
+  }, [diffStyle, splitForced, update])
 
   const multiFileDiffOptions = useMemo<FileDiffOptions<ReviewComment>>(
     () => ({
@@ -265,10 +182,10 @@ export const useToolbarState = (): UseToolbarStateReturn => {
       diffIndicators,
       lineDiffType: renderedLineDiffType,
       overflow: overflowOpt,
-      disableLineNumbers,
-      disableBackground,
-      disableFileHeader,
-      stickyHeader,
+      disableLineNumbers: !settings.diffShowLineNumbers,
+      disableBackground: !settings.diffBackgroundTint,
+      disableFileHeader: !settings.diffFileHeader,
+      stickyHeader: settings.diffStickyHeader,
       enableGutterUtility: true,
     }),
     [
@@ -277,15 +194,14 @@ export const useToolbarState = (): UseToolbarStateReturn => {
       diffIndicators,
       renderedLineDiffType,
       overflowOpt,
-      disableLineNumbers,
-      disableBackground,
-      disableFileHeader,
-      stickyHeader,
+      settings.diffShowLineNumbers,
+      settings.diffBackgroundTint,
+      settings.diffFileHeader,
+      settings.diffStickyHeader,
     ]
   )
 
   return {
-    toolbarSettingsProps,
     multiFileDiffOptions,
     renderKey: `${renderedTheme}:${renderedLineDiffType}`,
     renderSyncError,

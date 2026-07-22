@@ -2,13 +2,14 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import {
   act,
   fireEvent,
-  render,
+  render as testingLibraryRender,
   screen,
   waitFor,
   within,
+  type RenderResult,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement } from 'react'
+import { useCallback, useState, type ReactElement, type ReactNode } from 'react'
 import { Panel } from './Panel'
 import * as useGitStatusModule from './hooks/useGitStatus'
 import * as useFileDiffModule from './hooks/useFileDiff'
@@ -24,6 +25,7 @@ import {
 import type { GitService } from './services/gitService'
 import * as gitServiceModule from './services/gitService'
 import * as pierreAdapterModule from './services/pierreAdapter'
+import { __resetPoolWritesForTest } from './services/workerPoolWrites'
 import * as useFeedbackBatchModule from './hooks/useFeedbackBatch'
 import {
   type FeedbackDraftStore,
@@ -41,6 +43,39 @@ import {
 import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs'
 import { themeService } from '../../theme'
 import type { Keybindings } from '../keymap/useKeybindings'
+import {
+  SettingsContext,
+  type SettingsContextValue,
+} from '../settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '../settings/store/settingsDefaults'
+
+let updatePanelSettings: SettingsContextValue['update'] = (): void => undefined
+
+const PanelSettingsProvider = ({
+  children,
+}: {
+  children: ReactNode
+}): ReactElement => {
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
+
+  const update = useCallback(
+    (patch: Partial<typeof DEFAULT_SETTINGS>): void => {
+      setSettings((current) => ({ ...current, ...patch }))
+    },
+    []
+  )
+
+  updatePanelSettings = update
+
+  return (
+    <SettingsContext.Provider value={{ settings, saveError: null, update }}>
+      {children}
+    </SettingsContext.Provider>
+  )
+}
+
+const render = (ui: ReactElement): RenderResult =>
+  testingLibraryRender(ui, { wrapper: PanelSettingsProvider })
 
 const codeForKey = (key: string): string => {
   if (/^[a-z]$/i.test(key)) {
@@ -280,6 +315,7 @@ const lastMultiFileDiffOptions = (): FileDiffOptions<ReviewComment> => {
 describe('Panel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    __resetPoolWritesForTest()
     multiFileDiffOptionsSeen.length = 0
     mockedGutterHoverLine = 1
     window.localStorage.clear()
@@ -1034,8 +1070,6 @@ describe('Panel', () => {
   })
 
   test('changing the syntax theme keeps keyboard focus on the diff (VIM-276)', async (): Promise<void> => {
-    const user = userEvent.setup()
-
     vi.spyOn(useGitStatusModule, 'useGitStatus').mockReturnValue({
       files: [{ path: 'src/App.tsx', status: 'modified', staged: false }],
       filesCwd: '.',
@@ -1067,11 +1101,9 @@ describe('Panel', () => {
     act(() => diffRoot.focus())
     expect(diffRoot).toHaveFocus()
 
-    // Switch the syntax theme via the toolbar dropdown; the pierre surface
-    // re-keys and remounts, which used to strand focus off the diff.
-    await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
-    const menu = await screen.findByRole('menu')
-    await user.click(within(menu).getByRole('menuitem', { name: /dracula/i }))
+    // Switch the persisted syntax theme; the Pierre surface re-keys and
+    // remounts, which used to strand focus off the diff.
+    act(() => updatePanelSettings({ diffTheme: 'dracula' }))
 
     await waitFor(() => expect(diffRoot).toHaveFocus())
   })
@@ -1535,7 +1567,7 @@ describe('Panel', () => {
       expect(diff.getAttribute('data-diff-style')).toBe('unified')
     })
 
-    test('keeps split preference when clicking forced unified below split width', (): void => {
+    test('keeps split preference when toggling forced unified below split width', (): void => {
       render(<Panel cwd="/repo" />)
 
       setPaneWidth(SPLIT_MIN_WIDTH_PX - 1)
@@ -1545,7 +1577,7 @@ describe('Panel', () => {
         'unified'
       )
 
-      fireEvent.click(screen.getByRole('button', { name: 'unified' }))
+      keyDown(screen.getByTestId('diff-populated-state'), { key: 't' })
       setPaneWidth(SPLIT_MIN_WIDTH_PX + 1)
 
       expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
@@ -2170,7 +2202,6 @@ describe('Panel', () => {
     })
 
     test('remounts MultiFileDiff only after worker pool accepts a new theme', async (): Promise<void> => {
-      const user = userEvent.setup()
       const pendingThemeSync = deferredWorkerOptions()
       workerPoolSetRenderOptionsMock
         .mockResolvedValueOnce(undefined)
@@ -2213,11 +2244,11 @@ describe('Panel', () => {
         'pierre-dark'
       )
 
-      await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
-      const menu = await screen.findByRole('menu')
-      await user.click(
-        within(menu).getByRole('menuitem', { name: /pierre-light$/i })
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledTimes(1)
       )
+
+      act(() => updatePanelSettings({ diffTheme: 'pierre-light' }))
 
       await waitFor(() =>
         expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
@@ -2236,14 +2267,15 @@ describe('Panel', () => {
         await pendingThemeSync.promise
       })
 
-      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
-        'data-theme',
-        'pierre-light'
+      await waitFor(() =>
+        expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+          'data-theme',
+          'pierre-light'
+        )
       )
     })
 
     test('remounts MultiFileDiff only after worker pool accepts a new lineDiffType', async (): Promise<void> => {
-      const user = userEvent.setup()
       const pendingSync = deferredWorkerOptions()
       workerPoolSetRenderOptionsMock
         .mockResolvedValueOnce(undefined)
@@ -2286,15 +2318,14 @@ describe('Panel', () => {
         'word'
       )
 
-      // The Highlight config chip surfaces its key + current value ("Word").
-      await user.click(screen.getByRole('button', { name: /highlight.*word/i }))
-      const menu = await screen.findByRole('menu')
-      await user.click(
-        within(menu).getByRole('menuitem', { name: /character/i })
+      await waitFor(() =>
+        expect(workerPoolSetRenderOptionsMock).toHaveBeenCalledTimes(1)
       )
 
+      act(() => updatePanelSettings({ diffLineDiffType: 'char' }))
+
       // lineDiffType MUST ride along with theme — it is a pool-owned option,
-      // so the HIGHLIGHT dropdown would be a no-op without this push.
+      // so the persisted setting would be a no-op without this push.
       await waitFor(() =>
         expect(workerPoolSetRenderOptionsMock).toHaveBeenLastCalledWith({
           theme: 'pierre-dark',
@@ -2314,14 +2345,15 @@ describe('Panel', () => {
         await pendingSync.promise
       })
 
-      expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
-        'data-line-diff-type',
-        'char'
+      await waitFor(() =>
+        expect(screen.getByTestId('multi-file-diff')).toHaveAttribute(
+          'data-line-diff-type',
+          'char'
+        )
       )
     })
 
     test('serializes pool writes so a newer change waits for the prior write', async (): Promise<void> => {
-      const user = userEvent.setup()
       const firstWrite = deferredWorkerOptions()
       const secondWrite = deferredWorkerOptions()
       workerPoolSetRenderOptionsMock
@@ -2366,11 +2398,7 @@ describe('Panel', () => {
       )
 
       // Change the theme while the mount write is still in flight.
-      await user.click(screen.getByRole('button', { name: /pierre-dark/i }))
-      const menu = await screen.findByRole('menu')
-      await user.click(
-        within(menu).getByRole('menuitem', { name: /pierre-light$/i })
-      )
+      act(() => updatePanelSettings({ diffTheme: 'pierre-light' }))
 
       // Serialization: the second write MUST NOT start until the first
       // resolves. Overlapping `setRenderOptions` calls can land out of order
@@ -3664,6 +3692,17 @@ describe('Panel', () => {
       expect(
         within(annotationSlot).getByText('Great change!')
       ).toBeInTheDocument()
+
+      fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
+
+      const changedFilesPane = screen.getByTestId('changed-files-pane')
+
+      const fileRow = within(changedFilesPane).getByRole('button', {
+        name: /Review comments or threads on foo\.ts/i,
+      })
+      const reviewIcon = within(fileRow).getByText('forum')
+
+      expect(reviewIcon).toHaveAttribute('aria-hidden', 'true')
     })
 
     test('shows a changed-file cue for adding a file-level comment', async (): Promise<void> => {
@@ -3819,6 +3858,23 @@ describe('Panel', () => {
         within(fileCommentsPanel).getByText('Review the whole file')
       ).toBeInTheDocument()
 
+      const searchAnchor = screen.getByTestId('diff-search-anchor')
+      const reviewSurfaces = screen.getByTestId('diff-review-surfaces')
+
+      const searchButton = screen.getByRole('button', {
+        name: 'Search in diff',
+      })
+
+      expect(fileCommentsPanel.compareDocumentPosition(searchAnchor)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      expect(reviewSurfaces).toContainElement(fileCommentsPanel)
+      expect(reviewSurfaces.compareDocumentPosition(searchAnchor)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+      expect(searchAnchor).toContainElement(searchButton)
+      expect(searchAnchor).toHaveClass('h-0')
+
       fireEvent.mouseEnter(screen.getByTestId('changed-files-edge-hint'))
 
       expect(
@@ -3829,6 +3885,7 @@ describe('Panel', () => {
 
       expect(fileCommentsPanel).not.toHaveClass('max-h-56')
       expect(commentList).not.toHaveClass('overflow-y-auto')
+      expect(reviewSurfaces).toHaveClass('max-h-[40%]', 'overflow-y-auto')
     })
 
     test('keyboard Shift+U edits the selected file-level comment', async (): Promise<void> => {
@@ -6941,6 +6998,7 @@ describe('Panel', () => {
       })
 
       const popup = await screen.findByRole('search')
+      expect(screen.getByTestId('diff-search-anchor')).toContainElement(popup)
       await waitFor(() => expect(popup).not.toHaveAttribute('inert'))
       await waitFor(() =>
         expect(
@@ -6950,7 +7008,6 @@ describe('Panel', () => {
     })
 
     test('search anchor moves down while the pierre file header is visible', async (): Promise<void> => {
-      const user = userEvent.setup()
       renderPanel()
 
       const button = screen.getByRole('button', { name: /search in diff/i })
@@ -6959,12 +7016,7 @@ describe('Panel', () => {
       expect(button).not.toHaveClass('right-[72px]')
       expect(button).not.toHaveClass('top-1')
 
-      await user.click(screen.getByRole('button', { name: /view settings/i }))
-      await user.click(
-        await screen.findByRole('menuitemcheckbox', {
-          name: 'File header',
-        })
-      )
+      act(() => updatePanelSettings({ diffFileHeader: false }))
 
       expect(lastMultiFileDiffOptions().disableFileHeader).toBe(true)
       expect(button).toHaveClass('right-[22px]')

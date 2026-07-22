@@ -2067,6 +2067,15 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
       AVAILABLE_SETTINGS_SECTIONS.length + 1
     )
 
+    const SECTION_TARGET_IDS: Record<string, string> = {
+      general: 'general-close-with-no-tabs',
+      appearance: 'appearance-color-scheme',
+      keymap: 'keymap-preset',
+      agents: 'agents-manage-aliases',
+      terminal: 'terminal-font-family',
+      version: 'version-diff-view-style',
+    }
+
     const children = settingsCmd?.children ?? []
     for (const section of AVAILABLE_SETTINGS_SECTIONS) {
       const child = children.find((c) => c.id === `settings-${section.id}`)
@@ -2074,7 +2083,7 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
       expect(child?.description).toContain(section.label)
 
       child?.execute?.('')
-      expect(openSettings).toHaveBeenCalledWith(section.id)
+      expect(openSettings).toHaveBeenCalledWith(SECTION_TARGET_IDS[section.id])
     }
 
     expect(openSettings).toHaveBeenCalledTimes(

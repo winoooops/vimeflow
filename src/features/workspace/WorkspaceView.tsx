@@ -2042,8 +2042,8 @@ const WorkspaceViewContent = (): ReactElement => {
           setTimeout(() => claimTerminal(), 0)
         },
         openFile: requestOpenFile,
-        openSettings: (sectionId) => {
-          settingsDialog.open(sectionId)
+        openSettings: (targetId) => {
+          settingsDialog.open(targetId)
         },
         keybindingShortcut: (id) =>
           chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
@@ -3713,7 +3713,7 @@ const WorkspaceViewContent = (): ReactElement => {
       <SettingsDialog
         open={settingsDialog.isOpen}
         onClose={settingsDialog.close}
-        initialSectionId={settingsDialog.targetSectionId}
+        targetId={settingsDialog.targetId}
       />
     </div>
   )

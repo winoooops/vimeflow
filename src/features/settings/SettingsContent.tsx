@@ -29,6 +29,7 @@ import { AppearancePane } from './components/panes/AppearancePane'
 import { GeneralPane } from './components/panes/GeneralPane'
 import { KeymapPane } from './components/panes/KeymapPane'
 import { TerminalSettingsPane } from './components/panes/TerminalSettingsPane'
+import { VersionControlPane } from './components/panes/VersionControlPane'
 import { isKeymapCaptureTarget } from '../keymap/capture'
 
 const SETTINGS_PANES = {
@@ -37,6 +38,7 @@ const SETTINGS_PANES = {
   keymap: <KeymapPane />,
   agents: <AgentsPane />,
   terminal: <TerminalSettingsPane />,
+  version: <VersionControlPane />,
 } satisfies Record<AvailableSettingsSectionId, ReactElement>
 
 const hasSettingsPane = (
@@ -71,14 +73,14 @@ const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   ) !== null ||
     isKeymapCaptureTarget(target))
 
+interface SettingsContentProps {
+  targetId?: SettingsTargetId | null
+}
+
 export const SettingsContent = ({
-  initialSectionId = null,
-}: {
-  initialSectionId?: SettingsSectionId | null
-}): ReactElement => {
-  const [section, setSection] = useState<SettingsSectionId>(
-    initialSectionId ?? 'appearance'
-  )
+  targetId = null,
+}: SettingsContentProps): ReactElement => {
+  const [section, setSection] = useState<SettingsSectionId>('appearance')
   const [query, setQuery] = useState('')
 
   const [scrollTargetId, setScrollTargetId] = useState<SettingsTargetId | null>(
@@ -96,11 +98,8 @@ export const SettingsContent = ({
     ReadonlySet<SettingsSectionId>
   >(() => new Set(['appearance']))
 
-  useEffect(() => {
-    if (initialSectionId !== null) {
-      setSection(initialSectionId)
-    }
-  }, [initialSectionId])
+  const [requestedTargetId, setRequestedTargetId] =
+    useState<SettingsTargetId | null>(targetId)
 
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -169,6 +168,39 @@ export const SettingsContent = ({
     activeSidebarSubsection === undefined
       ? `section:${section}`
       : `subsection:${activeSidebarSubsection.id}`
+
+  useEffect(() => setRequestedTargetId(targetId), [targetId])
+
+  useEffect(
+    () => window.vimeflow?.settings?.onNavigateTarget?.(setRequestedTargetId),
+    []
+  )
+
+  useEffect(() => {
+    if (requestedTargetId === null) {
+      return
+    }
+
+    const target = SETTINGS_TARGETS.find(
+      (candidate) => candidate.id === requestedTargetId
+    )
+    if (target === undefined) {
+      setRequestedTargetId(null)
+
+      return
+    }
+
+    const subsection = SETTINGS_SUBSECTIONS.find((candidate) =>
+      candidate.targetIds.includes(target.id)
+    )
+
+    setExpandedSectionIds((current) => new Set([...current, target.section]))
+    setSection(target.section)
+    setActiveSidebarSubsectionId(subsection?.id ?? null)
+    setScrollTargetId(target.id)
+    setSelectedSearchResultKey(settingsTargetResultKey(target))
+    setRequestedTargetId(null)
+  }, [requestedTargetId])
 
   const expandSection = (id: SettingsSectionId): void => {
     setExpandedSectionIds((current) => {
@@ -389,15 +421,15 @@ export const SettingsContent = ({
           undefined
         )
 
-        const targetId = visibleTarget?.element.dataset.settingsTarget
-        if (targetId === undefined) {
+        const visibleTargetId = visibleTarget?.element.dataset.settingsTarget
+        if (visibleTargetId === undefined) {
           return activeNavigationKey
         }
 
         const visibleSubsection = SETTINGS_SUBSECTIONS.find(
           (subsection) =>
             subsection.section === section &&
-            subsection.targetIds.includes(targetId)
+            subsection.targetIds.includes(visibleTargetId)
         )
 
         const viewportKey =

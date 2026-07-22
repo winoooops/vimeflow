@@ -18,8 +18,9 @@ import { themeService } from '../../../theme'
 import type { CommandId } from '../../keymap/catalog'
 import {
   AVAILABLE_SETTINGS_SECTIONS,
-  type AvailableSettingsSectionId,
+  SETTINGS_TARGET_IDS,
 } from '@/features/settings/sections'
+import type { SettingsTargetId } from '@/features/settings/types'
 
 export type DockPositionCommandArg = 'bottom' | 'top' | 'left' | 'right'
 
@@ -138,8 +139,8 @@ export interface WorkspaceCommandDeps {
   focusTerminal?: () => void
   // Open a file in the dock editor by absolute path.
   openFile?: (path: string) => void
-  // Open the settings dialog, optionally jumped to a section.
-  openSettings?: (sectionId?: AvailableSettingsSectionId) => void
+  // Open the settings dialog, optionally jumped to a settings target.
+  openSettings?: (targetId?: SettingsTargetId) => void
   // Resolved registry display tokens for commands with a live accelerator.
   keybindingShortcut?: (id: CommandId) => string[]
 }
@@ -504,6 +505,17 @@ export const buildWorkspaceCommands = (
       }
     : undefined
 
+  // Map each settings section to a representative target so the dialog
+  // opens scrolled to a real control, not just the section header.
+  const SECTION_TARGET_IDS: Record<string, SettingsTargetId> = {
+    general: SETTINGS_TARGET_IDS.generalCloseWithNoTabs,
+    appearance: SETTINGS_TARGET_IDS.appearanceColorScheme,
+    keymap: SETTINGS_TARGET_IDS.keymapPreset,
+    agents: SETTINGS_TARGET_IDS.agentsManageAliases,
+    terminal: SETTINGS_TARGET_IDS.terminalFontFamily,
+    version: SETTINGS_TARGET_IDS.versionDiffViewStyle,
+  }
+
   const settingsCommand: Command | undefined = openSettings
     ? {
         id: 'settings',
@@ -527,7 +539,7 @@ export const buildWorkspaceCommands = (
             description: `Open ${section.label} settings`,
             icon: section.icon,
             execute: (): void => {
-              openSettings(section.id)
+              openSettings(SECTION_TARGET_IDS[section.id])
             },
           })),
         ],

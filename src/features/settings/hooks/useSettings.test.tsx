@@ -4,8 +4,10 @@ import type { ReactElement, ReactNode } from 'react'
 import type { AppSettings } from '../../../bindings/AppSettings'
 import { SettingsProvider } from '../SettingsProvider'
 import { useSettings } from './useSettings'
+import { DEFAULT_SETTINGS } from '../store/settingsDefaults'
 
 const createLoadedSettings = (): AppSettings => ({
+  ...DEFAULT_SETTINGS,
   version: 1,
   closeWithNoTabs: 'close',
   onLastWindowClosed: 'quit',

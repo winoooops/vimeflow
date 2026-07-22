@@ -49,7 +49,7 @@ export type SettingsSearchNavigationDirection = 'next' | 'previous'
 export interface SettingsDialogProps {
   open: boolean
   onClose: () => void
-  initialSectionId?: SettingsSectionId | null
+  targetId?: SettingsTargetId | null
 }
 
 export interface SettingsSidebarProps {
@@ -160,8 +160,8 @@ export interface PlaceholderPaneProps {
 
 export interface UseSettingsDialogReturn {
   isOpen: boolean
-  targetSectionId: SettingsSectionId | null
-  open: (sectionId?: SettingsSectionId | null) => void
+  targetId: SettingsTargetId | null
+  open: (targetId?: SettingsTargetId) => void
   close: () => void
   toggle: () => void
 }

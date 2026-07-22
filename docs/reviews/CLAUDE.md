@@ -55,16 +55,16 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 34       | 26   | 2026-07-20   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
-| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 10       | 4    | 2026-07-20   |
+| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 12       | 5    | 2026-07-21   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 88       | 42   | 2026-07-09   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 6    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 98       | 92   | 2026-07-20   |
-| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 100      | 89   | 2026-07-07   |
+| [Accessibility](patterns/accessibility.md)                                                           | a11y               | 101      | 90   | 2026-07-22   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 4        | 0    | 2026-07-20   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 95       | 88   | 2026-07-19   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
-| [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 1        | 0    | 2026-07-20   |
+| [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
@@ -86,7 +86,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 21       | 8    | 2026-07-20   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 13       | 3    | 2026-06-15   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 42       | 16   | 2026-07-18   |
-| [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 3        | 1    | 2026-07-01   |
+| [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 4        | 2    | 2026-07-22   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 31       | 20   | 2026-07-20   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 16   | 2026-07-19   |

@@ -126,3 +126,7 @@ worktrees/
 # local Linear API key (never commit) — see linear.env.example + rules/common/linear-workflow.md
 linear.env
 tests/e2e/.wdio-cache/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/

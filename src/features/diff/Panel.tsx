@@ -87,6 +87,8 @@ import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 import { DIFF_RANGE_BAR_UNSAFE_CSS } from './rangeBar/diffRangeBars'
 import { useKeybindings } from '../keymap/useKeybindings'
 import { chordToAriaShortcut, chordToShortcutInput } from '../keymap/displayKey'
+import { requestSettingsOpen } from '../settings/hooks/useSettingsDialog'
+import { SETTINGS_TARGET_IDS } from '../settings/sections'
 
 // One stable <style> injected into pierre's shadow tree: the search highlight
 // plus the persistent range-comment gutter bar (VIM-273). A module constant so
@@ -106,6 +108,9 @@ const isDiffNativeFocusTarget = (target: Element): boolean =>
 // motion to signal intent. Wire to Settings later.
 const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
 const EMPTY_REVIEW_ANNOTATIONS: DiffLineAnnotation<ReviewComment>[] = []
+
+const openHunkViewSettings = (): void =>
+  requestSettingsOpen(SETTINGS_TARGET_IDS.versionDiffViewStyle)
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -1528,7 +1533,6 @@ export const Panel = ({
   ])
 
   const {
-    toolbarSettingsProps,
     multiFileDiffOptions,
     renderKey,
     renderSyncError,
@@ -2600,7 +2604,7 @@ export const Panel = ({
   }
 
   // Empty state (no changes): keep a DORMANT toolbar (only the settings
-  // dropdowns stay live — nav arrows, tool-well + actions render disabled /
+  // button stays live — nav arrows, tool-well + actions render disabled /
   // placeholder) above a calm "no changes" panel, so the chrome stays put when
   // a diff appears instead of collapsing + re-expanding.
   if (effectiveFiles.length === 0) {
@@ -2614,9 +2618,9 @@ export const Panel = ({
       >
         <Notifier
           toolbarProps={{
-            ...toolbarSettingsProps,
             bindingFor,
             diffMode: 'unstaged',
+            onOpenSettings: openHunkViewSettings,
             currentFileIndex: -1,
             totalFiles: 0,
             feedbackCount: pendingFeedbackCount,
@@ -2673,9 +2677,9 @@ export const Panel = ({
     >
       <Notifier
         toolbarProps={{
-          ...toolbarSettingsProps,
           bindingFor,
           diffMode: selectedFileStaged ? 'staged' : 'unstaged',
+          onOpenSettings: openHunkViewSettings,
           totalHunks: hunkCount,
           focusedHunkIndex: clampedHunkIndex,
           onPrevHunk,
@@ -2736,33 +2740,11 @@ export const Panel = ({
           onTogglePinned={toggleFilesListPinned}
           onSelectFile={handleSelectDiffFileFromList}
           onAddFileComment={handleAddFileComment}
+          hasReviewComments={(file): boolean =>
+            !reviewControlsPaused &&
+            feedback.annotationsForFile(cwd, file.path, file.staged).length > 0
+          }
         />
-        {diffSearchFileKey !== null ? (
-          <>
-            {!diffSearch.isOpen ? (
-              <DiffSearchButton
-                bindingFor={bindingFor}
-                fileHeaderVisible={fileHeaderVisible}
-                onOpen={diffSearch.open}
-              />
-            ) : null}
-            <DiffSearchPopup
-              bindingFor={bindingFor}
-              matches={matches}
-              open={diffSearch.isOpen}
-              fileHeaderVisible={fileHeaderVisible}
-              query={diffSearch.query}
-              matchCount={diffSearch.matchCount}
-              activeOrdinal={diffSearch.activeOrdinal}
-              confirming={keyboardConfirmAction !== null}
-              inputRef={diffSearch.inputRef}
-              onQueryChange={diffSearch.setQuery}
-              onCommit={diffSearch.commit}
-              onStep={diffSearch.step}
-              onClose={diffSearch.close}
-            />
-          </>
-        ) : null}
         <div
           ref={setDiffPaneElement}
           data-testid="diff-right-pane"
@@ -2816,93 +2798,129 @@ export const Panel = ({
               onCancel={cancelCommentEditor}
             />
           </Popover>
-          {selectedFileEntry !== undefined &&
-          fileCommentsForSelectedFile.length > 0 ? (
-            <div
-              data-testid="file-level-comments-panel"
-              className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
-            >
-              <div className="px-2 text-xs font-medium text-on-surface-variant">
-                Commented on file
-              </div>
+          <div
+            data-testid="diff-review-surfaces"
+            className="min-h-0 max-h-[40%] shrink-0 overflow-y-auto"
+          >
+            {selectedFileEntry !== undefined &&
+            fileCommentsForSelectedFile.length > 0 ? (
               <div
-                data-testid="file-level-comments-list"
-                className="flex flex-col gap-1 pr-1"
+                data-testid="file-level-comments-panel"
+                className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
               >
-                {fileThreads.collapsed.map((annotation) => {
-                  const fileGroupKey = threadGroupKey(annotation)
+                <div className="px-2 text-xs font-medium text-on-surface-variant">
+                  Commented on file
+                </div>
+                <div
+                  data-testid="file-level-comments-list"
+                  className="flex flex-col gap-1 pr-1"
+                >
+                  {fileThreads.collapsed.map((annotation) => {
+                    const fileGroupKey = threadGroupKey(annotation)
 
-                  const fileGroup =
-                    fileGroupKey === undefined
-                      ? undefined
-                      : fileThreads.groups.get(fileGroupKey)
+                    const fileGroup =
+                      fileGroupKey === undefined
+                        ? undefined
+                        : fileThreads.groups.get(fileGroupKey)
 
-                  if (fileGroup !== undefined) {
+                    if (fileGroup !== undefined) {
+                      return (
+                        <ReviewThreadCard
+                          key={`thread:${fileGroup.threadId}`}
+                          group={fileGroup}
+                          anchorLabel={threadAnchorLabel(
+                            fileGroup.turns[0] ?? annotation
+                          )}
+                          actions={
+                            feedbackDispatch === undefined
+                              ? undefined
+                              : bindThreadCardActions(
+                                  threadProps,
+                                  fileGroup.threadId
+                                )
+                          }
+                        />
+                      )
+                    }
+
                     return (
-                      <ReviewThreadCard
-                        key={`thread:${fileGroup.threadId}`}
-                        group={fileGroup}
-                        anchorLabel={threadAnchorLabel(
-                          fileGroup.turns[0] ?? annotation
+                      <ReviewCommentRow
+                        key={annotation.metadata.id}
+                        comment={annotation.metadata}
+                        editShortcut={chordToShortcutInput(
+                          bindingFor('diff-file-comment-update')
                         )}
-                        actions={
-                          feedbackDispatch === undefined
-                            ? undefined
-                            : bindThreadCardActions(
-                                threadProps,
-                                fileGroup.threadId
-                              )
-                        }
+                        editAriaKeyshortcuts={chordToAriaShortcut(
+                          bindingFor('diff-file-comment-update')
+                        )}
+                        deleteShortcut={null}
+                        deleteAriaKeyshortcuts={null}
+                        onSendNow={(): void => {
+                          setFinishOpen(false)
+                          setReplyDispatchThreadId(null)
+                          setSendNowCommentId(annotation.metadata.id)
+                        }}
+                        onEdit={(): void => {
+                          setFileCommentAnchorPoint(null)
+                          setAnnotationTarget({
+                            scope: 'file',
+                            filePath: selectedFileEntry.path,
+                            staged: selectedFileEntry.staged,
+                            editId: annotation.metadata.id,
+                          })
+                          setCommentDraftText(annotation.metadata.text, false)
+                          setCommentCategory(
+                            reviewCommentCategory(annotation.metadata)
+                          )
+                        }}
+                        onDelete={(): void => {
+                          focusDiffRoot()
+                          feedback.removeAnnotation(
+                            cwd,
+                            selectedFileEntry.path,
+                            selectedFileEntry.staged,
+                            annotation.metadata.id
+                          )
+                        }}
                       />
                     )
-                  }
-
-                  return (
-                    <ReviewCommentRow
-                      key={annotation.metadata.id}
-                      comment={annotation.metadata}
-                      editShortcut={chordToShortcutInput(
-                        bindingFor('diff-file-comment-update')
-                      )}
-                      editAriaKeyshortcuts={chordToAriaShortcut(
-                        bindingFor('diff-file-comment-update')
-                      )}
-                      deleteShortcut={null}
-                      deleteAriaKeyshortcuts={null}
-                      onSendNow={(): void => {
-                        setFinishOpen(false)
-                        setReplyDispatchThreadId(null)
-                        setSendNowCommentId(annotation.metadata.id)
-                      }}
-                      onEdit={(): void => {
-                        setFileCommentAnchorPoint(null)
-                        setAnnotationTarget({
-                          scope: 'file',
-                          filePath: selectedFileEntry.path,
-                          staged: selectedFileEntry.staged,
-                          editId: annotation.metadata.id,
-                        })
-                        setCommentDraftText(annotation.metadata.text, false)
-                        setCommentCategory(
-                          reviewCommentCategory(annotation.metadata)
-                        )
-                      }}
-                      onDelete={(): void => {
-                        focusDiffRoot()
-                        feedback.removeAnnotation(
-                          cwd,
-                          selectedFileEntry.path,
-                          selectedFileEntry.staged,
-                          annotation.metadata.id
-                        )
-                      }}
-                    />
-                  )
-                })}
+                  })}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+            ) : null}
+            <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+          </div>
+          <div
+            data-testid="diff-search-anchor"
+            className="relative h-0 shrink-0"
+          >
+            {diffSearchFileKey !== null ? (
+              <>
+                {!diffSearch.isOpen ? (
+                  <DiffSearchButton
+                    bindingFor={bindingFor}
+                    fileHeaderVisible={fileHeaderVisible}
+                    onOpen={diffSearch.open}
+                  />
+                ) : null}
+                <DiffSearchPopup
+                  bindingFor={bindingFor}
+                  matches={matches}
+                  open={diffSearch.isOpen}
+                  fileHeaderVisible={fileHeaderVisible}
+                  query={diffSearch.query}
+                  matchCount={diffSearch.matchCount}
+                  activeOrdinal={diffSearch.activeOrdinal}
+                  confirming={keyboardConfirmAction !== null}
+                  inputRef={diffSearch.inputRef}
+                  onQueryChange={diffSearch.setQuery}
+                  onCommit={diffSearch.commit}
+                  onStep={diffSearch.step}
+                  onClose={diffSearch.close}
+                />
+              </>
+            ) : null}
+          </div>
           <PanelBody
             bindingFor={bindingFor}
             scrollBodyRef={diffScrollBodyRef}
