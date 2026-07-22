@@ -5,6 +5,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react'
+import { Button } from '@/components/Button'
 import { Chip } from '@/components/Chip'
 import { IconButton } from '@/components/IconButton'
 import type {
@@ -13,7 +14,6 @@ import type {
   NativeOverlayActivityToolEvent,
 } from '@/components/nativeOverlayActivity'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
-import { formatShortcut } from '@/lib/formatShortcut'
 import { formatDuration, formatRelativeTime } from '@/lib/relativeTime'
 
 export const ACTIVITY_CARD_SURFACE =
@@ -109,6 +109,9 @@ const buildCopyText = (event: NativeOverlayActivityEvent): string =>
 interface ActivityPopoverContentProps {
   event: NativeOverlayActivityEvent
   now: Date
+  onShowDiff?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
 }
 
 const KIND_ACCENT: Record<NativeOverlayActivityEventKind, string> = {
@@ -205,6 +208,9 @@ const Kbd = ({ children }: { children: ReactNode }): ReactElement => (
 export const NativeOverlayActivityCard = ({
   event,
   now,
+  onShowDiff = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
 }: ActivityPopoverContentProps): ReactElement => {
   const [copyState, setCopyState] = useState<CopyState>('idle')
   const copyText = buildCopyText(event)
@@ -256,9 +262,6 @@ export const NativeOverlayActivityCard = ({
 
   const showsFilePath =
     event.kind === 'edit' || event.kind === 'write' || event.kind === 'read'
-
-  const showFooter = event.kind === 'bash' || showsFilePath
-  const modKey = formatShortcut('Mod')
 
   return (
     <>
@@ -347,31 +350,25 @@ export const NativeOverlayActivityCard = ({
         ) : null}
       </div>
 
-      {showFooter ? (
-        <div className="flex items-center gap-2 border-t border-outline-variant/25 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_60%,transparent)] px-3.5 py-[7px] font-mono text-[9.5px] tracking-[0.04em] text-syn-comment">
-          {event.kind === 'bash' && (
-            <>
-              <Kbd>↵</Kbd> rerun <Kbd>{modKey}</Kbd>
-              <Kbd>O</Kbd> open in terminal
-            </>
-          )}
-          {(event.kind === 'edit' || event.kind === 'write') && (
-            <>
-              <Kbd>{modKey}</Kbd>
-              <Kbd>O</Kbd> open file <Kbd>{modKey}</Kbd>
-              <Kbd>D</Kbd> view diff
-            </>
-          )}
-          {event.kind === 'read' && (
-            <>
-              <Kbd>{modKey}</Kbd>
-              <Kbd>O</Kbd> open file
-            </>
-          )}
-          <span className="flex-1" />
-          <span className="text-outline-variant">esc</span>
+      {onShowDiff === undefined ? null : (
+        <div className="flex items-center border-t border-outline-variant/25 bg-[color-mix(in_srgb,var(--color-surface-container-lowest)_60%,transparent)] px-3.5 py-[7px]">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            leadingIcon="difference"
+            aria-label="Show diff"
+            aria-keyshortcuts={showDiffAriaShortcut}
+            onClick={onShowDiff}
+            className="gap-1.5 px-2 font-mono text-[10px] text-on-surface-variant"
+          >
+            Show diff
+            {showDiffShortcut === undefined ? null : (
+              <Kbd>{showDiffShortcut}</Kbd>
+            )}
+          </Button>
         </div>
-      ) : null}
+      )}
     </>
   )
 }

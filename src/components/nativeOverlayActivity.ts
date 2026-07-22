@@ -53,6 +53,9 @@ export interface NativeOverlayActivityPopoverPayload {
   ariaLabel: string
   event: NativeOverlayActivityEvent
   activateActionId?: string
+  showDiffActionId?: string
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
 }
 
 export interface NativeOverlayActivityPopoverRequest {
@@ -127,7 +130,13 @@ export const isNativeOverlayActivityPopoverPayload = (
   typeof value.ariaLabel === 'string' &&
   isActivityEvent(value.event) &&
   (value.activateActionId === undefined ||
-    typeof value.activateActionId === 'string')
+    typeof value.activateActionId === 'string') &&
+  (value.showDiffActionId === undefined ||
+    typeof value.showDiffActionId === 'string') &&
+  (value.showDiffShortcut === undefined ||
+    typeof value.showDiffShortcut === 'string') &&
+  (value.showDiffAriaShortcut === undefined ||
+    typeof value.showDiffAriaShortcut === 'string')
 
 export const isNativeActivityPopoverRequest = (
   value: unknown

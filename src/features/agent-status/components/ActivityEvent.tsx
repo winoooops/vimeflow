@@ -3,6 +3,8 @@ import {
   type KeyboardEventHandler,
   type ReactElement,
   type Ref,
+  useEffect,
+  useState,
 } from 'react'
 import { Chip } from '@/components/Chip'
 import {
@@ -14,6 +16,7 @@ import {
   computeActivityAgo,
 } from '@/components/NativeOverlayActivityCard'
 import { Tooltip } from '@/components/Tooltip'
+import { TERMINAL_CONTAINER_ID } from '@/features/workspace/containerIds'
 import { useNativeActivityPopoverSource } from '../hooks/useNativeActivityPopover'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
@@ -24,6 +27,10 @@ interface ActivityEventProps {
   now: Date
   onFocus?: FocusEventHandler<HTMLElement>
   onKeyDown?: KeyboardEventHandler<HTMLElement>
+  onShowDiff?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
   rowRef?: Ref<HTMLElement>
   tabIndex?: 0 | -1
 }
@@ -55,7 +62,27 @@ interface ActivityDetailsTooltipProps {
   now: Date
   ariaLabel: string
   onActivate?: () => void
+  onShowDiff?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
   children: ReactElement
+}
+
+const isEditorOrTerminalTarget = (element: Element): boolean =>
+  element.closest('.cm-editor') !== null ||
+  element.closest(`[data-container-id="${TERMINAL_CONTAINER_ID}"]`) !== null
+
+const isGuardedShortcutSurface = (event: KeyboardEvent): boolean => {
+  const target = event.target instanceof Element ? event.target : null
+
+  const activeElement =
+    document.activeElement instanceof Element ? document.activeElement : null
+
+  return (
+    (target !== null && isEditorOrTerminalTarget(target)) ||
+    (activeElement !== null && isEditorOrTerminalTarget(activeElement))
+  )
 }
 
 export const ActivityDetailsTooltip = ({
@@ -63,17 +90,62 @@ export const ActivityDetailsTooltip = ({
   now,
   ariaLabel,
   onActivate = undefined,
+  onShowDiff = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
   children,
 }: ActivityDetailsTooltipProps): ReactElement => {
+  const [open, setOpen] = useState(false)
+
   const { payload, actions } = useNativeActivityPopoverSource({
     event,
     ariaLabel,
     onActivate,
+    onShowDiff,
+    showDiffShortcut,
+    showDiffAriaShortcut,
   })
+
+  useEffect(() => {
+    if (
+      !open ||
+      onShowDiff === undefined ||
+      matchesShowDiffShortcut === undefined
+    ) {
+      return
+    }
+
+    const handleKeyDown = (keyboardEvent: KeyboardEvent): void => {
+      if (
+        keyboardEvent.repeat ||
+        isGuardedShortcutSurface(keyboardEvent) ||
+        !matchesShowDiffShortcut(keyboardEvent)
+      ) {
+        return
+      }
+
+      keyboardEvent.preventDefault()
+      onShowDiff()
+    }
+
+    document.addEventListener('keydown', handleKeyDown, true)
+
+    return (): void =>
+      document.removeEventListener('keydown', handleKeyDown, true)
+  }, [matchesShowDiffShortcut, onShowDiff, open])
 
   return (
     <Tooltip
-      content={<NativeOverlayActivityCard event={event} now={now} />}
+      content={
+        <NativeOverlayActivityCard
+          event={event}
+          now={now}
+          onShowDiff={onShowDiff}
+          showDiffShortcut={showDiffShortcut}
+          showDiffAriaShortcut={showDiffAriaShortcut}
+        />
+      }
       placement="left"
       bare
       interactive
@@ -82,6 +154,7 @@ export const ActivityDetailsTooltip = ({
       nativeOverlay
       nativeOverlayPayload={payload}
       nativeOverlayActions={actions}
+      onOpenChange={setOpen}
     >
       {children}
     </Tooltip>
@@ -149,6 +222,10 @@ export const ActivityEvent = ({
   now,
   onFocus = undefined,
   onKeyDown = undefined,
+  onShowDiff = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
   rowRef = undefined,
   tabIndex = 0,
 }: ActivityEventProps): ReactElement => {
@@ -163,6 +240,10 @@ export const ActivityEvent = ({
       event={event}
       now={now}
       ariaLabel={`${label} trace details`}
+      onShowDiff={onShowDiff}
+      showDiffShortcut={showDiffShortcut}
+      showDiffAriaShortcut={showDiffAriaShortcut}
+      matchesShowDiffShortcut={matchesShowDiffShortcut}
     >
       <article
         ref={rowRef}

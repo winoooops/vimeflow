@@ -1,8 +1,8 @@
 import { afterEach, describe, test, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { TERMINAL_CONTAINER_ID } from '@/features/workspace/containerIds'
 import { ActivityEvent } from './ActivityEvent'
-import { formatShortcut } from '../../../lib/formatShortcut'
 import type { ToolActivityEvent } from '../types/activityEvent'
 
 const now = new Date('2026-04-22T12:00:00Z')
@@ -919,7 +919,7 @@ describe('ActivityEvent — structured tooltip', () => {
     expect(within(details).getByText('Button.tsx')).toBeInTheDocument()
   })
 
-  test('footer hints render for bash and are static', async () => {
+  test('hides the footer for a trace without a diff action', async () => {
     render(
       <ActivityEvent
         event={toolEvent({
@@ -937,11 +937,132 @@ describe('ActivityEvent — structured tooltip', () => {
     const details = await screen.findByRole('dialog', {
       name: 'BASH trace details',
     })
-    expect(within(details).getByText(/rerun/)).toBeInTheDocument()
-    expect(within(details).getByText(/open in terminal/)).toBeInTheDocument()
-    // Footer super key is platform-aware (⌘ on macOS, Ctrl elsewhere), not a
-    // hardcoded ⌘ — assert it matches the resolved platform key.
-    expect(within(details).getByText(formatShortcut('Mod'))).toBeInTheDocument()
+    expect(
+      within(details).queryByRole('button', { name: 'Show diff' })
+    ).not.toBeInTheDocument()
+    expect(within(details).queryByText(/rerun/)).not.toBeInTheDocument()
+    expect(
+      within(details).queryByText(/open in terminal/)
+    ).not.toBeInTheDocument()
+  })
+
+  test('opens the trace diff from the footer and its resolved shortcut', async () => {
+    const onShowDiff = vi.fn()
+
+    const matchesShowDiffShortcut = vi.fn(
+      (event: KeyboardEvent): boolean => event.metaKey && event.code === 'KeyG'
+    )
+    render(
+      <ActivityEvent
+        event={toolEvent({
+          kind: 'edit',
+          tool: 'Edit',
+          body: 'src/components/Button.tsx',
+          status: 'done',
+        })}
+        now={now}
+        onShowDiff={onShowDiff}
+        showDiffShortcut="⌘G"
+        showDiffAriaShortcut="Meta+g"
+        matchesShowDiffShortcut={matchesShowDiffShortcut}
+      />
+    )
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+
+    const details = await screen.findByRole('dialog', {
+      name: 'EDIT trace details',
+    })
+    const showDiff = within(details).getByRole('button', { name: 'Show diff' })
+    expect(showDiff).toHaveTextContent('⌘G')
+
+    fireEvent.click(showDiff)
+    fireEvent.keyDown(document, { key: 'g', code: 'KeyG', metaKey: true })
+
+    expect(matchesShowDiffShortcut).toHaveBeenCalledOnce()
+    expect(onShowDiff).toHaveBeenCalledTimes(2)
+  })
+
+  test('leaves the tooltip shortcut to CodeMirror when editor focus is active', async () => {
+    const onShowDiff = vi.fn()
+
+    const matchesShowDiffShortcut = vi.fn(
+      (event: KeyboardEvent): boolean => event.metaKey && event.code === 'KeyG'
+    )
+    const editor = document.createElement('div')
+    editor.className = 'cm-editor'
+    editor.tabIndex = -1
+    document.body.appendChild(editor)
+
+    try {
+      render(
+        <ActivityEvent
+          event={toolEvent({
+            kind: 'edit',
+            tool: 'Edit',
+            body: 'src/components/Button.tsx',
+            status: 'done',
+          })}
+          now={now}
+          onShowDiff={onShowDiff}
+          showDiffShortcut="⌘G"
+          showDiffAriaShortcut="Meta+g"
+          matchesShowDiffShortcut={matchesShowDiffShortcut}
+        />
+      )
+
+      editor.focus()
+      fireEvent.mouseEnter(screen.getByRole('article', { name: 'EDIT' }))
+      await screen.findByRole('dialog', { name: 'EDIT trace details' })
+
+      fireEvent.keyDown(document, { key: 'g', code: 'KeyG', metaKey: true })
+
+      expect(matchesShowDiffShortcut).not.toHaveBeenCalled()
+      expect(onShowDiff).not.toHaveBeenCalled()
+    } finally {
+      document.body.removeChild(editor)
+    }
+  })
+
+  test('leaves the tooltip shortcut to the terminal when terminal focus is active', async () => {
+    const onShowDiff = vi.fn()
+
+    const matchesShowDiffShortcut = vi.fn(
+      (event: KeyboardEvent): boolean => event.ctrlKey && event.code === 'KeyG'
+    )
+    const terminalZone = document.createElement('div')
+    terminalZone.setAttribute('data-container-id', TERMINAL_CONTAINER_ID)
+    const xtermTextarea = document.createElement('textarea')
+    terminalZone.appendChild(xtermTextarea)
+    document.body.appendChild(terminalZone)
+
+    try {
+      render(
+        <ActivityEvent
+          event={toolEvent({
+            kind: 'edit',
+            tool: 'Edit',
+            body: 'src/components/Button.tsx',
+            status: 'done',
+          })}
+          now={now}
+          onShowDiff={onShowDiff}
+          showDiffShortcut="Ctrl+G"
+          showDiffAriaShortcut="Control+g"
+          matchesShowDiffShortcut={matchesShowDiffShortcut}
+        />
+      )
+
+      xtermTextarea.focus()
+      fireEvent.mouseEnter(screen.getByRole('article', { name: 'EDIT' }))
+      await screen.findByRole('dialog', { name: 'EDIT trace details' })
+
+      fireEvent.keyDown(document, { key: 'g', code: 'KeyG', ctrlKey: true })
+
+      expect(matchesShowDiffShortcut).not.toHaveBeenCalled()
+      expect(onShowDiff).not.toHaveBeenCalled()
+    } finally {
+      document.body.removeChild(terminalZone)
+    }
   })
 
   test('user card renders body as plain text', async () => {
