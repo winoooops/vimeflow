@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-07-22
-ref_count: 13
+ref_count: 14
 ---
 
 # Parser Resilience
@@ -364,4 +364,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** Codex code-mode `custom_tool_call` records that contained only `tools.exec_command(...)` were promoted to `exec_command`, but their activity-card args still came from the raw JavaScript cell input. The UI rendered a Bash activity with a `$` prompt followed by wrapper code such as `const result = await tools.exec_command({ cmd: 'git status' })` instead of the actual shell command.
 - **Fix:** Reused the JavaScript token walker to extract literal `cmd` or `command` fields from nested `tools.exec_command({...})` calls, including simple string const aliases, before falling back to the raw custom input summary. Regression coverage pins direct parser extraction and verifies promoted code-mode exec events emit `args: "false"` for both running and completed activity events.
+- **Commit:** same commit as this entry
+
+### 27. Promoted code-mode apply_patch kept escaped JavaScript wrapper arguments
+
+- **Source:** github-codex-connector | PR #720 round 2 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex code-mode `custom_tool_call` records that contained only `tools.apply_patch(...)` were promoted to `apply_patch`, but the activity-card args and test-file classifier still read the raw JavaScript cell input. Because the patch text lived inside an escaped string literal, the path extractor never saw `*** Update File:` lines, so the UI could show wrapper code instead of the patched path and fail to mark test-file patches correctly.
+- **Fix:** Added a narrow `tools.apply_patch(...)` string-argument extractor that reuses the existing JavaScript token walker, decodes inline string literals or simple const aliases, and feeds the decoded patch text back through `extract_patch_paths` for both args and `is_test_file`. Regression coverage pins direct extraction and verifies a promoted code-mode patch to `src/App.test.tsx` emits readable path args and `isTestFile: true` for running and completed activity events.
 - **Commit:** same commit as this entry

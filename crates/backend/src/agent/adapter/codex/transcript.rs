@@ -90,10 +90,36 @@ fn decode_javascript_string(literal: &str) -> Option<String> {
     }
     let inner = &literal[1..literal.len() - 1];
     match quote {
-        b'\'' => Some(inner.replace("\\'", "'").replace("\\\\", "\\")),
-        b'`' if !inner.contains("${") => Some(inner.replace("\\`", "`").replace("\\\\", "\\")),
+        b'\'' => decode_javascript_escaped_string(inner, b'\''),
+        b'`' if !inner.contains("${") => decode_javascript_escaped_string(inner, b'`'),
         _ => None,
     }
+}
+
+fn decode_javascript_escaped_string(inner: &str, quote: u8) -> Option<String> {
+    let quote = char::from(quote);
+    let mut output = String::new();
+    let mut chars = inner.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+
+        let escaped = chars.next()?;
+        match escaped {
+            ch if ch == quote => output.push(ch),
+            '\\' => output.push('\\'),
+            'n' => output.push('\n'),
+            'r' => output.push('\r'),
+            't' => output.push('\t'),
+            '0' => output.push('\0'),
+            other => output.push(other),
+        }
+    }
+
+    Some(output)
 }
 
 enum JavascriptToken<'a> {
@@ -440,6 +466,33 @@ fn extract_custom_exec_command_args(input: &str) -> Option<String> {
     }
 
     command
+}
+
+fn extract_custom_apply_patch_input(input: &str) -> Option<String> {
+    let tokens = tokenize_javascript(input);
+    let mut bindings = HashMap::new();
+    let mut patch = None;
+    let mut index = 0;
+
+    while index < tokens.len() {
+        record_const_string_binding(input, &tokens, index, &mut bindings);
+
+        let is_patch_call = identifier_at(&tokens, index) == Some("tools")
+            && is_punctuation(&tokens, index + 1, b'.')
+            && identifier_at(&tokens, index + 2) == Some("apply_patch")
+            && is_punctuation(&tokens, index + 3, b'(');
+        if is_patch_call {
+            patch = match tokens.get(index + 4) {
+                Some(JavascriptToken::String(value, _)) => decode_javascript_string(value),
+                Some(JavascriptToken::Identifier(name)) => bindings.get(name).cloned(),
+                _ => None,
+            }
+            .filter(|candidate| !candidate.is_empty());
+        }
+        index += 1;
+    }
+
+    patch
 }
 
 /// Pull the mid-session workdir off either Codex execution-call schema.
@@ -1174,7 +1227,7 @@ fn start_custom_tool_call(
     };
     let tool = tool_call_name(payload);
     let args = summarize_custom_tool_args(payload, &tool);
-    let is_test_file = custom_tool_is_test_file(payload.input.as_deref());
+    let is_test_file = custom_tool_is_test_file(payload, &tool);
     let completion_mode = if tool == "apply_patch" {
         CompletionMode::PatchApplyEnd
     } else if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
@@ -1473,6 +1526,18 @@ fn summarize_custom_tool_input(input: Option<&str>) -> String {
     truncate_string(input, MAX_ARGS_LEN)
 }
 
+fn custom_tool_patch_paths(payload: &CodexPayloadDto, tool: &str) -> Vec<String> {
+    let input = payload.input.as_deref().unwrap_or_default();
+
+    if payload.name.as_deref() == Some("exec") && tool == "apply_patch" {
+        return extract_custom_apply_patch_input(input)
+            .map(|patch| extract_patch_paths(&patch))
+            .unwrap_or_default();
+    }
+
+    extract_patch_paths(input)
+}
+
 fn summarize_custom_tool_args(payload: &CodexPayloadDto, tool: &str) -> String {
     if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
         if let Some(cmd) = payload.input.as_deref().and_then(extract_custom_exec_command_args) {
@@ -1480,13 +1545,15 @@ fn summarize_custom_tool_args(payload: &CodexPayloadDto, tool: &str) -> String {
         }
     }
 
+    if let Some(first_path) = custom_tool_patch_paths(payload, tool).into_iter().next() {
+        return truncate_string(&first_path, MAX_ARGS_LEN);
+    }
+
     summarize_custom_tool_input(payload.input.as_deref())
 }
 
-fn custom_tool_is_test_file(input: Option<&str>) -> bool {
-    let input = input.unwrap_or_default();
-
-    extract_patch_paths(input)
+fn custom_tool_is_test_file(payload: &CodexPayloadDto, tool: &str) -> bool {
+    custom_tool_patch_paths(payload, tool)
         .into_iter()
         .any(|path| is_test_file(&path))
 }
@@ -2167,6 +2234,36 @@ mod tests {
                 "const command = 'npm test'\nawait tools.exec_command({ command })"
             ),
             Some("npm test".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_decodes_string_argument() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "await tools.apply_patch(\"*** Begin Patch\\n*** Update File: src/App.test.tsx\\n*** End Patch\")"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/App.test.tsx\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_reads_const_alias() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "const patch = '*** Begin Patch\\n*** Update File: src/App.test.tsx\\n*** End Patch'\ntext(await tools.apply_patch(patch))"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/App.test.tsx\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_preserves_non_ascii_paths() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "const patch = '*** Begin Patch\\n*** Update File: src/é.test.ts\\n*** End Patch'\nawait tools.apply_patch(patch)"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/é.test.ts\n*** End Patch".to_string())
         );
     }
 
@@ -3417,7 +3514,7 @@ mod tests {
         let mut num_turns = 0u32;
         let mut last_cwd: Option<String> = None;
 
-        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_patch","input":"await tools.apply_patch(\"*** Begin Patch\\n*** Update File: foo.ts\\n*** End Patch\")"}}"#;
+        let start = r#"{"timestamp":"2026-06-15T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_patch","input":"await tools.apply_patch(\"*** Begin Patch\\n*** Update File: src/App.test.tsx\\n*** End Patch\")"}}"#;
         process_line(
             start,
             "sid",
@@ -3461,6 +3558,9 @@ mod tests {
             1,
             "custom_tool_call_output must not finalize code-mode apply_patch"
         );
+        assert_eq!(tool_calls_after_output[0].1["tool"], "apply_patch");
+        assert_eq!(tool_calls_after_output[0].1["args"], "src/App.test.tsx");
+        assert_eq!(tool_calls_after_output[0].1["isTestFile"], true);
         assert!(
             in_flight.contains_key("call_patch"),
             "code-mode apply_patch must stay in-flight until patch_apply_end"
@@ -3491,7 +3591,9 @@ mod tests {
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[1].1["toolUseId"], "call_patch");
         assert_eq!(tool_calls[1].1["tool"], "apply_patch");
+        assert_eq!(tool_calls[1].1["args"], "src/App.test.tsx");
         assert_eq!(tool_calls[1].1["status"], "failed");
+        assert_eq!(tool_calls[1].1["isTestFile"], true);
         assert!(in_flight.is_empty());
     }
 
