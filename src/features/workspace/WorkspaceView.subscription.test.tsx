@@ -121,10 +121,11 @@ vi.mock('../terminal/services/terminalService', () => ({
     write: vi.fn().mockResolvedValue(undefined),
     resize: vi.fn().mockResolvedValue(undefined),
     kill: vi.fn().mockResolvedValue(undefined),
-    onData: vi.fn((): Promise<() => void> =>
-      Promise.resolve((): void => {
-        /* noop */
-      })
+    onData: vi.fn(
+      (): Promise<() => void> =>
+        Promise.resolve((): void => {
+          /* noop */
+        })
     ),
     onExit: vi.fn((): (() => void) => (): void => {
       /* noop */
@@ -164,24 +165,26 @@ vi.mock('../terminal/services/terminalService', () => ({
 // "one hook call per child". The previous WorkspaceView.test.tsx mock
 // returns a singleton, which would defeat this assertion.
 vi.mock('../agent-status/hooks/useAgentStatus', () => ({
-  useAgentStatus: vi.fn((): AgentStatus => ({
-    isActive: true,
-    agentExited: false,
-    agentType: 'claude-code',
-    modelId: null,
-    modelDisplayName: null,
-    version: null,
-    sessionId: null,
-    agentSessionId: null,
-    cwd: null,
-    contextWindow: null,
-    cost: null,
-    rateLimits: null,
-    numTurns: 0,
-    toolCalls: { total: 0, byType: {}, active: null },
-    recentToolCalls: [],
-    testRun: null,
-  })),
+  useAgentStatus: vi.fn(
+    (): AgentStatus => ({
+      isActive: true,
+      agentExited: false,
+      agentType: 'claude-code',
+      modelId: null,
+      modelDisplayName: null,
+      version: null,
+      sessionId: null,
+      agentSessionId: null,
+      cwd: null,
+      contextWindow: null,
+      cost: null,
+      rateLimits: null,
+      numTurns: 0,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    })
+  ),
 }))
 
 vi.mock('../agent-status/hooks/useAgentReattach', () => ({
