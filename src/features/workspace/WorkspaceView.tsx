@@ -1980,6 +1980,8 @@ const WorkspaceViewContent = (): ReactElement => {
     [setSessionLayout]
   )
 
+  const settingsDialog = useSettingsDialog()
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
@@ -2040,6 +2042,9 @@ const WorkspaceViewContent = (): ReactElement => {
           setTimeout(() => claimTerminal(), 0)
         },
         openFile: requestOpenFile,
+        openSettings: (sectionId) => {
+          settingsDialog.open(sectionId)
+        },
         keybindingShortcut: (id) =>
           chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
       }),
@@ -2087,6 +2092,7 @@ const WorkspaceViewContent = (): ReactElement => {
       setCompactSidebarOpen,
       claimTerminal,
       requestOpenFile,
+      settingsDialog.open,
       bindingFor,
       preferModifier,
     ]
@@ -2125,8 +2131,6 @@ const WorkspaceViewContent = (): ReactElement => {
     (event: KeyboardEvent): boolean => matches(event, 'palette-leader'),
     [matches]
   )
-
-  const settingsDialog = useSettingsDialog()
 
   const commandPalette = useCommandPalette(workspaceCommands, {
     enabled:
@@ -3709,6 +3713,7 @@ const WorkspaceViewContent = (): ReactElement => {
       <SettingsDialog
         open={settingsDialog.isOpen}
         onClose={settingsDialog.close}
+        initialSectionId={settingsDialog.targetSectionId}
       />
     </div>
   )

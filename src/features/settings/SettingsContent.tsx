@@ -71,8 +71,14 @@ const shortcutTargetOwnsKey = (target: EventTarget | null): boolean =>
   ) !== null ||
     isKeymapCaptureTarget(target))
 
-export const SettingsContent = (): ReactElement => {
-  const [section, setSection] = useState<SettingsSectionId>('appearance')
+export const SettingsContent = ({
+  initialSectionId = null,
+}: {
+  initialSectionId?: SettingsSectionId | null
+}): ReactElement => {
+  const [section, setSection] = useState<SettingsSectionId>(
+    initialSectionId ?? 'appearance'
+  )
   const [query, setQuery] = useState('')
 
   const [scrollTargetId, setScrollTargetId] = useState<SettingsTargetId | null>(
@@ -89,6 +95,12 @@ export const SettingsContent = (): ReactElement => {
   const [expandedSectionIds, setExpandedSectionIds] = useState<
     ReadonlySet<SettingsSectionId>
   >(() => new Set(['appearance']))
+
+  useEffect(() => {
+    if (initialSectionId !== null) {
+      setSection(initialSectionId)
+    }
+  }, [initialSectionId])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)

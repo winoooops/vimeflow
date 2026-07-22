@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isMacPlatform } from '../../../lib/formatShortcut'
 import { isKeymapCaptureTarget } from '../../keymap/capture'
-import type { UseSettingsDialogReturn } from '../types'
+import type { SettingsSectionId, UseSettingsDialogReturn } from '../types'
 
 export const useSettingsDialog = (): UseSettingsDialogReturn => {
   const [isOpen, setIsOpen] = useState(false)
+
+  const [targetSectionId, setTargetSectionId] =
+    useState<SettingsSectionId | null>(null)
   const isOpenRef = useRef(isOpen)
 
   const openNativeWindow = useCallback((): boolean => {
@@ -32,15 +35,23 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
     return true
   }, [])
 
-  const open = useCallback(() => {
-    if (openNativeWindow()) {
-      return
-    }
+  const open = useCallback(
+    (sectionId?: SettingsSectionId | null) => {
+      setTargetSectionId(sectionId ?? null)
 
-    setIsOpen(true)
-  }, [openNativeWindow])
+      if (openNativeWindow()) {
+        return
+      }
 
-  const close = useCallback(() => setIsOpen(false), [])
+      setIsOpen(true)
+    },
+    [openNativeWindow]
+  )
+
+  const close = useCallback(() => {
+    setIsOpen(false)
+    setTargetSectionId(null)
+  }, [])
 
   const toggle = useCallback(() => {
     if (!isOpenRef.current && openNativeWindow()) {
@@ -48,6 +59,7 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
     }
 
     setIsOpen((prev) => !prev)
+    setTargetSectionId(null)
   }, [openNativeWindow])
 
   const handlersRef = useRef({ close, toggle })
@@ -96,5 +108,5 @@ export const useSettingsDialog = (): UseSettingsDialogReturn => {
     }
   }, [])
 
-  return { isOpen, open, close, toggle }
+  return { isOpen, targetSectionId, open, close, toggle }
 }

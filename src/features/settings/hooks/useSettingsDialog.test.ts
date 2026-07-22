@@ -43,6 +43,44 @@ describe('useSettingsDialog', () => {
     expect(result.current.isOpen).toBe(true)
   })
 
+  test('open with a section sets targetSectionId', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open('keymap'))
+
+    expect(result.current.isOpen).toBe(true)
+    expect(result.current.targetSectionId).toBe('keymap')
+  })
+
+  test('open without a section leaves targetSectionId null', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open())
+
+    expect(result.current.isOpen).toBe(true)
+    expect(result.current.targetSectionId).toBeNull()
+  })
+
+  test('close resets targetSectionId', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open('appearance'))
+    act(() => result.current.close())
+
+    expect(result.current.isOpen).toBe(false)
+    expect(result.current.targetSectionId).toBeNull()
+  })
+
+  test('toggle resets targetSectionId', () => {
+    const { result } = renderHook(() => useSettingsDialog())
+
+    act(() => result.current.open('general'))
+    act(() => result.current.toggle())
+
+    expect(result.current.isOpen).toBe(false)
+    expect(result.current.targetSectionId).toBeNull()
+  })
+
   test('close sets isOpen to false', () => {
     const { result } = renderHook(() => useSettingsDialog())
 

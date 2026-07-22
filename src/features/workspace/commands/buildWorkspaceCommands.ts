@@ -16,6 +16,10 @@ import {
 } from '../../terminal/layout-registry'
 import { themeService } from '../../../theme'
 import type { CommandId } from '../../keymap/catalog'
+import {
+  AVAILABLE_SETTINGS_SECTIONS,
+  type AvailableSettingsSectionId,
+} from '@/features/settings/sections'
 
 export type DockPositionCommandArg = 'bottom' | 'top' | 'left' | 'right'
 
@@ -134,6 +138,8 @@ export interface WorkspaceCommandDeps {
   focusTerminal?: () => void
   // Open a file in the dock editor by absolute path.
   openFile?: (path: string) => void
+  // Open the settings dialog, optionally jumped to a section.
+  openSettings?: (sectionId?: AvailableSettingsSectionId) => void
   // Resolved registry display tokens for commands with a live accelerator.
   keybindingShortcut?: (id: CommandId) => string[]
 }
@@ -213,6 +219,7 @@ export const buildWorkspaceCommands = (
     showSidebarTab,
     focusTerminal,
     openFile,
+    openSettings,
     keybindingShortcut,
   } = deps
 
@@ -494,6 +501,36 @@ export const buildWorkspaceCommands = (
 
           openFile(path)
         },
+      }
+    : undefined
+
+  const settingsCommand: Command | undefined = openSettings
+    ? {
+        id: 'settings',
+        label: ':settings',
+        description: 'Settings',
+        hint: 'open the settings dialog',
+        icon: 'settings',
+        children: [
+          {
+            id: 'settings-open',
+            label: 'Open Settings',
+            description: 'Open the settings dialog',
+            icon: 'settings',
+            execute: (): void => {
+              openSettings()
+            },
+          },
+          ...AVAILABLE_SETTINGS_SECTIONS.map((section) => ({
+            id: `settings-${section.id}`,
+            label: section.label,
+            description: `Open ${section.label} settings`,
+            icon: section.icon,
+            execute: (): void => {
+              openSettings(section.id)
+            },
+          })),
+        ],
       }
     : undefined
 
@@ -805,6 +842,7 @@ export const buildWorkspaceCommands = (
     ...(showFilesCommand ? [showFilesCommand] : []),
     ...(focusTerminalCommand ? [focusTerminalCommand] : []),
     ...(openFileCommand ? [openFileCommand] : []),
+    ...(settingsCommand ? [settingsCommand] : []),
   ]
 
   if (keymapPreset !== 'vim') {
