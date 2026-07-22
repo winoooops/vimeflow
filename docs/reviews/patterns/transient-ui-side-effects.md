@@ -2,8 +2,8 @@
 id: transient-ui-side-effects
 category: react-patterns
 created: 2026-06-20
-last_updated: 2026-07-20
-ref_count: 9
+last_updated: 2026-07-22
+ref_count: 10
 ---
 
 # Transient UI Side Effects
@@ -292,4 +292,17 @@ to persistent state through a separate, explicit path.
   `ChangedFilesListSurface`, preserving it across overlay reveal remounts while
   keeping standalone list behavior unchanged. Added regression coverage for
   hidden n/p selection followed by overlay reveal.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Palette close focus restore ignored settings dialog ownership
+
+- **Source:** github-codex-connector | PR #725 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** The command palette close effect restored focus to the active
+  terminal or dock after any palette command, but the renderer settings fallback
+  can open a modal in the same batch as palette close. That allowed the parent
+  focus restore to move keyboard focus behind the settings dialog.
+- **Fix:** Added `settingsDialog.isOpen` to the close-effect guard and dependency
+  list so settings owns focus while its dialog is visible.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

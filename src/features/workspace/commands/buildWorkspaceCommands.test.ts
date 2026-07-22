@@ -15,6 +15,7 @@ import {
 } from '../../terminal/layout-registry'
 import { themeService, themeToScheme } from '../../../theme'
 import { AVAILABLE_SETTINGS_SECTIONS } from '@/features/settings/sections'
+import type { SettingsTargetId } from '@/features/settings/types'
 
 // TODO(VIM-339): Cover the command/settings flow once terminal fonts can be
 // persisted and hot-swapped across native Ghostty and the xterm fallback.
@@ -2047,7 +2048,7 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
   })
 
   test(':settings is a namespace with an Open Settings entry', () => {
-    const openSettings = vi.fn()
+    const openSettings = vi.fn<(targetId?: SettingsTargetId) => void>()
     const commands = buildWorkspaceCommands({ ...baseDeps(), openSettings })
 
     const settingsCmd = commands.find((c) => c.id === 'settings')
@@ -2059,22 +2060,13 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
   })
 
   test(':settings lists available settings sections as children', () => {
-    const openSettings = vi.fn()
+    const openSettings = vi.fn<(targetId?: SettingsTargetId) => void>()
     const commands = buildWorkspaceCommands({ ...baseDeps(), openSettings })
 
     const settingsCmd = commands.find((c) => c.id === 'settings')
     expect(settingsCmd?.children).toHaveLength(
       AVAILABLE_SETTINGS_SECTIONS.length + 1
     )
-
-    const SECTION_TARGET_IDS: Record<string, string> = {
-      general: 'general-close-with-no-tabs',
-      appearance: 'appearance-color-scheme',
-      keymap: 'keymap-preset',
-      agents: 'agents-manage-aliases',
-      terminal: 'terminal-font-family',
-      version: 'version-diff-view-style',
-    }
 
     const children = settingsCmd?.children ?? []
     for (const section of AVAILABLE_SETTINGS_SECTIONS) {
@@ -2083,9 +2075,14 @@ describe('buildWorkspaceCommands - net-new wired commands', () => {
       expect(child?.description).toContain(section.label)
 
       child?.execute?.('')
-      expect(openSettings).toHaveBeenCalledWith(SECTION_TARGET_IDS[section.id])
     }
 
+    const targetIds = openSettings.mock.calls.map(
+      ([targetId]): SettingsTargetId | undefined => targetId
+    )
+    expect(targetIds).toHaveLength(AVAILABLE_SETTINGS_SECTIONS.length)
+    expect(targetIds).not.toContain(undefined)
+    expect(targetIds).not.toContain(null)
     expect(openSettings).toHaveBeenCalledTimes(
       AVAILABLE_SETTINGS_SECTIONS.length
     )

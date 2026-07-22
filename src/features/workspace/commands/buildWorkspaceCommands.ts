@@ -18,6 +18,7 @@ import { themeService } from '../../../theme'
 import type { CommandId } from '../../keymap/catalog'
 import {
   AVAILABLE_SETTINGS_SECTIONS,
+  type AvailableSettingsSectionId,
   SETTINGS_TARGET_IDS,
 } from '@/features/settings/sections'
 import type { SettingsTargetId } from '@/features/settings/types'
@@ -31,6 +32,18 @@ const aliasMatch =
   (...forms: string[]) =>
   (query: string): number =>
     forms.reduce((best, form) => Math.max(best, fuzzyMatch(query, form)), 0)
+
+// Map each settings section to a representative target so the dialog opens
+// scrolled to a real control, not just the section header.
+const SECTION_TARGET_IDS: Record<AvailableSettingsSectionId, SettingsTargetId> =
+  {
+    general: SETTINGS_TARGET_IDS.generalCloseWithNoTabs,
+    appearance: SETTINGS_TARGET_IDS.appearanceColorScheme,
+    keymap: SETTINGS_TARGET_IDS.keymapPreset,
+    agents: SETTINGS_TARGET_IDS.agentsManageAliases,
+    terminal: SETTINGS_TARGET_IDS.terminalFontFamily,
+    version: SETTINGS_TARGET_IDS.versionDiffViewStyle,
+  }
 
 // Single source of truth for which Session fields a workspace command may
 // read. `WorkspaceTab` derives its shape from this list, and the workspace's
@@ -504,17 +517,6 @@ export const buildWorkspaceCommands = (
         },
       }
     : undefined
-
-  // Map each settings section to a representative target so the dialog
-  // opens scrolled to a real control, not just the section header.
-  const SECTION_TARGET_IDS: Record<string, SettingsTargetId> = {
-    general: SETTINGS_TARGET_IDS.generalCloseWithNoTabs,
-    appearance: SETTINGS_TARGET_IDS.appearanceColorScheme,
-    keymap: SETTINGS_TARGET_IDS.keymapPreset,
-    agents: SETTINGS_TARGET_IDS.agentsManageAliases,
-    terminal: SETTINGS_TARGET_IDS.terminalFontFamily,
-    version: SETTINGS_TARGET_IDS.versionDiffViewStyle,
-  }
 
   const settingsCommand: Command | undefined = openSettings
     ? {

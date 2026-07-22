@@ -2,8 +2,8 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-07-09
-ref_count: 11
+last_updated: 2026-07-22
+ref_count: 12
 ---
 
 # Type Contract Safety
@@ -225,4 +225,19 @@ expands.
 - **Fix:** Made `setFontFamily` optional in `GhosttyNativeParentAddon`, guarded
   the call with `?.`, and added regression coverage for an addon without font
   support receiving a font-family update.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Section target maps must be exhaustive over the section catalog
+
+- **Source:** github-codex-connector / github-claude | PR #725 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
+- **Finding:** `SECTION_TARGET_IDS` was typed as `Record<string,
+SettingsTargetId>`, so new available settings sections could miss a
+  representative target and silently call `openSettings(undefined)`. The
+  companion test duplicated the same loose map, so both production and test code
+  could agree on `undefined`.
+- **Fix:** Typed the map as `Record<AvailableSettingsSectionId,
+SettingsTargetId>` and changed the test to assert generated child commands
+  pass non-null targets instead of maintaining a duplicate expected map.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

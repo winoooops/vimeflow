@@ -2160,7 +2160,8 @@ const WorkspaceViewContent = (): ReactElement => {
       wasOpen &&
       !commandPalette.state.isOpen &&
       !showUnsavedDialog &&
-      !newSessionDialog.open
+      !newSessionDialog.open &&
+      !settingsDialog.isOpen
     ) {
       requestFocus(
         activeContainerId === TERMINAL_CONTAINER_ID ? 'terminal' : dockTab
@@ -2173,6 +2174,7 @@ const WorkspaceViewContent = (): ReactElement => {
     requestFocus,
     showUnsavedDialog,
     newSessionDialog.open,
+    settingsDialog.isOpen,
   ])
 
   usePaneShortcuts({
