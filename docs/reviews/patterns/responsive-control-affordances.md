@@ -3,7 +3,7 @@ id: responsive-control-affordances
 category: a11y
 created: 2026-07-20
 last_updated: 2026-07-22
-ref_count: 1
+ref_count: 2
 ---
 
 # Responsive Control Affordances

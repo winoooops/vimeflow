@@ -205,6 +205,29 @@ describe('AgentStatusCard', () => {
     expect(screen.getByText('34%')).toBeInTheDocument()
   })
 
+  test('keeps compact budget metrics out of the fixed quota body when both usage bars render', () => {
+    render(
+      <AgentStatusCard
+        title="m"
+        turns={12}
+        contextPct={64}
+        cacheHitPct={75}
+        fiveHourPct={12}
+        weekPct={34}
+      />
+    )
+
+    const budgetMetrics = screen.getByTestId('agent-card-budget-metrics')
+    const body = screen.getByTestId('agent-card-body')
+    const rateLimits = screen.getByTestId('agent-card-rate-limits')
+
+    expect(budgetMetrics).toHaveTextContent('ctx64%cache75%')
+    expect(body).toHaveStyle({ height: '66px' })
+    expect(body).toContainElement(rateLimits)
+    expect(body).not.toContainElement(budgetMetrics)
+    expect(rateLimits).toHaveTextContent('5-hour Session12%Weekly Usage34%')
+  })
+
   test('omits the usage bars when both usages are null', () => {
     render(<AgentStatusCard title="m" fiveHourPct={null} weekPct={null} />)
 

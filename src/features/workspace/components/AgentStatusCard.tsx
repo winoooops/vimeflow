@@ -328,18 +328,21 @@ export const AgentStatusCard = ({
                 </Tooltip>
               )}
             </div>
-            <TurnPill turns={turns} />
+            <div className="flex shrink-0 items-center gap-[6px]">
+              {hasCompactBudgetMetrics && (
+                <CompactBudgetMetrics
+                  contextPct={contextPct}
+                  cacheHitPct={cacheHitPct}
+                />
+              )}
+              <TurnPill turns={turns} />
+            </div>
           </div>
           <div
+            data-testid="agent-card-body"
             className="mt-[9px] flex flex-col justify-center gap-[7px]"
             style={{ height: CARD_BODY_H }}
           >
-            {hasCompactBudgetMetrics && (
-              <CompactBudgetMetrics
-                contextPct={contextPct}
-                cacheHitPct={cacheHitPct}
-              />
-            )}
             {isKimi ? (
               <KimiUsageGate
                 fiveHourPct={fiveHourPct}
@@ -351,6 +354,7 @@ export const AgentStatusCard = ({
             ) : (
               hasUsage && (
                 <div
+                  data-testid="agent-card-rate-limits"
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
