@@ -24,10 +24,6 @@ export interface AgentStatusCardProps {
   elapsed?: string | null
   /** Turn count rendered in the compact header pill; absent values render as 0. */
   turns?: number | null
-  /** Context-window usage percent; omitted when null. */
-  contextPct?: number | null
-  /** Prompt-cache hit percent; omitted when null. */
-  cacheHitPct?: number | null
   /** 5-hour (session) rate-limit usage percent; omitted when null. */
   fiveHourPct?: number | null
   /** 7-day (weekly) rate-limit usage percent; omitted when null. */
@@ -109,14 +105,6 @@ const shellCheatsheetUrl = (shellName: string): string =>
     CHEATSHEET_TOPIC[shellName] ?? shellName
   )}`
 
-const compactPercent = (pct: number | null): string | null => {
-  if (pct === null || !Number.isFinite(pct)) {
-    return null
-  }
-
-  return `${Math.round(Math.min(100, Math.max(0, pct)))}%`
-}
-
 const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
   <Tooltip content={`${turns ?? 0} turns`}>
     <Chip
@@ -142,67 +130,6 @@ const TurnPill = ({ turns }: { turns: number | null }): ReactElement => (
     </Chip>
   </Tooltip>
 )
-
-const BudgetPill = ({
-  label,
-  value,
-  tooltip,
-}: {
-  label: string
-  value: string
-  tooltip: string
-}): ReactElement => (
-  <Tooltip content={tooltip}>
-    <Chip
-      tone="custom"
-      radius="chip"
-      size="custom"
-      className="h-[19px] min-w-0 rounded-[5px] bg-surface-container-highest/65 px-[6px] font-mono text-[9.5px] font-semibold leading-none text-on-surface-variant"
-    >
-      <span className="min-w-0 truncate uppercase text-on-surface-muted">
-        {label}
-      </span>
-      <span className="ml-[5px] text-on-surface">{value}</span>
-    </Chip>
-  </Tooltip>
-)
-
-const CompactBudgetMetrics = ({
-  contextPct,
-  cacheHitPct,
-}: {
-  contextPct: number | null
-  cacheHitPct: number | null
-}): ReactElement | null => {
-  const contextValue = compactPercent(contextPct)
-  const cacheValue = compactPercent(cacheHitPct)
-
-  if (contextValue === null && cacheValue === null) {
-    return null
-  }
-
-  return (
-    <div
-      data-testid="agent-card-budget-metrics"
-      className="flex min-w-0 items-center gap-[6px]"
-    >
-      {contextValue !== null && (
-        <BudgetPill
-          label="ctx"
-          value={contextValue}
-          tooltip={`Context window: ${contextValue} used`}
-        />
-      )}
-      {cacheValue !== null && (
-        <BudgetPill
-          label="cache"
-          value={cacheValue}
-          tooltip={`Current cache rate: ${cacheValue}`}
-        />
-      )}
-    </div>
-  )
-}
 
 const ShellBody = ({ shellName }: { shellName: string }): ReactElement => (
   <div
@@ -264,8 +191,6 @@ export const AgentStatusCard = ({
   isShell = false,
   elapsed = null,
   turns = null,
-  contextPct = null,
-  cacheHitPct = null,
   fiveHourPct = null,
   weekPct = null,
   isKimi = false,
@@ -280,9 +205,6 @@ export const AgentStatusCard = ({
   // shows in full beside a compact badge.
   const { name: modelName, contextLabel } = parseModelTitle(title)
   void elapsed
-
-  const hasCompactBudgetMetrics =
-    compactPercent(contextPct) !== null || compactPercent(cacheHitPct) !== null
 
   return (
     <div
@@ -329,12 +251,6 @@ export const AgentStatusCard = ({
               )}
             </div>
             <div className="flex shrink-0 items-center gap-[6px]">
-              {hasCompactBudgetMetrics && (
-                <CompactBudgetMetrics
-                  contextPct={contextPct}
-                  cacheHitPct={cacheHitPct}
-                />
-              )}
               <TurnPill turns={turns} />
             </div>
           </div>
