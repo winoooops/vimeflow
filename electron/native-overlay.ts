@@ -943,13 +943,15 @@ export class NativeOverlayController {
     }
 
     record.syncBounds()
-    record.menu.window.setIgnoreMouseEvents(false)
-    record.menu.window.showInactive()
-    // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
-    // still land behind it. The screen-saver level reliably places this
-    // transparent overlay window above that native surface while it is open.
-    record.menu.window.setAlwaysOnTop(true, 'screen-saver')
-    record.menu.window.moveTop()
+    if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
+      record.menu.window.setIgnoreMouseEvents(false)
+      record.menu.window.showInactive()
+      // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
+      // still land behind it. The screen-saver level reliably places this
+      // transparent overlay window above that native surface while it is open.
+      record.menu.window.setAlwaysOnTop(true, 'screen-saver')
+      record.menu.window.moveTop()
+    }
     record.activeSurfaceId = payload.surfaceId
 
     const dialog =
