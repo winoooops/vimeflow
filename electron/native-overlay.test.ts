@@ -1711,6 +1711,32 @@ describe('NativeOverlayController', () => {
       { surfaceId: request.surfaceId, reason: 'outside' }
     )
 
+    overlayWindow.setAlwaysOnTop.mockClear()
+    overlayWindow.setIgnoreMouseEvents.mockClear()
+    overlayWindow.showInactive.mockClear()
+    overlayWindow.moveTop.mockClear()
+
+    const refreshedRequest = {
+      ...request,
+      payload: {
+        ...request.payload,
+        ariaLabel: 'Updated terminal actions',
+      },
+    } as const
+
+    const refreshPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      refreshedRequest
+    )
+
+    await Promise.resolve()
+    await acknowledgeOverlayReady(overlayWindow)
+    await expect(refreshPromise).resolves.toEqual({ accepted: true })
+    expect(overlayWindow.setAlwaysOnTop).not.toHaveBeenCalled()
+    expect(overlayWindow.setIgnoreMouseEvents).not.toHaveBeenCalled()
+    expect(overlayWindow.showInactive).not.toHaveBeenCalled()
+    expect(overlayWindow.moveTop).not.toHaveBeenCalled()
+
     handler(NATIVE_OVERLAY_RESUME)(
       { sender: electronMock.owner.webContents },
       { surfaceId: request.surfaceId }
