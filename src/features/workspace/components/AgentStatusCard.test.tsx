@@ -169,17 +169,31 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
   })
 
-  test('renders only the turn count from the old metrics row', () => {
+  test('renders compact context and cache metrics with the turn count', () => {
     render(
-      <AgentStatusCard title="m" elapsed="2m" turns={12} contextPct={64} />
+      <AgentStatusCard
+        title="m"
+        elapsed="2m"
+        turns={12}
+        contextPct={64}
+        cacheHitPct={75}
+      />
     )
 
     expect(screen.queryByText('schedule')).not.toBeInTheDocument()
     expect(screen.queryByText('2m')).not.toBeInTheDocument()
     expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
-    expect(screen.queryByText('64%')).not.toBeInTheDocument()
     expect(screen.getByText('forum')).toBeInTheDocument()
     expect(screen.getByText('12 turns')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-card-budget-metrics')).toHaveTextContent(
+      'ctx64%cache75%'
+    )
+  })
+
+  test('omits compact budget metrics when no readings are available', () => {
+    render(<AgentStatusCard title="m" turns={12} />)
+
+    expect(screen.queryByTestId('agent-card-budget-metrics')).toBeNull()
   })
 
   test('renders 5-hour and weekly usage bars when provided', () => {
@@ -189,6 +203,29 @@ describe('AgentStatusCard', () => {
     expect(screen.getByText('12%')).toBeInTheDocument()
     expect(screen.getByText('Weekly Usage')).toBeInTheDocument()
     expect(screen.getByText('34%')).toBeInTheDocument()
+  })
+
+  test('keeps compact budget metrics out of the fixed quota body when both usage bars render', () => {
+    render(
+      <AgentStatusCard
+        title="m"
+        turns={12}
+        contextPct={64}
+        cacheHitPct={75}
+        fiveHourPct={12}
+        weekPct={34}
+      />
+    )
+
+    const budgetMetrics = screen.getByTestId('agent-card-budget-metrics')
+    const body = screen.getByTestId('agent-card-body')
+    const rateLimits = screen.getByTestId('agent-card-rate-limits')
+
+    expect(budgetMetrics).toHaveTextContent('ctx64%cache75%')
+    expect(body).toHaveStyle({ height: '66px' })
+    expect(body).toContainElement(rateLimits)
+    expect(body).not.toContainElement(budgetMetrics)
+    expect(rateLimits).toHaveTextContent('5-hour Session12%Weekly Usage34%')
   })
 
   test('omits the usage bars when both usages are null', () => {

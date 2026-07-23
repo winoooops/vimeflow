@@ -57,9 +57,11 @@ interface MockEditorBuffer {
   releaseScope: ReturnType<typeof vi.fn>
 }
 
-const editorBufferOverride = vi.hoisted(() => ({
-  current: null as unknown,
-}))
+const editorBufferOverride: { current: MockEditorBuffer | null } = vi.hoisted(
+  () => ({
+    current: null,
+  })
+)
 
 const fileSystemServiceOverride = vi.hoisted(() => ({
   current: {
@@ -91,7 +93,7 @@ const createMockEditorBuffer = (
 
 vi.mock('../editor/hooks/useEditorBuffer', () => ({
   useEditorBuffer: (): MockEditorBuffer =>
-    (editorBufferOverride.current as MockEditorBuffer | null) ??
+    editorBufferOverride.current ??
     ({
       filePath: null,
       originalContent: '',
@@ -270,17 +272,27 @@ vi.mock('@/components/sidebar/Sidebar', () => ({
   ),
 }))
 
-const capturedCardProps: { title?: string } = {}
+const capturedCardProps: {
+  title?: string
+  contextPct?: number | null
+  cacheHitPct?: number | null
+} = {}
 
 interface MockAgentStatusCardProps {
   title?: string
+  contextPct?: number | null
+  cacheHitPct?: number | null
 }
 
 vi.mock('./components/AgentStatusCard', () => ({
   AgentStatusCard: ({
     title = undefined,
+    contextPct = undefined,
+    cacheHitPct = undefined,
   }: MockAgentStatusCardProps): ReactElement => {
     capturedCardProps.title = title
+    capturedCardProps.contextPct = contextPct
+    capturedCardProps.cacheHitPct = cacheHitPct
 
     return <div data-testid="agent-status-card-mock" />
   },
@@ -354,6 +366,8 @@ describe('WorkspaceView lifted-subscription contract', () => {
     capturedPanelProps.isRefreshing = undefined
     capturedDockPanelProps.gitStatus = undefined
     capturedCardProps.title = undefined
+    capturedCardProps.contextPct = undefined
+    capturedCardProps.cacheHitPct = undefined
     capturedDockPanelProps.feedbackBatch = undefined
     capturedDockPanelProps.feedbackRepoRootRef = undefined
     capturedDockPanelProps.editorFileLifecycleStatus = undefined
@@ -427,15 +441,56 @@ describe('WorkspaceView lifted-subscription contract', () => {
     // useGitStatus call count — both are lifted once-per-render in WorkspaceView
     // and neither is called by children in this test setup. If a future child
     // adds its own useAgentStatus() call, the counts diverge and the test fails.
-    render(<WorkspaceView />)
-    await screen.findByTestId('agent-status-card-mock')
-    await screen.findByTestId('agent-status-panel-mock')
+    const activeAgentStatus: AgentStatus = {
+      isActive: true,
+      agentExited: false,
+      agentType: 'claude-code',
+      modelId: 'claude-sonnet',
+      modelDisplayName: 'Claude Sonnet',
+      version: null,
+      sessionId: 'sess-1',
+      agentSessionId: null,
+      cwd: null,
+      contextWindow: {
+        usedPercentage: 66,
+        contextWindowSize: 200000,
+        totalInputTokens: 120000,
+        totalOutputTokens: 12000,
+        currentUsage: {
+          inputTokens: 2500,
+          outputTokens: 500,
+          cacheCreationInputTokens: 1000,
+          cacheReadInputTokens: 7000,
+        },
+      },
+      cost: null,
+      rateLimits: null,
+      numTurns: 28,
+      toolCalls: { total: 0, byType: {}, active: null },
+      recentToolCalls: [],
+      testRun: null,
+    }
+    const useAgentStatusMock = vi.mocked(useAgentStatus)
+    const originalImpl = useAgentStatusMock.getMockImplementation()
+    useAgentStatusMock.mockImplementation(() => activeAgentStatus)
 
-    expect(capturedPanelProps.agentStatus).toBeDefined()
-    expect(capturedCardProps.title).toBeDefined()
-    expect(useAgentStatus).toHaveBeenCalledTimes(
-      vi.mocked(useGitStatus).mock.calls.length
-    )
+    try {
+      render(<WorkspaceView />)
+      await screen.findByTestId('agent-status-card-mock')
+      await screen.findByTestId('agent-status-panel-mock')
+
+      expect(capturedPanelProps.agentStatus).toBeDefined()
+      expect(capturedCardProps.title).toBeDefined()
+      expect(capturedCardProps.contextPct).toBe(66)
+      expect(capturedCardProps.cacheHitPct).toBe(67)
+      expect(useAgentStatus).toHaveBeenCalledTimes(
+        vi.mocked(useGitStatus).mock.calls.length
+      )
+    } finally {
+      if (originalImpl) {
+        useAgentStatusMock.mockImplementation(originalImpl)
+      }
+    }
   })
 
   test('AgentStatusPanel and DockPanel receive one shared git status object', async () => {

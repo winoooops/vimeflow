@@ -12,12 +12,6 @@ import type { ShortcutInput, ShortcutKey } from '../lib/formatShortcut'
 const PALETTE_SHORTCUT = ['Mod', ';'] as const satisfies readonly ShortcutKey[]
 const DOCK_SHORTCUT = ['Mod', '0'] as const satisfies readonly ShortcutKey[]
 
-interface StatusBarCache {
-  cached: number
-  wrote: number
-  fresh: number
-}
-
 interface StatusBarChanges {
   added: number
   removed: number
@@ -26,15 +20,11 @@ interface StatusBarChanges {
 export interface StatusBarSession {
   startedAgo?: string
   turns: number
-  cache?: StatusBarCache
   changes?: StatusBarChanges
 }
 
 export interface StatusBarProps {
   session: StatusBarSession | null
-  // null = the agent is active but has not reported a context window yet;
-  // the segment is suppressed rather than shown as a misleading 0%.
-  contextPct: number | null
   onOpenPalette: () => void
   /** Current command-palette shortcut — defaults to the app binding. */
   paletteShortcut?: ShortcutInput
@@ -54,11 +44,6 @@ interface Segment {
   node: ReactNode
 }
 
-interface ContextPresentation {
-  face: string
-  toneClass: string
-}
-
 const separatorStyle = {
   color: 'color-mix(in srgb, var(--color-outline-variant) 70%, transparent)',
 } satisfies CSSProperties
@@ -75,51 +60,6 @@ const ACTION_BUTTON_BASE =
 
 const ACTION_BUTTON_IDLE =
   'text-on-surface-muted hover:bg-primary/10 hover:text-primary'
-
-const normalizePct = (pct: number): number =>
-  Math.min(100, Math.max(0, Math.round(pct)))
-
-const contextPresentation = (pct: number): ContextPresentation => {
-  if (pct < 50) {
-    return { face: '😊', toneClass: 'text-success' }
-  }
-
-  if (pct < 75) {
-    return { face: '😐', toneClass: 'text-on-surface-variant' }
-  }
-
-  if (pct < 90) {
-    return { face: '😟', toneClass: 'text-tertiary' }
-  }
-
-  return { face: '🥵', toneClass: 'text-error' }
-}
-
-const cacheToneClass = (rate: number): string => {
-  if (rate >= 70) {
-    return 'text-success'
-  }
-
-  if (rate >= 40) {
-    return 'text-primary'
-  }
-
-  return 'text-tertiary'
-}
-
-const cacheRate = (cache: StatusBarCache | undefined): number | null => {
-  if (!cache) {
-    return null
-  }
-
-  const total = cache.cached + cache.wrote + cache.fresh
-
-  if (total <= 0) {
-    return null
-  }
-
-  return Math.round((cache.cached / total) * 100)
-}
 
 const hasStartedAgo = (startedAgo: string | undefined): startedAgo is string =>
   startedAgo !== undefined &&
@@ -158,34 +98,13 @@ const MaterialIcon = ({ name }: { name: string }): ReactElement => (
   </span>
 )
 
-const ContextSmiley = ({ pct }: { pct: number }): ReactElement => {
-  const normalizedPct = normalizePct(pct)
-  const presentation = contextPresentation(normalizedPct)
-
-  return (
-    <span
-      data-testid="status-bar-context"
-      aria-label={`Context ${normalizedPct}%`}
-      className="inline-flex items-center gap-[4px] whitespace-nowrap"
-    >
-      <span aria-hidden="true" className="text-sm leading-none">
-        {presentation.face}
-      </span>
-      <span className={`font-bold tabular-nums ${presentation.toneClass}`}>
-        {normalizedPct}%
-      </span>
-    </span>
-  )
-}
-
 const buildSegments = ({
   session,
-  contextPct,
   burnerCount = 0,
   burnerOpen = false,
 }: Pick<
   StatusBarProps,
-  'session' | 'contextPct' | 'burnerCount' | 'burnerOpen'
+  'session' | 'burnerCount' | 'burnerOpen'
 >): Segment[] => {
   // Global across sessions, so it surfaces even when no session is active.
   const burnerText = burnerOpen ? 'burner open' : `burner ×${burnerCount}`
@@ -226,45 +145,6 @@ const buildSegments = ({
         >
           <MaterialIcon name="schedule" />
           <span>{session.startedAgo}</span>
-        </span>
-      ),
-    })
-  }
-
-  if (contextPct !== null) {
-    segments.push({
-      id: 'context',
-      node: <ContextSmiley pct={contextPct} />,
-    })
-  }
-
-  const rate = cacheRate(session.cache)
-
-  if (rate !== null) {
-    const toneClass = cacheToneClass(rate)
-
-    segments.push({
-      id: 'cache',
-      node: (
-        <span
-          data-testid="status-bar-cache"
-          className="inline-flex items-center gap-[4px] whitespace-nowrap"
-        >
-          <span className={toneClass}>
-            <MaterialIcon name="bolt" />
-          </span>
-          <span
-            data-testid="status-bar-cache-rate"
-            className={`font-semibold tabular-nums ${toneClass}`}
-          >
-            {rate}%
-          </span>
-          <span
-            data-testid="status-bar-cache-label"
-            className="text-on-surface-muted max-[760px]:hidden"
-          >
-            cached
-          </span>
         </span>
       ),
     })
@@ -316,7 +196,6 @@ const buildSegments = ({
 
 export const StatusBar = ({
   session,
-  contextPct,
   onOpenPalette,
   paletteShortcut = PALETTE_SHORTCUT,
   dockShortcut = DOCK_SHORTCUT,
@@ -327,7 +206,6 @@ export const StatusBar = ({
 }: StatusBarProps): ReactElement => {
   const segments = buildSegments({
     session,
-    contextPct,
     burnerCount,
     burnerOpen,
   })

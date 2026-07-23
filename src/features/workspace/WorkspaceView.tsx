@@ -2625,16 +2625,6 @@ const WorkspaceViewContent = (): ReactElement => {
       return null
     }
 
-    const usage = agentStatus.contextWindow?.currentUsage
-
-    const cache = usage
-      ? {
-          cached: usage.cacheReadInputTokens,
-          wrote: usage.cacheCreationInputTokens,
-          fresh: usage.inputTokens,
-        }
-      : undefined
-
     const gitLineTotals =
       gitStatus.filesCwd === activeCwd ? sumLines(gitStatus.files) : null
     const changes = gitLineTotals ?? lineDelta(activeSession)
@@ -2642,26 +2632,17 @@ const WorkspaceViewContent = (): ReactElement => {
     return {
       startedAgo: formatStatusDuration(agentStatus.cost?.totalDurationMs ?? 0),
       turns: agentStatus.numTurns,
-      cache,
       changes,
     }
   }, [
     activeCwd,
     activeSession,
-    agentStatus.contextWindow?.currentUsage,
     agentStatus.cost?.totalDurationMs,
     agentStatus.numTurns,
     gitStatus.files,
     gitStatus.filesCwd,
     isStatusBarAgentActive,
   ])
-
-  // null (not 0) when the agent is active but has not yet reported a context
-  // window — StatusBar suppresses the segment so the user never sees a
-  // misleading 😊0% that implies a healthy reading before any data arrives.
-  const statusBarContextPct = isStatusBarAgentActive
-    ? (agentStatus.contextWindow?.usedPercentage ?? null)
-    : null
 
   // Fused AgentStatusCard props, derived from the same live signals the status
   // bar uses (VIM-66). The compact card keeps only the turn count in the
@@ -3303,6 +3284,10 @@ const WorkspaceViewContent = (): ReactElement => {
                   title={sidebarCardTitle}
                   isShell={sidebarCardIsShell}
                   turns={sidebarCardTurns}
+                  contextPct={agentStatus.contextWindow?.usedPercentage ?? null}
+                  cacheHitPct={cacheHitPercentage(
+                    agentStatus.contextWindow?.currentUsage
+                  )}
                   fiveHourPct={sidebarCardFiveHourPct}
                   weekPct={sidebarCardWeekPct}
                   isKimi={sidebarCardIsKimi}
@@ -3559,7 +3544,6 @@ const WorkspaceViewContent = (): ReactElement => {
 
         <StatusBar
           session={statusBarSession}
-          contextPct={statusBarContextPct}
           onOpenPalette={commandPalette.open}
           paletteShortcut={paletteShortcut}
           dockShortcut={dockShortcut}

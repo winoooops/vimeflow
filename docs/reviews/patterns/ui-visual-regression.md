@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-20
-ref_count: 20
+last_updated: 2026-07-23
+ref_count: 21
 ---
 
 # UI Visual Regression
@@ -393,4 +393,19 @@ test case for the state that triggers the collision.
 - **Fix:** Kept the active tint on the outer header and made the isolated drag
   handle paint only its inactive preview background. Updated the focused header
   test to assert the active handle no longer carries the duplicate tint.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Compact agent card budget row clipped weekly usage
+
+- **Source:** github-claude | PR #728 round 1 | 2026-07-23
+- **Severity:** MEDIUM
+- **File:** `src/features/workspace/components/AgentStatusCard.tsx`
+- **Finding:** Compact context/cache pills were stacked inside the fixed 66px
+  AgentStatusCard body above both rate-limit bars. Active Claude sessions can
+  render context, cache, 5-hour, and weekly usage metrics together, so the
+  lower weekly bar could be clipped by the fixed 125px card.
+- **Fix:** Moved compact budget pills into the header control cluster beside
+  the turn count, leaving the fixed body reserved for quota bars. Added a
+  regression test that renders all four metrics together and asserts the
+  budget row stays outside the fixed quota body.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
