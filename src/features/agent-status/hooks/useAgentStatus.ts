@@ -541,6 +541,7 @@ export const useAgentStatus = (
     // gates scheduling so a synchronous rAF (tests/jsdom) still re-arms cleanly.
     let pendingToolCalls: AgentToolCallEvent[] = []
     const pendingSeenToolUseIds = new Set<string>()
+    let replayFloodMode = true
     let toolCallFlushScheduled = false
     let toolCallFrame: number | null = null
 
@@ -589,11 +590,15 @@ export const useAgentStatus = (
       if (pendingToolCalls.length === 0) {
         return
       }
-      if (pendingToolCalls.length > TOOL_CALL_FLOOD_THRESHOLD) {
+      if (
+        replayFloodMode &&
+        pendingToolCalls.length > TOOL_CALL_FLOOD_THRESHOLD
+      ) {
         // Default mode (replay flood): drain the whole backlog in one render so
         // a resume's thousands of historical tool calls don't re-render per event.
         const batch = pendingToolCalls
         pendingToolCalls = []
+        replayFloodMode = false
         persistSeenToolUseIds(batch)
         setStatus((prev) => applyToolCallEvents(prev, batch))
       } else {

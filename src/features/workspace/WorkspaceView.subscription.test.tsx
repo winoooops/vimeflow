@@ -274,25 +274,21 @@ vi.mock('@/components/sidebar/Sidebar', () => ({
 
 const capturedCardProps: {
   title?: string
-  contextPct?: number | null
-  cacheHitPct?: number | null
+  turns?: number | null
 } = {}
 
 interface MockAgentStatusCardProps {
   title?: string
-  contextPct?: number | null
-  cacheHitPct?: number | null
+  turns?: number | null
 }
 
 vi.mock('./components/AgentStatusCard', () => ({
   AgentStatusCard: ({
     title = undefined,
-    contextPct = undefined,
-    cacheHitPct = undefined,
+    turns = undefined,
   }: MockAgentStatusCardProps): ReactElement => {
     capturedCardProps.title = title
-    capturedCardProps.contextPct = contextPct
-    capturedCardProps.cacheHitPct = cacheHitPct
+    capturedCardProps.turns = turns
 
     return <div data-testid="agent-status-card-mock" />
   },
@@ -366,8 +362,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
     capturedPanelProps.isRefreshing = undefined
     capturedDockPanelProps.gitStatus = undefined
     capturedCardProps.title = undefined
-    capturedCardProps.contextPct = undefined
-    capturedCardProps.cacheHitPct = undefined
+    capturedCardProps.turns = undefined
     capturedDockPanelProps.feedbackBatch = undefined
     capturedDockPanelProps.feedbackRepoRootRef = undefined
     capturedDockPanelProps.editorFileLifecycleStatus = undefined
@@ -481,8 +476,7 @@ describe('WorkspaceView lifted-subscription contract', () => {
 
       expect(capturedPanelProps.agentStatus).toBeDefined()
       expect(capturedCardProps.title).toBeDefined()
-      expect(capturedCardProps.contextPct).toBe(66)
-      expect(capturedCardProps.cacheHitPct).toBe(67)
+      expect(capturedCardProps.turns).toBeDefined()
       expect(useAgentStatus).toHaveBeenCalledTimes(
         vi.mocked(useGitStatus).mock.calls.length
       )
