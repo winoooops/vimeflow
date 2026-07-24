@@ -12,6 +12,7 @@ pub mod state;
 #[cfg(feature = "e2e-test")]
 pub mod test_commands;
 pub mod types;
+pub(crate) mod utf8;
 pub mod workspace_layout;
 
 pub use state::PtyState;

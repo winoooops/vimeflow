@@ -22,6 +22,14 @@ pub struct RingBuffer {
     bytes: VecDeque<u8>,
     capacity: usize,
     end_offset: u64,
+    /// Raw bytes at the buffer tail belonging to an incomplete UTF-8
+    /// sequence still held by the read loop's `Utf8ChunkDecoder` (0..=3).
+    /// Raw-byte storage is untouched — this only marks how much of the
+    /// tail has NOT been published as decoded pty-data yet, so a hydration
+    /// snapshot (`list_sessions`) can report a replay boundary consistent
+    /// with the event stream's offsets. Updated under the same lock as
+    /// `append`, so `(bytes, end_offset, pending)` always agree.
+    pending_utf8_carry: usize,
 }
 
 impl RingBuffer {
@@ -30,6 +38,7 @@ impl RingBuffer {
             bytes: VecDeque::with_capacity(capacity),
             capacity,
             end_offset: 0,
+            pending_utf8_carry: 0,
         }
     }
 
@@ -60,6 +69,17 @@ impl RingBuffer {
 
     pub fn end_offset(&self) -> u64 {
         self.end_offset
+    }
+
+    /// Record how many tail bytes are an unpublished incomplete UTF-8
+    /// carry. Call under the same lock as the `append` it describes.
+    pub fn set_pending_utf8_carry(&mut self, len: usize) {
+        self.pending_utf8_carry = len;
+    }
+
+    /// Tail bytes not yet published as decoded pty-data (0..=3).
+    pub fn pending_utf8_carry(&self) -> usize {
+        self.pending_utf8_carry
     }
 }
 
@@ -607,6 +627,23 @@ mod tests {
         }
         assert_eq!(buf.end_offset(), 20);
         assert_eq!(buf.bytes_snapshot().len(), 4);
+    }
+
+    #[test]
+    fn ring_buffer_pending_utf8_carry_defaults_zero_and_updates() {
+        use super::RingBuffer;
+        let mut buf = RingBuffer::new(16);
+        assert_eq!(buf.pending_utf8_carry(), 0);
+
+        buf.append(b"caf\xC3");
+        buf.set_pending_utf8_carry(1);
+        assert_eq!(buf.pending_utf8_carry(), 1);
+
+        buf.append(b"\xA9");
+        buf.set_pending_utf8_carry(0);
+        assert_eq!(buf.pending_utf8_carry(), 0);
+        // Raw storage stays byte-pure regardless of the carry marker.
+        assert_eq!(buf.bytes_snapshot(), b"caf\xC3\xA9");
     }
 
     #[test]

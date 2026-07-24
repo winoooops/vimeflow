@@ -11,6 +11,7 @@ use crate::runtime::EventSink;
 use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
 use super::state::{ManagedSession, PtyState, RingBuffer};
 use super::types::*;
+use super::utf8::Utf8ChunkDecoder;
 
 fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
     if let Some(dir) = dir {
@@ -779,11 +780,21 @@ pub(crate) fn list_sessions_inner(
                 let ring_guard = ring.lock().expect("ring poisoned");
                 let bytes = ring_guard.bytes_snapshot();
                 let end_offset = ring_guard.end_offset();
-                let replay_data = String::from_utf8_lossy(&bytes).to_string();
+                let pending = ring_guard.pending_utf8_carry();
+                drop(ring_guard);
+                // Replay everything the live read loop has already published
+                // as text, but stop at the same point it did. If the loop is
+                // mid-way through a character split across reads, those last
+                // few bytes haven't been emitted yet — leave them out so this
+                // replay ends exactly where the next live event begins.
+                // Otherwise the two would overlap and the frontend would drop
+                // the event that finishes the character, losing it for good.
+                let published = bytes.len().saturating_sub(pending);
+                let replay_data = String::from_utf8_lossy(&bytes[..published]).to_string();
                 SessionStatus::Alive {
                     pid,
                     replay_data,
-                    replay_end_offset: end_offset,
+                    replay_end_offset: end_offset - pending as u64,
                 }
             } else {
                 // Lazy reconciliation: cache says alive but PtyState
@@ -1108,6 +1119,96 @@ pub(crate) fn set_workspace_sessions_inner(
 /// Sentinel exit code for a PTY read error (no real OS exit status exists).
 const PTY_READ_ERROR_EXIT_CODE: i32 = -1;
 
+/// Hand one raw PTY read to the terminal: remember the bytes for replay,
+/// turn them into text, and emit that text to the UI as a `pty-data` event.
+///
+/// Why not a plain `from_utf8_lossy`: a PTY read can slice the byte stream
+/// in the middle of a multi-byte character — a box-drawing `─` split across
+/// two reads is the exact ghost-glyph bug this fixes. The `decoder` holds
+/// back any half-finished trailing character and completes it on the next
+/// read, so we only ever publish whole characters.
+///
+/// Two consistency rules, both so a reconnecting frontend can be replayed
+/// correctly from a mid-stream snapshot (`list_sessions` may lock the ring
+/// at any moment to hand back history):
+///
+/// 1. Decode first, THEN append the raw bytes and record the held-back
+///    tail length under a single ring lock. A snapshot taken concurrently
+///    then always sees the buffer and its "unpublished tail" marker agree,
+///    never a half-updated state.
+/// 2. The event's `byte_len` is a count of RAW bytes, not the character
+///    length of `data`. The frontend advances its replay cursor by these
+///    raw counts; using `data.len()` would drift (an invalid byte decodes
+///    to U+FFFD = 3 bytes re-encoded) and drop or duplicate output. So
+///    consecutive events line up to cover the raw stream exactly.
+fn publish_pty_chunk(
+    events: &dyn EventSink,
+    session_id: &SessionId,
+    ring: &Mutex<RingBuffer>,
+    decoder: &mut Utf8ChunkDecoder,
+    chunk: &[u8],
+) {
+    let carried = decoder.carry_len() as u64;
+    let data = decoder.decode(chunk);
+    let pending = decoder.carry_len();
+    let chunk_start = {
+        let mut ring = ring.lock().expect("ring poisoned");
+        let start = ring.append(chunk);
+        ring.set_pending_utf8_carry(pending);
+        start
+    };
+    let byte_len = carried + chunk.len() as u64 - pending as u64;
+    if byte_len == 0 {
+        // The whole chunk was carried (mid-scalar read) — nothing decoded
+        // to publish yet; the next chunk's event will cover these bytes.
+        return;
+    }
+    emit_pty_data(
+        events,
+        &PtyDataEvent {
+            session_id: session_id.clone(),
+            data,
+            offset_start: chunk_start - carried,
+            // Raw byte count, not `data.len()` — see rule 2 above.
+            byte_len,
+        },
+    )
+    .ok();
+}
+
+/// Emit a final replacement character when the stream ends (EOF or read
+/// error) while the decoder is still holding a half-finished character.
+///
+/// The bytes that would have completed it can never arrive now, so surface
+/// it as one U+FFFD rather than letting it vanish. Also clears the ring's
+/// held-back-tail marker so a later hydration snapshot treats the whole
+/// buffer as published.
+fn flush_pty_carry(
+    events: &dyn EventSink,
+    session_id: &SessionId,
+    ring: &Mutex<RingBuffer>,
+    decoder: &mut Utf8ChunkDecoder,
+) {
+    let Some((data, len)) = decoder.flush() else {
+        return;
+    };
+    let end_offset = {
+        let mut ring = ring.lock().expect("ring poisoned");
+        ring.set_pending_utf8_carry(0);
+        ring.end_offset()
+    };
+    emit_pty_data(
+        events,
+        &PtyDataEvent {
+            session_id: session_id.clone(),
+            data,
+            offset_start: end_offset - len as u64,
+            byte_len: len as u64,
+        },
+    )
+    .ok();
+}
+
 /// Background task to read PTY output and emit events
 async fn read_pty_output(
     events: Arc<dyn EventSink>,
@@ -1127,11 +1228,22 @@ async fn read_pty_output(
 
     // Read loop
     let mut buf = [0u8; 8192];
+    // Carries an incomplete trailing UTF-8 sequence across reads — PTY
+    // reads slice at arbitrary byte boundaries, so a multi-byte scalar
+    // can straddle two chunks.
+    let mut decoder = Utf8ChunkDecoder::new();
     loop {
         match reader.read(&mut buf) {
             Ok(0) => {
                 // EOF - process exited
                 log::info!("PTY session {} exited (EOF)", session_id);
+                // A dangling carry can never complete now — flush it as
+                // U+FFFD before the exit event so the data stream ends at
+                // the ring's end_offset. Skipped when cancelled: the
+                // "no pty-data after kill_pty" contract wins.
+                if !cancelled.load(Ordering::Relaxed) {
+                    flush_pty_carry(events.as_ref(), &session_id, &ring, &mut decoder);
+                }
                 // EOF can precede the child's reaped status under load; retry briefly so a non-zero code is not lost as None.
                 let mut exit_code = state.try_wait_exit_code(&session_id, generation);
                 let mut tries = 0;
@@ -1173,27 +1285,10 @@ async fn read_pty_output(
                     break;
                 }
 
-                // Atomically: append to ring buffer, get chunk_start, drop the lock
-                let chunk_start = {
-                    let mut ring = ring.lock().expect("ring poisoned");
-                    ring.append(&buf[..n])
-                };
-                let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                emit_pty_data(
-                    events.as_ref(),
-                    &PtyDataEvent {
-                        session_id: session_id.clone(),
-                        data,
-                        offset_start: chunk_start,
-                        // Raw byte count — the unit the producer's offset
-                        // arithmetic (RingBuffer::append) used. Subscribers
-                        // MUST advance their cursor with this, NOT with the
-                        // length of `data` (lossy UTF-8 inflates invalid
-                        // bytes to U+FFFD, which is 3 bytes when re-encoded).
-                        byte_len: n as u64,
-                    },
-                )
-                .ok();
+                // Append raw bytes to the ring + publish the decoded text.
+                // Any incomplete trailing UTF-8 sequence is carried into
+                // the next read instead of being lossily replaced.
+                publish_pty_chunk(events.as_ref(), &session_id, &ring, &mut decoder, &buf[..n]);
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
                 // Interrupted - retry
@@ -1202,6 +1297,11 @@ async fn read_pty_output(
             Err(e) => {
                 // Error - emit error event and exit
                 log::error!("PTY read error for session {}: {}", session_id, e);
+                // Same terminal-flush as the EOF path: the carried tail can
+                // never complete once the stream is dead.
+                if !cancelled.load(Ordering::Relaxed) {
+                    flush_pty_carry(events.as_ref(), &session_id, &ring, &mut decoder);
+                }
                 // A read error is a failure, not a clean exit: mark the cache
                 // errored with a sentinel so hydration reads errored too.
                 let _ = cache.mutate(|d| {
@@ -2167,6 +2267,12 @@ mod tests {
         }
     }
 
+    /// Absolute path to `printf`, present on macOS and Linux CI at the same
+    /// location. Used to emit an exact byte sequence with no shell involved.
+    fn test_printf_path() -> &'static str {
+        "/usr/bin/printf"
+    }
+
     /// Round 9, Finding 1 (codex P1) regression — when `state.kill` returns
     /// `KillError::KillFailed` (the session IS in `PtyState` but the OS-level
     /// `child.kill()` syscall failed), `kill_pty` must propagate the error
@@ -2805,6 +2911,226 @@ mod tests {
         assert!(!snap.groupings.contains_key("pty-only"));
     }
 
+    /// Decode the recorded `pty-data` events into `(data, offset_start,
+    /// byte_len)` triples for the UTF-8 tail-carry assertions below.
+    fn pty_data_events(events: &crate::runtime::FakeEventSink) -> Vec<(String, u64, u64)> {
+        events
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "pty-data")
+            .map(|(_, payload)| {
+                (
+                    payload["data"].as_str().expect("data string").to_string(),
+                    payload["offsetStart"].as_u64().expect("offsetStart"),
+                    payload["byteLen"].as_u64().expect("byteLen"),
+                )
+            })
+            .collect()
+    }
+
+    /// Assert the events tile the raw byte stream contiguously starting at
+    /// 0 (each event's offset_start == previous offset_start + byte_len)
+    /// and return the total raw bytes covered. This is exactly the frontend
+    /// cursor contract: `useTerminal` drops any event whose offsetStart is
+    /// below its cursor and advances the cursor by byte_len.
+    fn assert_contiguous(emitted: &[(String, u64, u64)]) -> u64 {
+        let mut cursor = 0u64;
+        for (data, start, len) in emitted {
+            assert_eq!(
+                *start, cursor,
+                "event {data:?} must start at the previous frontier {cursor}"
+            );
+            cursor += len;
+        }
+        cursor
+    }
+
+    #[test]
+    fn read_chunk_carries_split_two_byte_utf8_tail() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring = Mutex::new(RingBuffer::new(64));
+        let mut decoder = Utf8ChunkDecoder::new();
+        let sid = "utf8-2b".to_string();
+
+        // "café" with the C3 A9 of "é" split across two PTY reads.
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"caf\xC3");
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"\xA9");
+
+        let emitted = pty_data_events(&events);
+        let concat: String = emitted.iter().map(|(d, _, _)| d.as_str()).collect();
+        assert_eq!(concat, "café");
+        assert!(
+            !concat.contains('\u{FFFD}'),
+            "split scalar must not decode to U+FFFD"
+        );
+        assert_eq!(
+            assert_contiguous(&emitted),
+            5,
+            "byte_len must sum to raw bytes"
+        );
+    }
+
+    #[test]
+    fn read_chunk_carries_three_byte_scalar_fed_byte_at_a_time() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring = Mutex::new(RingBuffer::new(64));
+        let mut decoder = Utf8ChunkDecoder::new();
+        let sid = "utf8-3b".to_string();
+
+        // "€" = E2 82 AC, one byte per read. The first two reads publish
+        // nothing (whole chunk carried, no zero-length events).
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"\xE2");
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"\x82");
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"\xAC");
+
+        let emitted = pty_data_events(&events);
+        assert_eq!(emitted.len(), 1, "mid-scalar reads must not emit events");
+        assert_eq!(emitted[0], ("€".to_string(), 0, 3));
+    }
+
+    #[test]
+    fn read_chunk_carries_four_byte_scalar_split_mid_read() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring = Mutex::new(RingBuffer::new(64));
+        let mut decoder = Utf8ChunkDecoder::new();
+        let sid = "utf8-4b".to_string();
+
+        // "😀" = F0 9F 98 80 split 2+2, with ASCII around it.
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"ok \xF0\x9F");
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"\x98\x80!");
+
+        let emitted = pty_data_events(&events);
+        let concat: String = emitted.iter().map(|(d, _, _)| d.as_str()).collect();
+        assert_eq!(concat, "ok 😀!");
+        assert!(!concat.contains('\u{FFFD}'));
+        assert_eq!(assert_contiguous(&emitted), 8);
+    }
+
+    #[test]
+    fn read_chunk_still_replaces_truly_invalid_bytes() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring = Mutex::new(RingBuffer::new(64));
+        let mut decoder = Utf8ChunkDecoder::new();
+        let sid = "utf8-bad".to_string();
+
+        // 0xFF can never start a UTF-8 sequence — it must be replaced
+        // immediately, not carried.
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"ab\xFFcd");
+
+        let emitted = pty_data_events(&events);
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0], ("ab\u{FFFD}cd".to_string(), 0, 5));
+    }
+
+    #[test]
+    fn read_chunk_flushes_dangling_carry_as_replacement_on_stream_end() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring = Mutex::new(RingBuffer::new(64));
+        let mut decoder = Utf8ChunkDecoder::new();
+        let sid = "utf8-eof".to_string();
+
+        // EOF/exit with one dangling lead byte: the tail can never
+        // complete, so it must surface as U+FFFD and keep the offset
+        // stream contiguous up to the ring's end_offset.
+        publish_pty_chunk(&events, &sid, &ring, &mut decoder, b"caf\xC3");
+        flush_pty_carry(&events, &sid, &ring, &mut decoder);
+
+        let emitted = pty_data_events(&events);
+        assert_eq!(
+            emitted,
+            vec![("caf".to_string(), 0, 3), ("\u{FFFD}".to_string(), 3, 1),]
+        );
+        assert_eq!(
+            ring.lock().expect("ring poisoned").pending_utf8_carry(),
+            0,
+            "flush must clear the ring's pending-carry marker"
+        );
+    }
+
+    /// A hydration snapshot taken BETWEEN the two halves of a split scalar
+    /// must report the decoded frontier, not the raw ring end. Otherwise
+    /// the restored frontend's cursor starts past the carried byte and the
+    /// event completing the scalar (offset_start == frontier < cursor) is
+    /// dropped whole by the cursor dedupe in useTerminal — losing the
+    /// character forever and desyncing every later offset expectation.
+    #[test]
+    fn hydration_snapshot_mid_split_reports_decoded_frontier() {
+        use crate::terminal::cache::CachedSession;
+
+        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
+        let id = "utf8-hydrate".to_string();
+
+        // Seed a live session (fake child reports pid 1) + matching cache
+        // entry, mirroring what spawn_pty would have written.
+        state.insert(id.clone(), make_failing_kill_session());
+        cache
+            .mutate(|data| {
+                data.sessions.insert(
+                    id.clone(),
+                    CachedSession {
+                        cwd: "/tmp".to_string(),
+                        created_at: "2026-07-22T00:00:00Z".to_string(),
+                        exited: false,
+                        last_exit_code: None,
+                        activity_panel_collapsed: None,
+                        last_shell: None,
+                    },
+                );
+                data.session_order.push(id.clone());
+                Ok(())
+            })
+            .expect("cache mutate");
+
+        // Drive the session's OWN ring through the read-loop chunk path.
+        let ring = {
+            let sessions = state.inner_sessions().lock().expect("poisoned");
+            Arc::clone(&sessions.get(&id).expect("seeded session").ring)
+        };
+        let sink = crate::runtime::FakeEventSink::new();
+        let mut decoder = Utf8ChunkDecoder::new();
+
+        publish_pty_chunk(&sink, &id, &ring, &mut decoder, b"caf\xC3");
+
+        // Hydration snapshot mid-split.
+        let listed = list_sessions_inner(&state, &cache).expect("list_sessions");
+        let info = listed
+            .sessions
+            .iter()
+            .find(|s| s.id == id)
+            .expect("session listed");
+        let (replay_data, replay_end_offset) = match &info.status {
+            SessionStatus::Alive {
+                replay_data,
+                replay_end_offset,
+                ..
+            } => (replay_data.clone(), *replay_end_offset),
+            other => panic!("expected Alive, got {:?}", other),
+        };
+        assert_eq!(
+            replay_data, "caf",
+            "carried incomplete tail must not leak into replay as U+FFFD"
+        );
+        assert_eq!(
+            replay_end_offset, 3,
+            "replay boundary must stop at the decoded frontier, not the raw ring end"
+        );
+
+        // The completing chunk's event must start exactly at the hydration
+        // cursor so a restored frontend (cursor == replay_end_offset)
+        // accepts it: offsetStart >= cursor.
+        publish_pty_chunk(&sink, &id, &ring, &mut decoder, b"\xA9");
+        let emitted = pty_data_events(&sink);
+        let (data, start, len) = emitted.last().expect("completing event").clone();
+        assert_eq!(
+            start, replay_end_offset,
+            "completing event must resume at the reported replay boundary"
+        );
+        assert_eq!((data.as_str(), len), ("é", 2));
+        assert_eq!(format!("{replay_data}{data}"), "café");
+
+        let _ = state.remove(&id);
+    }
+
     #[tokio::test]
     async fn read_loop_eof_marks_cache_exited() {
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
@@ -2858,6 +3184,103 @@ mod tests {
         }
 
         assert!(exited, "cache entry should be marked exited after EOF");
+    }
+
+    /// Guards the EOF flush call site in `read_pty_output` itself, not just
+    /// the `flush_pty_carry` helper (the existing helper-level test would not
+    /// catch accidental removal of the read-loop call site).
+    ///
+    /// Drives the REAL read loop over a PTY whose child emits an exact byte
+    /// sequence ending mid-scalar, then exits. `/usr/bin/printf 'caf\303'`
+    /// writes "caf" plus a lone 0xC3 lead byte with nothing to complete it.
+    /// A raw non-shell child is used deliberately: a real interactive shell's
+    /// async workers (e.g. zsh autosuggestion forks) can inherit and hold the
+    /// PTY slave fd open, delaying EOF indefinitely and making the test flaky;
+    /// dropping the slave here makes EOF deterministic and immediate.
+    ///
+    /// The read loop must publish "caf" and then flush the dangling 0xC3 as a
+    /// final U+FFFD `pty-data` event. Deleting the EOF flush call site drops
+    /// the byte silently and the final event stops being U+FFFD, failing here.
+    #[tokio::test]
+    async fn read_loop_flushes_dangling_utf8_tail_on_eof() {
+        use crate::terminal::state::ManagedSession;
+
+        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
+        // Own the concrete sink so we can inspect the recorded events; it
+        // coerces to `Arc<dyn EventSink>` at the read_pty_output call below.
+        let events = Arc::new(crate::runtime::FakeEventSink::new());
+        let session_id = "utf8-eof-flush".to_string();
+
+        let pty_pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = CommandBuilder::new(test_printf_path());
+        cmd.arg("caf\\303"); // format string: "caf" + octal \303 (0xC3)
+        let child = pty_pair.slave.spawn_command(cmd).expect("spawn printf");
+        // Drop the slave so the master observes EOF once printf exits; a
+        // retained slave fd would keep the read blocked forever.
+        drop(pty_pair.slave);
+        let writer = pty_pair.master.take_writer().expect("take_writer");
+
+        let ring = Arc::new(Mutex::new(RingBuffer::new(64)));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        state.insert(
+            session_id.clone(),
+            ManagedSession {
+                master: pty_pair.master,
+                writer,
+                child,
+                cwd: "/tmp".into(),
+                bridge_dir: None,
+                shim_dir: None,
+                generation: 0,
+                ring: Arc::clone(&ring),
+                cancelled: Arc::clone(&cancelled),
+                started_at: std::time::SystemTime::now(),
+            },
+        );
+
+        // Run the actual read loop to completion — it returns on EOF.
+        read_pty_output(
+            events.clone(),
+            state.clone(),
+            cache.clone(),
+            session_id.clone(),
+            0,
+            Arc::clone(&ring),
+            cancelled,
+        )
+        .await
+        .expect("read loop");
+
+        // The final pty-data event must be the flushed replacement char
+        // covering the single carried byte. Without the EOF flush call site
+        // the 0xC3 is dropped and the last event is the "caf" prefix.
+        let emitted = pty_data_events(&events);
+        let (data, _start, byte_len) = emitted
+            .last()
+            .expect("read loop must emit at least one pty-data event")
+            .clone();
+        assert_eq!(
+            (data.as_str(), byte_len),
+            ("\u{FFFD}", 1),
+            "the dangling 0xC3 tail must flush as a single U+FFFD on EOF; events were {emitted:?}"
+        );
+        let concat: String = emitted.iter().map(|(d, _, _)| d.as_str()).collect();
+        assert_eq!(
+            concat, "caf\u{FFFD}",
+            "the read loop must publish the valid prefix, then the flushed U+FFFD"
+        );
+        assert_eq!(
+            ring.lock().expect("ring poisoned").pending_utf8_carry(),
+            0,
+            "the EOF flush must clear the ring's pending-carry marker"
+        );
     }
 
     #[tokio::test]
