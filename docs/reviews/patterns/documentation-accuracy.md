@@ -2,7 +2,7 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-20
+last_updated: 2026-07-24
 ref_count: 92
 ---
 
@@ -933,4 +933,18 @@ Stale documentation misleads future contributors and review agents.
   code lacked a TODO with the Linear issue ID and URL for the V2 implementation.
 - **Fix:** Added a TODO referencing VIM-361 and its Linear URL above the
   notification slot.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 99. Ghostty resize fork needed native boundary debug notes
+
+- **Source:** github-codex-connector | PR #736 round 1 | 2026-07-24
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-helper/Package.swift`
+- **Finding:** The PR pinned `libghostty-spm` to a forked revision that fixed a
+  native resize winsize/grid race, but the repository had no matching
+  `docs/superpowers/plans/` note preserving the required DOM rect, renderer
+  viewport, Electron bounds, applied native frame, and PTY resize evidence.
+- **Fix:** Added a dated Ghostty resize lockstep note recording the boundary
+  measurements, the premature `updateViewport` race, the fork revision, and the
+  verification needed to revert the temporary pin later.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
