@@ -918,4 +918,97 @@ describe('useResizable', () => {
       expect(result.current.sizeRef.current).toBe(350)
     })
   })
+
+  describe('drag cursor pinning', () => {
+    test('pins the col-resize cursor on body while dragging horizontally', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      expect(document.body.classList.contains('vf-resize-dragging-col')).toBe(
+        true
+      )
+
+      expect(document.body.classList.contains('vf-resize-dragging-row')).toBe(
+        false
+      )
+    })
+
+    test('pins the row-resize cursor on body while dragging vertically', () => {
+      const { result } = renderHook(() =>
+        useResizable({
+          initial: 256,
+          min: 100,
+          max: 500,
+          direction: 'vertical',
+        })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 0,
+          clientY: 200,
+        } as React.MouseEvent)
+      })
+
+      expect(document.body.classList.contains('vf-resize-dragging-row')).toBe(
+        true
+      )
+
+      expect(document.body.classList.contains('vf-resize-dragging-col')).toBe(
+        false
+      )
+    })
+
+    test('mouseup restores the cursor after the drag ends', () => {
+      const { result } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      act(() => {
+        document.dispatchEvent(new MouseEvent('mouseup'))
+      })
+
+      expect(document.body.classList.contains('vf-resize-dragging-col')).toBe(
+        false
+      )
+    })
+
+    test('unmounting mid-drag restores the cursor', () => {
+      const { result, unmount } = renderHook(() =>
+        useResizable({ initial: 256, min: 100, max: 500 })
+      )
+
+      act(() => {
+        result.current.handleMouseDown({
+          preventDefault: () => undefined,
+          clientX: 200,
+          clientY: 0,
+        } as React.MouseEvent)
+      })
+
+      unmount()
+
+      expect(document.body.classList.contains('vf-resize-dragging-col')).toBe(
+        false
+      )
+    })
+  })
 })
