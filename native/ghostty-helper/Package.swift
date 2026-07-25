@@ -18,7 +18,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/Lakr233/libghostty-spm.git", from: "1.2.0"),
+        .package(url: "https://github.com/winoooops/libghostty-spm.git", revision: "59271cd02bc6e18b350b4b14674daabf2f1fc299"),
     ],
     targets: [
         .executableTarget(

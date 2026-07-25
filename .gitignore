@@ -130,3 +130,4 @@ tests/e2e/.wdio-cache/
 ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
+native/ghostty-helper/.build/

@@ -2,6 +2,10 @@ import AppKit
 import Foundation
 import GhosttyTerminal
 
+/// Diagnostics switch shared by the bridge's trace points (see VIMEFLOW_GHOSTTY_DEBUG).
+let vimeflowGhosttyDebugEnabled =
+    ProcessInfo.processInfo.environment["VIMEFLOW_GHOSTTY_DEBUG"] == "1"
+
 public typealias VimeflowGhosttyInputCallback = @convention(c) (
     UnsafeMutableRawPointer?,
     UnsafePointer<UInt8>?,
@@ -485,6 +489,18 @@ private final class EmbeddedGhosttySurface: NSObject {
 
     private let parentView: NSView
     private let container = EmbeddedGhosttyContainerView(frame: .zero)
+
+    /// Last frame the renderer asked for while the window was live-resizing.
+    /// Applied once the drag ends — see `setFrame`.
+    private var pendingLiveResizeFrame: (
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        bottomCornerRadius: Double,
+        parentHeight: Double
+    )?
+    private var liveResizeSettleScheduled = false
     private let callbacks: CallbackBox
     private var focusMonitor: Any?
     private var contextMenuMonitor: Any?
@@ -580,6 +596,49 @@ private final class EmbeddedGhosttySurface: NSObject {
         bottomCornerRadius: Double,
         parentHeight: Double
     ) {
+        // While the window is live-resizing, this frame is a stale echo: it was
+        // derived from a DOM layout that lags the window by an IPC round-trip.
+        // AppKit's autoresize prediction (see updateLiveResizePrediction) already
+        // tracks the window in real time, so applying this would fight it and snap
+        // the surface back to an older size. That is exactly what a debug capture
+        // of a window drag shows — the grid oscillating between the live size and
+        // a ~200px-stale one, which reads as flicker/stale frames. Keep the
+        // prediction while dragging and apply the authoritative frame at the end.
+        // Ground truth for which gesture this frame belongs to: a window drag puts
+        // the parent view in live resize, a pane-divider drag does not.
+        if vimeflowGhosttyDebugEnabled {
+            print("[vimeflow-bridge] setFrame live=\(parentView.inLiveResize) \(Int(width))x\(Int(height)) at \(Int(x)),\(Int(y))")
+        }
+
+        // While the window is live-resizing, this frame is a stale echo: it was
+        // derived from a DOM layout that lags the window by an IPC round-trip.
+        // AppKit's autoresize prediction already tracks the window in real time,
+        // so applying this would fight it and snap the surface back to an older
+        // size — a debug capture of a window drag shows the grid oscillating
+        // between the live size and a ~200px-stale one. Keep the prediction while
+        // dragging and apply the authoritative frame once the drag ends.
+        //
+        // A pane-divider drag does NOT enter live resize, so this branch must be
+        // inert there: the renderer frame is authoritative for that gesture.
+        guard !parentView.inLiveResize else {
+            pendingLiveResizeFrame = (
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                bottomCornerRadius: bottomCornerRadius,
+                parentHeight: parentHeight
+            )
+            // Arm the prediction from the frame the surface actually has: that
+            // mask is what makes AppKit resize this pane with the window on every
+            // step of the drag, instead of it sitting still and snapping at the end.
+            updateLiveResizePrediction(frame: container.frame)
+            scheduleLiveResizeSettle()
+
+            return
+        }
+        pendingLiveResizeFrame = nil
+
         let safeWidth = max(0, width)
         let safeHeight = max(0, height)
         let safeBottomCornerRadius = max(0, bottomCornerRadius)
@@ -801,6 +860,43 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             self?.handleKeyDown(event) == true ? nil : event
+        }
+    }
+
+    /// Apply the renderer's authoritative frame once the window stops live-resizing.
+    ///
+    /// Frames sent during the drag are ignored (they lag the window); this makes
+    /// sure the last one still lands, so the surface does not stay on AppKit's
+    /// prediction if no further frame happens to arrive.
+    private func scheduleLiveResizeSettle() {
+        guard !liveResizeSettleScheduled else {
+            return
+        }
+
+        liveResizeSettleScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self else { return }
+            liveResizeSettleScheduled = false
+
+            guard let pending = pendingLiveResizeFrame else { return }
+            guard !parentView.inLiveResize else {
+                scheduleLiveResizeSettle()
+
+                return
+            }
+
+            pendingLiveResizeFrame = nil
+            if vimeflowGhosttyDebugEnabled {
+                print("[vimeflow-bridge] setFrame settle after live resize")
+            }
+            setFrame(
+                x: pending.x,
+                y: pending.y,
+                width: pending.width,
+                height: pending.height,
+                bottomCornerRadius: pending.bottomCornerRadius,
+                parentHeight: pending.parentHeight
+            )
         }
     }
 
@@ -1078,6 +1174,13 @@ public func vimeflowGhosttyCreate(
 ) -> UnsafeMutableRawPointer? {
     guard let parentViewPointer else {
         return nil
+    }
+
+    // Diagnostics escape hatch: VIMEFLOW_GHOSTTY_DEBUG=1 streams GhosttyTerminal's
+    // metrics/render timeline to stdout (captured by the Electron main process),
+    // so a live resize can be diagnosed from data instead of inference.
+    if ProcessInfo.processInfo.environment["VIMEFLOW_GHOSTTY_DEBUG"] == "1" {
+        TerminalDebugLog.enable([.metrics, .render, .lifecycle])
     }
 
     let parentPointer = SendablePointer(value: parentViewPointer)
