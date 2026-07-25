@@ -1,4 +1,11 @@
-import { ClaudeCode, Codex, Kimi, OpenCode, type AgentIcon } from './brandIcons'
+import {
+  ClaudeCode,
+  Codex,
+  Kimi,
+  OpenCode,
+  Shell,
+  type AgentIcon,
+} from './brandIcons'
 import type { AgentStatus } from '../features/agent-status/types'
 import type { SessionStatus } from '../features/sessions/types'
 
@@ -96,7 +103,7 @@ export const AGENTS = {
     name: 'Shell',
     short: 'SHELL',
     glyph: '$',
-    Icon: undefined,
+    Icon: Shell,
     model: null,
     resumeCommands: null,
     accent: 'var(--color-agent-shell-accent)',

@@ -2,8 +2,8 @@
 id: verify-render-target
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-01
-ref_count: 1
+last_updated: 2026-07-22
+ref_count: 2
 ---
 
 # Verify Render Target
@@ -53,5 +53,20 @@ is load-bearing.
 - **Fix:** Added a bounded outer panel height and moved the rendered comment
   rows into a `min-h-0 overflow-y-auto` list. Extended the existing panel test
   to assert the bounded container and scrollable list classes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this
+  line)
+
+### 4. Keep floating search controls above capped review surfaces
+
+- **Source:** github-codex-connector | PR #722 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/Panel.tsx`
+- **Finding:** The diff search anchor was placed after unbounded file-level
+  review surfaces inside a right pane with `overflow-hidden`. Several comments
+  or thread turns could push the zero-height anchor below the visible pane, so
+  `/` still focused search while the button and popup were clipped.
+- **Fix:** Wrapped the file-level comments and review notes in a capped
+  `max-h-[40%] overflow-y-auto` region before the search anchor. Updated the
+  panel regression test to assert the scroll boundary sits before search.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this
   line)

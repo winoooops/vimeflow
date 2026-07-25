@@ -13,8 +13,9 @@ export interface CommandDef {
   label: string
   kind: 'shell' | 'browser'
   accentVar: string
-  // Mono fallback glyph (shell). Agents render their brand `Icon`, browser its
-  // `materialIcon`, so those entries omit it.
+  // Mono fallback glyph, rendered only when a command has neither `Icon` nor
+  // `materialIcon`. Every agent carries a brand `Icon` and browser its
+  // `materialIcon`, so this is a fallback for future icon-less entries.
   glyph?: string
   Icon?: AgentIcon
   materialIcon?: string

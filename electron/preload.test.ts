@@ -23,6 +23,7 @@ import {
   DIALOG_PICK_DIRECTORY,
   E2E_COMMAND_PALETTE_SHORTCUT,
   SETTINGS_CHANGED,
+  SETTINGS_NAVIGATE_TARGET,
   SETTINGS_OPEN_WINDOW,
 } from './ipc-channels'
 import {
@@ -150,14 +151,37 @@ describe('preload browserPane wiring', () => {
 
   test('settings.openWindow invokes the native settings window channel', async () => {
     const settings = preloadApi().settings as {
-      openWindow: () => Promise<void>
+      openWindow: (targetId?: string) => Promise<void>
     }
 
-    await settings.openWindow()
+    await settings.openWindow('version-diff-view-style')
 
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(
-      SETTINGS_OPEN_WINDOW
+      SETTINGS_OPEN_WINDOW,
+      'version-diff-view-style'
     )
+  })
+
+  test('settings.onNavigateTarget forwards settings navigation', () => {
+    const settings = preloadApi().settings as {
+      onNavigateTarget: (callback: (targetId: string) => void) => () => void
+    }
+
+    const callback = vi.fn()
+    const unlisten = settings.onNavigateTarget(callback)
+
+    const handler = electronMock.ipcRenderer.on.mock.calls.find(
+      ([channel]) => channel === SETTINGS_NAVIGATE_TARGET
+    )?.[1] as ((event: unknown, targetId: string) => void) | undefined
+
+    if (handler === undefined) {
+      throw new Error('settings navigation listener was not registered')
+    }
+
+    handler({}, 'version-diff-view-style')
+    unlisten()
+
+    expect(callback).toHaveBeenCalledWith('version-diff-view-style')
   })
 
   test('settings.onDidChange forwards settings broadcasts', () => {

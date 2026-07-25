@@ -62,6 +62,20 @@ const fireKey = async (init: KeyInit): Promise<void> => {
   }, init)
 }
 
+const fireKeyUp = async (init: KeyInit): Promise<void> => {
+  await browser.execute((i: KeyInit) => {
+    const { modKey, ...eventInit } = i
+    void modKey
+    document.dispatchEvent(
+      new KeyboardEvent('keyup', {
+        ...eventInit,
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+  }, init)
+}
+
 const fireTerminalZoneKey = async (init: KeyInit): Promise<void> => {
   await browser.execute((i: KeyInit) => {
     const { modKey, ...eventInit } = i
@@ -285,6 +299,10 @@ const waitForLayout = async (expected: string): Promise<void> => {
 
 const bodyHasText = async (text: string): Promise<boolean> =>
   browser.execute((t: string) => document.body.innerText.includes(t), text)
+
+// Same active-session accessor used across the suite (e.g. agent-resume-lifecycle).
+const activeSessionLabel = async (): Promise<string | null> =>
+  browser.execute(() => window.__VIMEFLOW_E2E__?.getVisibleSessionId() ?? null)
 
 const hasElement = async (selector: string): Promise<boolean> =>
   browser.execute(
@@ -622,5 +640,68 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
       0,
       'Cmd+Shift+Left did not focus the first (left) pane'
     )
+  })
+})
+
+describe('session switcher (Ctrl+Tab MRU)', () => {
+  it('quick tap bounces to the previously active session', async () => {
+    // Consume each creation's activation explicitly so no activation is
+    // pending by tap time and the taps can assert exact session ids.
+    const initialId = await activeSessionLabel()
+    await createNewSessionWithDefaults()
+    let firstId: string | null = null
+    await browser.waitUntil(
+      async () => {
+        firstId = await activeSessionLabel()
+
+        return firstId !== null && firstId !== initialId
+      },
+      { timeoutMsg: 'first created session was never activated' }
+    )
+
+    await createNewSessionWithDefaults()
+    let secondId: string | null = null
+    await browser.waitUntil(
+      async () => {
+        secondId = await activeSessionLabel()
+
+        return secondId !== null && secondId !== firstId
+      },
+      { timeoutMsg: 'second created session was never activated' }
+    )
+
+    // The create dialog's exit animation must finish before the chord fires;
+    // the switcher defers to open dialogs by design.
+    await browser.waitUntil(
+      async () => !(await hasElement('[role="dialog"]')),
+      { timeoutMsg: 'new-session dialog did not settle before switching' }
+    )
+
+    await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
+    await fireKeyUp({ key: 'Control', code: 'ControlLeft' })
+    await browser.waitUntil(
+      async () => (await activeSessionLabel()) === firstId,
+      { timeoutMsg: 'first tap did not switch to the previous session' }
+    )
+
+    await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
+    await fireKeyUp({ key: 'Control', code: 'ControlLeft' })
+    await browser.waitUntil(
+      async () => (await activeSessionLabel()) === secondId,
+      { timeoutMsg: 'second tap did not bounce back' }
+    )
+  })
+
+  it('holding ctrl shows the switcher overlay and escape cancels', async () => {
+    await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
+    const listbox = await browser.$(
+      '[role="listbox"][aria-label="Session switcher"]'
+    )
+    await listbox.waitForExist()
+
+    await fireKey({ key: 'Escape', code: 'Escape' })
+    await browser.waitUntil(async () => !(await listbox.isExisting()), {
+      timeoutMsg: 'switcher did not close on escape',
+    })
   })
 })

@@ -16,6 +16,7 @@ import {
   resolveInterfaceFont,
 } from '@/features/settings/interfaceFont'
 import { SETTINGS_TARGET_IDS } from '@/features/settings/sections'
+import { resolveSessionIslandDisplay } from '@/features/sessions/utils/sessionIslandDisplay'
 import type { SettingsPaneTargetProps } from '@/features/settings/types'
 import { themeService, useActiveTheme, type ThemeId } from '@/theme'
 
@@ -23,6 +24,12 @@ const RESERVOIR_SWELL_OPTIONS: { id: SwellVariant; label: string }[] = [
   { id: 'soft-mound', label: 'Soft Mound' },
   { id: 'trailing', label: 'Trailing' },
   { id: 'wide-lift', label: 'Wide Lift' },
+]
+
+const SESSION_ISLAND_DISPLAY_OPTIONS = [
+  { id: 'dots', label: 'Dots' },
+  { id: 'numbers', label: 'Numbers' },
+  { id: 'labels', label: 'Active label' },
 ]
 
 export const AppearancePane = ({
@@ -85,6 +92,26 @@ export const AppearancePane = ({
           onChange={(value) => update({ uiFont: value })}
           aria-label="Interface font"
           options={[...INTERFACE_FONT_OPTIONS]}
+        />
+      </Row>
+
+      <Row
+        label="Session Island"
+        hint="Choose how open sessions appear in the centered top bar switcher."
+        settingsTargetId={SETTINGS_TARGET_IDS.appearanceSessionIsland}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.appearanceSessionIsland
+        }
+      >
+        <Select
+          value={resolveSessionIslandDisplay(settings.sessionIslandDisplay)}
+          onChange={(value): void =>
+            update({
+              sessionIslandDisplay: resolveSessionIslandDisplay(value),
+            })
+          }
+          aria-label="Session island display"
+          options={SESSION_ISLAND_DISPLAY_OPTIONS}
         />
       </Row>
 

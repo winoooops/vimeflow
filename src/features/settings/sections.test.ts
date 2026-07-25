@@ -49,6 +49,7 @@ describe('SETTINGS_SECTIONS', () => {
       'keymap',
       'agents',
       'terminal',
+      'version',
     ])
 
     expect(AVAILABLE_SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
@@ -57,6 +58,7 @@ describe('SETTINGS_SECTIONS', () => {
       'keymap',
       'agents',
       'terminal',
+      'version',
     ])
   })
 })
@@ -90,6 +92,16 @@ describe('SETTINGS_TARGETS', () => {
           id: SETTINGS_TARGET_IDS.terminalFontFamily,
           section: 'terminal',
           label: 'Terminal Font',
+        }),
+        expect.objectContaining({
+          id: SETTINGS_TARGET_IDS.appearanceSessionIsland,
+          section: 'appearance',
+          label: 'Session Island',
+        }),
+        expect.objectContaining({
+          id: SETTINGS_TARGET_IDS.versionDiffViewStyle,
+          section: 'version',
+          label: 'Diff Layout',
         }),
       ])
     )
@@ -136,6 +148,12 @@ describe('SETTINGS_SUBSECTIONS', () => {
           targetId: SETTINGS_TARGET_IDS.terminalFontFamily,
           targetIds: [SETTINGS_TARGET_IDS.terminalFontFamily],
         }),
+        expect.objectContaining({
+          id: 'version-hunk-appearance',
+          section: 'version',
+          label: 'Hunk Appearance',
+          targetId: SETTINGS_TARGET_IDS.versionDiffViewStyle,
+        }),
       ])
     )
   })
@@ -179,5 +197,14 @@ describe('DEFAULT_ALIASES', () => {
 
   test('defaults leave resume commands to session restoration', () => {
     expect(DEFAULT_ALIASES.every((alias) => alias.extra === '')).toBe(true)
+  })
+})
+
+describe('Sessions keymap targets', () => {
+  test('session switcher commands are searchable settings targets', () => {
+    const ids = SETTINGS_TARGETS.map((t) => t.id)
+    expect(ids).toContain(keymapCommandTargetId('session-switch-next'))
+    expect(ids).toContain(keymapCommandTargetId('session-switch-prev'))
+    expect(ids).toContain(keymapCommandTargetId('session-close'))
   })
 })

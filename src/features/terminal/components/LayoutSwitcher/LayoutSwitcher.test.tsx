@@ -103,6 +103,45 @@ describe('LayoutSwitcher', () => {
     expect(screen.getByTestId('layout-switcher')).toHaveClass('flex-col')
   })
 
+  test('compact mode replaces layout choices with a non-interactive active readout', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="vsplit"
+        onPick={vi.fn()}
+        compact
+        trailing={
+          <button type="button" aria-label="Configure displayed layouts" />
+        }
+      />
+    )
+
+    expect(
+      screen.getByRole('img', { name: 'Current pane layout: Vertical split' })
+    ).toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: 'Vertical split' })).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    ).toBeInTheDocument()
+  })
+
+  test('vertical pickers ignore compact mode', () => {
+    render(
+      <LayoutSwitcher
+        activeLayoutId="single"
+        onPick={vi.fn()}
+        compact
+        vertical
+      />
+    )
+
+    expect(screen.getAllByRole('button')).toHaveLength(6)
+    expect(
+      screen.queryByRole('img', { name: /current pane layout/i })
+    ).toBeNull()
+  })
+
   test('marks the active button with data-active', () => {
     render(<LayoutSwitcher activeLayoutId="vsplit" onPick={vi.fn()} />)
 

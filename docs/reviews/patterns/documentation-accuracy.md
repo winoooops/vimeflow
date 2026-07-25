@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-05
-ref_count: 91
+last_updated: 2026-07-20
+ref_count: 92
 ---
 
 # Documentation Accuracy
@@ -897,3 +897,40 @@ Stale documentation misleads future contributors and review agents.
   file sequentially, and updated the knowledge-base index counts and dates to
   match the rewritten headings.
 - **Commit:** same commit as this entry
+
+### 96. Review-pattern entry contradicted the shipped file-comment layout
+
+- **Source:** github-claude | PR #706 round 1 | 2026-07-19
+- **Severity:** LOW
+- **File:** `docs/reviews/patterns/ui-visual-regression.md`
+- **Finding:** The UI visual regression entry claimed the diff panel restored a
+  bounded file-comment section and nested overflow container, but the shipped
+  code intentionally removed those classes so file-level review threads expand
+  in the dock scroll container.
+- **Fix:** Reworded the entry to match the implemented layout contract: no
+  nested `max-h-56` or `overflow-y-auto` clamp on the file-level comment stack.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 97. Session island batching needed an inline rationale
+
+- **Source:** github-human | PR #714 round 1 | 2026-07-20
+- **Severity:** HUMAN
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** The session island remembered and clamped batches once the open
+  session list exceeded ten items, but the code did not explain that this is a
+  pagination-like behavior rather than a sliding window.
+- **Fix:** Added a concise comment above the batch calculation explaining that
+  the island uses stable batches, so selecting session 11 moves from 1-10 to
+  11-20 instead of sliding one indicator at a time.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 98. Placeholder notification slot needed a tracked V2 TODO
+
+- **Source:** github-human | PR #714 round 1 | 2026-07-20
+- **Severity:** HUMAN
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** The optional notification slot was intentionally gated, but the
+  code lacked a TODO with the Linear issue ID and URL for the V2 implementation.
+- **Fix:** Added a TODO referencing VIM-361 and its Linear URL above the
+  notification slot.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

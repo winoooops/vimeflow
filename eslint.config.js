@@ -43,6 +43,10 @@ export default defineConfig([
       // under prettier (`format:check`).
       'crates/backend/src/agent/adapter/opencode/plugin/**',
       '.claude/**',
+      // /design-sync harness inputs (bundle entry + preview compositions for
+      // claude.ai/design). Compiled and screenshot-verified by the design-sync
+      // pipeline, not part of the app build; prettier still covers them.
+      '.design-sync/**',
       'src/bindings/',
       'docs/**',
       // E2E lives in a separate TS sub-project (tests/e2e/tsconfig.json)

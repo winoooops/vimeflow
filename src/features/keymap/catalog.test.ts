@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { CATALOG, DIFF_COMMANDS, getCommand, type CommandId } from './catalog'
-import { formatChord } from './chord'
+import { formatChord, type Chord } from './chord'
 import { isValidBinding, resolveDefault } from './resolve'
 
 describe('CATALOG', () => {
@@ -37,6 +37,9 @@ describe('CATALOG', () => {
         'new-session',
         'session-prev',
         'session-next',
+        'session-switch-next',
+        'session-switch-prev',
+        'session-close',
         'sidebar-toggle',
         'sidebar-sessions',
         'sidebar-files',
@@ -121,5 +124,57 @@ describe('CATALOG', () => {
           cmd.rebindable
       )
     ).toBe(true)
+  })
+})
+
+describe('session switching commands', () => {
+  test('registers the switcher pair and close command in the Sessions group', () => {
+    const next = getCommand('session-switch-next')
+    const prev = getCommand('session-switch-prev')
+    const close = getCommand('session-close')
+
+    for (const cmd of [next, prev, close]) {
+      expect(cmd.group).toBe('Sessions')
+      expect(cmd.context).toBe('global')
+      expect(cmd.matchPolicy).toBe('exact')
+      expect(cmd.rebindable).toBe(true)
+    }
+
+    expect(next.label).toBe('Switch session (recent first)')
+    expect(prev.label).toBe('Switch session backward (recent first)')
+  })
+
+  test('switcher defaults are literal Ctrl+Tab on both platforms', () => {
+    const next = getCommand('session-switch-next')
+    const prev = getCommand('session-switch-prev')
+    expect(next.defaultCombo).toEqual({ code: 'Tab', mods: new Set(['Ctrl']) })
+    expect(prev.defaultCombo).toEqual({
+      code: 'Tab',
+      mods: new Set(['Ctrl', 'Shift']),
+    })
+  })
+
+  test('session-close is Mod+W on mac and Mod+Shift+W elsewhere', () => {
+    const combo = getCommand('session-close').defaultCombo
+    expect(typeof combo).toBe('function')
+    const resolve = combo as (isMac: boolean) => Chord
+    expect(resolve(true)).toEqual({ code: 'KeyW', mods: new Set(['Mod']) })
+    expect(resolve(false)).toEqual({
+      code: 'KeyW',
+      mods: new Set(['Mod', 'Shift']),
+    })
+  })
+
+  test('existing session commands moved to the Sessions group', () => {
+    expect(getCommand('new-session').group).toBe('Sessions')
+    expect(getCommand('session-prev').group).toBe('Sessions')
+    expect(getCommand('session-next').group).toBe('Sessions')
+  })
+
+  test('pane digits stay tolerant (layout contract regression guard)', () => {
+    for (let digit = 1; digit <= 9; digit += 1) {
+      const id = `focus-pane-${digit}` as CommandId
+      expect(getCommand(id).matchPolicy).toBe('tolerant')
+    }
   })
 })

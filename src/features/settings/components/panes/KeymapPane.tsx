@@ -44,6 +44,7 @@ import { PaneTitle, Row, Select } from '../controls'
 // their own static rows. Every keyboard binding renders from the catalog.
 const GROUP_ORDER = [
   'Global',
+  'Sessions',
   'Panes & Layout',
   'Terminal',
   'Browser',

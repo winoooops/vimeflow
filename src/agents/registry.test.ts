@@ -113,10 +113,10 @@ test('agentStatusToSessionStatus reports idle when not isActive', () => {
   )
 })
 
-test('supported agents carry a brand Icon; others fall back to their glyph', () => {
+test('every supported agent carries a brand Icon', () => {
   expect(AGENTS.claude.Icon).toBeDefined()
   expect(AGENTS.codex.Icon).toBeDefined()
   expect(AGENTS.kimi.Icon).toBeDefined()
   expect(AGENTS.opencode.Icon).toBeDefined()
-  expect(AGENTS.shell.Icon).toBeUndefined()
+  expect(AGENTS.shell.Icon).toBeDefined()
 })

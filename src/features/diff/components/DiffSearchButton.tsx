@@ -13,8 +13,8 @@ interface DiffSearchButtonProps {
 }
 
 /**
- * Floating search entry point - anchored by Panel 4px under the toolbar,
- * or below Pierre's file header when visible. Hover tints the icon only.
+ * Floating search entry point — anchored to the diff below any file-level
+ * review surfaces, and below Pierre's file header when visible.
  */
 export const DiffSearchButton = ({
   bindingFor,

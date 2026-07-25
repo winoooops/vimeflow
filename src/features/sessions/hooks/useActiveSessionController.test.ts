@@ -313,3 +313,274 @@ describe('useActiveSessionController', () => {
     expect(result.current.activeSessionId).toBe('sess-browser')
   })
 })
+
+interface Deferred {
+  resolve: () => void
+  reject: (err: Error) => void
+}
+
+const makeDeferredService = (): {
+  service: ITerminalService
+  calls: string[]
+  settlers: Deferred[]
+} => {
+  const calls: string[] = []
+  const settlers: Deferred[] = []
+
+  const service = {
+    setActiveSession: (ptyId: string): Promise<void> => {
+      calls.push(ptyId)
+
+      return new Promise<void>((resolve, reject) => {
+        settlers.push({ resolve: () => resolve(), reject })
+      })
+    },
+  } as unknown as ITerminalService
+
+  return { service, calls, settlers }
+}
+
+const liveSession = (id: string, ptyId: string): Session =>
+  ({
+    id,
+    panes: [
+      { id: `${id}-p1`, ptyId, kind: 'shell', status: 'running', active: true },
+    ],
+  }) as unknown as Session
+
+describe('serialized activation settlement', () => {
+  test('second activation does not dispatch until the first settles', async () => {
+    const { service, calls, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [liveSession('A', 'pty-a'), liveSession('B', 'pty-b')],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({ service, sessionsRef })
+    )
+
+    act(() => result.current.setActiveSessionId('A'))
+    act(() => result.current.setActiveSessionId('B'))
+    expect(calls).toEqual(['pty-a'])
+
+    await act(async () => {
+      settlers[0].resolve()
+      await Promise.resolve()
+    })
+    expect(calls).toEqual(['pty-a', 'pty-b'])
+  })
+
+  test('rapid cycling coalesces to the newest pending target', async () => {
+    const { service, calls, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [
+        liveSession('A', 'pty-a'),
+        liveSession('B', 'pty-b'),
+        liveSession('C', 'pty-c'),
+      ],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({ service, sessionsRef })
+    )
+
+    act(() => result.current.setActiveSessionId('A'))
+    act(() => result.current.setActiveSessionId('B'))
+    act(() => result.current.setActiveSessionId('C'))
+
+    await act(async () => {
+      settlers[0].resolve()
+      await Promise.resolve()
+    })
+    expect(calls).toEqual(['pty-a', 'pty-c'])
+  })
+
+  test('B succeeds then C fails: all channels land on B', async () => {
+    const committed: string[] = []
+    const rolledBack: (string | null)[] = []
+    const { service, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [liveSession('B', 'pty-b'), liveSession('C', 'pty-c')],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({
+        service,
+        sessionsRef,
+        onActivationCommitted: (id) => committed.push(id),
+        onActivationRolledBack: (id) => rolledBack.push(id),
+      })
+    )
+
+    act(() => result.current.setActiveSessionId('B'))
+    act(() => result.current.setActiveSessionId('C'))
+
+    await act(async () => {
+      settlers[0].resolve()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      settlers[1].reject(new Error('ipc failed'))
+      await Promise.resolve()
+    })
+
+    expect(result.current.activeSessionId).toBe('B')
+    expect(committed).toEqual(['B', 'B'])
+    expect(rolledBack).toEqual(['B'])
+  })
+
+  test('B fails then C fails: all channels land on the prior committed id', async () => {
+    const committed: string[] = []
+    const { service, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [
+        liveSession('A', 'pty-a'),
+        liveSession('B', 'pty-b'),
+        liveSession('C', 'pty-c'),
+      ],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({
+        service,
+        sessionsRef,
+        onActivationCommitted: (id) => committed.push(id),
+      })
+    )
+
+    act(() => result.current.setActiveSessionId('A'))
+    await act(async () => {
+      settlers[0].resolve()
+      await Promise.resolve()
+    })
+
+    act(() => result.current.setActiveSessionId('B'))
+    act(() => result.current.setActiveSessionId('C'))
+    await act(async () => {
+      settlers[1].reject(new Error('b failed'))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      settlers[2].reject(new Error('c failed'))
+      await Promise.resolve()
+    })
+
+    expect(result.current.activeSessionId).toBe('A')
+    expect(committed).toEqual(['A', 'A'])
+  })
+
+  test('browser-only activation settles synchronously and commits', () => {
+    const committed: string[] = []
+    const { service, calls } = makeDeferredService()
+
+    const browserOnly = {
+      id: 'W',
+      panes: [{ id: 'W-p1', kind: 'browser', status: 'running', active: true }],
+    } as unknown as Session
+    const sessionsRef = { current: [browserOnly] }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({
+        service,
+        sessionsRef,
+        onActivationCommitted: (id) => committed.push(id),
+      })
+    )
+
+    act(() => result.current.setActiveSessionId('W'))
+    expect(calls).toEqual([])
+    expect(committed).toEqual(['W'])
+  })
+
+  test('B fails with C pending: C still dispatches and commits', async () => {
+    const committed: string[] = []
+    const { service, calls, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [liveSession('B', 'pty-b'), liveSession('C', 'pty-c')],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({
+        service,
+        sessionsRef,
+        onActivationCommitted: (id) => committed.push(id),
+      })
+    )
+
+    act(() => result.current.setActiveSessionId('B'))
+    act(() => result.current.setActiveSessionId('C'))
+    await act(async () => {
+      settlers[0].reject(new Error('b failed'))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      settlers[1].resolve()
+      await Promise.resolve()
+    })
+
+    expect(calls).toEqual(['pty-b', 'pty-c'])
+    expect(committed).toEqual(['C'])
+    expect(result.current.activeSessionId).toBe('C')
+  })
+
+  test('post-barrier request queues behind the stale in-flight ipc', async () => {
+    const { service, calls, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [liveSession('A', 'pty-a'), liveSession('B', 'pty-b')],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({ service, sessionsRef })
+    )
+
+    act(() => result.current.setActiveSessionId('A'))
+    act(() => result.current.setActiveSessionIdRaw(null))
+    act(() => result.current.setActiveSessionId('B'))
+    expect(calls).toEqual(['pty-a'])
+
+    await act(async () => {
+      settlers[0].resolve()
+      await Promise.resolve()
+    })
+    expect(calls).toEqual(['pty-a', 'pty-b'])
+  })
+
+  test('raw write is a barrier: stale settlement applies nothing, pending drops', async () => {
+    const committed: string[] = []
+    const { service, calls, settlers } = makeDeferredService()
+
+    const sessionsRef = {
+      current: [liveSession('A', 'pty-a'), liveSession('B', 'pty-b')],
+    }
+
+    const { result } = renderHook(() =>
+      useActiveSessionController({
+        service,
+        sessionsRef,
+        onActivationCommitted: (id) => committed.push(id),
+      })
+    )
+
+    act(() => result.current.setActiveSessionId('A'))
+    act(() => result.current.setActiveSessionId('B'))
+    act(() => result.current.setActiveSessionIdRaw(null))
+
+    await act(async () => {
+      settlers[0].resolve()
+      await Promise.resolve()
+    })
+
+    expect(committed).toEqual([])
+    expect(result.current.activeSessionId).toBeNull()
+    expect(calls).toEqual(['pty-a'])
+  })
+})

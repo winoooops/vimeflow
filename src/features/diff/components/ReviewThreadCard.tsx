@@ -171,7 +171,7 @@ export const ReviewThreadCard = ({
   )
 
   return (
-    <div className="mx-3 my-2 overflow-hidden rounded-lg bg-surface-container-high/80">
+    <div className="mx-3 my-2 shrink-0 overflow-hidden rounded-lg bg-surface-container-high/80">
       {group.resolved ? (
         <button
           type="button"

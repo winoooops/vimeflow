@@ -34,6 +34,7 @@ export interface LayoutDisplayMenuProps {
   onDeleteCustomLayout?: (layoutId: PaneLayoutId) => void
   onOpenChange?: (open: boolean) => void
   nativeOverlay?: boolean
+  compactSelectionMode?: boolean
 }
 
 type LayoutDisplayMenuTriggerProps = Omit<
@@ -107,6 +108,7 @@ export const LayoutDisplayMenu = ({
   onDeleteCustomLayout = undefined,
   onOpenChange = undefined,
   nativeOverlay = false,
+  compactSelectionMode = false,
 }: LayoutDisplayMenuProps): ReactElement => {
   const [closeSignal, setCloseSignal] = useState(0)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -144,8 +146,12 @@ export const LayoutDisplayMenu = ({
           builtInLayouts: menu.builtInLayouts,
           allLayouts: layouts,
           activeLayoutId,
+          blockedLayoutIds,
           visibleLayoutIds,
           onVisibleLayoutIdsChange,
+          onPickLayout,
+          onClose: closeMenu,
+          compactSelectionMode,
         })}
       </Menu.Section>
       {menu.customLayouts.length > 0 && (

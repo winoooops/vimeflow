@@ -24,8 +24,6 @@ export interface AgentStatusCardProps {
   elapsed?: string | null
   /** Turn count rendered in the compact header pill; absent values render as 0. */
   turns?: number | null
-  /** Context-window usage percent; omitted when null. */
-  contextPct?: number | null
   /** 5-hour (session) rate-limit usage percent; omitted when null. */
   fiveHourPct?: number | null
   /** 7-day (weekly) rate-limit usage percent; omitted when null. */
@@ -193,7 +191,6 @@ export const AgentStatusCard = ({
   isShell = false,
   elapsed = null,
   turns = null,
-  contextPct = null,
   fiveHourPct = null,
   weekPct = null,
   isKimi = false,
@@ -208,7 +205,6 @@ export const AgentStatusCard = ({
   // shows in full beside a compact badge.
   const { name: modelName, contextLabel } = parseModelTitle(title)
   void elapsed
-  void contextPct
 
   return (
     <div
@@ -254,10 +250,13 @@ export const AgentStatusCard = ({
                 </Tooltip>
               )}
             </div>
-            <TurnPill turns={turns} />
+            <div className="flex shrink-0 items-center gap-[6px]">
+              <TurnPill turns={turns} />
+            </div>
           </div>
           <div
-            className="mt-[9px] flex flex-col justify-center"
+            data-testid="agent-card-body"
+            className="mt-[9px] flex flex-col justify-center gap-[7px]"
             style={{ height: CARD_BODY_H }}
           >
             {isKimi ? (
@@ -271,6 +270,7 @@ export const AgentStatusCard = ({
             ) : (
               hasUsage && (
                 <div
+                  data-testid="agent-card-rate-limits"
                   style={{
                     display: 'flex',
                     flexDirection: 'column',

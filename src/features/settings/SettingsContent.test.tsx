@@ -4,6 +4,7 @@ import { type ReactElement } from 'react'
 import { SettingsContent } from './SettingsContent'
 import { SettingsProvider } from './SettingsProvider'
 import { DEFAULT_SETTINGS } from './store/settingsDefaults'
+import { SETTINGS_TARGET_IDS } from './sections'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -55,5 +56,16 @@ describe('SettingsContent', () => {
 
     expect(event.defaultPrevented).toBe(false)
     nestedDialog.remove()
+  })
+
+  test('opens directly on a requested settings target', async () => {
+    render(
+      <SettingsContent targetId={SETTINGS_TARGET_IDS.versionDiffViewStyle} />
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Version Control' })
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Diff layout')).toBeInTheDocument()
   })
 })

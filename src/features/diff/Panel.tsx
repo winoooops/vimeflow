@@ -87,6 +87,8 @@ import { DIFF_SEARCH_UNSAFE_CSS } from './search/diffSearchDom'
 import { DIFF_RANGE_BAR_UNSAFE_CSS } from './rangeBar/diffRangeBars'
 import { useKeybindings } from '../keymap/useKeybindings'
 import { chordToAriaShortcut, chordToShortcutInput } from '../keymap/displayKey'
+import { requestSettingsOpen } from '../settings/hooks/useSettingsDialog'
+import { SETTINGS_TARGET_IDS } from '../settings/sections'
 
 // One stable <style> injected into pierre's shadow tree: the search highlight
 // plus the persistent range-comment gutter bar (VIM-273). A module constant so
@@ -105,6 +107,10 @@ const isDiffNativeFocusTarget = (target: Element): boolean =>
 // after this delay — longer than the hover-leave delay since there's no pointer
 // motion to signal intent. Wire to Settings later.
 const FILES_LIST_KEYBOARD_AUTO_HIDE_MS = 5000
+const EMPTY_REVIEW_ANNOTATIONS: DiffLineAnnotation<ReviewComment>[] = []
+
+const openHunkViewSettings = (): void =>
+  requestSettingsOpen(SETTINGS_TARGET_IDS.versionDiffViewStyle)
 
 const getFilesListStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -185,6 +191,8 @@ interface PanelBaseProps {
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments */
   feedbackDispatch?: FeedbackDispatchTarget
+  /** Durable review state is not ready; keep diff workflows active but pause review edits. */
+  reviewStateStatus?: 'loading' | 'unavailable'
   /** The active feedback owner (sessionId:paneId) — recorded at dispatch so an
    * agent reply routes back to this review even after a pane switch (VIM-249). */
   feedbackOwnerKey?: string
@@ -192,13 +200,9 @@ interface PanelBaseProps {
 
 export type PanelProps = PanelBaseProps & PanelSelectionControl
 
-// Monotonic id source. A module counter keeps comment ids stable + unique
-// without reaching for Date.now()/Math.random() in render.
-
-let feedbackCommentSeq = 0
-
+// Persisted ids stay unique across renderer restarts.
 const nextFeedbackCommentId = (): string =>
-  `feedback-comment-${(feedbackCommentSeq += 1)}`
+  `feedback-comment-${crypto.randomUUID()}`
 
 type KeyboardConfirmAction = 'stage-hunk' | 'discard-hunk' | 'discard-file'
 
@@ -279,6 +283,7 @@ export const Panel = ({
   feedbackDraft = undefined,
   feedbackRepoRootRef = undefined,
   feedbackDispatch = undefined,
+  reviewStateStatus = undefined,
   feedbackOwnerKey = undefined,
 }: PanelProps): ReactElement => {
   const { bindingFor, matches } = useKeybindings()
@@ -638,6 +643,7 @@ export const Panel = ({
   const { clearBatch: clearLocalFeedbackBatch } = localFeedback
   const hasParentFeedbackBatch = feedbackBatch !== undefined
   const feedback: UseFeedbackBatchReturn = feedbackBatch ?? localFeedback
+  const reviewControlsPaused = reviewStateStatus !== undefined
   const localRepoRootRef = useRef('') as FeedbackRepoRootRef
   const repoRootRef = feedbackRepoRootRef ?? localRepoRootRef
 
@@ -669,10 +675,16 @@ export const Panel = ({
   }, [response, repoRootRef])
 
   // Real annotations for the currently selected file.
-  const annotationsForSelectedFile = feedback.annotationsForFile(
-    cwd,
-    selectedFilePath ?? '',
-    selectedFileStaged
+  const annotationsForSelectedFile = useMemo(
+    (): DiffLineAnnotation<ReviewComment>[] =>
+      reviewControlsPaused
+        ? EMPTY_REVIEW_ANNOTATIONS
+        : feedback.annotationsForFile(
+            cwd,
+            selectedFilePath ?? '',
+            selectedFileStaged
+          ),
+    [cwd, feedback, reviewControlsPaused, selectedFilePath, selectedFileStaged]
   )
 
   const realAnnotations = useMemo(
@@ -683,7 +695,7 @@ export const Panel = ({
 
   const fileCommentsForSelectedFile = useMemo(
     (): DiffLineAnnotation<ReviewComment>[] =>
-      selectedFileEntry === undefined
+      selectedFileEntry === undefined || reviewControlsPaused
         ? []
         : feedback
             .annotationsForFile(
@@ -692,7 +704,7 @@ export const Panel = ({
               selectedFileEntry.staged
             )
             .filter(isFileLevelReviewAnnotation),
-    [cwd, feedback, selectedFileEntry]
+    [cwd, feedback, reviewControlsPaused, selectedFileEntry]
   )
 
   const {
@@ -768,11 +780,34 @@ export const Panel = ({
   const [sendNowCommentId, setSendNowCommentId] = useState<string | null>(null)
 
   // Thread reply drafts (VIM-298), keyed by threadId so starting a reply on
-  // one thread never discards another thread's typed text. Panel-owned so a
-  // MultiFileDiff remount cannot erase them; an entry is cleared ONLY by that
-  // thread's explicit cancel or its successful dispatch.
-  const [replyDrafts, setReplyDrafts] = useState<ReadonlyMap<string, string>>(
-    new Map()
+  // one thread never discards another thread's typed text. Workspace-owned when
+  // available so remounts/restarts cannot erase them; an entry is cleared ONLY
+  // by that thread's explicit cancel or its successful dispatch.
+  const [localReplyDrafts, setLocalReplyDrafts] = useState<
+    ReadonlyMap<string, string>
+  >(new Map())
+  const replyDrafts = feedbackDraft?.threadDrafts ?? localReplyDrafts
+
+  const setReplyDraft = useCallback(
+    (threadId: string, text: string | null): void => {
+      if (feedbackDraft?.setThreadDraft !== undefined) {
+        feedbackDraft.setThreadDraft(threadId, text)
+
+        return
+      }
+
+      setLocalReplyDrafts((previous) => {
+        const next = new Map(previous)
+        if (text === null) {
+          next.delete(threadId)
+        } else {
+          next.set(threadId, text)
+        }
+
+        return next
+      })
+    },
+    [feedbackDraft]
   )
   // Thread whose reply editor is currently open; null = none.
   const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null)
@@ -1084,12 +1119,7 @@ export const Panel = ({
           }
 
           // Clear ONLY this thread's draft (successful dispatch).
-          setReplyDrafts((prev) => {
-            const next = new Map(prev)
-            next.delete(group.threadId)
-
-            return next
-          })
+          setReplyDraft(group.threadId, null)
 
           setReplyingThreadId((current) =>
             current === group.threadId ? null : current
@@ -1118,6 +1148,7 @@ export const Panel = ({
     [
       replyDispatchThreadId,
       replyDrafts,
+      setReplyDraft,
       threadGroupById,
       feedback,
       feedbackDispatch,
@@ -1209,18 +1240,12 @@ export const Panel = ({
     // draft stays in the map — reopening restores it.
     onStartReply: (threadId: string): void => setReplyingThreadId(threadId),
     onReplyDraftChange: (text: string): void => {
-      setReplyDrafts((prev) => {
-        if (replyingThreadId === null) {
-          return prev
-        }
-        const next = new Map(prev)
-        next.set(replyingThreadId, text)
-
-        return next
-      })
+      if (replyingThreadId !== null) {
+        setReplyDraft(replyingThreadId, text)
+      }
     },
     onSubmitReply: (threadId: string, text: string): void => {
-      setReplyDrafts((prev) => new Map(prev).set(threadId, text))
+      setReplyDraft(threadId, text)
       setFinishOpen(false)
       setSendNowCommentId(null)
       setReplyDispatchThreadId(threadId)
@@ -1228,12 +1253,7 @@ export const Panel = ({
     // Explicit cancel clears ONLY the active thread's draft.
     onCancelReply: (): void => {
       if (replyingThreadId !== null) {
-        setReplyDrafts((prev) => {
-          const next = new Map(prev)
-          next.delete(replyingThreadId)
-
-          return next
-        })
+        setReplyDraft(replyingThreadId, null)
       }
       setReplyingThreadId(null)
     },
@@ -1513,7 +1533,6 @@ export const Panel = ({
   ])
 
   const {
-    toolbarSettingsProps,
     multiFileDiffOptions,
     renderKey,
     renderSyncError,
@@ -1959,6 +1978,12 @@ export const Panel = ({
   )
 
   const openSelectedFileComment = useCallback((): void => {
+    if (reviewControlsPaused) {
+      notifyInfo('Review comments are unavailable until review history loads.')
+
+      return
+    }
+
     if (selectedFileEntry === undefined) {
       notifyInfo('No file selected.')
 
@@ -1966,10 +1991,23 @@ export const Panel = ({
     }
 
     openFileCommentEditor(selectedFileEntry)
-  }, [notifyInfo, openFileCommentEditor, selectedFileEntry])
+  }, [
+    notifyInfo,
+    openFileCommentEditor,
+    reviewControlsPaused,
+    selectedFileEntry,
+  ])
 
   const handleAddFileComment = useCallback(
     (file: ChangedFile, anchor: HTMLElement): void => {
+      if (reviewControlsPaused) {
+        notifyInfo(
+          'Review comments are unavailable until review history loads.'
+        )
+
+        return
+      }
+
       selectDiffFile(file)
 
       if (!filesListPinnedOpen) {
@@ -1982,7 +2020,9 @@ export const Panel = ({
     [
       clearFilesListHideTimer,
       filesListPinnedOpen,
+      notifyInfo,
       openFileCommentEditor,
+      reviewControlsPaused,
       selectDiffFile,
     ]
   )
@@ -2350,6 +2390,14 @@ export const Panel = ({
 
   const handleBodyAddComment = useCallback(
     (lineNumber: number, side: AnnotationSide): void => {
+      if (reviewControlsPaused) {
+        notifyInfo(
+          'Review comments are unavailable until review history loads.'
+        )
+
+        return
+      }
+
       if (selectedFilePath === null) {
         return
       }
@@ -2380,6 +2428,8 @@ export const Panel = ({
     [
       annotationTarget,
       deactivateReviewTarget,
+      notifyInfo,
+      reviewControlsPaused,
       selectedFilePath,
       selectedFileStaged,
       setCommentCategory,
@@ -2417,8 +2467,11 @@ export const Panel = ({
     ]
   )
 
-  const feedbackCount = feedback.pendingAnnotations()
-  const feedbackDraftCount = commentDraftText.trim().length > 0 ? 1 : 0
+  const feedbackCount = reviewControlsPaused ? 0 : feedback.pendingAnnotations()
+
+  const feedbackDraftCount =
+    !reviewControlsPaused && commentDraftText.trim().length > 0 ? 1 : 0
+
   const pendingFeedbackCount = feedbackCount + feedbackDraftCount
 
   // Files with at least one pending comment — the "across N files" the Finish
@@ -2432,7 +2485,7 @@ export const Panel = ({
   )
 
   const onFinishFeedback =
-    feedbackCount > 0 && !review.open
+    !reviewControlsPaused && feedbackCount > 0 && !review.open
       ? (): void => {
           review.closePopover()
           setSendNowCommentId(null)
@@ -2481,7 +2534,7 @@ export const Panel = ({
   // The "Request review" affordance (VIM-304) — always available when a file
   // diff is loaded, independent of pending comments (unlike Finish).
   const onRequestReview =
-    review.canRequest && !isFinishPopoverOpen
+    !reviewControlsPaused && review.canRequest && !isFinishPopoverOpen
       ? (): void => {
           setFinishOpen(false)
           review.openPopover()
@@ -2551,7 +2604,7 @@ export const Panel = ({
   }
 
   // Empty state (no changes): keep a DORMANT toolbar (only the settings
-  // dropdowns stay live — nav arrows, tool-well + actions render disabled /
+  // button stays live — nav arrows, tool-well + actions render disabled /
   // placeholder) above a calm "no changes" panel, so the chrome stays put when
   // a diff appears instead of collapsing + re-expanding.
   if (effectiveFiles.length === 0) {
@@ -2565,9 +2618,9 @@ export const Panel = ({
       >
         <Notifier
           toolbarProps={{
-            ...toolbarSettingsProps,
             bindingFor,
             diffMode: 'unstaged',
+            onOpenSettings: openHunkViewSettings,
             currentFileIndex: -1,
             totalFiles: 0,
             feedbackCount: pendingFeedbackCount,
@@ -2624,9 +2677,9 @@ export const Panel = ({
     >
       <Notifier
         toolbarProps={{
-          ...toolbarSettingsProps,
           bindingFor,
           diffMode: selectedFileStaged ? 'staged' : 'unstaged',
+          onOpenSettings: openHunkViewSettings,
           totalHunks: hunkCount,
           focusedHunkIndex: clampedHunkIndex,
           onPrevHunk,
@@ -2687,33 +2740,11 @@ export const Panel = ({
           onTogglePinned={toggleFilesListPinned}
           onSelectFile={handleSelectDiffFileFromList}
           onAddFileComment={handleAddFileComment}
+          hasReviewComments={(file): boolean =>
+            !reviewControlsPaused &&
+            feedback.annotationsForFile(cwd, file.path, file.staged).length > 0
+          }
         />
-        {diffSearchFileKey !== null ? (
-          <>
-            {!diffSearch.isOpen ? (
-              <DiffSearchButton
-                bindingFor={bindingFor}
-                fileHeaderVisible={fileHeaderVisible}
-                onOpen={diffSearch.open}
-              />
-            ) : null}
-            <DiffSearchPopup
-              bindingFor={bindingFor}
-              matches={matches}
-              open={diffSearch.isOpen}
-              fileHeaderVisible={fileHeaderVisible}
-              query={diffSearch.query}
-              matchCount={diffSearch.matchCount}
-              activeOrdinal={diffSearch.activeOrdinal}
-              confirming={keyboardConfirmAction !== null}
-              inputRef={diffSearch.inputRef}
-              onQueryChange={diffSearch.setQuery}
-              onCommit={diffSearch.commit}
-              onStep={diffSearch.step}
-              onClose={diffSearch.close}
-            />
-          </>
-        ) : null}
         <div
           ref={setDiffPaneElement}
           data-testid="diff-right-pane"
@@ -2767,93 +2798,129 @@ export const Panel = ({
               onCancel={cancelCommentEditor}
             />
           </Popover>
-          {selectedFileEntry !== undefined &&
-          fileCommentsForSelectedFile.length > 0 ? (
-            <div
-              data-testid="file-level-comments-panel"
-              className="flex max-h-56 shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
-            >
-              <div className="px-2 text-xs font-medium text-on-surface-variant">
-                Commented on file
-              </div>
+          <div
+            data-testid="diff-review-surfaces"
+            className="min-h-0 max-h-[40%] shrink-0 overflow-y-auto"
+          >
+            {selectedFileEntry !== undefined &&
+            fileCommentsForSelectedFile.length > 0 ? (
               <div
-                data-testid="file-level-comments-list"
-                className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-1"
+                data-testid="file-level-comments-panel"
+                className="flex shrink-0 flex-col gap-1 px-4 pb-3 pt-2"
               >
-                {fileThreads.collapsed.map((annotation) => {
-                  const fileGroupKey = threadGroupKey(annotation)
+                <div className="px-2 text-xs font-medium text-on-surface-variant">
+                  Commented on file
+                </div>
+                <div
+                  data-testid="file-level-comments-list"
+                  className="flex flex-col gap-1 pr-1"
+                >
+                  {fileThreads.collapsed.map((annotation) => {
+                    const fileGroupKey = threadGroupKey(annotation)
 
-                  const fileGroup =
-                    fileGroupKey === undefined
-                      ? undefined
-                      : fileThreads.groups.get(fileGroupKey)
+                    const fileGroup =
+                      fileGroupKey === undefined
+                        ? undefined
+                        : fileThreads.groups.get(fileGroupKey)
 
-                  if (fileGroup !== undefined) {
+                    if (fileGroup !== undefined) {
+                      return (
+                        <ReviewThreadCard
+                          key={`thread:${fileGroup.threadId}`}
+                          group={fileGroup}
+                          anchorLabel={threadAnchorLabel(
+                            fileGroup.turns[0] ?? annotation
+                          )}
+                          actions={
+                            feedbackDispatch === undefined
+                              ? undefined
+                              : bindThreadCardActions(
+                                  threadProps,
+                                  fileGroup.threadId
+                                )
+                          }
+                        />
+                      )
+                    }
+
                     return (
-                      <ReviewThreadCard
-                        key={`thread:${fileGroup.threadId}`}
-                        group={fileGroup}
-                        anchorLabel={threadAnchorLabel(
-                          fileGroup.turns[0] ?? annotation
+                      <ReviewCommentRow
+                        key={annotation.metadata.id}
+                        comment={annotation.metadata}
+                        editShortcut={chordToShortcutInput(
+                          bindingFor('diff-file-comment-update')
                         )}
-                        actions={
-                          feedbackDispatch === undefined
-                            ? undefined
-                            : bindThreadCardActions(
-                                threadProps,
-                                fileGroup.threadId
-                              )
-                        }
+                        editAriaKeyshortcuts={chordToAriaShortcut(
+                          bindingFor('diff-file-comment-update')
+                        )}
+                        deleteShortcut={null}
+                        deleteAriaKeyshortcuts={null}
+                        onSendNow={(): void => {
+                          setFinishOpen(false)
+                          setReplyDispatchThreadId(null)
+                          setSendNowCommentId(annotation.metadata.id)
+                        }}
+                        onEdit={(): void => {
+                          setFileCommentAnchorPoint(null)
+                          setAnnotationTarget({
+                            scope: 'file',
+                            filePath: selectedFileEntry.path,
+                            staged: selectedFileEntry.staged,
+                            editId: annotation.metadata.id,
+                          })
+                          setCommentDraftText(annotation.metadata.text, false)
+                          setCommentCategory(
+                            reviewCommentCategory(annotation.metadata)
+                          )
+                        }}
+                        onDelete={(): void => {
+                          focusDiffRoot()
+                          feedback.removeAnnotation(
+                            cwd,
+                            selectedFileEntry.path,
+                            selectedFileEntry.staged,
+                            annotation.metadata.id
+                          )
+                        }}
                       />
                     )
-                  }
-
-                  return (
-                    <ReviewCommentRow
-                      key={annotation.metadata.id}
-                      comment={annotation.metadata}
-                      editShortcut={chordToShortcutInput(
-                        bindingFor('diff-file-comment-update')
-                      )}
-                      editAriaKeyshortcuts={chordToAriaShortcut(
-                        bindingFor('diff-file-comment-update')
-                      )}
-                      deleteShortcut={null}
-                      deleteAriaKeyshortcuts={null}
-                      onSendNow={(): void => {
-                        setFinishOpen(false)
-                        setReplyDispatchThreadId(null)
-                        setSendNowCommentId(annotation.metadata.id)
-                      }}
-                      onEdit={(): void => {
-                        setFileCommentAnchorPoint(null)
-                        setAnnotationTarget({
-                          scope: 'file',
-                          filePath: selectedFileEntry.path,
-                          staged: selectedFileEntry.staged,
-                          editId: annotation.metadata.id,
-                        })
-                        setCommentDraftText(annotation.metadata.text, false)
-                        setCommentCategory(
-                          reviewCommentCategory(annotation.metadata)
-                        )
-                      }}
-                      onDelete={(): void => {
-                        focusDiffRoot()
-                        feedback.removeAnnotation(
-                          cwd,
-                          selectedFileEntry.path,
-                          selectedFileEntry.staged,
-                          annotation.metadata.id
-                        )
-                      }}
-                    />
-                  )
-                })}
+                  })}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+            ) : null}
+            <ReviewLevelNotes ownerKey={feedbackOwnerKey} />
+          </div>
+          <div
+            data-testid="diff-search-anchor"
+            className="relative h-0 shrink-0"
+          >
+            {diffSearchFileKey !== null ? (
+              <>
+                {!diffSearch.isOpen ? (
+                  <DiffSearchButton
+                    bindingFor={bindingFor}
+                    fileHeaderVisible={fileHeaderVisible}
+                    onOpen={diffSearch.open}
+                  />
+                ) : null}
+                <DiffSearchPopup
+                  bindingFor={bindingFor}
+                  matches={matches}
+                  open={diffSearch.isOpen}
+                  fileHeaderVisible={fileHeaderVisible}
+                  query={diffSearch.query}
+                  matchCount={diffSearch.matchCount}
+                  activeOrdinal={diffSearch.activeOrdinal}
+                  confirming={keyboardConfirmAction !== null}
+                  inputRef={diffSearch.inputRef}
+                  onQueryChange={diffSearch.setQuery}
+                  onCommit={diffSearch.commit}
+                  onStep={diffSearch.step}
+                  onClose={diffSearch.close}
+                />
+              </>
+            ) : null}
+          </div>
           <PanelBody
             bindingFor={bindingFor}
             scrollBodyRef={diffScrollBodyRef}

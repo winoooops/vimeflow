@@ -25,16 +25,24 @@ interface BuiltInLayoutMenuItemsOptions {
   builtInLayouts: readonly LayoutShape[]
   allLayouts: readonly LayoutShape[]
   activeLayoutId: PaneLayoutId
+  blockedLayoutIds?: readonly PaneLayoutId[]
   visibleLayoutIds: readonly PaneLayoutId[]
   onVisibleLayoutIdsChange: (next: readonly PaneLayoutId[]) => void
+  onPickLayout?: (layoutId: PaneLayoutId) => boolean
+  onClose?: () => void
+  compactSelectionMode?: boolean
 }
 
 export const builtInLayoutMenuItems = ({
   builtInLayouts,
   allLayouts,
   activeLayoutId,
+  blockedLayoutIds = [],
   visibleLayoutIds,
   onVisibleLayoutIdsChange,
+  onPickLayout = undefined,
+  onClose = undefined,
+  compactSelectionMode = false,
 }: BuiltInLayoutMenuItemsOptions): ReactElement[] =>
   builtInLayouts.map((layout) => {
     const layoutId = layout.id
@@ -43,7 +51,11 @@ export const builtInLayoutMenuItems = ({
       isLockedDisplayLayout(layoutId) || visibleLayoutIds.includes(layoutId)
     const isActive = layoutId === activeLayoutId
 
-    const disabled = isLockedDisplayLayout(layoutId) || isActive
+    const blocked = blockedLayoutIds.includes(layoutId)
+
+    const disabled = compactSelectionMode
+      ? isActive || blocked
+      : isLockedDisplayLayout(layoutId) || isActive
 
     return (
       <Menu.Checkbox
@@ -51,7 +63,15 @@ export const builtInLayoutMenuItems = ({
         aria-label={layout.name}
         checked={checked || isActive}
         disabled={disabled}
-        onChange={(next): void =>
+        onChange={(next): void => {
+          if (compactSelectionMode) {
+            if (onPickLayout?.(layoutId) === true) {
+              onClose?.()
+            }
+
+            return
+          }
+
           onVisibleLayoutIdsChange(
             buildNextVisibleLayoutIds(
               visibleLayoutIds,
@@ -60,7 +80,7 @@ export const builtInLayoutMenuItems = ({
               allLayouts
             )
           )
-        }
+        }}
       >
         <BuiltInLayoutCheckboxContent layout={layout} />
       </Menu.Checkbox>

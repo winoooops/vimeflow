@@ -59,6 +59,7 @@ struct ReplayCoordinatorState {
     expected: usize,
     completed: usize,
     num_turns: u32,
+    cwd: Option<String>,
     activity: ReplayActivity,
     flushed: bool,
 }
@@ -70,7 +71,6 @@ struct ReplayCoordinatorState {
 struct KimiReplayCoordinator {
     events: Arc<dyn EventSink>,
     session_id: String,
-    cwd: Option<String>,
     state: Mutex<ReplayCoordinatorState>,
     flushed: Condvar,
 }
@@ -80,8 +80,10 @@ impl KimiReplayCoordinator {
         Self {
             events,
             session_id,
-            cwd,
-            state: Mutex::new(ReplayCoordinatorState::default()),
+            state: Mutex::new(ReplayCoordinatorState {
+                cwd,
+                ..ReplayCoordinatorState::default()
+            }),
             flushed: Condvar::new(),
         }
     }
@@ -101,7 +103,13 @@ impl KimiReplayCoordinator {
         true
     }
 
-    fn finish(&self, activity: ReplayActivity, num_turns: u32, stop: Option<&AtomicBool>) {
+    fn finish(
+        &self,
+        activity: ReplayActivity,
+        num_turns: u32,
+        cwd: Option<String>,
+        stop: Option<&AtomicBool>,
+    ) {
         let mut state = self
             .state
             .lock()
@@ -112,6 +120,9 @@ impl KimiReplayCoordinator {
 
         state.activity.merge(activity);
         state.num_turns = state.num_turns.saturating_add(num_turns);
+        if cwd.is_some() {
+            state.cwd = cwd;
+        }
         state.completed = state.completed.saturating_add(1);
 
         if state.completed == state.expected {
@@ -121,7 +132,7 @@ impl KimiReplayCoordinator {
             let summary = std::mem::take(&mut state.activity).into_summary(
                 self.session_id.clone(),
                 state.num_turns,
-                self.cwd.clone(),
+                state.cwd.clone(),
             );
             if summary.tool_call_total > 0 || summary.num_turns > 0 || summary.cwd.is_some() {
                 if let Err(e) = emit_agent_replay_summary(self.events.as_ref(), &summary) {
@@ -528,11 +539,13 @@ fn run_session_supervisor(
         let replaying: Vec<_> = pending.iter().map(|_| replay.register()).collect();
         for ((wire, prefix, file), replaying) in pending.into_iter().zip(replaying) {
             let child_stop = Arc::new(AtomicBool::new(false));
+            let decoder_cwd = if prefix.is_empty() { cwd.clone() } else { None };
             let decoder = KimiTranscriptDecoder::with_replay(
                 events.clone(),
                 session_id.clone(),
                 agent_session_id.clone(),
                 prefix,
+                decoder_cwd,
                 replay.clone(),
                 replaying.then(|| child_stop.clone()),
                 !replaying,
@@ -607,6 +620,9 @@ struct KimiTranscriptDecoder {
     agent_prefix: String,
     in_flight: InFlightToolCalls,
     num_turns: u32,
+    /// Latest cwd reported by a main-wire Bash call. During replay this is
+    /// folded into the summary; live transitions emit `agent-cwd` directly.
+    last_cwd: Option<String>,
     /// Main-wire assistant text parts for the CURRENT turn (VIM-293) — whole
     /// blocks, joined at `step.end`/`end_turn` and drained per turn.
     turn_text: String,
@@ -640,7 +656,7 @@ impl KimiTranscriptDecoder {
         let replay = Arc::new(KimiReplayCoordinator::new(
             events.clone(),
             session_id.clone(),
-            cwd,
+            cwd.clone(),
         ));
         let replaying = replay.register();
         debug_assert!(replaying);
@@ -649,6 +665,7 @@ impl KimiTranscriptDecoder {
             session_id,
             agent_session_id,
             agent_prefix,
+            cwd,
             replay,
             None,
             false,
@@ -660,6 +677,7 @@ impl KimiTranscriptDecoder {
         session_id: String,
         agent_session_id: String,
         agent_prefix: String,
+        cwd: Option<String>,
         replay: Arc<KimiReplayCoordinator>,
         replay_stop: Option<Arc<AtomicBool>>,
         replay_done: bool,
@@ -671,6 +689,7 @@ impl KimiTranscriptDecoder {
             agent_prefix,
             in_flight: HashMap::new(),
             num_turns: 0,
+            last_cwd: cwd,
             turn_text: String::new(),
             last_phase: None,
             replay_phase: None,
@@ -733,6 +752,7 @@ impl TranscriptDecoder for KimiTranscriptDecoder {
             self.replay.finish(
                 std::mem::take(&mut self.replay_activity),
                 self.num_turns,
+                self.is_main().then(|| self.last_cwd.clone()).flatten(),
                 self.replay_stop.as_deref(),
             );
             self.replay_done = true;
@@ -796,6 +816,7 @@ impl KimiTranscriptDecoder {
                 if self.in_flight.contains_key(call_id) {
                     return;
                 }
+                self.record_cwd(event);
                 let tool = event.name.as_deref().unwrap_or("unknown").to_string();
                 let args = summarize_tool_args(event);
                 let is_test_file = false;
@@ -938,6 +959,33 @@ impl KimiTranscriptDecoder {
             &mut self.replay_activity,
             self.replay_done,
         );
+    }
+
+    fn record_cwd(&mut self, event: &super::transcript_dto::KimiLoopEventDto) {
+        if !self.is_main() || event.name.as_deref() != Some("Bash") {
+            return;
+        }
+        let Some(observed) = event
+            .args
+            .get("cwd")
+            .and_then(|value| value.as_str())
+            .filter(|cwd| !cwd.is_empty())
+        else {
+            return;
+        };
+        if self.last_cwd.as_deref() == Some(observed) {
+            return;
+        }
+        if self.replay_done {
+            let event = AgentCwdEvent {
+                session_id: self.session_id.clone(),
+                cwd: observed.to_string(),
+            };
+            if let Err(e) = emit_agent_cwd(self.events.as_ref(), &event) {
+                log::warn!("Failed to emit kimi agent-cwd event: {}", e);
+            }
+        }
+        self.last_cwd = Some(observed.to_string());
     }
 }
 
@@ -1728,6 +1776,48 @@ mod tests {
         // The wire time is in 2026; today's `now_iso8601` would differ, so a
         // direct equality to the derived stamp proves it is not current-time.
         assert_ne!(calls[0]["timestamp"], now_iso8601());
+    }
+
+    #[test]
+    fn bash_tool_cwd_drives_replay_summary_and_live_transitions() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = KimiTranscriptDecoder::new_with_cwd(
+            sink.clone(),
+            "sid".into(),
+            String::new(),
+            String::new(),
+            Some("/workspace/main".into()),
+        );
+
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"historic","name":"Bash","args":{"command":"npm install","cwd":"/workspace/.worktrees/feature"}}}"#,
+        );
+        decoder.on_caught_up();
+
+        let summary = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-replay-summary")
+            .map(|(_, payload)| payload)
+            .expect("replay summary");
+        assert_eq!(summary["cwd"], "/workspace/.worktrees/feature");
+        assert_eq!(sink.count("agent-cwd"), 0, "replay cwd is summarized");
+
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"not-bash","name":"Read","args":{"path":"a","cwd":"/workspace/decoy"}}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"context.append_loop_event","event":{"type":"tool.call","toolCallId":"live","name":"Bash","args":{"command":"git status","cwd":"/workspace/main"}}}"#,
+        );
+
+        let cwd_events: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-cwd")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(cwd_events.len(), 1);
+        assert_eq!(cwd_events[0]["cwd"], "/workspace/main");
     }
 
     #[test]

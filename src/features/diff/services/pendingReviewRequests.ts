@@ -2,8 +2,8 @@
  * Correlation state for a dispatched "Request review" (VIM-304), parallel to
  * `pendingReviews` (the reply-correlation store). Keyed by the per-dispatch
  * nonce so multiple review requests can be in flight on one pty (forward-
- * compatible with VIM-297). Not persisted — the placed reviewer annotations
- * persist via the feedback store (VIM-282); this is just the routing + snapshot.
+ * compatible with VIM-297). The workspace review snapshot persists this
+ * routing state alongside placed annotations so recovery works after restart.
  */
 import type { AgentReplyStatus } from '@/bindings'
 import type { FileDiff } from '../types'
@@ -73,6 +73,11 @@ export interface PendingReviewRequest {
   dispatchedAt: number
 }
 
+export type PersistedPendingReviewRequest = Omit<
+  PendingReviewRequest,
+  'ownerKey' | 'cwd'
+>
+
 // ponytail: module-singleton keyed by nonce. One entry per in-flight request.
 const store = new Map<string, PendingReviewRequest>()
 
@@ -80,6 +85,7 @@ export const setPendingReviewRequest = (
   request: PendingReviewRequest
 ): void => {
   store.set(request.nonce, request)
+  emitNotes()
 }
 
 export const getPendingReviewRequest = (
@@ -87,12 +93,19 @@ export const getPendingReviewRequest = (
 ): PendingReviewRequest | undefined => store.get(nonce)
 
 export const clearPendingReviewRequest = (nonce: string): void => {
-  store.delete(nonce)
+  if (store.delete(nonce)) {
+    emitNotes()
+  }
 }
 
-export const pendingReviewRequestNoncesForPty = (ptyId: string): string[] =>
+export const pendingReviewRequestNoncesForPty = (
+  ptyId: string,
+  isOwnerReady: (ownerKey: string) => boolean = () => true
+): string[] =>
   [...store.values()]
-    .filter((request) => request.ptyId === ptyId)
+    .filter(
+      (request) => request.ptyId === ptyId && isOwnerReady(request.ownerKey)
+    )
     .map((request) => request.nonce)
 
 /**
@@ -121,12 +134,16 @@ const reviewLevelByOwner = new Map<string, ReviewLevelNote[]>()
 const EMPTY_NOTES: readonly ReviewLevelNote[] = []
 
 const noteListeners = new Set<() => void>()
+let revision = 0
 
 const emitNotes = (): void => {
+  revision += 1
   for (const listener of noteListeners) {
     listener()
   }
 }
+
+export const reviewRequestStateRevision = (): number => revision
 
 export const subscribeReviewLevelNotes = (
   listener: () => void
@@ -194,6 +211,21 @@ export interface FindingThreadRecord {
   seenReplies: Set<string>
 }
 
+export type PersistedFindingThreadTarget =
+  | {
+      kind: 'anchored'
+      commentId: string
+      handle: Omit<PendingReviewHandle, 'cwd'>
+    }
+  | { kind: 'reviewLevel'; commentId: string }
+
+export interface PersistedFindingThreadRecord {
+  ptyId: string
+  nonce: string
+  byOrdinal: [number, PersistedFindingThreadTarget][]
+  seenReplies: string[]
+}
+
 const threadKey = (ptyId: string, nonce: string): string =>
   `${ptyId}\u0000${nonce}`
 
@@ -201,6 +233,7 @@ const findingThreads = new Map<string, FindingThreadRecord>()
 
 export const setFindingThreadRecord = (record: FindingThreadRecord): void => {
   findingThreads.set(threadKey(record.ptyId, record.nonce), record)
+  emitNotes()
 }
 
 export const getFindingThreadRecord = (
@@ -209,25 +242,136 @@ export const getFindingThreadRecord = (
 ): FindingThreadRecord | undefined =>
   findingThreads.get(threadKey(ptyId, nonce))
 
+export const findingThreadNoncesForPty = (
+  ptyId: string,
+  isOwnerReady: (ownerKey: string) => boolean = () => true
+): string[] =>
+  [...findingThreads.values()]
+    .filter((record) => record.ptyId === ptyId && isOwnerReady(record.ownerKey))
+    .map((record) => record.nonce)
+
 export const clearFindingThreadRecord = (
   ptyId: string,
   nonce: string
 ): void => {
-  findingThreads.delete(threadKey(ptyId, nonce))
+  if (findingThreads.delete(threadKey(ptyId, nonce))) {
+    emitNotes()
+  }
+}
+
+export const persistedPendingReviewRequests = (
+  ownerKey: string
+): PersistedPendingReviewRequest[] =>
+  [...store.values()]
+    .filter((request) => request.ownerKey === ownerKey)
+    .map((request) => ({
+      nonce: request.nonce,
+      ...(request.ptyId === undefined ? {} : { ptyId: request.ptyId }),
+      diffSnapshot: request.diffSnapshot,
+      dispatchedAt: request.dispatchedAt,
+    }))
+
+export const persistedFindingThreads = (
+  ownerKey: string
+): PersistedFindingThreadRecord[] =>
+  [...findingThreads.values()]
+    .filter((record) => record.ownerKey === ownerKey)
+    .map((record) => ({
+      ptyId: record.ptyId,
+      nonce: record.nonce,
+      byOrdinal: [...record.byOrdinal.entries()].map(([ordinal, target]) => [
+        ordinal,
+        target.kind === 'reviewLevel'
+          ? target
+          : {
+              ...target,
+              handle: {
+                filePath: target.handle.filePath,
+                staged: target.handle.staged,
+                lineNumber: target.handle.lineNumber,
+                side: target.handle.side,
+                target: target.handle.target,
+                threadId: target.handle.threadId,
+              },
+            },
+      ]),
+      seenReplies: [...record.seenReplies],
+    }))
+
+export const persistedReviewLevelNotes = (
+  ownerKey: string
+): ReviewLevelNote[] => [...(reviewLevelByOwner.get(ownerKey) ?? EMPTY_NOTES)]
+
+export const restoreReviewRequestState = (
+  ownerKey: string,
+  cwd: string,
+  currentPtyId: string | undefined,
+  requests: readonly PersistedPendingReviewRequest[],
+  threads: readonly PersistedFindingThreadRecord[],
+  notes: readonly ReviewLevelNote[]
+): void => {
+  for (const [nonce, request] of store) {
+    if (request.ownerKey === ownerKey) {
+      store.delete(nonce)
+    }
+  }
+  for (const request of requests) {
+    store.set(request.nonce, {
+      ...request,
+      ...(request.ptyId === undefined
+        ? {}
+        : { ptyId: currentPtyId ?? request.ptyId }),
+      ownerKey,
+      cwd,
+    })
+  }
+
+  for (const [key, record] of findingThreads) {
+    if (record.ownerKey === ownerKey) {
+      findingThreads.delete(key)
+    }
+  }
+  for (const record of threads) {
+    const ptyId = currentPtyId ?? record.ptyId
+    findingThreads.set(threadKey(ptyId, record.nonce), {
+      ptyId,
+      nonce: record.nonce,
+      ownerKey,
+      byOrdinal: new Map(
+        record.byOrdinal.map(([ordinal, target]) => [
+          ordinal,
+          target.kind === 'reviewLevel'
+            ? target
+            : { ...target, handle: { cwd, ...target.handle } },
+        ])
+      ),
+      seenReplies: new Set(record.seenReplies),
+    })
+  }
+
+  if (notes.length === 0) {
+    reviewLevelByOwner.delete(ownerKey)
+  } else {
+    reviewLevelByOwner.set(ownerKey, [...notes])
+  }
+  emitNotes()
 }
 
 export const prunePendingReviewRequestOwners = (
   liveOwnerKeys: ReadonlySet<string>
 ): void => {
+  let changed = false
   for (const [nonce, request] of store) {
     if (!liveOwnerKeys.has(request.ownerKey)) {
       store.delete(nonce)
+      changed = true
     }
   }
 
   for (const [key, record] of findingThreads) {
     if (!liveOwnerKeys.has(record.ownerKey)) {
       findingThreads.delete(key)
+      changed = true
     }
   }
 
@@ -239,7 +383,7 @@ export const prunePendingReviewRequestOwners = (
     }
   }
 
-  if (notesChanged) {
+  if (notesChanged || changed) {
     emitNotes()
   }
 }

@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-17
-ref_count: 24
+last_updated: 2026-07-20
+ref_count: 26
 ---
 
 # Derived State Consistency
@@ -416,4 +416,47 @@ base data is technically "correct."
   source, derived `SETTINGS_SECTIONS` and `AVAILABLE_SETTINGS_SECTIONS` from it,
   and made `SettingsContent` type its pane registry against that same ID union.
   Added focused coverage that available IDs and available sections stay aligned.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Unfinished-review summaries omitted thread reply drafts
+
+- **Source:** local-codex | VIM-346 fix review | 2026-07-18
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/hooks/useFeedbackBatch.ts`
+- **Finding:** Thread reply drafts were persisted by owner, but the unfinished
+  review summary derived its owner set and draft count only from top-level
+  drafts and comments. Switching panes could therefore hide the navigation
+  entry for an owner whose only pending work was a thread reply.
+- **Fix:** Include thread-draft owners when deriving summaries and count each
+  nonblank reply draft. Added a focused regression test for a reply-only owner.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Command palette reused live-session navigation state for visible tab actions
+
+- **Source:** github-codex-connector | PR #714 round 1 | 2026-07-20
+- **Severity:** HIGH
+- **File:** `src/features/workspace/commands/buildWorkspaceCommands.ts`
+- **Finding:** The workspace command builder received a live-only session list
+  and reused it for both navigation commands and active-tab actions. When the
+  active tab had just exited but remained visible, `:close`, `:qa`,
+  `:tabclose`, and `:rename-session` could not find the active session.
+- **Fix:** Split command dependencies into all workspace tabs and live navigable
+  tabs. Close/rename paths resolve the active tab from the all-tabs list, while
+  `:next`, `:previous`, `:tabn`, `:tabp`, and `:goto` use the navigable list.
+  Added command-builder tests for exited active tabs and live-only navigation.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Session island retained compact batch start after full-width expansion
+
+- **Source:** github-claude | PR #714 round 2 | 2026-07-20
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** While a Recent/completed session was active, the session island
+  retained the previous open-session batch start by clamping it to the current
+  maximum, but did not realign it to the current `batchSize`. A compact-to-full
+  chrome transition could therefore render a non-canonical slice such as
+  sessions 6-15 instead of the documented 1-10 or 11-20 batches.
+- **Fix:** Clamp the retained batch start and then floor it to the current
+  batch-size boundary in the Recent-session path. Added a rerender regression
+  test that expands from five visible indicators to ten while Recent is active.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

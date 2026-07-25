@@ -34,6 +34,11 @@ describe('COMMANDS', () => {
     expect(typeof COMMANDS.claude.Icon).toBe('function')
   })
 
+  test('shell command has Icon defined (brand SVG component)', () => {
+    expect(COMMANDS.shell.Icon).toBeDefined()
+    expect(typeof COMMANDS.shell.Icon).toBe('function')
+  })
+
   test('adds enabled agent aliases next to their canonical command', () => {
     const aliases: AgentAlias[] = [
       {

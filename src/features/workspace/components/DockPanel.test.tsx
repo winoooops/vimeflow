@@ -1,9 +1,10 @@
 import {
   fireEvent,
-  render,
+  render as testingLibraryRender,
   screen,
   waitFor,
   within,
+  type RenderResult,
 } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import userEvent from '@testing-library/user-event'
@@ -20,6 +21,10 @@ import type { ChangedFile, SelectedDiffFile } from '../../diff/types'
 import type { FeedbackDispatchTarget } from '../../diff/services/activePanePicker'
 import { javascript } from '@codemirror/lang-javascript'
 import type { Keybindings } from '../../keymap/useKeybindings'
+import { SettingsProvider } from '../../settings/SettingsProvider'
+
+const render = (ui: ReactElement): RenderResult =>
+  testingLibraryRender(ui, { wrapper: SettingsProvider })
 
 vi.mock('../../editor/hooks/useCodeMirror')
 vi.mock('../../editor/hooks/useVimMode')
@@ -1348,6 +1353,48 @@ describe('DockPanel', () => {
     })
 
     expect(screen.getByTestId('diff-panel')).toBeInTheDocument()
+  })
+
+  test('keeps the diff available while durable review hydration loads', () => {
+    renderDockPanel({
+      tab: 'diff',
+      reviewStateLoading: true,
+      selectedDiffFile: {
+        path: 'src/foo.ts',
+        staged: false,
+        cwd: '/repo',
+      },
+      onSelectedDiffFileChange: vi.fn(),
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Restoring review comments…'
+    )
+
+    expect(
+      screen.getByRole('toolbar', { name: 'Diff toolbar' })
+    ).toBeInTheDocument()
+  })
+
+  test('keeps the diff available when review hydration fails', () => {
+    renderDockPanel({
+      tab: 'diff',
+      reviewStateUnavailable: true,
+      selectedDiffFile: {
+        path: 'src/foo.ts',
+        staged: false,
+        cwd: '/repo',
+      },
+      onSelectedDiffFileChange: vi.fn(),
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Review comments are temporarily unavailable.'
+    )
+
+    expect(
+      screen.getByRole('toolbar', { name: 'Diff toolbar' })
+    ).toBeInTheDocument()
   })
 
   test('preserves selected diff file when the dock closes and reopens', () => {

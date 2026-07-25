@@ -158,7 +158,6 @@ describe('AgentStatusCard', () => {
         isShell
         elapsed="8m"
         turns={6}
-        contextPct={57}
         fiveHourPct={12}
         weekPct={34}
       />
@@ -169,15 +168,12 @@ describe('AgentStatusCard', () => {
     expect(screen.queryByText('Weekly Usage')).not.toBeInTheDocument()
   })
 
-  test('renders only the turn count from the old metrics row', () => {
-    render(
-      <AgentStatusCard title="m" elapsed="2m" turns={12} contextPct={64} />
-    )
+  test('renders the turn count in the header', () => {
+    render(<AgentStatusCard title="m" elapsed="2m" turns={12} />)
 
     expect(screen.queryByText('schedule')).not.toBeInTheDocument()
     expect(screen.queryByText('2m')).not.toBeInTheDocument()
     expect(screen.queryByText('data_usage')).not.toBeInTheDocument()
-    expect(screen.queryByText('64%')).not.toBeInTheDocument()
     expect(screen.getByText('forum')).toBeInTheDocument()
     expect(screen.getByText('12 turns')).toBeInTheDocument()
   })
@@ -189,6 +185,19 @@ describe('AgentStatusCard', () => {
     expect(screen.getByText('12%')).toBeInTheDocument()
     expect(screen.getByText('Weekly Usage')).toBeInTheDocument()
     expect(screen.getByText('34%')).toBeInTheDocument()
+  })
+
+  test('keeps the turn pill out of the fixed quota body when both usage bars render', () => {
+    render(
+      <AgentStatusCard title="m" turns={12} fiveHourPct={12} weekPct={34} />
+    )
+
+    const body = screen.getByTestId('agent-card-body')
+    const rateLimits = screen.getByTestId('agent-card-rate-limits')
+
+    expect(body).toHaveStyle({ height: '66px' })
+    expect(body).toContainElement(rateLimits)
+    expect(rateLimits).toHaveTextContent('5-hour Session12%Weekly Usage34%')
   })
 
   test('omits the usage bars when both usages are null', () => {
@@ -239,7 +248,7 @@ describe('AgentStatusCard', () => {
   })
 
   test('renders zero turns in the header pill', () => {
-    render(<AgentStatusCard title="m" elapsed="2m" turns={0} contextPct={64} />)
+    render(<AgentStatusCard title="m" elapsed="2m" turns={0} />)
 
     expect(screen.getByText('forum')).toBeInTheDocument()
     expect(screen.getByText('0 turns')).toBeInTheDocument()

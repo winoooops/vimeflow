@@ -8,10 +8,8 @@ const defaultProps = {
   session: {
     startedAgo: '4h 12m',
     turns: 37,
-    cache: { cached: 73, wrote: 20, fresh: 7 },
     changes: { added: 212, removed: 188 },
   },
-  contextPct: 74,
   onOpenPalette: vi.fn(),
   dockOpen: false,
   onToggleDock: vi.fn(),
@@ -52,13 +50,9 @@ describe('StatusBar', () => {
     expect(screen.getByTestId('status-bar-duration')).toHaveTextContent(
       'schedule4h 12m'
     )
-    expect(screen.getByTestId('status-bar-context')).toHaveTextContent('😐74%')
-    expect(screen.getByTestId('status-bar-cache')).toHaveTextContent(
-      'bolt73%cached'
-    )
     expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('37 turns')
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+212−188')
-    expect(screen.getAllByTestId('status-bar-separator')).toHaveLength(4)
+    expect(screen.getAllByTestId('status-bar-separator')).toHaveLength(2)
   })
 
   test('action buttons are transparent compact icon buttons with hover fill only (J7)', () => {
@@ -161,22 +155,18 @@ describe('StatusBar', () => {
     expect(onOpenPalette).toHaveBeenCalledOnce()
   })
 
-  test('omits duration cache turns and diff segments without orphan separators (J9)', () => {
+  test('omits duration turns and diff segments without orphan separators (J9)', () => {
     renderStatusBar({
       session: {
         startedAgo: '—',
         turns: 0,
-        cache: { cached: 0, wrote: 0, fresh: 0 },
         changes: { added: 0, removed: 0 },
       },
-      contextPct: 12,
     })
 
     expect(screen.queryByTestId('status-bar-duration')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('status-bar-cache')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-diff')).not.toBeInTheDocument()
-    expect(screen.getByTestId('status-bar-context')).toHaveTextContent('😊12%')
     expect(screen.queryAllByTestId('status-bar-separator')).toHaveLength(0)
   })
 
@@ -185,40 +175,26 @@ describe('StatusBar', () => {
 
     expect(screen.getByTestId('status-bar-palette')).toBeInTheDocument()
     expect(screen.getByTestId('status-bar-dock-toggle')).toBeInTheDocument()
-    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
     expect(screen.queryByTestId('status-bar-turns')).not.toBeInTheDocument()
     expect(screen.queryAllByTestId('status-bar-separator')).toHaveLength(0)
   })
 
-  test('uses critical context and cold cache tones with compact diff counts', () => {
+  test('uses compact diff counts for large line deltas', () => {
     renderStatusBar({
       session: {
         startedAgo: '1d 03h',
         turns: 44,
-        cache: { cached: 35, wrote: 30, fresh: 35 },
         changes: { added: 540, removed: 1200 },
       },
-      contextPct: 94,
     })
-
-    expect(screen.getByTestId('status-bar-context')).toHaveTextContent('🥵94%')
-    expect(screen.getByText('94%')).toHaveClass('text-error')
-    expect(screen.getByTestId('status-bar-cache-rate')).toHaveTextContent('35%')
-
-    expect(screen.getByTestId('status-bar-cache-rate')).toHaveClass(
-      'text-tertiary'
-    )
 
     expect(screen.getByTestId('status-bar-diff')).toHaveTextContent('+540−1.2k')
   })
 
-  test('maps the warm cache and diff additions to the success token', () => {
+  test('maps diff additions to the success token', () => {
     renderStatusBar()
 
     // Theme token: the semantic success color (set during the #424 migration).
-    expect(screen.getByTestId('status-bar-cache-rate')).toHaveClass(
-      'text-success'
-    )
     expect(screen.getByText('+212')).toHaveClass('text-success')
   })
 
@@ -229,7 +205,6 @@ describe('StatusBar', () => {
         turns: 5,
         changes: { added: 500, removed: 0 },
       },
-      contextPct: 20,
     })
 
     // Must not show a misleading −0 in the tertiary (orange) tone.
@@ -243,40 +218,19 @@ describe('StatusBar', () => {
         turns: 5,
         changes: { added: 0, removed: 300 },
       },
-      contextPct: 20,
     })
 
     // Must not show a misleading +0 in the success (green) tone.
     expect(screen.getByTestId('status-bar-diff').textContent).toBe('−300')
   })
 
-  test('suppresses the context segment when contextPct is null', () => {
-    renderStatusBar({
-      session: {
-        startedAgo: '2m',
-        turns: 5,
-        changes: { added: 1, removed: 1 },
-      },
-      contextPct: null,
-    })
-
-    // Agent is active (turns render) but no context reading has arrived yet, so
-    // the segment is omitted rather than shown as a misleading 😊0%.
-    expect(screen.queryByTestId('status-bar-context')).not.toBeInTheDocument()
-    expect(screen.getByTestId('status-bar-turns')).toHaveTextContent('5 turns')
-  })
-
-  test('narrow widths hide duration, the cached label, and turns instead of wrapping (J7)', () => {
+  test('narrow widths hide duration and turns instead of wrapping (J7)', () => {
     renderStatusBar()
 
     const bar = screen.getByTestId('status-bar')
     expect(bar.className).not.toContain('max-[760px]:h-[44px]')
 
     expect(screen.getByTestId('status-bar-duration')).toHaveClass(
-      'max-[760px]:hidden'
-    )
-
-    expect(screen.getByTestId('status-bar-cache-label')).toHaveClass(
       'max-[760px]:hidden'
     )
 

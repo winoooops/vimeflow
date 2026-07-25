@@ -393,7 +393,7 @@ const CATALOG_LITERAL = [
   {
     id: 'new-session',
     label: 'New terminal session',
-    group: 'Global',
+    group: 'Sessions',
     context: 'global',
     matchPolicy: 'exact',
     rebindable: true,
@@ -403,7 +403,7 @@ const CATALOG_LITERAL = [
   {
     id: 'session-prev',
     label: 'Previous session',
-    group: 'Global',
+    group: 'Sessions',
     context: 'global',
     matchPolicy: 'exact',
     rebindable: true,
@@ -413,12 +413,40 @@ const CATALOG_LITERAL = [
   {
     id: 'session-next',
     label: 'Next session',
-    group: 'Global',
+    group: 'Sessions',
     context: 'global',
     matchPolicy: 'exact',
     rebindable: true,
     defaultCombo: (isMac: boolean): Chord =>
       isMac ? c('BracketRight', 'Mod') : c('BracketRight', 'Mod', 'Shift'),
+  },
+  {
+    id: 'session-switch-next',
+    label: 'Switch session (recent first)',
+    group: 'Sessions',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: c('Tab', 'Ctrl'),
+  },
+  {
+    id: 'session-switch-prev',
+    label: 'Switch session backward (recent first)',
+    group: 'Sessions',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: c('Tab', 'Ctrl', 'Shift'),
+  },
+  {
+    id: 'session-close',
+    label: 'Close session',
+    group: 'Sessions',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: (isMac: boolean): Chord =>
+      isMac ? c('KeyW', 'Mod') : c('KeyW', 'Mod', 'Shift'),
   },
   {
     id: 'sidebar-toggle',

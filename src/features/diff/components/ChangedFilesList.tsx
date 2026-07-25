@@ -1,5 +1,5 @@
-import { useRef } from 'react'
-import type { FocusEvent, ReactElement } from 'react'
+import { useEffect, useRef } from 'react'
+import type { FocusEvent, ReactElement, RefObject } from 'react'
 import { IconButton } from '@/components/IconButton'
 import {
   chordToAriaShortcut,
@@ -16,8 +16,15 @@ export interface ChangedFilesListProps {
   selectedFile: { path: string; staged: boolean } | null
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
+  hasReviewComments?: (file: ChangedFile) => boolean
   pinned?: boolean
   onTogglePinned?: () => void
+  scrollState?: ChangedFilesListScrollState
+}
+
+export interface ChangedFilesListScrollState {
+  initialSelectionKeyRef: RefObject<string | null>
+  hasObservedPostMountSelectionRef: RefObject<boolean>
 }
 
 interface ChangedFilesListSurfaceProps {
@@ -32,16 +39,24 @@ interface ChangedFilesListSurfaceProps {
   onTogglePinned: () => void
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment: (file: ChangedFile, anchor: HTMLElement) => void
+  hasReviewComments?: (file: ChangedFile) => boolean
 }
 
 interface ChangedFileItemProps {
   commentAriaKeyshortcuts: string
   commentShortcut: ShortcutInput
   file: ChangedFile
+  hasReviewComments: boolean
   selected: boolean
+  selectionKey: string | null
+  initialSelectionKeyRef: RefObject<string | null>
+  hasObservedPostMountSelectionRef: RefObject<boolean>
+  scrollContainerRef: RefObject<HTMLDivElement | null>
   onSelectFile: (file: ChangedFile) => void
   onAddFileComment?: (file: ChangedFile, anchor: HTMLElement) => void
 }
+
+const hasNoReviewComments = (): boolean => false
 
 const getDisplayName = (path: string): string => {
   const trimmedPath = path.replace(/\/+$/u, '')
@@ -60,6 +75,11 @@ const getDirectory = (path: string): string => {
   return parts.length > 1 ? parts.slice(0, -1).join('/') : ''
 }
 
+const getSelectionKey = (
+  selectedFile: { path: string; staged: boolean } | null
+): string | null =>
+  selectedFile === null ? null : `${selectedFile.path}:${selectedFile.staged}`
+
 const statusTone = (
   status: ChangedFile['status']
 ): { glyph: string; label: string; className: string } => {
@@ -77,11 +97,38 @@ const statusTone = (
   }
 }
 
+const scrollIntoNearestContainerView = (
+  item: HTMLElement,
+  container: HTMLElement
+): void => {
+  const itemRect = item.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const itemTop = itemRect.top - containerRect.top + container.scrollTop
+  const itemBottom = itemTop + itemRect.height
+  const visibleTop = container.scrollTop
+  const visibleBottom = visibleTop + container.clientHeight
+
+  if (itemTop < visibleTop) {
+    container.scrollTop = itemTop
+
+    return
+  }
+
+  if (itemBottom > visibleBottom) {
+    container.scrollTop = itemBottom - container.clientHeight
+  }
+}
+
 const ChangedFileItem = ({
   commentAriaKeyshortcuts,
   commentShortcut,
   file,
+  hasReviewComments,
   selected,
+  selectionKey,
+  initialSelectionKeyRef,
+  hasObservedPostMountSelectionRef,
+  scrollContainerRef,
   onSelectFile,
   onAddFileComment = undefined,
 }: ChangedFileItemProps): ReactElement => {
@@ -89,11 +136,50 @@ const ChangedFileItem = ({
   const directory = getDirectory(file.path)
   const status = statusTone(file.status)
   const isDeleted = file.status === 'deleted'
+  const itemRef = useRef<HTMLDivElement | null>(null)
+
+  // Keyboard file navigation (n/p) moves the selection from outside the list.
+  // Skip the already-selected mount state so merely rendering the diff dock
+  // cannot move unrelated app surfaces during smoke tests.
+  useEffect(() => {
+    const item = itemRef.current
+    const container = scrollContainerRef.current
+
+    if (
+      !selected ||
+      selectionKey === null ||
+      item === null ||
+      container === null
+    ) {
+      return
+    }
+
+    if (!hasObservedPostMountSelectionRef.current) {
+      if (selectionKey === initialSelectionKeyRef.current) {
+        return
+      }
+
+      hasObservedPostMountSelectionRef.current = true
+    }
+
+    scrollIntoNearestContainerView(item, container)
+  }, [
+    hasObservedPostMountSelectionRef,
+    initialSelectionKeyRef,
+    scrollContainerRef,
+    selected,
+    selectionKey,
+  ])
 
   return (
     <div
+      ref={itemRef}
       className={`flex items-center gap-2 rounded-md px-[9px] py-[7px] text-left transition-colors ${
-        selected ? 'bg-primary/15' : 'hover:bg-surface-container-high/60'
+        selected
+          ? 'bg-primary/15'
+          : hasReviewComments
+            ? 'bg-primary/[0.08] hover:bg-primary/[0.13]'
+            : 'hover:bg-surface-container-high/60'
       }`}
     >
       <button
@@ -121,6 +207,19 @@ const ChangedFileItem = ({
             </span>
           ) : null}
         </span>
+        {hasReviewComments ? (
+          <>
+            <span className="sr-only">
+              Review comments or threads on {fileName}
+            </span>
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined shrink-0 text-[14px] leading-none text-primary"
+            >
+              forum
+            </span>
+          </>
+        ) : null}
         <div className="flex shrink-0 items-center gap-1.5 font-code text-[10px]">
           {(file.insertions ?? 0) > 0 && (
             <span className="text-vcs-added">+{file.insertions}</span>
@@ -223,14 +322,27 @@ export const ChangedFilesList = ({
   selectedFile,
   onSelectFile,
   onAddFileComment = undefined,
+  hasReviewComments = hasNoReviewComments,
   pinned = false,
   onTogglePinned = undefined,
+  scrollState = undefined,
 }: ChangedFilesListProps): ReactElement => {
   const totals = sumLines(files)
   const commentShortcut = bindingFor('diff-comment-file')
   const pinShortcut = bindingFor('diff-files-pin')
   const commentShortcutInput = chordToShortcutInput(commentShortcut)
   const commentAriaKeyshortcuts = chordToAriaShortcut(commentShortcut)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const selectionKey = getSelectionKey(selectedFile)
+  const defaultInitialSelectionKeyRef = useRef<string | null>(selectionKey)
+  const defaultHasObservedPostMountSelectionRef = useRef(selectionKey === null)
+
+  const initialSelectionKeyRef =
+    scrollState?.initialSelectionKeyRef ?? defaultInitialSelectionKeyRef
+
+  const hasObservedPostMountSelectionRef =
+    scrollState?.hasObservedPostMountSelectionRef ??
+    defaultHasObservedPostMountSelectionRef
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -256,13 +368,22 @@ export const ChangedFilesList = ({
         ) : null}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1.5">
+      <div
+        ref={scrollContainerRef}
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1.5 py-1.5"
+        data-testid="changed-files-scroll-container"
+      >
         {files.map((file) => (
           <ChangedFileItem
             key={`${file.path}:${file.staged}`}
             commentAriaKeyshortcuts={commentAriaKeyshortcuts}
             commentShortcut={commentShortcutInput}
             file={file}
+            hasReviewComments={hasReviewComments(file)}
+            selectionKey={selectionKey}
+            initialSelectionKeyRef={initialSelectionKeyRef}
+            hasObservedPostMountSelectionRef={hasObservedPostMountSelectionRef}
+            scrollContainerRef={scrollContainerRef}
             selected={
               selectedFile?.path === file.path &&
               selectedFile.staged === file.staged
@@ -295,7 +416,20 @@ export const ChangedFilesListSurface = ({
   onTogglePinned,
   onSelectFile,
   onAddFileComment,
+  hasReviewComments = hasNoReviewComments,
 }: ChangedFilesListSurfaceProps): ReactElement => {
+  const surfaceSelectionKey = getSelectionKey(selectedFile)
+  const initialSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
+  const hasObservedPostMountSelectionRef = useRef(selectedFile === null)
+  const previousSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
+
+  useEffect(() => {
+    if (previousSelectionKeyRef.current !== surfaceSelectionKey) {
+      hasObservedPostMountSelectionRef.current = true
+      previousSelectionKeyRef.current = surfaceSelectionKey
+    }
+  }, [surfaceSelectionKey])
+
   const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
     const nextTarget = event.relatedTarget
 
@@ -316,8 +450,13 @@ export const ChangedFilesListSurface = ({
       selectedFile={selectedFile}
       pinned={pinned}
       onTogglePinned={onTogglePinned}
+      scrollState={{
+        initialSelectionKeyRef,
+        hasObservedPostMountSelectionRef,
+      }}
       onSelectFile={onSelectFile}
       onAddFileComment={onAddFileComment}
+      hasReviewComments={hasReviewComments}
     />
   )
 

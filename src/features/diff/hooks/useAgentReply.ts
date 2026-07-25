@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { invoke, listen } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import type {
@@ -11,21 +11,33 @@ import type { ReviewComment } from './useFeedbackBatch'
 import {
   clearPendingReview,
   getPendingReview,
+  pendingReviewsRevision,
   pendingNoncesForPty,
   recoveryNonceBatches,
   setPendingReview,
+  subscribePendingReviews,
   type PendingReviewHandle,
 } from '../services/pendingReviews'
 import {
   addReviewLevelNote,
+  findingThreadNoncesForPty,
   getFindingThreadRecord,
+  reviewRequestStateRevision,
+  setFindingThreadRecord,
+  subscribeReviewLevelNotes,
   type FindingThreadRecord,
 } from '../services/pendingReviewRequests'
 
 /** Identity label for a main-agent turn shown on the review-level surface. */
 const AGENT_REVIEW_LEVEL_LABEL = 'Agent'
+const MAX_BUFFERED_AGENT_REPLIES = 200
+const ownerReviewStateAlwaysReady = (): boolean => true
 
 export interface UseAgentReplyOptions {
+  /** Buffer live events until durable correlation state has hydrated. */
+  enabled?: boolean
+  /** Whether the event's target owner has durable correlation state available. */
+  isOwnerReviewStateReady?: (ownerKey: string) => boolean
   /** PTY currently visible in the workspace; returning to it triggers recovery. */
   activePtyId: string | null
   /** Attach an annotation onto a specific feedback owner (the dispatching one). */
@@ -44,9 +56,10 @@ export interface UseAgentReplyOptions {
 
 const handleAgentReply = (
   event: AgentReplyEvent,
+  isOwnerReviewStateReady: (ownerKey: string) => boolean,
   addAnnotationForOwner: UseAgentReplyOptions['addAnnotationForOwner'],
   nextCommentId: UseAgentReplyOptions['nextCommentId']
-): void => {
+): boolean => {
   const attachAgentNote = (
     ownerKey: string,
     handle: PendingReviewHandle,
@@ -84,16 +97,23 @@ const handleAgentReply = (
     // Malformed marker: degrade to one review-level note; the living thread
     // record survives one garbled turn.
     if (event.replies === null) {
+      const turnKey = `raw\u0000${event.rawText}`
+      if (record.seenReplies.has(turnKey)) {
+        return
+      }
       addReviewLevelNote(record.ownerKey, {
         commentId: nextCommentId(),
         reviewer: AGENT_REVIEW_LEVEL_LABEL,
         text: event.rawText,
         nonce: record.nonce,
       })
+      record.seenReplies.add(turnKey)
+      setFindingThreadRecord(record)
 
       return
     }
 
+    let changed = false
     for (const reply of event.replies) {
       if (reply.target !== 'finding') {
         continue
@@ -118,6 +138,7 @@ const handleAgentReply = (
         )
         if (result === 'ok') {
           record.seenReplies.add(turnKey)
+          changed = true
         }
         continue
       }
@@ -130,11 +151,15 @@ const handleAgentReply = (
         outcome: reply.status,
       })
       record.seenReplies.add(turnKey)
+      changed = true
+    }
+    if (changed) {
+      setFindingThreadRecord(record)
     }
   }
 
   if (event.nonce === null) {
-    return
+    return true
   }
 
   // The nonce names the dispatch a turn answers: a review nonce resolves
@@ -142,16 +167,23 @@ const handleAgentReply = (
   // feedback nonce against the pending [#n] handles below.
   const record = getFindingThreadRecord(event.sessionId, event.nonce)
   if (record !== undefined) {
+    if (!isOwnerReviewStateReady(record.ownerKey)) {
+      return false
+    }
+
     handleFindingTurns(record)
 
-    return
+    return true
   }
 
   // Session + nonce gate — both are part of the store key (VIM-297), so
   // only a reply echoing a live dispatch's nonce on its own pty resolves.
   const pending = getPendingReview(event.sessionId, event.nonce)
   if (pending === undefined) {
-    return
+    return false
+  }
+  if (!isOwnerReviewStateReady(pending.ownerKey)) {
+    return false
   }
 
   const matched = (event.replies ?? []).filter((reply) =>
@@ -159,6 +191,7 @@ const handleAgentReply = (
   )
 
   if (event.replies !== null && matched.length > 0) {
+    const consumedHandles = pending.consumedHandles ?? new Set<number>()
     for (const reply of matched) {
       const handle = pending.byHandle.get(reply.id)
       if (handle === undefined) {
@@ -173,8 +206,10 @@ const handleAgentReply = (
       )
       if (result === 'ok') {
         pending.byHandle.delete(reply.id) // consume so a replay can't re-attach
+        consumedHandles.add(reply.id)
       }
     }
+    pending.consumedHandles = consumedHandles
 
     if (pending.byHandle.size === 0) {
       clearPendingReview(event.sessionId, event.nonce)
@@ -182,7 +217,17 @@ const handleAgentReply = (
       setPendingReview(pending)
     }
 
-    return
+    return true
+  }
+
+  if (
+    event.replies !== null &&
+    event.replies.length > 0 &&
+    event.replies.some(
+      (reply) => pending.consumedHandles?.has(reply.id) === true
+    )
+  ) {
+    return true
   }
 
   // Malformed marker (replies === null) OR every id unmatched → degrade: one
@@ -195,10 +240,12 @@ const handleAgentReply = (
     if (result === 'cap-reached') {
       setPendingReview(pending)
 
-      return
+      return true
     }
   }
   clearPendingReview(event.sessionId, event.nonce)
+
+  return true
 }
 
 /**
@@ -214,20 +261,78 @@ const handleAgentReply = (
  * it never throws.
  */
 export const useAgentReply = ({
+  enabled = true,
+  isOwnerReviewStateReady = ownerReviewStateAlwaysReady,
   activePtyId,
   addAnnotationForOwner,
   nextCommentId,
   notifyInfo,
 }: UseAgentReplyOptions): void => {
-  const handleReply = useCallback(
-    (event: AgentReplyEvent): void =>
-      handleAgentReply(event, addAnnotationForOwner, nextCommentId),
-    [addAnnotationForOwner, nextCommentId]
+  const enabledRef = useRef(enabled)
+  const queuedRepliesRef = useRef<AgentReplyEvent[]>([])
+  enabledRef.current = enabled
+
+  const pendingReviewRevision = useSyncExternalStore(
+    subscribePendingReviews,
+    pendingReviewsRevision,
+    pendingReviewsRevision
   )
+
+  const findingThreadRevision = useSyncExternalStore(
+    subscribeReviewLevelNotes,
+    reviewRequestStateRevision,
+    reviewRequestStateRevision
+  )
+
+  const queueReply = useCallback((event: AgentReplyEvent): void => {
+    if (event.nonce === null) {
+      return
+    }
+    if (queuedRepliesRef.current.length >= MAX_BUFFERED_AGENT_REPLIES) {
+      queuedRepliesRef.current.shift()
+    }
+    queuedRepliesRef.current.push(event)
+  }, [])
+
+  const handleReply = useCallback(
+    (event: AgentReplyEvent): void => {
+      if (!enabledRef.current) {
+        queueReply(event)
+
+        return
+      }
+
+      if (
+        !handleAgentReply(
+          event,
+          isOwnerReviewStateReady,
+          addAnnotationForOwner,
+          nextCommentId
+        )
+      ) {
+        queueReply(event)
+      }
+    },
+    [addAnnotationForOwner, isOwnerReviewStateReady, nextCommentId, queueReply]
+  )
+
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
+    const queued = queuedRepliesRef.current.splice(0)
+    queued.forEach(handleReply)
+  }, [enabled, findingThreadRevision, handleReply, pendingReviewRevision])
 
   const recoverPty = useCallback(
     async (ptyId: string, isCancelled: () => boolean): Promise<void> => {
-      const nonces = pendingNoncesForPty(ptyId)
+      const nonces = [
+        ...new Set([
+          ...pendingNoncesForPty(ptyId, isOwnerReviewStateReady),
+          ...findingThreadNoncesForPty(ptyId, isOwnerReviewStateReady),
+        ]),
+      ]
       if (nonces.length === 0) {
         return
       }
@@ -253,7 +358,7 @@ export const useAgentReply = ({
         }
       }
     },
-    [handleReply, notifyInfo]
+    [handleReply, isOwnerReviewStateReady, notifyInfo]
   )
 
   useEffect(() => {
@@ -295,7 +400,7 @@ export const useAgentReply = ({
   }, [handleReply, recoverPty])
 
   useEffect(() => {
-    if (!isDesktop() || activePtyId === null) {
+    if (!isDesktop() || !enabled || activePtyId === null) {
       return undefined
     }
 
@@ -305,5 +410,5 @@ export const useAgentReply = ({
     return (): void => {
       cancelled = true
     }
-  }, [activePtyId, recoverPty])
+  }, [activePtyId, enabled, recoverPty])
 }

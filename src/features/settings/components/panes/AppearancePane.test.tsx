@@ -103,6 +103,38 @@ describe('AppearancePane', () => {
     expect(screen.getByLabelText('Reservoir swell')).toHaveValue('soft-mound')
   })
 
+  test('reflects the default session island display setting', () => {
+    renderPane()
+
+    expect(screen.getByLabelText('Session island display')).toHaveValue('dots')
+  })
+
+  test('persists the session island display setting', async () => {
+    const user = userEvent.setup()
+    const save = vi.fn().mockResolvedValue(undefined)
+
+    window.vimeflow = {
+      settings: {
+        load: vi.fn().mockResolvedValue(DEFAULT_SETTINGS),
+        save,
+        openFile: vi.fn(),
+      },
+    } as unknown as Window['vimeflow']
+
+    renderPane()
+
+    await user.selectOptions(
+      screen.getByLabelText('Session island display'),
+      'numbers'
+    )
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionIslandDisplay: 'numbers' })
+      )
+    })
+  })
+
   test('persists reservoir swell through the settings store', async () => {
     const user = userEvent.setup()
     const save = vi.fn().mockResolvedValue(undefined)

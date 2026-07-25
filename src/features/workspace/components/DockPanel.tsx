@@ -273,6 +273,10 @@ interface DockPanelBaseProps {
   feedbackBatch?: UseFeedbackBatchReturn
   /** Workspace-owned comment editor that has not been submitted yet. */
   feedbackDraft?: FeedbackDraftStore
+  /** Prevent rendering an empty diff review before durable state hydrates. */
+  reviewStateLoading?: boolean
+  /** Prevent editing when durable state could not be loaded safely. */
+  reviewStateUnavailable?: boolean
   /** Optional workspace-owned repo root cache for feedback dispatch. */
   feedbackRepoRootRef?: FeedbackRepoRootRef
   /** Optional feedback dispatch target for inline review comments. */
@@ -323,6 +327,8 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
       gitStatus = undefined,
       feedbackBatch = undefined,
       feedbackDraft = undefined,
+      reviewStateLoading = false,
+      reviewStateUnavailable = false,
       feedbackRepoRootRef = undefined,
       feedbackDispatch = undefined,
       pendingFeedbackReviews = [],
@@ -460,6 +466,12 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
     const borderClass = `${borderEdge} border-outline-variant/30`
 
     const sectionAriaLabel = tab === 'editor' ? 'Code editor' : 'Diff viewer'
+
+    const reviewStateStatus = reviewStateUnavailable
+      ? 'unavailable'
+      : reviewStateLoading
+        ? 'loading'
+        : undefined
 
     const compactActions =
       !isVerticalDock && horizontalSize < DOCK_INLINE_ACTIONS_MIN_WIDTH_PX
@@ -637,8 +649,18 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                 data-testid="diff-focus-target"
                 ref={diffWrapperRef}
                 tabIndex={-1}
-                className="flex min-h-0 flex-1 focus:outline-none"
+                className="flex min-h-0 flex-1 flex-col focus:outline-none"
               >
+                {reviewStateStatus !== undefined ? (
+                  <div
+                    role="status"
+                    className="border-b border-outline-variant/35 bg-surface-container-low px-4 py-1.5 text-xs text-on-surface-variant"
+                  >
+                    {reviewStateStatus === 'unavailable'
+                      ? 'Review comments are temporarily unavailable.'
+                      : 'Restoring review comments…'}
+                  </div>
+                ) : null}
                 {selectedDiffFile !== undefined ? (
                   <Panel
                     cwd={cwd}
@@ -649,6 +671,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
+                    reviewStateStatus={reviewStateStatus}
                     feedbackOwnerKey={activeFeedbackReviewKey}
                   />
                 ) : (
@@ -659,6 +682,7 @@ const DockPanel = forwardRef<DockPanelHandle, DockPanelProps>(
                     feedbackDraft={feedbackDraft}
                     feedbackRepoRootRef={feedbackRepoRootRef}
                     feedbackDispatch={feedbackDispatch}
+                    reviewStateStatus={reviewStateStatus}
                     feedbackOwnerKey={activeFeedbackReviewKey}
                   />
                 )}

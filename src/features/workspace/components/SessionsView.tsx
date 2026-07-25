@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { List } from '../../sessions/components/List'
 import type { Session, SessionCloseResult } from '../../sessions/types'
+import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
 
 export interface SessionsViewProps {
   hidden?: boolean
@@ -10,6 +11,7 @@ export interface SessionsViewProps {
   onRemoveSession: (id: string) => SessionCloseResult
   onRenameSession: (id: string, name: string) => void
   onReorderSessions: (reordered: Session[]) => void
+  layoutRegistry: PaneLayoutRegistry
 }
 
 export const SessionsView = ({
@@ -20,6 +22,7 @@ export const SessionsView = ({
   onRemoveSession,
   onRenameSession,
   onReorderSessions,
+  layoutRegistry,
 }: SessionsViewProps): ReactElement => (
   // Tailwind v4 puts utilities in a higher cascade layer than `@layer base`
   // (where Preflight's `[hidden] { display: none }` lives), so a hardcoded
@@ -40,6 +43,7 @@ export const SessionsView = ({
       onRemoveSession={onRemoveSession}
       onRenameSession={onRenameSession}
       onReorderSessions={onReorderSessions}
+      layoutRegistry={layoutRegistry}
     />
   </div>
 )

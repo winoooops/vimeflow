@@ -128,6 +128,19 @@
     -webkit-app-region: no-drag;
   }
 
+  /* While a resize drag is active, keep the resize cursor pinned across the
+     whole window so fast drags over pane content don't blink back to the
+     hovered element's cursor. `!important` beats per-element cursor utilities. */
+  .vf-resize-dragging-col,
+  .vf-resize-dragging-col * {
+    cursor: col-resize !important;
+  }
+
+  .vf-resize-dragging-row,
+  .vf-resize-dragging-row * {
+    cursor: row-resize !important;
+  }
+
   .vf-new-session-button {
     container-type: inline-size;
   }

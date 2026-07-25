@@ -70,6 +70,9 @@ import { formatShortcut } from '@/lib/formatShortcut'
 import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
 import { cycleSession } from '@/features/sessions/utils/cycleSession'
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
+import { SessionIsland } from '@/features/sessions/components/SessionIsland'
+import { SessionSwitcher } from '@/features/sessions/components/SessionSwitcher'
+import { resolveSessionIslandDisplay } from '@/features/sessions/utils/sessionIslandDisplay'
 import {
   clampSize,
   useResizable,
@@ -97,6 +100,8 @@ import { useSidebarShortcut } from './hooks/useSidebarShortcut'
 import { useNewSessionShortcut } from './hooks/useNewSessionShortcut'
 import { useSidebarTabShortcut } from './hooks/useSidebarTabShortcut'
 import { useSessionNavShortcut } from './hooks/useSessionNavShortcut'
+import { useSessionSwitcher } from './hooks/useSessionSwitcher'
+import { useSessionCloseShortcut } from './hooks/useSessionCloseShortcut'
 import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
@@ -129,6 +134,8 @@ import {
   isOpenSession,
 } from '@/features/sessions/utils/sessionStatus'
 import { pickNextVisibleSessionId } from '@/features/sessions/utils/pickNextVisibleSessionId'
+import { closeSessionWithSuccessor } from '@/features/sessions/utils/closeSessionWithSuccessor'
+import { orderSwitcherSessionIds } from './utils/orderSwitcherSessionIds'
 import {
   AGENTS,
   agentTypeToRegistryKey,
@@ -185,16 +192,11 @@ const UNBOUND_FEEDBACK_OWNER_KEY = 'workspace:unbound-feedback'
 const makeFeedbackOwnerKey = (sessionId: string, paneId: string): string =>
   `${sessionId}:${paneId}`
 
-// Unique id for each attached agent-reply annotation (VIM-249).
-let agentReplyCommentSeq = 0
-
 const nextAgentReplyCommentId = (): string =>
-  `agent-reply-${(agentReplyCommentSeq += 1)}`
-
-let agentReviewCommentSeq = 0
+  `agent-reply-${crypto.randomUUID()}`
 
 const nextAgentReviewCommentId = (): string =>
-  `agent-review-${(agentReviewCommentSeq += 1)}`
+  `agent-review-${crypto.randomUUID()}`
 
 const sameSelectedDiffFile = (
   left: SelectedDiffFile | null,
@@ -292,6 +294,11 @@ const SIDEBAR_TOGGLE_SURFACE_PADDING_END = 12
 // in the collapsed rail, so the control reads as symmetric in both states.
 const ACTIVITY_TOGGLE_RIGHT = 8
 const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
+const SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX = 700
+const SESSION_ISLAND_COMPACT_BATCH_SIZE = 5
+
+const SESSION_ISLAND_NOTIFICATIONS_ENABLED =
+  import.meta.env.VITE_SESSION_ISLAND_NOTIFICATIONS === '1'
 
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
@@ -364,9 +371,13 @@ const WorkspaceViewContent = (): ReactElement => {
   // owned by a dialog, including terminal spawn failures.
   const [fileError, setFileError] = useState<string | null>(null)
 
+  // Forwarder ref; assigned to claimTerminal once it exists below.
+  const activationRollbackFocusRef = useRef<() => void>(() => undefined)
+
   const {
     sessions,
     activeSessionId,
+    mruSessionIds,
     customPaneLayouts,
     layoutRegistry,
     setCustomPaneLayouts,
@@ -397,6 +408,7 @@ const WorkspaceViewContent = (): ReactElement => {
     dropAllForPty,
   } = useSessionManager(terminalService, {
     onTerminalSpawnError: setFileError,
+    onActivationRolledBack: () => activationRollbackFocusRef.current(),
   })
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -475,6 +487,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const [isCompactViewport, setIsCompactViewport] =
     useState(readCompactViewport)
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false)
+  const [isLayoutSwitcherCompact, setIsLayoutSwitcherCompact] = useState(false)
 
   const [visibleLayoutIds, setVisibleLayoutIds] = useState<
     readonly PaneLayoutId[]
@@ -637,8 +650,14 @@ const WorkspaceViewContent = (): ReactElement => {
   // — adding a key there automatically extends this signature so the memo
   // rebuilds whenever a newly-readable field actually changes. JSON
   // encoding is collision-free regardless of separator characters in names.
-  const sessionsSignature = JSON.stringify(
+  const liveSessions = useMemo(() => sessions.filter(isOpenSession), [sessions])
+
+  const commandSessionsSignature = JSON.stringify(
     sessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
+  )
+
+  const navigableSessionsSignature = JSON.stringify(
+    liveSessions.map((s) => WORKSPACE_TAB_KEYS.map((k) => s[k]))
   )
 
   // `activePane` is declared further down (after `activeSession`); resolve
@@ -1146,6 +1165,12 @@ const WorkspaceViewContent = (): ReactElement => {
       const workspaceWidth =
         workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth
 
+      if (width > 0) {
+        setIsLayoutSwitcherCompact(
+          width < SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX
+        )
+      }
+
       if (
         !sidebarCollapsed &&
         width > 0 &&
@@ -1552,6 +1577,7 @@ const WorkspaceViewContent = (): ReactElement => {
     setActiveContainerId(TERMINAL_CONTAINER_ID)
     requestFocus('terminal')
   }, [requestFocus])
+  activationRollbackFocusRef.current = claimTerminal
 
   const closeDock = useCallback((): void => {
     setIsDockOpen(false)
@@ -1955,10 +1981,13 @@ const WorkspaceViewContent = (): ReactElement => {
     [setSessionLayout]
   )
 
+  const settingsDialog = useSettingsDialog()
+
   const workspaceCommands = useMemo(
     () =>
       buildWorkspaceCommands({
         sessions,
+        navigableSessions: liveSessions,
         activeSessionId,
         activePanePtyId: activePanePtyIdForCommands,
         activePaneAgentType: activePaneAgentTypeForCommands,
@@ -2014,15 +2043,21 @@ const WorkspaceViewContent = (): ReactElement => {
           setTimeout(() => claimTerminal(), 0)
         },
         openFile: requestOpenFile,
+        openSettings: (targetId) => {
+          settingsDialog.open(targetId)
+        },
         keybindingShortcut: (id) =>
           chordToKeycapShortcut(bindingFor(id), preferModifier === 'meta'),
       }),
-    // sessionsSignature captures every field the closures read; activity-only
-    // changes keep the signature stable so the memo (and downstream
-    // filteredResults / handler refs) do not churn during agent I/O.
+    // These signatures capture every session field the closures read.
+    // Activity-only changes keep them stable so the memo (and downstream
+    // filteredResults / handler refs) do not churn during agent I/O. Keep the
+    // all-tabs and navigable-tabs signatures split: close/rename can target the
+    // visibly active just-exited tab, while navigation stays live-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      sessionsSignature,
+      commandSessionsSignature,
+      navigableSessionsSignature,
       activeSessionId,
       activePanePtyIdForCommands,
       activePaneAgentTypeForCommands,
@@ -2058,6 +2093,7 @@ const WorkspaceViewContent = (): ReactElement => {
       setCompactSidebarOpen,
       claimTerminal,
       requestOpenFile,
+      settingsDialog.open,
       bindingFor,
       preferModifier,
     ]
@@ -2097,8 +2133,6 @@ const WorkspaceViewContent = (): ReactElement => {
     [matches]
   )
 
-  const settingsDialog = useSettingsDialog()
-
   const commandPalette = useCommandPalette(workspaceCommands, {
     enabled:
       !showUnsavedDialog && !settingsDialog.isOpen && !newSessionDialog.open,
@@ -2127,7 +2161,8 @@ const WorkspaceViewContent = (): ReactElement => {
       wasOpen &&
       !commandPalette.state.isOpen &&
       !showUnsavedDialog &&
-      !newSessionDialog.open
+      !newSessionDialog.open &&
+      !settingsDialog.isOpen
     ) {
       requestFocus(
         activeContainerId === TERMINAL_CONTAINER_ID ? 'terminal' : dockTab
@@ -2140,6 +2175,7 @@ const WorkspaceViewContent = (): ReactElement => {
     requestFocus,
     showUnsavedDialog,
     newSessionDialog.open,
+    settingsDialog.isOpen,
   ])
 
   usePaneShortcuts({
@@ -2207,11 +2243,11 @@ const WorkspaceViewContent = (): ReactElement => {
     matches,
   })
 
-  // VIM-104: ⌘[ / ⌘] cycle to the previous / next session (Ctrl+⇧[ / Ctrl+⇧]
-  // on Linux). Mirrors the previous/next-session palette commands.
+  // VIM-104: ⌘[ / ⌘] cycle to the previous / next live session (Ctrl+⇧[ /
+  // Ctrl+⇧] on Linux). Recent sessions stay sidebar-only until resumed.
   const switchRelativeSession = useCallback(
     (delta: number): void => {
-      const nextSession = cycleSession(sessions, activeSessionId, delta)
+      const nextSession = cycleSession(liveSessions, activeSessionId, delta)
       if (nextSession === null) {
         notifyInfo('No open sessions')
 
@@ -2221,7 +2257,13 @@ const WorkspaceViewContent = (): ReactElement => {
       setActiveSessionId(nextSession.id)
       claimTerminal()
     },
-    [sessions, activeSessionId, setActiveSessionId, notifyInfo, claimTerminal]
+    [
+      liveSessions,
+      activeSessionId,
+      setActiveSessionId,
+      notifyInfo,
+      claimTerminal,
+    ]
   )
 
   const handlePrevSession = useCallback((): void => {
@@ -2235,6 +2277,64 @@ const WorkspaceViewContent = (): ReactElement => {
   useSessionNavShortcut({
     onPrevSession: handlePrevSession,
     onNextSession: handleNextSession,
+    matches,
+  })
+
+  // Ctrl+Tab MRU switcher: switchable set in MRU order, never-activated
+  // sessions appended so every open session stays reachable.
+  const switcherOrderedIds = useMemo(
+    () =>
+      orderSwitcherSessionIds(
+        mruSessionIds,
+        liveSessions.map((s) => s.id),
+        activeSessionId
+      ),
+    [activeSessionId, liveSessions, mruSessionIds]
+  )
+
+  const switcherEntries = useMemo(
+    () =>
+      switcherOrderedIds.flatMap((id) => {
+        const session = sessions.find((s) => s.id === id)
+
+        return session
+          ? [
+              {
+                id,
+                title: session.name,
+                layoutId: session.layout,
+                isActive: id === activeSessionId,
+              },
+            ]
+          : []
+      }),
+    [activeSessionId, sessions, switcherOrderedIds]
+  )
+
+  const sessionSwitcher = useSessionSwitcher({
+    orderedIds: switcherOrderedIds,
+    activeSessionId,
+    matches,
+    bindingFor,
+    onCommit: handleSetActiveSessionId,
+    onCancel: claimTerminal,
+  })
+
+  const handleCloseActiveSession = useCallback((): void => {
+    if (activeSessionId === null) {
+      return
+    }
+
+    closeSessionWithSuccessor(activeSessionId, {
+      sessions,
+      activeSessionId,
+      removeSession: handleRemoveSession,
+      activateSession: handleSetActiveSessionId,
+    })
+  }, [activeSessionId, handleRemoveSession, handleSetActiveSessionId, sessions])
+
+  useSessionCloseShortcut({
+    onCloseActiveSession: handleCloseActiveSession,
     matches,
   })
 
@@ -2287,7 +2387,14 @@ const WorkspaceViewContent = (): ReactElement => {
     feedbackDraft,
     summaries: feedbackSummaries,
     pruneOwners: pruneFeedbackOwners,
-  } = useFeedbackBatchStore(activeFeedbackOwnerKey, activeCwd)
+    isOwnerReviewStateReady,
+    hydrating: reviewStateHydrating,
+    hydrationFailed: reviewStateHydrationFailed,
+  } = useFeedbackBatchStore(
+    activeFeedbackOwnerKey,
+    activeCwd,
+    activePtyBackedPanePtyId
+  )
 
   useLayoutEffect(() => {
     pruneFeedbackOwners(livePaneKeys)
@@ -2299,6 +2406,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // where every feedback owner is reachable so a reply attaches onto the owner
   // that dispatched it — even after the user switches panes.
   useAgentReply({
+    isOwnerReviewStateReady,
     activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReplyCommentId,
@@ -2308,6 +2416,7 @@ const WorkspaceViewContent = (): ReactElement => {
   // Capture delegated review findings (VIM-304): the same single subscription
   // point, placing reviewer findings onto the owner that requested the review.
   useAgentReview({
+    isOwnerReviewStateReady,
     activePtyId: activePtyBackedPanePtyId ?? null,
     addAnnotationForOwner: feedbackBatch.addAnnotationForOwner,
     nextCommentId: nextAgentReviewCommentId,
@@ -2517,16 +2626,6 @@ const WorkspaceViewContent = (): ReactElement => {
       return null
     }
 
-    const usage = agentStatus.contextWindow?.currentUsage
-
-    const cache = usage
-      ? {
-          cached: usage.cacheReadInputTokens,
-          wrote: usage.cacheCreationInputTokens,
-          fresh: usage.inputTokens,
-        }
-      : undefined
-
     const gitLineTotals =
       gitStatus.filesCwd === activeCwd ? sumLines(gitStatus.files) : null
     const changes = gitLineTotals ?? lineDelta(activeSession)
@@ -2534,26 +2633,17 @@ const WorkspaceViewContent = (): ReactElement => {
     return {
       startedAgo: formatStatusDuration(agentStatus.cost?.totalDurationMs ?? 0),
       turns: agentStatus.numTurns,
-      cache,
       changes,
     }
   }, [
     activeCwd,
     activeSession,
-    agentStatus.contextWindow?.currentUsage,
     agentStatus.cost?.totalDurationMs,
     agentStatus.numTurns,
     gitStatus.files,
     gitStatus.filesCwd,
     isStatusBarAgentActive,
   ])
-
-  // null (not 0) when the agent is active but has not yet reported a context
-  // window — StatusBar suppresses the segment so the user never sees a
-  // misleading 😊0% that implies a healthy reading before any data arrives.
-  const statusBarContextPct = isStatusBarAgentActive
-    ? (agentStatus.contextWindow?.usedPercentage ?? null)
-    : null
 
   // Fused AgentStatusCard props, derived from the same live signals the status
   // bar uses (VIM-66). The compact card keeps only the turn count in the
@@ -3017,6 +3107,8 @@ const WorkspaceViewContent = (): ReactElement => {
       }}
       feedbackBatch={feedbackBatch}
       feedbackDraft={feedbackDraft}
+      reviewStateLoading={reviewStateHydrating}
+      reviewStateUnavailable={reviewStateHydrationFailed}
       feedbackRepoRootRef={feedbackRepoRootRef}
       feedbackDispatch={feedbackDispatch}
       pendingFeedbackReviews={pendingFeedbackReviews}
@@ -3066,6 +3158,7 @@ const WorkspaceViewContent = (): ReactElement => {
         unsavedChangesDialogOpen={showUnsavedDialog}
         newSessionDialogOpen={newSessionDialog.open}
         burnerTerminalOpen={hasVisibleBurner}
+        sessionSwitcherOpen={sessionSwitcher.open}
         paneRenameOpen={paneRenameNode !== null}
         layoutCreatorOpen={layoutCreatorOpen}
         dragOverlayOpen={isDragging}
@@ -3223,6 +3316,7 @@ const WorkspaceViewContent = (): ReactElement => {
                     onRemoveSession={handleRemoveSession}
                     onRenameSession={renameSession}
                     onReorderSessions={reorderSessions}
+                    layoutRegistry={layoutRegistry}
                   />
                   <FilesView
                     hidden={activeTab !== 'files'}
@@ -3311,6 +3405,20 @@ const WorkspaceViewContent = (): ReactElement => {
               }}
             />
           )}
+          <SessionIsland
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            displayMode={resolveSessionIslandDisplay(
+              settings.sessionIslandDisplay
+            )}
+            onSessionSelect={handleSetActiveSessionId}
+            maxVisibleSessions={
+              isLayoutSwitcherCompact
+                ? SESSION_ISLAND_COMPACT_BATCH_SIZE
+                : undefined
+            }
+            showNotifications={SESSION_ISLAND_NOTIFICATIONS_ENABLED}
+          />
           <span className="min-w-[10px] flex-1" />
 
           {/* Pills render in every layout, with the layout-display config
@@ -3324,6 +3432,7 @@ const WorkspaceViewContent = (): ReactElement => {
               onPick={handlePickLayout}
               labelSingleAsFocusAction
               nativeOverlayTooltips
+              compact={isLayoutSwitcherCompact}
               trailing={
                 <LayoutDisplayMenu
                   activeLayoutId={activeSession.layout}
@@ -3339,6 +3448,7 @@ const WorkspaceViewContent = (): ReactElement => {
                   onDuplicateCustomLayout={handleDuplicateCustomLayout}
                   onDeleteCustomLayout={handleDeleteCustomLayout}
                   onOpenChange={setIsLayoutDisplayMenuOpen}
+                  compactSelectionMode={isLayoutSwitcherCompact}
                   nativeOverlay
                 />
               }
@@ -3431,7 +3541,6 @@ const WorkspaceViewContent = (): ReactElement => {
 
         <StatusBar
           session={statusBarSession}
-          contextPct={statusBarContextPct}
           onOpenPalette={commandPalette.open}
           paletteShortcut={paletteShortcut}
           dockShortcut={dockShortcut}
@@ -3571,6 +3680,15 @@ const WorkspaceViewContent = (): ReactElement => {
       {paneRenameNode}
       {burnerTerminalNode}
 
+      {/* Session Switcher — Ctrl+Tab MRU hold-overlay */}
+      <SessionSwitcher
+        open={sessionSwitcher.open}
+        entries={switcherEntries}
+        selectedIndex={sessionSwitcher.selectedIndex}
+        onCommitIndex={sessionSwitcher.commitIndex}
+        onCancel={sessionSwitcher.cancel}
+      />
+
       {/* Command Palette — workspace-scoped command dispatcher */}
       <CommandPalette
         state={commandPalette.state}
@@ -3585,6 +3703,7 @@ const WorkspaceViewContent = (): ReactElement => {
       <SettingsDialog
         open={settingsDialog.isOpen}
         onClose={settingsDialog.close}
+        targetId={settingsDialog.targetId}
       />
     </div>
   )

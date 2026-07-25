@@ -79,12 +79,16 @@ const handle = (
   ...overrides,
 })
 
-const pending = (byHandle: PendingReview['byHandle']): PendingReview => ({
+const pending = (
+  byHandle: PendingReview['byHandle'],
+  overrides: Partial<PendingReview> = {}
+): PendingReview => ({
   ptyId: 'pty-1',
   ownerKey: 'owner-a',
   nonce: 'abc',
   dispatchedAt: 1,
   byHandle,
+  ...overrides,
 })
 
 const event = (partial: Partial<AgentReplyEvent>): AgentReplyEvent => ({
@@ -126,6 +130,7 @@ beforeEach(() => {
 afterEach(() => {
   clearPendingReview('pty-1', 'abc')
   clearPendingReview('pty-1', 'xyz')
+  clearPendingReview('pty-1', 'ready')
   for (let index = 0; index < 51; index += 1) {
     clearPendingReview('pty-1', `nonce-${index}`)
   }
@@ -425,6 +430,18 @@ describe('useAgentReply', () => {
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
     expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe('A')
+
+    // Recovery replays the whole mixed event. Seeing a consumed handle makes
+    // it a no-op even though the original unknown id is still present.
+    await emit(
+      event({
+        replies: [
+          { id: 1, status: 'reply', target: 'comment', text: 'A' },
+          { id: 99, status: 'reply', target: 'comment', text: 'ignored' },
+        ],
+      })
+    )
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
   })
 
   test('partial reply leaves the unanswered handles pending', async () => {
@@ -444,6 +461,15 @@ describe('useAgentReply', () => {
       })
     )
 
+    // Transcript recovery may replay the already-consumed partial turn while
+    // #2 is still pending. It must remain a no-op, not degrade raw text onto #2.
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+    expect(addAnnotationForOwner).toHaveBeenCalledTimes(1)
+
     await emit(
       event({
         replies: [{ id: 2, status: 'resolved', target: 'comment', text: 'B' }],
@@ -452,6 +478,128 @@ describe('useAgentReply', () => {
 
     expect(addAnnotationForOwner).toHaveBeenCalledTimes(2)
     expect(addAnnotationForOwner.mock.calls[1][4].metadata.text).toBe('B')
+  })
+
+  test('buffers a live reply until durable correlation hydration completes', async () => {
+    setPendingReview(pending(new Map([[1, handle()]])))
+
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useAgentReply({
+          enabled,
+          activePtyId: 'pty-1',
+          addAnnotationForOwner,
+          nextCommentId: () => `agent-${(ids += 1)}`,
+          notifyInfo: vi.fn(),
+        }),
+      { initialProps: { enabled: false } }
+    )
+
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    rerender({ enabled: true })
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+  })
+
+  test('does not let one not-ready owner block another owner reply', async () => {
+    setPendingReview(
+      pending(new Map([[1, handle()]]), {
+        ownerKey: 'owner-waiting',
+        nonce: 'abc',
+      })
+    )
+
+    setPendingReview(
+      pending(new Map([[1, handle({ filePath: 'ready.ts' })]]), {
+        ownerKey: 'owner-ready',
+        nonce: 'ready',
+      })
+    )
+
+    renderHook(() =>
+      useAgentReply({
+        activePtyId: 'pty-1',
+        isOwnerReviewStateReady: (ownerKey) => ownerKey === 'owner-ready',
+        addAnnotationForOwner,
+        nextCommentId: () => `agent-${(ids += 1)}`,
+        notifyInfo: vi.fn(),
+      })
+    )
+
+    await emit(
+      event({
+        nonce: 'abc',
+        replies: [
+          {
+            id: 1,
+            status: 'reply',
+            target: 'comment',
+            text: 'Still waiting.',
+          },
+        ],
+      })
+    )
+
+    await emit(
+      event({
+        nonce: 'ready',
+        replies: [
+          {
+            id: 1,
+            status: 'reply',
+            target: 'comment',
+            text: 'Ready owner.',
+          },
+        ],
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledOnce()
+    expect(addAnnotationForOwner.mock.calls[0][0]).toBe('owner-ready')
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Ready owner.'
+    )
+  })
+
+  test('replays a live reply after its owner correlation hydrates', async () => {
+    mount()
+    await emit(
+      event({
+        replies: [{ id: 1, status: 'reply', target: 'comment', text: 'A' }],
+      })
+    )
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    setPendingReview(pending(new Map([[1, handle()]])))
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe('A')
+  })
+
+  test('replays a finding-thread reply after its owner correlation hydrates', async () => {
+    mount()
+    await emit(
+      event({
+        nonce: 'rev',
+        replies: [
+          { id: 1, status: 'resolved', target: 'finding', text: 'Fixed it.' },
+        ],
+      })
+    )
+    expect(addAnnotationForOwner).not.toHaveBeenCalled()
+
+    setFindingThreadRecord(findingRecord())
+
+    await waitFor(() => expect(addAnnotationForOwner).toHaveBeenCalledOnce())
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Fixed it.'
+    )
   })
 
   test('a file-scope reply inherits the file target (not a line-0 annotation)', async () => {

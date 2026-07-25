@@ -75,6 +75,7 @@ import {
 } from '../../browser/browserBridge'
 import { useAutoCreateOnEmpty } from './useAutoCreateOnEmpty'
 import { useActiveSessionController } from './useActiveSessionController'
+import { useSessionMru } from './useSessionMru'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
 import {
@@ -92,6 +93,8 @@ export type { RestoreData, PaneEventHandler, NotifyPaneReadyResult }
 export interface SessionManager {
   sessions: Session[]
   activeSessionId: string | null
+  /** Session ids ordered by most recent committed activation. */
+  mruSessionIds: readonly string[]
   setActiveSessionId: (id: string) => void
   createSession: (opts?: CreateSessionOptions) => void
   createBrowserSession: () => void
@@ -281,6 +284,7 @@ const browserSessionIdForSession = (session: Session): string => session.id
 export interface UseSessionManagerOptions {
   autoCreateOnEmpty?: boolean
   onTerminalSpawnError?: (message: string) => void
+  onActivationRolledBack?: (id: string | null) => void
 }
 
 const spawnErrorMessage = (action: string, error: unknown): string => {
@@ -318,7 +322,11 @@ export const useSessionManager = (
   service: ITerminalService,
   options: UseSessionManagerOptions = {}
 ): SessionManager => {
-  const { autoCreateOnEmpty = true, onTerminalSpawnError } = options
+  const {
+    autoCreateOnEmpty = true,
+    onTerminalSpawnError,
+    onActivationRolledBack,
+  } = options
 
   const [sessions, setSessions] = useState<Session[]>([])
 
@@ -445,12 +453,28 @@ export const useSessionManager = (
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
 
+  // Forwarder ref; the MRU recorder is assigned after both hooks run.
+  const recordActivationCommittedRef = useRef<(id: string) => void>(
+    () => undefined
+  )
+
   const {
     activeSessionId,
     setActiveSessionId,
     setActiveSessionIdRaw,
     activeSessionIdRef,
-  } = useActiveSessionController({ service, sessionsRef })
+  } = useActiveSessionController({
+    service,
+    sessionsRef,
+    onActivationCommitted: (id) => recordActivationCommittedRef.current(id),
+    onActivationRolledBack,
+  })
+
+  const { mruSessionIds, recordActivationCommitted } = useSessionMru({
+    sessions,
+    activeSessionId,
+  })
+  recordActivationCommittedRef.current = recordActivationCommitted
   // Round 12, Finding 2 (claude MEDIUM): restoreData is a mutable
   // side-channel, NOT React state. The previous `useState(new Map())`
   // was misleading — Map mutations via .set/.delete don't notify React,
@@ -3146,6 +3170,7 @@ export const useSessionManager = (
   return {
     sessions,
     activeSessionId,
+    mruSessionIds,
     customPaneLayouts,
     layoutRegistry,
     setCustomPaneLayouts,

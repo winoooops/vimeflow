@@ -85,3 +85,14 @@ export const OpenCode = ({
     <path d="M16 6H8v12h8V6zm4 16H4V2h16v20z" />
   </BrandSvg>
 )
+
+// Shell terminal mark — drawn in-house (see ./icons-NOTICE.md). A rounded tile
+// with the `>_` prompt knocked out by BrandSvg's evenodd fill rule.
+export const Shell = ({
+  size = DEFAULT_SIZE,
+  ...props
+}: AgentIconProps): ReactElement => (
+  <BrandSvg size={size} {...props}>
+    <path d="M6 4.2h12a3.4 3.4 0 013.4 3.4v8.8a3.4 3.4 0 01-3.4 3.4H6a3.4 3.4 0 01-3.4-3.4V7.6A3.4 3.4 0 016 4.2zM6.9 8.7h1.9l4.1 3.3-4.1 3.3H6.9l4.1-3.3zM13.5 14.3h4.1v1.7h-4.1z" />
+  </BrandSvg>
+)

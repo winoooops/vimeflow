@@ -758,9 +758,10 @@ describe('useAgentStatus', () => {
     advanceFrame()
     expect(result.current.toolCalls.total).toBe(40)
 
-    // Active mode: three live calls drip in one-per-frame so the JAR stacks each.
+    // Active mode: a large live burst still drips one-per-frame after the
+    // one-shot replay flood guard has been consumed.
     act(() => {
-      for (let i = 0; i < 3; i += 1) {
+      for (let i = 0; i < 20; i += 1) {
         emit('agent-tool-call', {
           sessionId: 'pty-session-1',
           toolUseId: `live_${i}`,

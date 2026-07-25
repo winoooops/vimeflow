@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import { createLogger } from '../../../lib/log'
+import { flushRendererTeardownState } from '../../../lib/teardownFlush'
 import {
   onWorkspaceRequestFinalShape,
   pushWorkspaceShape,
@@ -195,7 +196,17 @@ export const usePushWorkspaceGrouping = ({
           debounceRef.current = null
         }
 
-        void pushShapeWithLog(finalShape)
+        const flushFinalState = async (): Promise<void> => {
+          try {
+            await flushRendererTeardownState()
+          } catch (err) {
+            log.warn('renderer teardown flush failed', err)
+          }
+
+          await pushShapeWithLog(finalShape)
+        }
+
+        void flushFinalState()
       }),
     []
   )

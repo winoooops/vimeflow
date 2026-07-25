@@ -3,7 +3,7 @@ id: agent-state-guards
 category: correctness
 created: 2026-06-15
 last_updated: 2026-07-05
-ref_count: 10
+ref_count: 11
 ---
 
 # Agent-State Guards

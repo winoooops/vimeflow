@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-07
-ref_count: 89
+last_updated: 2026-07-22
+ref_count: 90
 ---
 
 # Accessibility
@@ -930,3 +930,18 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** The burner sync collapse effect inferred focus from `document.activeElement` after the sync button had already become disabled. Chromium can blur a focused disabled control before passive effects run, leaving focus on another element or body and causing the intended handoff to the burner toggle to be skipped.
 - **Fix:** Tracked sync-button focus intent with focus/blur handlers, preserved the intent for disabled-triggered blur, and restored focus to the burner toggle when the sync control collapses. Expanded the regression test to simulate active focus moving away before collapse.
 - **Commit:** same commit as this entry
+
+### 101. Decorative review-state icon contributed to the row button name
+
+- **Source:** github-codex-connector | PR #722 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx`
+- **Finding:** The changed-file review indicator exposed the Material Symbol
+  itself with an `aria-label` inside the file row button. Screen readers could
+  announce a labeled generic icon as part of the row instead of treating the
+  glyph as decorative state.
+- **Fix:** Marked the `forum` glyph `aria-hidden` and moved the review-state
+  wording into screen-reader-only text inside the file row button. Updated the
+  changed-files and panel tests to assert the row name and decorative icon.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this
+  line)

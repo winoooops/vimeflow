@@ -21,7 +21,7 @@ export const RestartAffordance = ({
       type="button"
       aria-label={`Restart session ${sessionId}`}
       onClick={() => onRestart(sessionId)}
-      className="inline-flex items-center rounded-pill bg-surface-container px-3 py-1.5 font-label text-sm text-on-surface hover:bg-surface-container/80 focus-visible:outline focus-visible:outline-2"
+      className="inline-flex cursor-pointer items-center rounded-pill bg-surface-container px-3 py-1.5 font-label text-sm text-on-surface hover:bg-surface-container/80 focus-visible:outline focus-visible:outline-2"
       style={{ outlineColor: agent.accent }}
     >
       <span
