@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-20
-ref_count: 92
+last_updated: 2026-07-25
+ref_count: 93
 ---
 
 # Documentation Accuracy
@@ -933,4 +933,18 @@ Stale documentation misleads future contributors and review agents.
   code lacked a TODO with the Linear issue ID and URL for the V2 implementation.
 - **Fix:** Added a TODO referencing VIM-361 and its Linear URL above the
   notification slot.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 99. Native live-resize rationale was duplicated beside the guard
+
+- **Source:** github-claude | PR #739 round 1 | 2026-07-25
+- **Severity:** LOW
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`
+- **Finding:** The `setFrame` live-resize rationale was written twice around
+  the debug print and guard branch, with both comments explaining the same stale
+  renderer-frame and AppKit-prediction behavior. Two near-identical comments
+  next to the same invariant invite future drift.
+- **Fix:** Removed the duplicate block and kept one explanation directly above
+  the live-resize guard, leaving the debug print as code without a second copy
+  of the same prose.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

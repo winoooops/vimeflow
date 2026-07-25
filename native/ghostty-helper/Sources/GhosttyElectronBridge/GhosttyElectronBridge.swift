@@ -489,6 +489,10 @@ private final class EmbeddedGhosttySurface: NSObject {
 
     private let parentView: NSView
     private let container = EmbeddedGhosttyContainerView(frame: .zero)
+    private struct LiveResizePredictionSnapshot {
+        let frame: NSRect
+        let parentBounds: NSRect
+    }
 
     /// Last frame the renderer asked for while the window was live-resizing.
     /// Applied once the drag ends — see `setFrame`.
@@ -500,6 +504,7 @@ private final class EmbeddedGhosttySurface: NSObject {
         bottomCornerRadius: Double,
         parentHeight: Double
     )?
+    private var liveResizePredictionSnapshot: LiveResizePredictionSnapshot?
     private var liveResizeSettleScheduled = false
     private let callbacks: CallbackBox
     private var focusMonitor: Any?
@@ -596,16 +601,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         bottomCornerRadius: Double,
         parentHeight: Double
     ) {
-        // While the window is live-resizing, this frame is a stale echo: it was
-        // derived from a DOM layout that lags the window by an IPC round-trip.
-        // AppKit's autoresize prediction (see updateLiveResizePrediction) already
-        // tracks the window in real time, so applying this would fight it and snap
-        // the surface back to an older size. That is exactly what a debug capture
-        // of a window drag shows — the grid oscillating between the live size and
-        // a ~200px-stale one, which reads as flicker/stale frames. Keep the
-        // prediction while dragging and apply the authoritative frame at the end.
-        // Ground truth for which gesture this frame belongs to: a window drag puts
-        // the parent view in live resize, a pane-divider drag does not.
         if vimeflowGhosttyDebugEnabled {
             print("[vimeflow-bridge] setFrame live=\(parentView.inLiveResize) \(Int(width))x\(Int(height)) at \(Int(x)),\(Int(y))")
         }
@@ -632,7 +627,7 @@ private final class EmbeddedGhosttySurface: NSObject {
             // Arm the prediction from the frame the surface actually has: that
             // mask is what makes AppKit resize this pane with the window on every
             // step of the drag, instead of it sitting still and snapping at the end.
-            updateLiveResizePrediction(frame: container.frame)
+            updateLiveResizePrediction()
             scheduleLiveResizeSettle()
 
             return
@@ -643,6 +638,7 @@ private final class EmbeddedGhosttySurface: NSObject {
         let safeHeight = max(0, height)
         let safeBottomCornerRadius = max(0, bottomCornerRadius)
         let safeParentHeight = parentHeight.isFinite && parentHeight > 0 ? parentHeight : parentView.bounds.height
+        let parentBounds = parentView.bounds
         let appKitY = safeParentHeight - y - safeHeight
 
         // Direct layer writes (unlike AppKit-managed view geometry) pick up
@@ -665,7 +661,11 @@ private final class EmbeddedGhosttySurface: NSObject {
             height: safeHeight
         )
         CATransaction.commit()
-        updateLiveResizePrediction(frame: container.frame)
+        liveResizePredictionSnapshot = LiveResizePredictionSnapshot(
+            frame: container.frame,
+            parentBounds: parentBounds
+        )
+        updateLiveResizePrediction()
         layoutChildren()
         container.isHidden = safeWidth <= 0 || safeHeight <= 0
     }
@@ -900,7 +900,7 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
     }
 
-    private func updateLiveResizePrediction(frame: NSRect) {
+    private func updateLiveResizePrediction() {
         guard parentView.inLiveResize else {
             container.autoresizingMask = []
 
@@ -909,9 +909,13 @@ private final class EmbeddedGhosttySurface: NSObject {
 
         // AppKit moves/resizes the native view between renderer IPC corrections
         // during live resize; renderer frames still win on the next update.
-        container.autoresizingMask = predictedAutoresizingMask(
-            frame: frame,
+        let snapshot = liveResizePredictionSnapshot ?? LiveResizePredictionSnapshot(
+            frame: container.frame,
             parentBounds: parentView.bounds
+        )
+        container.autoresizingMask = predictedAutoresizingMask(
+            frame: snapshot.frame,
+            parentBounds: snapshot.parentBounds
         )
     }
 

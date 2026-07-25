@@ -3,7 +3,7 @@ id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
 last_updated: 2026-07-05
-ref_count: 3
+ref_count: 4
 ---
 
 # Native Surface Occlusion
