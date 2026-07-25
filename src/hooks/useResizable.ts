@@ -220,6 +220,15 @@ export const useResizable = ({
       return
     }
 
+    // Pin the resize cursor on <body> for the whole drag. Without this, a
+    // fast drag outruns the thin handle and the cursor style flips to
+    // whatever element is under the pointer, producing a visible blink.
+    const cursorClass =
+      direction === 'horizontal'
+        ? 'vf-resize-dragging-col'
+        : 'vf-resize-dragging-row'
+    document.body.classList.add(cursorClass)
+
     const handleMouseMove = (e: MouseEvent): void => {
       const nextCurrentPos = direction === 'horizontal' ? e.clientX : e.clientY
       currentPos.current = nextCurrentPos
@@ -263,6 +272,7 @@ export const useResizable = ({
     document.addEventListener('mouseup', handleMouseUp)
 
     return (): void => {
+      document.body.classList.remove(cursorClass)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
