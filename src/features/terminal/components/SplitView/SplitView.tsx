@@ -3,6 +3,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -42,9 +43,11 @@ import {
 } from '@/features/terminal/components/TerminalPane'
 import { EmptySlot } from '@/features/terminal/components/SplitView/EmptySlot'
 import { Tooltip } from '@/components/Tooltip'
+import { isKeymapCaptureTarget } from '@/features/keymap/capture'
 import type { CommandId } from '@/features/keymap/catalog'
 import { chordToShortcutInput } from '@/features/keymap/displayKey'
 import { useKeybindings } from '@/features/keymap/useKeybindings'
+import { DIALOG_SELECTOR } from '@/features/workspace/containerIds'
 import { formatShortcut } from '@/lib/formatShortcut'
 import { SplitDividers } from '@/features/terminal/components/SplitView/SplitDividers'
 import { resolveGrid } from '@/features/terminal/components/SplitView/resolveGrid'
@@ -60,6 +63,11 @@ import {
 } from '@/features/terminal/layout-registry'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
+
+// One keypress moves the boundary this far. Larger than the handle's own
+// arrow-key step: this is a deliberate "resize the pane" command, not a
+// fine adjustment with the handle already focused.
+const PANE_RESIZE_STEP_PX = 40
 
 export interface SplitViewProps {
   session: Session
@@ -169,6 +177,40 @@ export const resolveLayoutRatios = (
   return layout.defaultRatios
 }
 
+export const resolvePaneSpanTrackNudge = (
+  trackStart: number,
+  trackSpan: number,
+  trackCount: number,
+  grow: boolean,
+  stepPx: number
+): { boundary: number; px: number } | null => {
+  if (
+    trackStart < 0 ||
+    trackSpan <= 0 ||
+    trackStart + trackSpan > trackCount ||
+    trackCount < 2
+  ) {
+    return null
+  }
+
+  const trackEnd = trackStart + trackSpan - 1
+  if (trackStart === 0 && trackEnd === trackCount - 1) {
+    return null
+  }
+
+  if (trackEnd < trackCount - 1) {
+    return {
+      boundary: trackEnd,
+      px: grow ? stepPx : -stepPx,
+    }
+  }
+
+  return {
+    boundary: trackStart - 1,
+    px: grow ? -stepPx : stepPx,
+  }
+}
+
 export const getSlotOrderedPaneIds = (
   assignments: readonly PaneSlotAssignment[],
   layout: LayoutShape
@@ -215,7 +257,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     }: SplitViewProps,
     ref
   ): ReactElement {
-    const { bindingFor } = useKeybindings()
+    const { bindingFor, matches } = useKeybindings()
     const layout = layoutRegistry.getFallbackLayout(session.layout)
     const outerDivRef = useRef<HTMLDivElement>(null)
 
@@ -399,6 +441,130 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const slotIdByPaneId = new Map(
       visiblePaneAssignments.map(({ pane, slotId }) => [pane.id, slotId])
     )
+
+    // Widen/narrow the active pane from the keyboard, driving the very
+    // function the divider's own arrow keys drive. Binding the ratio state
+    // instead does nothing: ratios only seed the layout, while the elastic
+    // divider owns the live track sizes.
+    const nudgeByBoundaryRef = useRef(new Map<string, (px: number) => void>())
+
+    const registerNudge = useCallback(
+      (key: string, nudgeBy: ((px: number) => void) | null): void => {
+        if (nudgeBy === null) {
+          nudgeByBoundaryRef.current.delete(key)
+
+          return
+        }
+
+        nudgeByBoundaryRef.current.set(key, nudgeBy)
+      },
+      []
+    )
+
+    const activePaneRect = ((): {
+      col: number
+      row: number
+      colSpan: number
+      rowSpan: number
+    } | null => {
+      if (activePaneId === null) {
+        return null
+      }
+
+      const slotId = slotIdByPaneId.get(activePaneId)
+
+      const rect = layout.definition.slots.find(
+        (entry) => entry.id === slotId
+      )?.rect
+
+      return rect
+        ? {
+            col: rect.col,
+            row: rect.row,
+            colSpan: rect.colSpan,
+            rowSpan: rect.rowSpan,
+          }
+        : null
+    })()
+
+    const activePaneColumn = activePaneRect?.col ?? -1
+    const activePaneRow = activePaneRect?.row ?? -1
+    const activePaneColumnSpan = activePaneRect?.colSpan ?? 0
+    const activePaneRowSpan = activePaneRect?.rowSpan ?? 0
+    const columnCount = layout.defaultRatios.cols.length
+    const rowCount = layout.defaultRatios.rows.length
+
+    useEffect(() => {
+      if (!isSessionVisible || (activePaneColumn < 0 && activePaneRow < 0)) {
+        return
+      }
+
+      const handleKeyDown = (event: KeyboardEvent): void => {
+        if (isKeymapCaptureTarget(event.target)) {
+          return
+        }
+
+        if (document.querySelector(DIALOG_SELECTOR)) {
+          return
+        }
+
+        const widthGrow = matches(event, 'pane-width-increase')
+        const widthShrink = !widthGrow && matches(event, 'pane-width-decrease')
+
+        const heightGrow =
+          !widthGrow && !widthShrink && matches(event, 'pane-height-increase')
+
+        const heightShrink =
+          !widthGrow &&
+          !widthShrink &&
+          !heightGrow &&
+          matches(event, 'pane-height-decrease')
+        if (!widthGrow && !widthShrink && !heightGrow && !heightShrink) {
+          return
+        }
+
+        const horizontal = widthGrow || widthShrink
+
+        const nudge = resolvePaneSpanTrackNudge(
+          horizontal ? activePaneColumn : activePaneRow,
+          horizontal ? activePaneColumnSpan : activePaneRowSpan,
+          horizontal ? columnCount : rowCount,
+          widthGrow || heightGrow,
+          PANE_RESIZE_STEP_PX
+        )
+        if (nudge === null) {
+          return
+        }
+
+        const nudgeBy = nudgeByBoundaryRef.current.get(
+          `${horizontal ? 'cols' : 'rows'}:${nudge.boundary}`
+        )
+        if (!nudgeBy) {
+          return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+        nudgeBy(nudge.px)
+      }
+
+      document.addEventListener('keydown', handleKeyDown, { capture: true })
+
+      return (): void => {
+        document.removeEventListener('keydown', handleKeyDown, {
+          capture: true,
+        })
+      }
+    }, [
+      activePaneColumn,
+      activePaneColumnSpan,
+      activePaneRow,
+      activePaneRowSpan,
+      columnCount,
+      rowCount,
+      isSessionVisible,
+      matches,
+    ])
 
     const paneById = new Map(
       visiblePaneAssignments.map(({ pane }) => [pane.id, pane])
@@ -794,6 +960,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               containerRef={outerDivRef}
               ratios={currentRatios}
               onRatioChange={handleRatioChange}
+              onRegisterNudge={registerNudge}
             />
           ) : null}
         </div>

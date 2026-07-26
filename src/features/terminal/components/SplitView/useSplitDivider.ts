@@ -34,6 +34,7 @@ export interface SplitDividerBinding {
   pixelMax: number
   handleMouseDown: (event: React.MouseEvent) => void
   onKeyDown: (event: KeyboardEvent) => void
+  nudgeBy: (px: number) => void
 }
 
 export interface UseSplitDividerArgs {
@@ -171,6 +172,19 @@ export const useSplitDivider = ({
     [containerRef, endVar, startVar]
   )
 
+  /** Move this boundary by `px`, exactly as an arrow key on the handle does.
+   *
+   *  Exposed so a command can resize a pane without the handle holding focus —
+   *  a terminal pane never gives focus up, so the handle's own key bindings
+   *  are unreachable while working in a pane. */
+  const nudgeBy = useCallback(
+    (px: number): void => {
+      persistIntentRef.current = true
+      adjustBy(px)
+    },
+    [adjustBy]
+  )
+
   const onKeyDown = useCallback(
     (event: KeyboardEvent): void => {
       const step = event.shiftKey ? KEYBOARD_STEP_SHIFT_PX : KEYBOARD_STEP_PX
@@ -178,23 +192,19 @@ export const useSplitDivider = ({
       const shrink = axis === 'horizontal' ? 'ArrowLeft' : 'ArrowUp'
       if (event.key === grow) {
         event.preventDefault()
-        persistIntentRef.current = true
-        adjustBy(step)
+        nudgeBy(step)
       } else if (event.key === shrink) {
         event.preventDefault()
-        persistIntentRef.current = true
-        adjustBy(-step)
+        nudgeBy(-step)
       } else if (event.key === 'Home') {
         event.preventDefault()
-        persistIntentRef.current = true
-        adjustBy(pixelMin - size)
+        nudgeBy(pixelMin - size)
       } else if (event.key === 'End') {
         event.preventDefault()
-        persistIntentRef.current = true
-        adjustBy(pixelMax - size)
+        nudgeBy(pixelMax - size)
       }
     },
-    [axis, adjustBy, pixelMin, pixelMax, size]
+    [axis, nudgeBy, pixelMin, pixelMax, size]
   )
 
   return {
@@ -207,5 +217,6 @@ export const useSplitDivider = ({
       elastic.handleMouseDown(event)
     },
     onKeyDown,
+    nudgeBy,
   }
 }

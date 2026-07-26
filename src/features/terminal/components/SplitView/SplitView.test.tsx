@@ -19,6 +19,7 @@ import {
   SplitView,
   canClosePane,
   getSlotOrderedPaneIds,
+  resolvePaneSpanTrackNudge,
   type SplitViewHandle,
 } from './SplitView'
 import type {
@@ -517,6 +518,146 @@ describe('SplitView - multi-pane layouts', () => {
     )
 
     expect(handleValues()).toEqual(defaultGridValues)
+  })
+
+  test('pane height shortcut does not move a side-stack divider for a full-height active pane', () => {
+    const handleValuesByOrientation = (): Record<string, string> =>
+      Object.fromEntries(
+        screen
+          .getAllByTestId('split-resize-handle')
+          .map((handle) => [
+            handle.getAttribute('aria-orientation') ?? '',
+            handle.getAttribute('aria-valuenow') ?? '',
+          ])
+      )
+
+    render(
+      <SplitView
+        session={makeSession('threeRight', 3)}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
+
+    const before = handleValuesByOrientation()
+
+    fireEvent.keyDown(document, {
+      code: 'Equal',
+      ctrlKey: true,
+      shiftKey: true,
+    })
+
+    expect(handleValuesByOrientation()).toEqual(before)
+  })
+
+  test('pane width shortcut still moves the trailing boundary for a spanning active pane', () => {
+    const verticalHandleValue = (): string | null =>
+      screen
+        .getAllByTestId('split-resize-handle')
+        .find(
+          (handle) => handle.getAttribute('aria-orientation') === 'vertical'
+        )
+        ?.getAttribute('aria-valuenow') ?? null
+
+    render(
+      <SplitView
+        session={makeSession('threeRight', 3)}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
+
+    const before = verticalHandleValue()
+
+    fireEvent.keyDown(document, {
+      code: 'Equal',
+      ctrlKey: true,
+    })
+
+    expect(verticalHandleValue()).not.toBe(before)
+  })
+
+  test('pane resize shortcuts are ignored while the keymap recorder captures input', () => {
+    const handleValue = (): string | null =>
+      screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
+    const recorder = document.createElement('div')
+    recorder.setAttribute('data-keymap-capture-target', 'true')
+    document.body.append(recorder)
+
+    try {
+      render(
+        <SplitView
+          session={makeSession('vsplit', 2)}
+          service={makeMockService()}
+          isSessionVisible
+        />
+      )
+
+      const before = handleValue()
+
+      fireEvent.keyDown(recorder, {
+        code: 'Equal',
+        ctrlKey: true,
+      })
+
+      expect(handleValue()).toBe(before)
+    } finally {
+      recorder.remove()
+    }
+  })
+
+  test('pane resize shortcuts are ignored while a dialog owns input', () => {
+    const handleValue = (): string | null =>
+      screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+
+    try {
+      render(
+        <SplitView
+          session={makeSession('vsplit', 2)}
+          service={makeMockService()}
+          isSessionVisible
+        />
+      )
+
+      const before = handleValue()
+
+      fireEvent.keyDown(document, {
+        code: 'Equal',
+        ctrlKey: true,
+      })
+
+      expect(handleValue()).toBe(before)
+    } finally {
+      dialog.remove()
+    }
+  })
+
+  test('pane resize shortcuts claim handled terminal-originating keydown events', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
+
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: 'Equal',
+      ctrlKey: true,
+    })
+    const stopPropagation = vi.spyOn(event, 'stopPropagation')
+
+    document.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(stopPropagation).toHaveBeenCalledOnce()
   })
 
   test('each slot gets gridArea by index regardless of pane.id naming', () => {
@@ -1584,5 +1725,29 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
     expect(
       within(emptySlot).getByRole('button', { name: 'add browser pane' })
     ).toBeInTheDocument()
+  })
+})
+
+describe('resolvePaneSpanTrackNudge', () => {
+  const STEP = 40
+
+  test('a span with a trailing neighbor drives the trailing boundary', () => {
+    expect(resolvePaneSpanTrackNudge(0, 2, 3, true, STEP)).toEqual({
+      boundary: 1,
+      px: STEP,
+    })
+  })
+
+  test('a span on the trailing edge drives the leading boundary with flipped sign', () => {
+    expect(resolvePaneSpanTrackNudge(1, 2, 3, true, STEP)).toEqual({
+      boundary: 0,
+      px: -STEP,
+    })
+  })
+
+  test('a full-axis span and invalid geometry resolve to null', () => {
+    expect(resolvePaneSpanTrackNudge(0, 2, 2, true, STEP)).toBeNull()
+    expect(resolvePaneSpanTrackNudge(2, 2, 3, true, STEP)).toBeNull()
+    expect(resolvePaneSpanTrackNudge(0, 0, 3, true, STEP)).toBeNull()
   })
 })

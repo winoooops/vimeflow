@@ -2,8 +2,8 @@
 id: pane-slot-identity
 category: correctness
 created: 2026-06-19
-last_updated: 2026-07-14
-ref_count: 2
+last_updated: 2026-07-26
+ref_count: 3
 ---
 
 # Pane Slot Identity
@@ -94,4 +94,20 @@ pass the `slotId` through every layer that needs to act on a specific cell.
   `SplitView`, then preserve the dock reclaim path as a focus-only no-op when the
   visible target is already active. Added a dock regression for a rescued active
   pane in single-pane focus.
+- **Commit:** same commit as this entry
+
+### 7. Pane resize shortcuts used the slot origin instead of pane span geometry
+
+- **Source:** github-claude | PR #741 round 1 | 2026-07-26
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx` L459-519
+- **Finding:** Keyboard resize commands resolved the active pane's divider from
+  only `rect.col` or `rect.row`. In spanning layouts such as `threeRight`, a
+  full-height active pane could nudge the right-hand stack divider instead of a
+  boundary that belongs to the active pane; the Codex connector reported the same
+  failure mode for custom spanning slots.
+- **Fix:** Preserve `colSpan` and `rowSpan` while resolving the active pane
+  geometry, choose the pane edge that actually has a neighboring track, and no-op
+  when the pane spans the entire axis because no owned divider exists. Added
+  SplitView regressions for `threeRight` plus pure edge-span resolver coverage.
 - **Commit:** same commit as this entry
