@@ -1717,7 +1717,9 @@ describe('ghostty native parent', () => {
         onResize?: (cols: number, rows: number) => void
       } = {}
       const surface = {}
-      let resolveResize: (() => void) | null = null
+      let resolveResize = (): void => {
+        throw new Error('Expected resize request to be in flight')
+      }
 
       const addon = {
         create: vi.fn(
@@ -1792,7 +1794,7 @@ describe('ghostty native parent', () => {
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(1)
 
-      resolveResize?.()
+      resolveResize()
       await Promise.resolve()
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(2)
