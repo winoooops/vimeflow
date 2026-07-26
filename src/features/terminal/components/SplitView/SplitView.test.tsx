@@ -607,6 +607,59 @@ describe('SplitView - multi-pane layouts', () => {
     }
   })
 
+  test('pane resize shortcuts are ignored while a dialog owns input', () => {
+    const handleValue = (): string | null =>
+      screen.getByTestId('split-resize-handle').getAttribute('aria-valuenow')
+
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+
+    try {
+      render(
+        <SplitView
+          session={makeSession('vsplit', 2)}
+          service={makeMockService()}
+          isSessionVisible
+        />
+      )
+
+      const before = handleValue()
+
+      fireEvent.keyDown(document, {
+        code: 'Equal',
+        ctrlKey: true,
+      })
+
+      expect(handleValue()).toBe(before)
+    } finally {
+      dialog.remove()
+    }
+  })
+
+  test('pane resize shortcuts claim handled terminal-originating keydown events', () => {
+    render(
+      <SplitView
+        session={makeSession('vsplit', 2)}
+        service={makeMockService()}
+        isSessionVisible
+      />
+    )
+
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: 'Equal',
+      ctrlKey: true,
+    })
+    const stopPropagation = vi.spyOn(event, 'stopPropagation')
+
+    document.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(stopPropagation).toHaveBeenCalledOnce()
+  })
+
   test('each slot gets gridArea by index regardless of pane.id naming', () => {
     const session = makeSession('quad', 4)
 

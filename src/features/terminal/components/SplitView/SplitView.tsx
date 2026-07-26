@@ -47,6 +47,7 @@ import { isKeymapCaptureTarget } from '@/features/keymap/capture'
 import type { CommandId } from '@/features/keymap/catalog'
 import { chordToShortcutInput } from '@/features/keymap/displayKey'
 import { useKeybindings } from '@/features/keymap/useKeybindings'
+import { DIALOG_SELECTOR } from '@/features/workspace/containerIds'
 import { formatShortcut } from '@/lib/formatShortcut'
 import { SplitDividers } from '@/features/terminal/components/SplitView/SplitDividers'
 import { resolveGrid } from '@/features/terminal/components/SplitView/resolveGrid'
@@ -503,6 +504,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
           return
         }
 
+        if (document.querySelector(DIALOG_SELECTOR)) {
+          return
+        }
+
         const widthGrow = matches(event, 'pane-width-increase')
         const widthShrink = !widthGrow && matches(event, 'pane-width-decrease')
 
@@ -539,6 +544,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
         }
 
         event.preventDefault()
+        event.stopPropagation()
         nudgeBy(nudge.px)
       }
 

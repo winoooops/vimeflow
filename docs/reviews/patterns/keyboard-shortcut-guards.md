@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-26
-ref_count: 18
+ref_count: 19
 ---
 
 # Keyboard Shortcut Guards
@@ -619,4 +619,46 @@ against three classes of false-fire:
   single active tooltip owner id. `ActivityEvent` keeps the local listener and
   editor/terminal guards, but only the parent-designated owner installs and
   responds to the document shortcut.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 47. Pane resize shortcuts reached terminal input after resizing
+
+- **Source:** github-codex-connector | PR #741 round 3 | 2026-07-26
+- **Severity:** P1 / HIGH
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The SplitView document capture listener called `preventDefault()`
+  after handling pane resize shortcuts, but did not stop propagation. In the
+  xterm fallback, the same chord could continue to terminal input, so one
+  keypress both resized the layout and affected the running shell.
+- **Fix:** Added `event.stopPropagation()` after the listener confirms a
+  concrete divider nudge, and covered the handled-event contract with a
+  SplitView regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 48. Pane resize shortcuts ignored open dialog ownership
+
+- **Source:** github-codex-connector | PR #741 round 3 | 2026-07-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The SplitView global resize listener skipped keymap recorder
+  capture targets but did not apply the shared `DIALOG_SELECTOR` guard used by
+  sibling workspace shortcut owners. Resize chords could mutate the obscured
+  pane grid while Settings, command palette, or another dialog owned input.
+- **Fix:** Imported the shared `DIALOG_SELECTOR` and returned before command
+  matching whenever a dialog is active, with regression coverage that verifies
+  the split ratio stays unchanged.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 49. Pane resize shortcut omitted sibling dialog guard convention
+
+- **Source:** github-claude | PR #741 round 3 | 2026-07-26
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** The pane resize keydown listener guarded keymap recorder capture
+  targets but did not mirror the shared `DIALOG_SELECTOR` check used by other
+  workspace-global shortcuts. Modal interactions could therefore resize the
+  workspace behind a Settings, rename, layout, or confirmation dialog.
+- **Fix:** Reused the shared `DIALOG_SELECTOR` guard in the SplitView listener
+  and added a focused regression test proving an open dialog suppresses the
+  pane resize shortcut.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
