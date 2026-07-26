@@ -1183,7 +1183,7 @@ public func vimeflowGhosttyCreate(
     // Diagnostics escape hatch: VIMEFLOW_GHOSTTY_DEBUG=1 streams GhosttyTerminal's
     // metrics/render timeline to stdout (captured by the Electron main process),
     // so a live resize can be diagnosed from data instead of inference.
-    if ProcessInfo.processInfo.environment["VIMEFLOW_GHOSTTY_DEBUG"] == "1" {
+    if vimeflowGhosttyDebugEnabled {
         TerminalDebugLog.enable([.metrics, .render, .lifecycle])
     }
 
