@@ -233,9 +233,7 @@ export const formatReviewRequest = (
     `> Delegate a code review of ${files.length === 1 ? 'this' : 'these'} ${files.length} change${files.length === 1 ? '' : 's'}:`,
     ...groups,
     '>',
-    delegatedReviewPrompt
-      .trimEnd()
-      .replace(/\{\{NONCE\}\}/g, cleanNonce),
+    delegatedReviewPrompt.trimEnd().replace(/\{\{NONCE\}\}/g, cleanNonce),
   ].join('\n')
 }
 
