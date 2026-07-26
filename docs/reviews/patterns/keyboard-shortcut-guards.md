@@ -590,7 +590,7 @@ against three classes of false-fire:
   Added a SplitView regression that dispatches the resize chord from a recorder
   target and verifies the split ratio does not change.
 - **Commit:** same commit as this entry
- 
+
 ### 45. Tooltip shortcut bypassed editor and terminal focus guards
 
 - **Source:** github-claude | PR #726 round 1 | 2026-07-22

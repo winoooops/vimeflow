@@ -176,32 +176,6 @@ export const resolveLayoutRatios = (
   return layout.defaultRatios
 }
 
-/** Which divider boundary a keyboard pane-resize drives, and with what sign.
- *
- *  Boundaries sit BETWEEN tracks, so the last track has none of its own and
- *  shares the one before it. Growing a pane means pushing its boundary away
- *  from it, which flips the sign on that last track. `+px` always grows the
- *  earlier track — the convention `useSplitDivider.adjustBy` already uses for
- *  both axes. Exported for unit testing.
- */
-export const resolvePaneTrackNudge = (
-  trackIndex: number,
-  trackCount: number,
-  grow: boolean,
-  stepPx: number
-): { boundary: number; px: number } | null => {
-  if (trackIndex < 0 || trackIndex >= trackCount || trackCount < 2) {
-    return null
-  }
-
-  const isLastTrack = trackIndex === trackCount - 1
-
-  return {
-    boundary: isLastTrack ? trackIndex - 1 : trackIndex,
-    px: grow === !isLastTrack ? stepPx : -stepPx,
-  }
-}
-
 export const resolvePaneSpanTrackNudge = (
   trackStart: number,
   trackSpan: number,
@@ -291,11 +265,6 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const [ratios, setRatios] = useState<
       Partial<Record<PaneLayoutId, LayoutRatios>>
     >({})
-
-    // The keydown handler is registered once per layout; a ref keeps it
-    // reading the current ratios instead of the ones captured at register time.
-    const ratiosRef = useRef(ratios)
-    ratiosRef.current = ratios
 
     const currentRatios = resolveLayoutRatios(layout, ratios[layout.id])
     const grid = resolveGrid(layout, currentRatios)
