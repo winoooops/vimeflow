@@ -1620,7 +1620,7 @@ describe('ghostty native parent', () => {
     }
   })
 
-  test('drops native Ghostty input while an interactive overlay is active', () => {
+  test('blocks terminal input but forwards app shortcuts through an activity popover', async () => {
     const callbacks: {
       onInput?: (data: string) => void
       onFocus?: () => void
@@ -1663,6 +1663,11 @@ describe('ghostty native parent', () => {
     } as unknown as Sidecar
 
     const inputBlocked = vi.fn(() => true)
+    const shortcutInputBlocked = vi.fn(() => false)
+    webContentsExecuteJavaScript.mockResolvedValueOnce({
+      activeGhosttyPane: true,
+      dockHasFocus: true,
+    })
 
     const controller = setupGhosttyNativeParent({
       sidecar,
@@ -1670,6 +1675,7 @@ describe('ghostty native parent', () => {
       env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
       addon,
       inputBlocked,
+      shortcutInputBlocked,
     })
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
@@ -1689,11 +1695,17 @@ describe('ghostty native parent', () => {
     callbacks.onShortcut?.('n', 'KeyN', false, true, false, false, false)
     callbacks.onRenamePane?.()
 
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
     expect(inputBlocked).toHaveBeenCalled()
+    expect(shortcutInputBlocked).toHaveBeenCalledOnce()
     expect(sidecar.invoke).not.toHaveBeenCalled()
     expect(webContentsSend).not.toHaveBeenCalled()
-    expect(webContentsFocus).not.toHaveBeenCalled()
-    expect(webContentsExecuteJavaScript).not.toHaveBeenCalled()
+    expect(webContentsFocus).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript).toHaveBeenCalledOnce()
+    expect(webContentsExecuteJavaScript.mock.calls[0]?.[0]).toContain('KeyN')
     expect(addon.focus).not.toHaveBeenCalled()
 
     controller.dispose()

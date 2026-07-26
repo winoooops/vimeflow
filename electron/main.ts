@@ -561,6 +561,10 @@ const setupApp = async (): Promise<void> => {
       inputBlocked: (win) =>
         nativeOverlayController?.hasActiveInteractiveOverlaySurface(win) ===
         true,
+      shortcutInputBlocked: (win) =>
+        nativeOverlayController?.hasActiveShortcutBlockingOverlaySurface(
+          win
+        ) === true,
     })
   } else {
     ghosttyNativeController = null

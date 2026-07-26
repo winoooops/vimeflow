@@ -438,17 +438,17 @@ describe('Tooltip', () => {
 
     const { unmount } = render(
       <Tooltip
-        content={<button type="button">Copy activity details</button>}
+        content={<button type="button">Copy trace details</button>}
         delayMs={0}
         placement="left"
         bare
         interactive
-        ariaLabel="BASH activity details"
+        ariaLabel="BASH trace details"
         nativeOverlay
         nativeOverlayPayload={{
           kind: 'popover',
           popover: 'activity',
-          ariaLabel: 'BASH activity details',
+          ariaLabel: 'BASH trace details',
           event: {
             id: 'activity-1',
             kind: 'bash',
@@ -456,6 +456,7 @@ describe('Tooltip', () => {
             status: 'done',
             body: 'npm test',
             tool: 'Bash',
+            label: 'BASH',
             durationMs: 1200,
           },
         }}

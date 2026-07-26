@@ -1,34 +1,17 @@
-import type { ActivityEvent, ActivityEventKind } from '../types/activityEvent'
-import type { ActiveToolCall, RecentToolCall } from '../types'
-
-const toolToKind = (tool: string): ActivityEventKind => {
-  switch (tool) {
-    case 'Edit':
-    case 'MultiEdit':
-      return 'edit'
-    case 'Write':
-    case 'NotebookEdit':
-      return 'write'
-    case 'Read':
-      return 'read'
-    case 'Bash':
-      return 'bash'
-    case 'Grep':
-      return 'grep'
-    case 'Glob':
-      return 'glob'
-    default:
-      return 'meta'
-  }
-}
+import type { ActivityEvent } from '../types/activityEvent'
+import type { ActiveToolCall, AgentStatus, RecentToolCall } from '../types'
+import { classifyToolCall } from './toolCallProfiles'
 
 export const toolCallsToEvents = (
+  agentType: AgentStatus['agentType'],
   active: ActiveToolCall | null,
   recent: RecentToolCall[]
 ): ActivityEvent[] => {
   const events: ActivityEvent[] = []
 
   if (active) {
+    const presentation = classifyToolCall(agentType, active.tool)
+
     events.push({
       // Use the Anthropic tool_use_id so this entry's React key stays
       // stable across the running → done transition. Otherwise React
@@ -37,8 +20,9 @@ export const toolCallsToEvents = (
       // but it silently breaks any future CSS transition animation on
       // the state change.
       id: active.toolUseId,
-      kind: toolToKind(active.tool),
+      kind: presentation.kind,
       tool: active.tool,
+      label: presentation.label,
       body: active.args,
       timestamp: active.startedAt,
       status: 'running',
@@ -73,10 +57,13 @@ export const toolCallsToEvents = (
   })
 
   for (const r of sortedRecent) {
+    const presentation = classifyToolCall(agentType, r.tool)
+
     events.push({
       id: r.id,
-      kind: toolToKind(r.tool),
+      kind: presentation.kind,
       tool: r.tool,
+      label: presentation.label,
       body: r.args,
       timestamp: r.timestamp,
       status: r.status,
