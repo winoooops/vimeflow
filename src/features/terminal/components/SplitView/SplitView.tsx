@@ -43,6 +43,7 @@ import {
 } from '@/features/terminal/components/TerminalPane'
 import { EmptySlot } from '@/features/terminal/components/SplitView/EmptySlot'
 import { Tooltip } from '@/components/Tooltip'
+import { isKeymapCaptureTarget } from '@/features/keymap/capture'
 import type { CommandId } from '@/features/keymap/catalog'
 import { chordToShortcutInput } from '@/features/keymap/displayKey'
 import { useKeybindings } from '@/features/keymap/useKeybindings'
@@ -198,6 +199,40 @@ export const resolvePaneTrackNudge = (
   return {
     boundary: isLastTrack ? trackIndex - 1 : trackIndex,
     px: grow === !isLastTrack ? stepPx : -stepPx,
+  }
+}
+
+export const resolvePaneSpanTrackNudge = (
+  trackStart: number,
+  trackSpan: number,
+  trackCount: number,
+  grow: boolean,
+  stepPx: number
+): { boundary: number; px: number } | null => {
+  if (
+    trackStart < 0 ||
+    trackSpan <= 0 ||
+    trackStart + trackSpan > trackCount ||
+    trackCount < 2
+  ) {
+    return null
+  }
+
+  const trackEnd = trackStart + trackSpan - 1
+  if (trackStart === 0 && trackEnd === trackCount - 1) {
+    return null
+  }
+
+  if (trackEnd < trackCount - 1) {
+    return {
+      boundary: trackEnd,
+      px: grow ? stepPx : -stepPx,
+    }
+  }
+
+  return {
+    boundary: trackStart - 1,
+    px: grow ? -stepPx : stepPx,
   }
 }
 
@@ -456,7 +491,12 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       []
     )
 
-    const activePaneRect = ((): { col: number; row: number } | null => {
+    const activePaneRect = ((): {
+      col: number
+      row: number
+      colSpan: number
+      rowSpan: number
+    } | null => {
       if (activePaneId === null) {
         return null
       }
@@ -467,11 +507,20 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
         (entry) => entry.id === slotId
       )?.rect
 
-      return rect ? { col: rect.col, row: rect.row } : null
+      return rect
+        ? {
+            col: rect.col,
+            row: rect.row,
+            colSpan: rect.colSpan,
+            rowSpan: rect.rowSpan,
+          }
+        : null
     })()
 
     const activePaneColumn = activePaneRect?.col ?? -1
     const activePaneRow = activePaneRect?.row ?? -1
+    const activePaneColumnSpan = activePaneRect?.colSpan ?? 0
+    const activePaneRowSpan = activePaneRect?.rowSpan ?? 0
     const columnCount = layout.defaultRatios.cols.length
     const rowCount = layout.defaultRatios.rows.length
 
@@ -481,6 +530,10 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       }
 
       const handleKeyDown = (event: KeyboardEvent): void => {
+        if (isKeymapCaptureTarget(event.target)) {
+          return
+        }
+
         const widthGrow = matches(event, 'pane-width-increase')
         const widthShrink = !widthGrow && matches(event, 'pane-width-decrease')
 
@@ -498,8 +551,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
 
         const horizontal = widthGrow || widthShrink
 
-        const nudge = resolvePaneTrackNudge(
+        const nudge = resolvePaneSpanTrackNudge(
           horizontal ? activePaneColumn : activePaneRow,
+          horizontal ? activePaneColumnSpan : activePaneRowSpan,
           horizontal ? columnCount : rowCount,
           widthGrow || heightGrow,
           PANE_RESIZE_STEP_PX
@@ -528,7 +582,9 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       }
     }, [
       activePaneColumn,
+      activePaneColumnSpan,
       activePaneRow,
+      activePaneRowSpan,
       columnCount,
       rowCount,
       isSessionVisible,

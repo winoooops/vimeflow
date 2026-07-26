@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-18
-ref_count: 16
+last_updated: 2026-07-26
+ref_count: 17
 ---
 
 # Keyboard Shortcut Guards
@@ -561,3 +561,32 @@ against three classes of false-fire:
 - **Fix:** Restored the skipped e2e block to `Cmd+Shift+Arrow` copy and
   `shiftKey: true` with `...modInit()` for both directional key events.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 43. Browser-pane forwarding omitted new workspace resize commands
+
+- **Source:** github-codex-connector | PR #741 round 1 | 2026-07-26
+- **Severity:** P1 / HIGH
+- **File:** `src/features/keymap/catalog.ts` L335-356
+- **Finding:** The new pane resize commands were registered as global shortcuts,
+  but the Electron browser-pane forwarding allowlist did not include their command
+  ids. When a native browser pane owned focus, Chromium kept the key event and the
+  renderer-level SplitView listener never saw the resize command.
+- **Fix:** Added the four pane resize command ids to
+  `BROWSER_WORKSPACE_SHORTCUT_IDS_TO_FORWARD` and extended the existing
+  browser-safe global binding forwarding test to cover them.
+- **Commit:** same commit as this entry
+
+### 44. Global resize listener ignored keymap recorder capture targets
+
+- **Source:** github-codex-connector | PR #741 round 1 | 2026-07-26
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx` L484-484
+- **Finding:** The SplitView document capture listener handled pane resize
+  shortcuts before checking whether the keymap recorder was capturing input.
+  Recording a resize chord in Settings could therefore resize the workspace behind
+  the dialog while the recorder tried to learn the same chord.
+- **Fix:** Imported the shared `isKeymapCaptureTarget` guard and returned before
+  command matching when the keydown target is inside a keymap capture surface.
+  Added a SplitView regression that dispatches the resize chord from a recorder
+  target and verifies the split ratio does not change.
+- **Commit:** same commit as this entry
