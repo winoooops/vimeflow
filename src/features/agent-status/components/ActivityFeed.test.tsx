@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ActivityFeed } from './ActivityFeed'
+import type { ChangedFile } from '../../diff/types'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
 const fixedNow = new Date('2026-04-22T12:00:00Z')
@@ -30,6 +31,12 @@ const doneEvent = (id: string, body: string): ActivityEventType => ({
   timestamp: '2026-04-22T11:59:42Z', // 18s ago
   status: 'done',
   durationMs: 120,
+})
+
+const changedFile = (path: string): ChangedFile => ({
+  path,
+  status: 'modified',
+  staged: false,
 })
 
 describe('ActivityFeed', () => {
@@ -322,5 +329,54 @@ describe('ActivityFeed', () => {
     })
 
     expect(screen.getByText('running 9s')).toBeInTheDocument()
+  })
+
+  test('routes the trace diff shortcut to the latest open tooltip owner', async () => {
+    vi.useRealTimers()
+    const user = userEvent.setup()
+    const onOpenDiff = vi.fn()
+
+    const matchesShowDiffShortcut = vi.fn(
+      (event: globalThis.KeyboardEvent): boolean =>
+        event.metaKey && event.code === 'KeyG'
+    )
+
+    render(
+      <ActivityFeed
+        events={[
+          doneEvent('a', 'src/focused.ts'),
+          doneEvent('b', 'src/hovered.ts'),
+        ]}
+        changedFiles={[
+          changedFile('src/focused.ts'),
+          changedFile('src/hovered.ts'),
+        ]}
+        onOpenDiff={onOpenDiff}
+        showDiffShortcut="Meta+G"
+        showDiffAriaShortcut="Meta+g"
+        matchesShowDiffShortcut={matchesShowDiffShortcut}
+      />
+    )
+
+    const articles = screen.getAllByRole('article')
+
+    await user.hover(articles[1])
+    expect(
+      await screen.findByRole('dialog', { name: 'EDIT trace details' })
+    ).toBeInTheDocument()
+
+    fireEvent.focus(articles[0])
+    expect(
+      await screen.findAllByRole('dialog', { name: 'EDIT trace details' })
+    ).toHaveLength(2)
+
+    fireEvent.keyDown(document, { key: 'g', code: 'KeyG', metaKey: true })
+
+    expect(matchesShowDiffShortcut).toHaveBeenCalledOnce()
+    expect(onOpenDiff).toHaveBeenCalledOnce()
+    expect(onOpenDiff).toHaveBeenCalledWith(changedFile('src/focused.ts'))
+
+    vi.useFakeTimers()
+    vi.setSystemTime(fixedNow)
   })
 })

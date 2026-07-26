@@ -41,6 +41,10 @@ export const ActivityFeed = ({
   const [now, setNow] = useState<Date>(() => new Date())
   const [showAll, setShowAll] = useState<boolean>(false)
   const [activeEventId, setActiveEventId] = useState<string | null>(null)
+
+  const [showDiffShortcutOwnerId, setShowDiffShortcutOwnerId] = useState<
+    string | null
+  >(null)
   const eventRefs = useRef<Map<string, HTMLElement>>(new Map())
 
   // Two separate effects — combining them into one `[hasRunning, events]`
@@ -172,6 +176,9 @@ export const ActivityFeed = ({
                     }}
                     ariaPosInSet={index + 1}
                     ariaSetSize={events.length}
+                    isShowDiffShortcutOwner={
+                      event.id === showDiffShortcutOwnerId
+                    }
                     tabIndex={event.id === activeVisibleEventId ? 0 : -1}
                     onFocus={(): void => setActiveEventId(event.id)}
                     onKeyDown={(keyboardEvent): void =>
@@ -181,6 +188,14 @@ export const ActivityFeed = ({
                       changedFile === null || onOpenDiff === undefined
                         ? undefined
                         : (): void => onOpenDiff(changedFile)
+                    }
+                    onShowDiffShortcutOpen={(): void =>
+                      setShowDiffShortcutOwnerId(event.id)
+                    }
+                    onShowDiffShortcutClose={(): void =>
+                      setShowDiffShortcutOwnerId((current) =>
+                        current === event.id ? null : current
+                      )
                     }
                     showDiffShortcut={showDiffShortcut}
                     showDiffAriaShortcut={showDiffAriaShortcut}

@@ -24,10 +24,13 @@ interface ActivityEventProps {
   ariaPosInSet?: number
   ariaSetSize?: number
   event: ActivityEventType
+  isShowDiffShortcutOwner?: boolean
   now: Date
   onFocus?: FocusEventHandler<HTMLElement>
   onKeyDown?: KeyboardEventHandler<HTMLElement>
   onShowDiff?: () => void
+  onShowDiffShortcutOpen?: () => void
+  onShowDiffShortcutClose?: () => void
   showDiffShortcut?: string
   showDiffAriaShortcut?: string
   matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
@@ -59,10 +62,13 @@ export const computeAgo = computeActivityAgo
 
 interface ActivityDetailsTooltipProps {
   event: ActivityEventType
+  isShowDiffShortcutOwner?: boolean
   now: Date
   ariaLabel: string
   onActivate?: () => void
   onShowDiff?: () => void
+  onShowDiffShortcutOpen?: () => void
+  onShowDiffShortcutClose?: () => void
   showDiffShortcut?: string
   showDiffAriaShortcut?: string
   matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
@@ -87,10 +93,13 @@ const isGuardedShortcutSurface = (event: KeyboardEvent): boolean => {
 
 export const ActivityDetailsTooltip = ({
   event,
+  isShowDiffShortcutOwner = true,
   now,
   ariaLabel,
   onActivate = undefined,
   onShowDiff = undefined,
+  onShowDiffShortcutOpen = undefined,
+  onShowDiffShortcutClose = undefined,
   showDiffShortcut = undefined,
   showDiffAriaShortcut = undefined,
   matchesShowDiffShortcut = undefined,
@@ -110,6 +119,7 @@ export const ActivityDetailsTooltip = ({
   useEffect(() => {
     if (
       !open ||
+      !isShowDiffShortcutOwner ||
       onShowDiff === undefined ||
       matchesShowDiffShortcut === undefined
     ) {
@@ -133,7 +143,23 @@ export const ActivityDetailsTooltip = ({
 
     return (): void =>
       document.removeEventListener('keydown', handleKeyDown, true)
-  }, [matchesShowDiffShortcut, onShowDiff, open])
+  }, [isShowDiffShortcutOwner, matchesShowDiffShortcut, onShowDiff, open])
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen)
+
+    if (onShowDiff === undefined) {
+      return
+    }
+
+    if (nextOpen) {
+      onShowDiffShortcutOpen?.()
+
+      return
+    }
+
+    onShowDiffShortcutClose?.()
+  }
 
   return (
     <Tooltip
@@ -154,7 +180,7 @@ export const ActivityDetailsTooltip = ({
       nativeOverlay
       nativeOverlayPayload={payload}
       nativeOverlayActions={actions}
-      onOpenChange={setOpen}
+      onOpenChange={handleOpenChange}
     >
       {children}
     </Tooltip>
@@ -219,10 +245,13 @@ export const ActivityEvent = ({
   ariaPosInSet = undefined,
   ariaSetSize = undefined,
   event,
+  isShowDiffShortcutOwner = true,
   now,
   onFocus = undefined,
   onKeyDown = undefined,
   onShowDiff = undefined,
+  onShowDiffShortcutOpen = undefined,
+  onShowDiffShortcutClose = undefined,
   showDiffShortcut = undefined,
   showDiffAriaShortcut = undefined,
   matchesShowDiffShortcut = undefined,
@@ -238,9 +267,12 @@ export const ActivityEvent = ({
   return (
     <ActivityDetailsTooltip
       event={event}
+      isShowDiffShortcutOwner={isShowDiffShortcutOwner}
       now={now}
       ariaLabel={`${label} trace details`}
       onShowDiff={onShowDiff}
+      onShowDiffShortcutOpen={onShowDiffShortcutOpen}
+      onShowDiffShortcutClose={onShowDiffShortcutClose}
       showDiffShortcut={showDiffShortcut}
       showDiffAriaShortcut={showDiffAriaShortcut}
       matchesShowDiffShortcut={matchesShowDiffShortcut}

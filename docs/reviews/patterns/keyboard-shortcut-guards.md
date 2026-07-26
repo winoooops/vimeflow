@@ -2,8 +2,8 @@
 id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
-last_updated: 2026-07-22
-ref_count: 17
+last_updated: 2026-07-26
+ref_count: 18
 ---
 
 # Keyboard Shortcut Guards
@@ -575,4 +575,19 @@ against three classes of false-fire:
 - **Fix:** Added a local guard that skips the tooltip shortcut when either the
   keyboard event target or `document.activeElement` is inside `.cm-editor` or
   the terminal container, with regression coverage for both focused surfaces.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 44. Independently open trace tooltips shared one global shortcut
+
+- **Source:** github-claude | PR #740 round 1 | 2026-07-26
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ActivityEvent.tsx`
+- **Finding:** Each trace row tooltip owned its own capture-phase document
+  listener for the Show diff shortcut. A row opened by hover and another row
+  opened by keyboard focus could therefore both handle one shortcut event,
+  dispatching two different file diffs in the same keypress.
+- **Fix:** Moved shortcut ownership coordination to `ActivityFeed` with a
+  single active tooltip owner id. `ActivityEvent` keeps the local listener and
+  editor/terminal guards, but only the parent-designated owner installs and
+  responds to the document shortcut.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
