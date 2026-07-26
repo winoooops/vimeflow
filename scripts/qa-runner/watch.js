@@ -990,7 +990,7 @@ const dispatchFix = (
   new Promise((resolve) => {
     mkdirSync(LOG_DIR, { recursive: true })
     const logPath = join(LOG_DIR, `pr-${pr}.log`)
-    const logFd = createWriteStream(logPath, { flags: 'a' })
+    const logFd = createWriteStream(logPath, { flags: 'w' })
     const tag = `[#${pr}]`
     let lastLine = ''
     clearDispatchBlocker(pr)

@@ -732,4 +732,30 @@ describe('workerInfraFailure', () => {
       detail: 'worker SSM command failed before fixer output',
     })
   })
+
+  test('classifies a dirty runner checkout before stale log errors', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qa-worker-dirty-'))
+    const logPath = join(dir, 'pr-42.log')
+    writeFileSync(
+      logPath,
+      [
+        'SSM command old Failed (response -1) produced no output',
+        'worker runner checkout has tracked changes; refusing refresh',
+      ].join('\n')
+    )
+
+    try {
+      expect(
+        workerInfraFailure({
+          exitReason: 'worker keep alive requested',
+          logPath,
+        })
+      ).toEqual({
+        category: 'worker_checkout_dirty',
+        detail: 'worker runner checkout has unexpected tracked changes',
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

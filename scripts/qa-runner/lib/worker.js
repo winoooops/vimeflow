@@ -102,6 +102,14 @@ export const workerInfraFailure = (tickResult) => {
     }
   }
   if (
+    /worker runner checkout has tracked changes; refusing refresh/i.test(text)
+  ) {
+    return {
+      category: 'worker_checkout_dirty',
+      detail: 'worker runner checkout has unexpected tracked changes',
+    }
+  }
+  if (
     /SSM command .* produced no output|document process failed unexpectedly|TargetNotConnected|DeliveryTimedOut|ExecutionTimedOut|Undeliverable/i.test(
       text
     )
@@ -293,7 +301,9 @@ const pauseLabel = (st, maxNoops) =>
     ? 'dispatch blocked'
     : st.pauseReason === 'worker_ssm_unhealthy'
       ? 'worker SSM unhealthy'
-      : `${st.noopCount}/${maxNoops} failed`
+      : st.pauseReason === 'worker_checkout_dirty'
+        ? 'worker checkout dirty'
+        : `${st.noopCount}/${maxNoops} failed`
 
 const decisionStore = (pr) => readDecisionStore(decisionStorePath(pr))
 
@@ -520,7 +530,10 @@ export const runOne = async (pr, reason, deps) => {
     }
     const infraFailure = workerInfraFailure(tickResult)
     if (infraFailure) {
-      const terminal = infraFailure.category === 'worker_ssm_unhealthy'
+      const terminal = [
+        'worker_ssm_unhealthy',
+        'worker_checkout_dirty',
+      ].includes(infraFailure.category)
       if (terminal) {
         state.update(pr, {
           lastHeadSha: after.headSha,

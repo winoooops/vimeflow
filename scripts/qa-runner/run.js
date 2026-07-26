@@ -435,11 +435,16 @@ const realGitPath = (env = process.env) => {
   return path
 }
 
-export const gitPushCiWrapperScript = ({ realGit, ciCommand }) => `#!/usr/bin/env bash
+export const gitPushCiWrapperScript = ({
+  realGit,
+  ciCommand,
+  worktree,
+}) => `#!/usr/bin/env bash
 set -euo pipefail
 
 real_git=${shellQuote(realGit)}
 ci_cmd=${shellQuote(ciCommand)}
+worktree=${shellQuote(worktree)}
 is_push=0
 for arg in "$@"; do
   if [ "$arg" = "push" ]; then
@@ -450,7 +455,10 @@ done
 
 if [ "$is_push" = "1" ]; then
   echo "QA_RUNNER_LOCAL_CI_START $ci_cmd" >&2
-  bash -lc "$ci_cmd"
+  (
+    cd "$worktree"
+    bash -lc "$ci_cmd"
+  )
   echo "QA_RUNNER_LOCAL_CI_OK" >&2
 fi
 
@@ -466,6 +474,7 @@ const installGitPushCiWrapper = (wt, env = process.env) => {
     gitPushCiWrapperScript({
       realGit: realGitPath(env),
       ciCommand: localCiCommand(env),
+      worktree: wt,
     })
   )
   chmodSync(wrapper, 0o755)

@@ -93,9 +93,12 @@ describe('local CI push gate', () => {
     const script = gitPushCiWrapperScript({
       realGit: '/usr/bin/git',
       ciCommand: 'npm test',
+      worktree: '/repo/.claude/worktrees/qa-pr-348',
     })
 
     expect(script).toContain('if [ "$arg" = "push" ]')
+    expect(script).toContain("worktree='/repo/.claude/worktrees/qa-pr-348'")
+    expect(script).toContain('cd "$worktree"')
     expect(script).toContain('bash -lc "$ci_cmd"')
     expect(script).toContain('exec "$real_git" "$@"')
   })
