@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-22
-ref_count: 14
+last_updated: 2026-07-26
+ref_count: 15
 ---
 
 # Parser Resilience
@@ -373,4 +373,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** Codex code-mode `custom_tool_call` records that contained only `tools.apply_patch(...)` were promoted to `apply_patch`, but the activity-card args and test-file classifier still read the raw JavaScript cell input. Because the patch text lived inside an escaped string literal, the path extractor never saw `*** Update File:` lines, so the UI could show wrapper code instead of the patched path and fail to mark test-file patches correctly.
 - **Fix:** Added a narrow `tools.apply_patch(...)` string-argument extractor that reuses the existing JavaScript token walker, decodes inline string literals or simple const aliases, and feeds the decoded patch text back through `extract_patch_paths` for both args and `is_test_file`. Regression coverage pins direct extraction and verifies a promoted code-mode patch to `src/App.test.tsx` emits readable path args and `isTestFile: true` for running and completed activity events.
+- **Commit:** same commit as this entry
+
+### 28. JavaScript string decoder corrupted valid hex and Unicode escapes
+
+- **Source:** github-codex-connector | PR #740 round 1 | 2026-07-26
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** The Codex code-mode JavaScript string decoder only handled a small escape table and treated all other escape introducers as literal characters after dropping the backslash. Valid `\xHH`, `\uHHHH`, and `\u{...}` string literals in `exec_command` args, workdirs, or `apply_patch` text were reconstructed incorrectly.
+- **Fix:** Added explicit hex, fixed-width Unicode, braced Unicode, and UTF-16 surrogate-pair decoding. Malformed hex/unicode forms now make the extractor abstain instead of returning corrupted text, with regression coverage for command extraction and patch-path extraction.
 - **Commit:** same commit as this entry

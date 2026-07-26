@@ -99,7 +99,7 @@ fn decode_javascript_string(literal: &str) -> Option<String> {
 fn decode_javascript_escaped_string(inner: &str, quote: u8) -> Option<String> {
     let quote = char::from(quote);
     let mut output = String::new();
-    let mut chars = inner.chars();
+    let mut chars = inner.chars().peekable();
 
     while let Some(ch) = chars.next() {
         if ch != '\\' {
@@ -114,12 +114,79 @@ fn decode_javascript_escaped_string(inner: &str, quote: u8) -> Option<String> {
             'n' => output.push('\n'),
             'r' => output.push('\r'),
             't' => output.push('\t'),
+            'b' => output.push('\u{0008}'),
+            'f' => output.push('\u{000c}'),
+            'v' => output.push('\u{000b}'),
             '0' => output.push('\0'),
+            'x' => {
+                let value = consume_hex_escape(&mut chars, 2)?;
+                output.push(char::from_u32(value)?);
+            }
+            'u' => {
+                let value = consume_unicode_escape(&mut chars)?;
+                output.push(char::from_u32(value)?);
+            }
             other => output.push(other),
         }
     }
 
     Some(output)
+}
+
+fn consume_hex_escape(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    digits: usize,
+) -> Option<u32> {
+    let mut value = 0;
+    for _ in 0..digits {
+        value = value * 16 + chars.next()?.to_digit(16)?;
+    }
+    Some(value)
+}
+
+fn consume_unicode_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<u32> {
+    if chars.peek() == Some(&'{') {
+        chars.next();
+        return consume_braced_unicode_escape(chars);
+    }
+
+    let value = consume_hex_escape(chars, 4)?;
+    if !(0xd800..=0xdfff).contains(&value) {
+        return Some(value);
+    }
+
+    if !(0xd800..=0xdbff).contains(&value) {
+        return None;
+    }
+
+    if chars.next()? != '\\' || chars.next()? != 'u' || chars.peek() == Some(&'{') {
+        return None;
+    }
+
+    let low = consume_hex_escape(chars, 4)?;
+    if !(0xdc00..=0xdfff).contains(&low) {
+        return None;
+    }
+
+    Some(0x10000 + ((value - 0xd800) << 10) + (low - 0xdc00))
+}
+
+fn consume_braced_unicode_escape(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Option<u32> {
+    let mut value = 0;
+    let mut digits = 0;
+    loop {
+        let ch = chars.next()?;
+        if ch == '}' {
+            return (digits > 0 && value <= 0x10ffff).then_some(value);
+        }
+        value = value * 16 + ch.to_digit(16)?;
+        digits += 1;
+        if digits > 6 {
+            return None;
+        }
+    }
 }
 
 enum JavascriptToken<'a> {
@@ -2241,6 +2308,28 @@ mod tests {
     }
 
     #[test]
+    fn extract_custom_exec_command_args_decodes_hex_and_unicode_escapes() {
+        assert_eq!(
+            extract_custom_exec_command_args(
+                "const command = 'printf \\x2fworkspace\\u002fA\\u{20ac}'\n\
+                 await tools.exec_command({ command })"
+            ),
+            Some("printf /workspace/A€".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_exec_command_args_abstains_on_malformed_hex_escape() {
+        assert_eq!(
+            extract_custom_exec_command_args(
+                "const command = 'printf \\xZZ'\n\
+                 await tools.exec_command({ command })"
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn extract_custom_apply_patch_input_decodes_string_argument() {
         assert_eq!(
             extract_custom_apply_patch_input(
@@ -2267,6 +2356,30 @@ mod tests {
                 "const patch = '*** Begin Patch\\n*** Update File: src/é.test.ts\\n*** End Patch'\nawait tools.apply_patch(patch)"
             ),
             Some("*** Begin Patch\n*** Update File: src/é.test.ts\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_decodes_unicode_path_escapes() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "const patch = '*** Begin Patch\\n*** Update File: \
+                 src/\\u00e9.test.ts\\n*** End Patch'\n\
+                 await tools.apply_patch(patch)"
+            ),
+            Some("*** Begin Patch\n*** Update File: src/é.test.ts\n*** End Patch".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_custom_apply_patch_input_abstains_on_malformed_unicode_escape() {
+        assert_eq!(
+            extract_custom_apply_patch_input(
+                "const patch = '*** Begin Patch\\n*** Update File: \
+                 src/\\u{110000}.test.ts\\n*** End Patch'\n\
+                 await tools.apply_patch(patch)"
+            ),
+            None
         );
     }
 
@@ -2407,6 +2520,25 @@ mod tests {
         assert_eq!(
             extract_exec_workdir(dto.record_type(), &payload_of(&dto)).as_deref(),
             Some("/workspace/B")
+        );
+    }
+
+    #[test]
+    fn extract_exec_workdir_decodes_unicode_escapes_from_custom_exec() {
+        let dto: CodexLineDto = serde_json::from_value(json!({
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "call_id": "c1",
+                "input": "await tools.exec_command({ cmd: 'pwd', workdir: '/workspace/\\u0041' })"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            extract_exec_workdir(dto.record_type(), &payload_of(&dto)).as_deref(),
+            Some("/workspace/A")
         );
     }
 
