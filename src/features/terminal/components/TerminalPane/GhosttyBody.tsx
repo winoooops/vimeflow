@@ -594,6 +594,13 @@ export const GhosttyBody = ({
       }
       resizeTrackingUntilRef.current = 0
       queuedNativeFrameSnapshotRef.current = null
+      // An announced frame dies with the announcer. StrictMode remounts the
+      // same instance, so this ref survives into the next mount — and its
+      // ghost unmount has already destroyed the native surface. If the next
+      // mount's identical frame key gets deduped against it, main is never
+      // told to rebuild, and a pane with no follow-up output (a fresh shell,
+      // a restored low-content pane) stays blank until its bounds change.
+      lastSentNativeFrameKeyRef.current = null
       observer.disconnect()
       window.removeEventListener('resize', syncAndTrackNativeFrame)
     }

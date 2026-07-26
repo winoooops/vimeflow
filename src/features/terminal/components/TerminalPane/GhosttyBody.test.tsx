@@ -1,5 +1,6 @@
 // cspell:ignore Ghostty
 import { act, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { flexoki, obsidianLens, themeService } from '../../../../theme'
 import type { ITerminalService } from '../../services/terminalService'
@@ -129,6 +130,38 @@ describe('GhosttyBody', () => {
     backendListeners.clear()
     outputListener = null
     themeService.apply('obsidian-lens')
+  })
+
+  test('re-announces its frame after a strict-mode remount rebuilds the pane', async () => {
+    // StrictMode mounts, ghost-unmounts, and mounts again with the SAME
+    // instance: the ghost unmount's async destroy tears the native surface
+    // down, and the second mount's frame key equals the first's. If the
+    // dedupe swallows it, main is never told to rebuild — a freshly created
+    // pane (or one restored with little content) stays blank until its
+    // bounds happen to change.
+    render(
+      <StrictMode>
+        <GhosttyBody
+          paneId="pane-1"
+          ptyId="pty-1"
+          cwd="/tmp"
+          active
+          service={createService()}
+        />
+      </StrictMode>
+    )
+
+    await waitFor(() => {
+      expect(destroyNativeGhostty).toHaveBeenCalled()
+    })
+
+    await waitFor(() => {
+      const destroyedAt =
+        vi.mocked(destroyNativeGhostty).mock.invocationCallOrder[0] ?? Infinity
+      const updates = vi.mocked(updateNativeGhostty).mock.invocationCallOrder
+
+      expect(updates.some((order) => order > destroyedAt)).toBe(true)
+    })
   })
 
   test('keeps native surface mounted when pane loses focus', async () => {
