@@ -504,6 +504,14 @@ const createWindow = (): BrowserWindow => {
   installCommandPaletteShortcutOverride(win)
   installNavigationGuard(win, openExternalUrl)
 
+  // Dev-only: force-open devtools for resize-tuning experiments (the menu/shortcut
+  // are hard to reach in this build). Gated on VITE_OPEN_DEVTOOLS=1; never packaged.
+  if (!app.isPackaged && process.env.VITE_OPEN_DEVTOOLS === '1') {
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.openDevTools({ mode: 'detach' })
+    })
+  }
+
   const devUrl = process.env.VITE_DEV_SERVER_URL
 
   if (app.isPackaged) {
