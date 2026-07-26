@@ -1226,8 +1226,9 @@ fn start_custom_tool_call(
         return;
     };
     let tool = tool_call_name(payload);
-    let args = summarize_custom_tool_args(payload, &tool);
-    let is_test_file = custom_tool_is_test_file(payload, &tool);
+    let patch_paths = custom_tool_patch_paths(payload, &tool);
+    let args = summarize_custom_tool_args(payload, &tool, &patch_paths);
+    let is_test_file = custom_tool_is_test_file(&patch_paths);
     let completion_mode = if tool == "apply_patch" {
         CompletionMode::PatchApplyEnd
     } else if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
@@ -1538,24 +1539,26 @@ fn custom_tool_patch_paths(payload: &CodexPayloadDto, tool: &str) -> Vec<String>
     extract_patch_paths(input)
 }
 
-fn summarize_custom_tool_args(payload: &CodexPayloadDto, tool: &str) -> String {
+fn summarize_custom_tool_args(
+    payload: &CodexPayloadDto,
+    tool: &str,
+    patch_paths: &[String],
+) -> String {
     if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
         if let Some(cmd) = payload.input.as_deref().and_then(extract_custom_exec_command_args) {
             return truncate_string(&cmd, MAX_ARGS_LEN);
         }
     }
 
-    if let Some(first_path) = custom_tool_patch_paths(payload, tool).into_iter().next() {
+    if let Some(first_path) = patch_paths.first() {
         return truncate_string(&first_path, MAX_ARGS_LEN);
     }
 
     summarize_custom_tool_input(payload.input.as_deref())
 }
 
-fn custom_tool_is_test_file(payload: &CodexPayloadDto, tool: &str) -> bool {
-    custom_tool_patch_paths(payload, tool)
-        .into_iter()
-        .any(|path| is_test_file(&path))
+fn custom_tool_is_test_file(patch_paths: &[String]) -> bool {
+    patch_paths.iter().any(|path| is_test_file(path))
 }
 
 fn extract_patch_paths(input: &str) -> Vec<String> {

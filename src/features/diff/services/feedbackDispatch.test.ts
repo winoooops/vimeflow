@@ -334,6 +334,7 @@ test('formatReviewRequest names the scope, coordinate convention, and block (VIM
   expect(payload).toContain(
     '{"v":1,"nonce":"r3v13w","replies":[{"target":"finding","id":1,"status":"resolved","text":"..."}]}'
   )
+
   expect(payload).toContain(
     '{"v":1,"nonce":"r3v13w","reviewer":"<your name>","findings":[{"path":"<file>","scope":"line","side":"additions","line":1,"category":"bug","text":"..."}]}'
   )
