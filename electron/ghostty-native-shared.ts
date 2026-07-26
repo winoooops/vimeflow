@@ -11,6 +11,10 @@ export interface GhosttyNativeBounds {
 export interface GhosttyNativePaneRequest {
   sessionId: string
   paneId: string
+  /** Identity of one MOUNT of the pane. A destroy carries the epoch of the
+   *  mount that issued it, so a destroy from an already-unmounted pane can
+   *  never tear down state a newer mount has begun filling. */
+  epoch?: string
 }
 
 export interface GhosttyNativeShortcutContext {

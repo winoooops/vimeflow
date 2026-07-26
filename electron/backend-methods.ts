@@ -7,6 +7,7 @@ const backendMethods = new Set([
   'kill_pty',
   'kill_ephemeral_ptys',
   'list_sessions',
+  'get_pty_replay',
   'set_active_session',
   'reorder_sessions',
   'update_session_cwd',

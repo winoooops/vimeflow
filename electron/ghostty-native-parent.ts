@@ -1,4 +1,4 @@
-// cspell:ignore Ghostty ghostty GHOSTTY
+// cspell:ignore Ghostty ghostty GHOSTTY winsize
 import { BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -130,8 +130,16 @@ interface GhosttyNativeSurfaceState {
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
+  /** Ignore grid callbacks while set — see SURFACE_SETTLE_MS. */
+  settleTimer: ReturnType<typeof setTimeout> | null
+  /** Last grid swallowed by the settle window, forwarded when it ends. */
+  settleGrid: { cols: number; rows: number } | null
+  /** A `resize_pty` awaiting its acknowledgement. */
+  resizeInFlight: boolean
   shortcutContext: GhosttyNativeShortcutContext | null
   lastKeybindings: string | null
+  /** Epoch of the mount this state belongs to — see the renderer's note. */
+  epoch: string | null
 }
 
 interface GhosttyNativeSecondaryCallbacks {
@@ -168,6 +176,15 @@ interface GhosttyNativeShortcutDispatchState {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
+
+// A surface reports a grid for its creation-default size before the frame we
+// actually want lands (~25ms later, measured). Forwarding that to a PTY whose
+// agent is already running tells it the terminal briefly became 46x16, and the
+// agent relays out its whole UI for 16 rows before snapping back — the input
+// area folding in on itself and springing open again. Nothing real happens in
+// this window: the PTY already holds the correct size.
+export const SURFACE_SETTLE_MS = 120
+
 const MAX_PENDING_CHUNKS = 64
 const MAX_SURFACES = 128
 // Leading+trailing throttle for PTY resize during live drags. Stock Ghostty
@@ -551,7 +568,10 @@ export class GhosttyNativeParentController {
       frame.parentHeight
     )
     this.applyKeybindings(addon, win, state)
-    if (state.pendingData.length > 0) {
+    // A freshly created surface holds its creation-default grid until the
+    // settle window ends; flushing history into that would wrap it all at
+    // the default width. The settle expiry flushes instead.
+    if (state.pendingData.length > 0 && state.settleTimer === null) {
       this.flushPendingData(addon, state)
     }
 
@@ -570,9 +590,11 @@ export class GhosttyNativeParentController {
 
     const state = this.getOrCreatePaneState(payload)
 
-    // PTY data can arrive before the renderer has reported pane bounds.
-    // Keep a small tail, then flush it when update creates the native surface.
-    if (!state.surface) {
+    // PTY data can arrive before the renderer has reported pane bounds, and
+    // a freshly created surface holds its creation-default grid until the
+    // settle window ends — writing history into either wraps it all at the
+    // wrong width. Keep a small tail and flush when the surface is ready.
+    if (!state.surface || state.settleTimer !== null) {
       state.pendingData.push(payload.data)
       if (state.pendingData.length > MAX_PENDING_CHUNKS) {
         state.pendingData.shift()
@@ -612,6 +634,22 @@ export class GhosttyNativeParentController {
     const addon = this.getOptionalAddon()
     if (!addon) {
       return { enabled: false }
+    }
+
+    // A destroy is issued by a mount's unmount over async IPC, so it can
+    // arrive AFTER a newer mount of the same pane has begun filling this
+    // state — deleting it then would throw away that mount's queued
+    // hydration replay, leaving the rebuilt surface blank until the agent's
+    // next unrelated repaint. Epochs make the destroy self-identifying:
+    // only the mount that owns the state may tear it down.
+    const state = this.surfaces.get(this.paneKey(payload))
+    if (
+      state !== undefined &&
+      payload.epoch !== undefined &&
+      state.epoch !== null &&
+      state.epoch !== payload.epoch
+    ) {
+      return { enabled: true }
     }
 
     this.destroySurface(this.paneKey(payload), addon, {
@@ -831,6 +869,10 @@ export class GhosttyNativeParentController {
     const key = this.paneKey(payload)
     const existing = this.surfaces.get(key)
     if (existing) {
+      if (payload.epoch !== undefined) {
+        existing.epoch = payload.epoch
+      }
+
       return existing
     }
 
@@ -838,7 +880,7 @@ export class GhosttyNativeParentController {
       throw new Error('ghostty native parent surface limit exceeded')
     }
 
-    const state = {
+    const state: GhosttyNativeSurfaceState = {
       pane: {
         sessionId: payload.sessionId,
         paneId: payload.paneId,
@@ -854,8 +896,15 @@ export class GhosttyNativeParentController {
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
+      settleTimer: null,
+      settleGrid: null,
+      resizeInFlight: false,
       shortcutContext: null,
       lastKeybindings: null,
+      epoch: null,
+    }
+    if (payload.epoch !== undefined) {
+      state.epoch = payload.epoch
     }
     this.surfaces.set(key, state)
 
@@ -890,6 +939,44 @@ export class GhosttyNativeParentController {
 
     this.registerWindowCleanup(win)
 
+    if (state.settleTimer !== null) {
+      clearTimeout(state.settleTimer)
+    }
+    state.settleGrid = null
+    state.settleTimer = setTimeout(() => {
+      state.settleTimer = null
+
+      // Forward the size the window swallowed — by now it is the surface's
+      // real grid, and the PTY must learn it or the agent never repaints.
+      const grid = state.settleGrid
+      state.settleGrid = null
+      if (
+        grid !== null &&
+        !win.isDestroyed() &&
+        this.surfaces.get(this.paneKey(state.pane)) === state
+      ) {
+        this.queuePtyResize(
+          state,
+          state.pane.sessionId,
+          grid.cols,
+          grid.rows,
+          () =>
+            !win.isDestroyed() &&
+            this.surfaces.get(this.paneKey(state.pane)) === state
+        )
+      }
+
+      // Hydration deferred by the settle window lands now, on a grid that
+      // has its real size — pouring it earlier wraps the whole history at
+      // the creation-default width.
+      if (state.pendingData.length > 0 && state.surface !== null) {
+        const lateAddon = this.getOptionalAddon()
+        if (lateAddon) {
+          this.flushPendingData(lateAddon, state)
+        }
+      }
+    }, SURFACE_SETTLE_MS)
+
     state.surface = addon.create(
       bridgePath(this.nativeParentDir),
       win.getNativeWindowHandle(),
@@ -916,6 +1003,17 @@ export class GhosttyNativeParentController {
       },
       (cols, rows) => {
         if (win.isDestroyed() || !this.surfaces.has(this.paneKey(state.pane))) {
+          return
+        }
+
+        if (state.settleTimer !== null) {
+          // Swallowing is not enough: the surface's REAL size can land inside
+          // this window too, and nothing re-fires it afterwards — the PTY
+          // would keep the pane's previous winsize forever and the agent
+          // would never repaint. Remember the freshest swallowed grid so the
+          // window's expiry can forward it.
+          state.settleGrid = { cols, rows }
+
           return
         }
 
@@ -1179,7 +1277,10 @@ export class GhosttyNativeParentController {
       return
     }
 
-    if (resizeState.resizeTimer !== null) {
+    // One winsize in flight at a time, newest pending wins. The sidecar's
+    // reply acknowledges the ioctl, so gating on it keeps the number of widths
+    // the agent has been told about — and must redraw for — down to one.
+    if (resizeState.resizeTimer !== null || resizeState.resizeInFlight) {
       resizeState.pendingResize = { cols, rows }
 
       return
@@ -1221,13 +1322,40 @@ export class GhosttyNativeParentController {
     rows: number
   ): void {
     resizeState.lastResize = { cols, rows }
-    this.invokeSidecar('resize_pty', {
-      request: {
-        sessionId,
-        cols,
-        rows,
-      },
-    })
+    resizeState.resizeInFlight = true
+    void (async (): Promise<void> => {
+      try {
+        await this.sidecar.invoke('resize_pty', {
+          request: { sessionId, cols, rows },
+        })
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('Ghostty native sidecar invoke failed', error)
+        // The PTY never received this size — forget it, or the dedupe would
+        // swallow the next legitimate request for the very same grid.
+        if (
+          resizeState.lastResize?.cols === cols &&
+          resizeState.lastResize.rows === rows
+        ) {
+          resizeState.lastResize = null
+        }
+      } finally {
+        resizeState.resizeInFlight = false
+      }
+
+      const pending = resizeState.pendingResize
+      if (
+        pending === null ||
+        resizeState.resizeTimer !== null ||
+        (resizeState.lastResize?.cols === pending.cols &&
+          resizeState.lastResize.rows === pending.rows)
+      ) {
+        return
+      }
+
+      resizeState.pendingResize = null
+      this.forwardPtyResize(resizeState, sessionId, pending.cols, pending.rows)
+    })()
   }
 
   private clearPendingResize(resizeState: GhosttyNativeSurfaceState): void {
@@ -1423,6 +1551,14 @@ export class GhosttyNativeParentController {
       addon.destroy(state.surface)
     }
     this.clearPendingResize(state)
+    // A destroyed surface must not fire its settle window: with
+    // preserveSecondary the state stays in the map, so the expiry's identity
+    // check alone would still let it resize a PTY for a surface that is gone.
+    if (state.settleTimer !== null) {
+      clearTimeout(state.settleTimer)
+    }
+    state.settleTimer = null
+    state.settleGrid = null
     this.resetSurfaceScopedCaches(state)
 
     if (state.ownerWindowId !== null) {

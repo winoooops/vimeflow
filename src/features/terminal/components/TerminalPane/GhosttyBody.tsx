@@ -9,7 +9,9 @@ import {
 } from 'react'
 import { listen } from '../../../../lib/backend'
 import { useTheme } from '../../../../theme'
+import { useIsPresent } from 'framer-motion'
 import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
+import type { PtyReplay } from '../../types'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import type { ITerminalService } from '../../services/terminalService'
 import {
@@ -199,7 +201,25 @@ export const GhosttyBody = ({
   cwdRef.current = cwd
   const agentCwdRef = useRef(cwd)
   const agentCwdSourceRef = useRef<AgentCwdSource>('prop')
-  const paneRef = useMemo(() => ({ sessionId: ptyId, paneId }), [paneId, ptyId])
+  // One value per MOUNT: the async destroy in this component's unmount can
+  // land in main AFTER a remounted instance has already queued its hydration
+  // replay, deleting that replay with the old state. Main compares epochs and
+  // ignores a destroy that no longer matches the pane's current mount.
+  const mountEpochRef = useRef('')
+  if (mountEpochRef.current === '') {
+    mountEpochRef.current = crypto.randomUUID()
+  }
+
+  const paneRef = useMemo(
+    () => ({ sessionId: ptyId, paneId, epoch: mountEpochRef.current }),
+    [paneId, ptyId]
+  )
+
+  // Read inside the frame-snapshot callback, which is not re-created per
+  // render — a ref keeps it seeing the current presence.
+  const isPresent = useIsPresent()
+  const isPresentRef = useRef(isPresent)
+  isPresentRef.current = isPresent
   const onCommandSubmitRef = useRef(onCommandSubmit)
   const onCwdChangeRef = useRef(onCwdChange)
 
@@ -471,7 +491,13 @@ export const GhosttyBody = ({
       Number.isFinite(viewport.outerHeight) && viewport.outerHeight > 0
         ? viewport.outerHeight
         : viewport.innerHeight
-    const visible = true
+    // A pane leaving the layout is still mounted for its exit animation, and
+    // the grid it is leaving has already given its slot the full width — so it
+    // measures the whole container. Reporting that as visible resizes its PTY
+    // to the zoomed width, the agent redraws that wide, and those wide frames
+    // are what the pane is later rebuilt from. Report the exit instead: main
+    // zeroes the frame, and a zero-sized grid forwards no PTY resize at all.
+    const visible = isPresentRef.current
 
     const snapshot = {
       key: nativeGhosttyFrameKey({
@@ -665,26 +691,32 @@ export const GhosttyBody = ({
     const isCancelled = (): boolean => cancelled
 
     const attachOutput = async (): Promise<void> => {
-      if (restoredFrom?.replayData) {
-        handleNativeOutput(restoredFrom.replayData)
-        await sendOutputToNative(restoredFrom.replayData)
-        if (isCancelled()) {
-          return
-        }
-      }
-      if (isCancelled()) {
-        return
-      }
-      for (const event of restoredFrom?.bufferedEvents ?? []) {
-        forwardNativeOutput(event.data, event.offsetStart, event.byteLen, true)
-      }
-      if (isCancelled()) {
-        return
-      }
+      // Subscribe BEFORE hydrating. Rebuilding the surface resizes the PTY,
+      // which makes the agent repaint — and that repaint is emitted while the
+      // replay is still in flight. Attaching afterwards drops it, leaving the
+      // pane showing only stale history with no composer. Hold live chunks
+      // until the replay has landed, then let the cursor in
+      // `forwardNativeOutput` discard whatever the replay already covered.
+      let hydrating = true
+
+      const heldLive: {
+        data: string
+        offsetStart: number
+        byteLen: number
+      }[] = []
 
       const unsubscribe = await attachNativeGhosttyOutput(service, paneRef, {
-        onOutput: (data, offsetStart, byteLen) =>
-          forwardNativeOutput(data, offsetStart, byteLen, false),
+        onOutput: (data, offsetStart, byteLen) => {
+          // Returning false stops the client's own native write — a held
+          // chunk must not reach the surface before the replay it follows.
+          if (hydrating) {
+            heldLive.push({ data, offsetStart, byteLen })
+
+            return false
+          }
+
+          return forwardNativeOutput(data, offsetStart, byteLen, false)
+        },
         onUnavailable,
       })
 
@@ -693,6 +725,68 @@ export const GhosttyBody = ({
 
         return
       }
+
+      if (restoredFrom?.replayData) {
+        handleNativeOutput(restoredFrom.replayData)
+        await sendOutputToNative(restoredFrom.replayData)
+        if (isCancelled()) {
+          unsubscribe()
+
+          return
+        }
+      } else {
+        // No startup snapshot: this pane is remounting against a PTY that has
+        // been running all along — a layout switch unmounts every pane the new
+        // layout has no slot for, destroying its terminal surface. Without
+        // history the rebuilt surface starts on an empty grid and shows
+        // nothing until the agent happens to repaint.
+        //
+        // Best-effort: a pane with no history still repaints on the agent's
+        // next frame, but a failed hydration must not take the subscription
+        // down with it.
+        let replay: PtyReplay | null = null
+        try {
+          replay = await service.getPtyReplay(ptyId)
+        } catch {
+          replay = null
+        }
+        if (isCancelled()) {
+          unsubscribe()
+
+          return
+        }
+        if (replay?.replayData) {
+          handleNativeOutput(replay.replayData)
+          await sendOutputToNative(replay.replayData)
+          if (isCancelled()) {
+            unsubscribe()
+
+            return
+          }
+          cursorRef.current = replay.replayEndOffset
+        }
+      }
+      if (isCancelled()) {
+        unsubscribe()
+
+        return
+      }
+      for (const event of restoredFrom?.bufferedEvents ?? []) {
+        forwardNativeOutput(event.data, event.offsetStart, event.byteLen, true)
+      }
+      if (isCancelled()) {
+        unsubscribe()
+
+        return
+      }
+
+      hydrating = false
+      for (const event of heldLive) {
+        // sendToNative: the client's write was suppressed while holding, so
+        // the flush owns it — cursor-gated, covered chunks stay dropped.
+        forwardNativeOutput(event.data, event.offsetStart, event.byteLen, true)
+      }
+      heldLive.length = 0
 
       unsubscribeOutput = unsubscribe
       releasePaneReady = onPaneReady?.(ptyId, drainBufferedOutput) ?? null
@@ -704,13 +798,6 @@ export const GhosttyBody = ({
       cancelled = true
       releasePaneReady?.()
       unsubscribeOutput?.()
-      void (async (): Promise<void> => {
-        try {
-          await destroyNativeGhostty(paneRef)
-        } catch {
-          // Best-effort cleanup can race with Electron handler disposal.
-        }
-      })()
     }
   }, [
     forwardNativeOutput,
@@ -723,6 +810,24 @@ export const GhosttyBody = ({
     sendOutputToNative,
     service,
   ])
+
+  // The surface outlives every re-subscription. Tearing it down from the
+  // effect above meant any of its nine dependencies changing identity — a new
+  // callback, a fresh `restoredFrom` — destroyed the live NSView and left the
+  // pane blank until something happened to rebuild it. Only losing the pane
+  // itself may destroy its surface.
+  useEffect(
+    () => (): void => {
+      void (async (): Promise<void> => {
+        try {
+          await destroyNativeGhostty(paneRef)
+        } catch {
+          // Best-effort cleanup can race with Electron handler disposal.
+        }
+      })()
+    },
+    [paneRef]
+  )
 
   return (
     <div

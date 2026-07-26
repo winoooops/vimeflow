@@ -17,6 +17,7 @@ import type { Sidecar } from './sidecar'
 import {
   isGhosttyNativeParentEnabled,
   setupGhosttyNativeParent,
+  SURFACE_SETTLE_MS,
 } from './ghostty-native-parent'
 import {
   DEFAULT_WORKSPACE_KEYBINDING_SNAPSHOT,
@@ -100,6 +101,15 @@ vi.mock('electron', () => ({
     }),
   },
 }))
+
+/** A freshly created surface ignores grid callbacks for a moment so its
+ *  creation-default size never reaches the PTY. Step past that window before
+ *  driving resizes that are meant to be forwarded. */
+const settleSurface = async (): Promise<void> => {
+  await new Promise((resolve) => {
+    setTimeout(resolve, SURFACE_SETTLE_MS + 20)
+  })
+}
 
 describe('ghostty native parent', () => {
   beforeEach(() => {
@@ -636,7 +646,7 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('flushes pending data once when the parented surface is created', () => {
+  test('flushes pending data once when the parented surface is created', async () => {
     const surface = {}
 
     const addon = {
@@ -668,6 +678,8 @@ describe('ghostty native parent', () => {
         { sessionId: 'pty-1', paneId: 'pane-1', data: 'boot' }
       )
     ).toEqual({ enabled: true })
+    await settleSurface()
+
     expect(addon.write).not.toHaveBeenCalled()
 
     update?.(
@@ -681,6 +693,8 @@ describe('ghostty native parent', () => {
         bounds: { x: 10, y: 20, width: 300, height: 200 },
       }
     )
+
+    await settleSurface()
 
     expect(addon.write).toHaveBeenCalledWith(surface, 'boot')
 
@@ -843,6 +857,8 @@ describe('ghostty native parent', () => {
       if (firstResize === undefined) {
         throw new Error('expected native resize callback')
       }
+
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
 
       firstResize(80, 24)
       firstResize(100, 30)
@@ -1323,7 +1339,7 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('creates parented surface and forwards native input plus resize', () => {
+  test('creates parented surface and forwards native input plus resize', async () => {
     const callbacks: {
       onInput?: (data: string) => void
       onResize?: (cols: number, rows: number) => void
@@ -1397,6 +1413,8 @@ describe('ghostty native parent', () => {
       900
     )
 
+    await settleSurface()
+
     callbacks.onInput?.('a')
     callbacks.onResize?.(80, 24)
     callbacks.onResize?.(80, 24)
@@ -1431,7 +1449,7 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
-  test('forwards a steady throttled resize stream during continuous drags', () => {
+  test('forwards a steady throttled resize stream during continuous drags', async () => {
     vi.useFakeTimers()
     let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
 
@@ -1495,6 +1513,8 @@ describe('ghostty native parent', () => {
         }
       )
 
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
+
       // Leading edge: the first resize forwards immediately.
       callbacks.onResize?.(80, 24)
       callbacks.onResize?.(81, 24)
@@ -1506,7 +1526,9 @@ describe('ghostty native parent', () => {
       })
 
       // Trailing edge: one throttle window later the freshest size forwards.
-      vi.advanceTimersByTime(16)
+      // The async variant also flushes the microtask that releases the
+      // in-flight gate on the sidecar's acknowledgement.
+      await vi.advanceTimersByTimeAsync(16)
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(2)
       expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
@@ -1516,7 +1538,7 @@ describe('ghostty native parent', () => {
       // Continuous motion keeps the stream flowing once per window — the
       // reset-on-change starvation (zero forwards until drag end) is gone.
       callbacks.onResize?.(83, 24)
-      vi.advanceTimersByTime(16)
+      await vi.advanceTimersByTimeAsync(16)
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(3)
       expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
@@ -1605,6 +1627,7 @@ describe('ghostty native parent', () => {
         }
       )
 
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
       callbacks.onResize?.(80, 24)
       callbacks.onResize?.(81, 24)
       callbacks.onResize?.(80, 24)
@@ -2882,6 +2905,8 @@ describe('ghostty native parent', () => {
     )
 
     callbacks.onInput?.('a')
+    await settleSurface()
+
     callbacks.onResize?.(80, 24)
     await Promise.resolve()
 
@@ -2895,7 +2920,7 @@ describe('ghostty native parent', () => {
     warnSpy.mockRestore()
   })
 
-  test('keeps separate surfaces for split panes', () => {
+  test('keeps separate surfaces for split panes', async () => {
     const callbacks: {
       onInput: (data: string) => void
       onResize: (cols: number, rows: number) => void
@@ -2983,6 +3008,8 @@ describe('ghostty native parent', () => {
 
     callbacks[0]?.onInput('a')
     callbacks[1]?.onInput('b')
+    await settleSurface()
+
     callbacks[0]?.onResize(80, 24)
     callbacks[1]?.onResize(100, 30)
     callbacks[1]?.onResize(100, 30)
@@ -3021,5 +3048,157 @@ describe('ghostty native parent', () => {
     })
 
     controller.dispose()
+  })
+
+  const settleHarness = (): {
+    callbacks: { onResize?: (cols: number, rows: number) => void }
+    addon: {
+      create: ReturnType<typeof vi.fn>
+      setFrame: ReturnType<typeof vi.fn>
+      setFontFamily: ReturnType<typeof vi.fn>
+      write: ReturnType<typeof vi.fn>
+      focus: ReturnType<typeof vi.fn>
+      destroy: ReturnType<typeof vi.fn>
+    }
+    sidecar: Sidecar
+    controller: ReturnType<typeof setupGhosttyNativeParent>
+  } => {
+    const callbacks: {
+      onResize?: (cols: number, rows: number) => void
+    } = {}
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(
+        (_bridge, _handle, _input, resize, _focus, _shortcut, _renamePane) => {
+          void _bridge
+          void _handle
+          void _input
+          void _focus
+          void _shortcut
+          void _renamePane
+          callbacks.onResize = resize
+
+          return surface
+        }
+      ),
+      setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    return { callbacks, addon, sidecar, controller }
+  }
+
+  const updatePane = (epoch?: string): void => {
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+        ...(epoch === undefined ? {} : { epoch }),
+      }
+    )
+  }
+
+  test('forwards the freshest grid a settle window swallowed, exactly once', () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const harness = settleHarness()
+      controller = harness.controller
+      updatePane()
+
+      // Both land inside the settle window: the creation-default junk first,
+      // then the surface's real grid. Neither may reach the PTY yet.
+      harness.callbacks.onResize?.(46, 16)
+      harness.callbacks.onResize?.(96, 44)
+
+      expect(harness.sidecar.invoke).not.toHaveBeenCalled()
+
+      // The expiry forwards only the freshest swallowed size — the PTY never
+      // hears about 46x16, and it hears about 96x44 exactly once.
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
+
+      expect(harness.sidecar.invoke).toHaveBeenCalledTimes(1)
+      expect(harness.sidecar.invoke).toHaveBeenCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 96, rows: 44 },
+      })
+
+      vi.advanceTimersByTime(500)
+
+      expect(harness.sidecar.invoke).toHaveBeenCalledTimes(1)
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  test('ignores a destroy carrying a stale epoch', () => {
+    const harness = settleHarness()
+    updatePane('mount-2')
+
+    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+      { sender: {} },
+      { sessionId: 'pty-1', paneId: 'pane-1', epoch: 'mount-1' }
+    )
+
+    expect(harness.addon.destroy).not.toHaveBeenCalled()
+
+    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+      { sender: {} },
+      { sessionId: 'pty-1', paneId: 'pane-1', epoch: 'mount-2' }
+    )
+
+    expect(harness.addon.destroy).toHaveBeenCalledTimes(1)
+
+    harness.controller.dispose()
+  })
+
+  test('a destroyed surface never fires its settle resize', () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const harness = settleHarness()
+      controller = harness.controller
+      updatePane()
+
+      harness.callbacks.onResize?.(96, 44)
+
+      handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+        { sender: {} },
+        { sessionId: 'pty-1', paneId: 'pane-1' }
+      )
+
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS + 500)
+
+      expect(harness.sidecar.invoke).not.toHaveBeenCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 96, rows: 44 },
+      })
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
   })
 })

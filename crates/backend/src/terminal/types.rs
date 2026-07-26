@@ -171,6 +171,18 @@ pub enum SessionStatus {
     },
 }
 
+/// Replay history for a single live PTY, for a pane mounting against a
+/// session that is already running. `None` from the command means the
+/// session is gone.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PtyReplay {
+    pub replay_data: String,
+    pub replay_end_offset: u64,
+}
+
 /// Grouping metadata tying a PTY to its owning frontend workspace session,
 /// its position in that session's layout, and its detected agent. Persisted
 /// in the session cache (`SessionCacheData.groupings`, keyed by PTY id) and

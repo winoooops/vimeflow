@@ -156,6 +156,7 @@ const createService = (): ControlledTerminalService => {
     onBurnerForeground: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    getPtyReplay: vi.fn().mockResolvedValue(null),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
       sessions: [],

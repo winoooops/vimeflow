@@ -355,6 +355,13 @@ impl BackendState {
         crate::terminal::commands::list_sessions_inner(&self.pty, &self.sessions)
     }
 
+    pub fn get_pty_replay(
+        &self,
+        session_id: &str,
+    ) -> Option<crate::terminal::types::PtyReplay> {
+        crate::terminal::commands::get_pty_replay(&self.pty, &session_id.to_string())
+    }
+
     pub fn set_active_session(
         &self,
         request: crate::terminal::types::SetActiveSessionRequest,
