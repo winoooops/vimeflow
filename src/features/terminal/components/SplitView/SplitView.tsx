@@ -3,6 +3,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -60,6 +61,11 @@ import {
 } from '@/features/terminal/layout-registry'
 
 const SLOT_FADE_TRANSITION = { duration: 0.08, ease: 'easeOut' } as const
+
+// One keypress moves the boundary this far. Larger than the handle's own
+// arrow-key step: this is a deliberate "resize the pane" command, not a
+// fine adjustment with the handle already focused.
+const PANE_RESIZE_STEP_PX = 40
 
 export interface SplitViewProps {
   session: Session
@@ -169,6 +175,32 @@ export const resolveLayoutRatios = (
   return layout.defaultRatios
 }
 
+/** Which divider boundary a keyboard pane-resize drives, and with what sign.
+ *
+ *  Boundaries sit BETWEEN tracks, so the last track has none of its own and
+ *  shares the one before it. Growing a pane means pushing its boundary away
+ *  from it, which flips the sign on that last track. `+px` always grows the
+ *  earlier track — the convention `useSplitDivider.adjustBy` already uses for
+ *  both axes. Exported for unit testing.
+ */
+export const resolvePaneTrackNudge = (
+  trackIndex: number,
+  trackCount: number,
+  grow: boolean,
+  stepPx: number
+): { boundary: number; px: number } | null => {
+  if (trackIndex < 0 || trackIndex >= trackCount || trackCount < 2) {
+    return null
+  }
+
+  const isLastTrack = trackIndex === trackCount - 1
+
+  return {
+    boundary: isLastTrack ? trackIndex - 1 : trackIndex,
+    px: grow === !isLastTrack ? stepPx : -stepPx,
+  }
+}
+
 export const getSlotOrderedPaneIds = (
   assignments: readonly PaneSlotAssignment[],
   layout: LayoutShape
@@ -215,7 +247,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     }: SplitViewProps,
     ref
   ): ReactElement {
-    const { bindingFor } = useKeybindings()
+    const { bindingFor, matches } = useKeybindings()
     const layout = layoutRegistry.getFallbackLayout(session.layout)
     const outerDivRef = useRef<HTMLDivElement>(null)
 
@@ -224,6 +256,11 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const [ratios, setRatios] = useState<
       Partial<Record<PaneLayoutId, LayoutRatios>>
     >({})
+
+    // The keydown handler is registered once per layout; a ref keeps it
+    // reading the current ratios instead of the ones captured at register time.
+    const ratiosRef = useRef(ratios)
+    ratiosRef.current = ratios
 
     const currentRatios = resolveLayoutRatios(layout, ratios[layout.id])
     const grid = resolveGrid(layout, currentRatios)
@@ -399,6 +436,104 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
     const slotIdByPaneId = new Map(
       visiblePaneAssignments.map(({ pane, slotId }) => [pane.id, slotId])
     )
+
+    // Widen/narrow the active pane from the keyboard, driving the very
+    // function the divider's own arrow keys drive. Binding the ratio state
+    // instead does nothing: ratios only seed the layout, while the elastic
+    // divider owns the live track sizes.
+    const nudgeByBoundaryRef = useRef(new Map<string, (px: number) => void>())
+
+    const registerNudge = useCallback(
+      (key: string, nudgeBy: ((px: number) => void) | null): void => {
+        if (nudgeBy === null) {
+          nudgeByBoundaryRef.current.delete(key)
+
+          return
+        }
+
+        nudgeByBoundaryRef.current.set(key, nudgeBy)
+      },
+      []
+    )
+
+    const activePaneRect = ((): { col: number; row: number } | null => {
+      if (activePaneId === null) {
+        return null
+      }
+
+      const slotId = slotIdByPaneId.get(activePaneId)
+
+      const rect = layout.definition.slots.find(
+        (entry) => entry.id === slotId
+      )?.rect
+
+      return rect ? { col: rect.col, row: rect.row } : null
+    })()
+
+    const activePaneColumn = activePaneRect?.col ?? -1
+    const activePaneRow = activePaneRect?.row ?? -1
+    const columnCount = layout.defaultRatios.cols.length
+    const rowCount = layout.defaultRatios.rows.length
+
+    useEffect(() => {
+      if (!isSessionVisible || (activePaneColumn < 0 && activePaneRow < 0)) {
+        return
+      }
+
+      const handleKeyDown = (event: KeyboardEvent): void => {
+        const widthGrow = matches(event, 'pane-width-increase')
+        const widthShrink = !widthGrow && matches(event, 'pane-width-decrease')
+
+        const heightGrow =
+          !widthGrow && !widthShrink && matches(event, 'pane-height-increase')
+
+        const heightShrink =
+          !widthGrow &&
+          !widthShrink &&
+          !heightGrow &&
+          matches(event, 'pane-height-decrease')
+        if (!widthGrow && !widthShrink && !heightGrow && !heightShrink) {
+          return
+        }
+
+        const horizontal = widthGrow || widthShrink
+
+        const nudge = resolvePaneTrackNudge(
+          horizontal ? activePaneColumn : activePaneRow,
+          horizontal ? columnCount : rowCount,
+          widthGrow || heightGrow,
+          PANE_RESIZE_STEP_PX
+        )
+        if (nudge === null) {
+          return
+        }
+
+        const nudgeBy = nudgeByBoundaryRef.current.get(
+          `${horizontal ? 'cols' : 'rows'}:${nudge.boundary}`
+        )
+        if (!nudgeBy) {
+          return
+        }
+
+        event.preventDefault()
+        nudgeBy(nudge.px)
+      }
+
+      document.addEventListener('keydown', handleKeyDown, { capture: true })
+
+      return (): void => {
+        document.removeEventListener('keydown', handleKeyDown, {
+          capture: true,
+        })
+      }
+    }, [
+      activePaneColumn,
+      activePaneRow,
+      columnCount,
+      rowCount,
+      isSessionVisible,
+      matches,
+    ])
 
     const paneById = new Map(
       visiblePaneAssignments.map(({ pane }) => [pane.id, pane])
@@ -794,6 +929,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
               containerRef={outerDivRef}
               ratios={currentRatios}
               onRatioChange={handleRatioChange}
+              onRegisterNudge={registerNudge}
             />
           ) : null}
         </div>

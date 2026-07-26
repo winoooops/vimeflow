@@ -19,6 +19,7 @@ import {
   SplitView,
   canClosePane,
   getSlotOrderedPaneIds,
+  resolvePaneTrackNudge,
   type SplitViewHandle,
 } from './SplitView'
 import type {
@@ -1584,5 +1585,48 @@ describe('SplitView - drag panes into slots (VIM-167)', () => {
     expect(
       within(emptySlot).getByRole('button', { name: 'add browser pane' })
     ).toBeInTheDocument()
+  })
+})
+
+describe('resolvePaneTrackNudge', () => {
+  const STEP = 40
+
+  test('a non-last track drives its own boundary and grows with +px', () => {
+    expect(resolvePaneTrackNudge(0, 2, true, STEP)).toEqual({
+      boundary: 0,
+      px: STEP,
+    })
+
+    expect(resolvePaneTrackNudge(0, 2, false, STEP)).toEqual({
+      boundary: 0,
+      px: -STEP,
+    })
+  })
+
+  /** The last track has no boundary of its own: it shares the previous one,
+   *  and growing means pushing that boundary AWAY — the sign flips. */
+  test('the last track shares the previous boundary with a flipped sign', () => {
+    expect(resolvePaneTrackNudge(1, 2, true, STEP)).toEqual({
+      boundary: 0,
+      px: -STEP,
+    })
+
+    expect(resolvePaneTrackNudge(2, 3, false, STEP)).toEqual({
+      boundary: 1,
+      px: STEP,
+    })
+  })
+
+  test('a middle track of three keeps its own boundary', () => {
+    expect(resolvePaneTrackNudge(1, 3, true, STEP)).toEqual({
+      boundary: 1,
+      px: STEP,
+    })
+  })
+
+  test('a single-track axis and out-of-range indices resolve to null', () => {
+    expect(resolvePaneTrackNudge(0, 1, true, STEP)).toBeNull()
+    expect(resolvePaneTrackNudge(-1, 2, true, STEP)).toBeNull()
+    expect(resolvePaneTrackNudge(2, 2, true, STEP)).toBeNull()
   })
 })
