@@ -38,6 +38,19 @@ export const runUntilChange = (spawnChild, probe, opts = {}) => {
     let graceTimer = null
     let killTimer = null
 
+    const terminate = (signal) => {
+      if (child.detached && child.pid && process.platform !== 'win32') {
+        try {
+          process.kill(-child.pid, signal)
+
+          return
+        } catch {
+          // Fall back to the direct child if its process group is already gone.
+        }
+      }
+      child.kill(signal)
+    }
+
     const stop = (reason, why) => {
       if (stopped) {
         return
@@ -45,10 +58,10 @@ export const runUntilChange = (spawnChild, probe, opts = {}) => {
       stopped = true
       stopReason = reason
       log(`run-until-change: ${why} — terminating`)
-      child.kill('SIGTERM')
+      terminate('SIGTERM')
       // SIGKILL backstop if SIGTERM is ignored — captured so cleanup() can cancel it
       // once the child exits, instead of holding the process (and the pool slot) 10s.
-      killTimer = timers.setTimeout(() => child.kill('SIGKILL'), 10000)
+      killTimer = timers.setTimeout(() => terminate('SIGKILL'), 10000)
     }
 
     const poll = timers.setInterval(() => {
@@ -87,6 +100,9 @@ export const runUntilChange = (spawnChild, probe, opts = {}) => {
     }
 
     child.on('exit', (code, signal) => {
+      if (stopped && child.detached) {
+        terminate('SIGKILL')
+      }
       cleanup()
       resolve({
         status: code ?? null,

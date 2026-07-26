@@ -12,6 +12,7 @@ const makeChild = () => {
 describe('runUntilChange', () => {
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   test('starts grace only after the watched probe changes', async () => {
@@ -70,5 +71,27 @@ describe('runUntilChange', () => {
       signal: 'SIGTERM',
       timedOut: true,
     })
+  })
+
+  test('terminates the detached fixer process group', async () => {
+    vi.useFakeTimers()
+    const child = makeChild()
+    child.detached = true
+    child.pid = 4242
+    const killGroup = vi.spyOn(process, 'kill').mockReturnValue(true)
+
+    const done = runUntilChange(
+      () => child,
+      () => 'origin-a',
+      { timeoutMs: 1000 }
+    )
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(killGroup).toHaveBeenCalledWith(-4242, 'SIGTERM')
+
+    child.emit('exit', null, 'SIGTERM')
+    await expect(done).resolves.toMatchObject({ killed: true, timedOut: true })
+    expect(killGroup).toHaveBeenCalledWith(-4242, 'SIGKILL')
+    expect(child.kill).not.toHaveBeenCalled()
   })
 })

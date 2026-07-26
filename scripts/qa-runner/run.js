@@ -608,6 +608,7 @@ const run = async (pr, live) => {
               cwd: wt,
               stdio: ['pipe', 'inherit', 'inherit'],
               env: childEnv,
+              detached: process.platform !== 'win32',
             }
           )
           child.stdin?.on('error', () => {
@@ -633,6 +634,7 @@ const run = async (pr, live) => {
             cwd: wt,
             stdio: 'inherit',
             env: childEnv,
+            detached: process.platform !== 'win32',
           }
         )
       },

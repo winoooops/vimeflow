@@ -291,7 +291,9 @@ const tick = (pr, config, reason) =>
 const pauseLabel = (st, maxNoops) =>
   st.pauseReason === 'dispatch_blocked'
     ? 'dispatch blocked'
-    : `${st.noopCount}/${maxNoops} failed`
+    : st.pauseReason === 'worker_ssm_unhealthy'
+      ? 'worker SSM unhealthy'
+      : `${st.noopCount}/${maxNoops} failed`
 
 const decisionStore = (pr) => readDecisionStore(decisionStorePath(pr))
 
@@ -518,9 +520,17 @@ export const runOne = async (pr, reason, deps) => {
     }
     const infraFailure = workerInfraFailure(tickResult)
     if (infraFailure) {
+      const terminal = infraFailure.category === 'worker_ssm_unhealthy'
+      if (terminal) {
+        state.update(pr, {
+          lastHeadSha: after.headSha,
+          pausedAt: now(),
+          pauseReason: infraFailure.category,
+        })
+      }
       events.emit(
         {
-          type: 'worker_infra_unhealthy',
+          type: terminal ? 'paused' : 'worker_infra_unhealthy',
           pr,
           sourceEvent: reason,
           category: infraFailure.category,
@@ -529,13 +539,18 @@ export const runOne = async (pr, reason, deps) => {
           signal: tickResult.signal,
           exitReason: tickResult.exitReason,
           logPath: tickResult.logPath,
-          retryMode: reason === 'poll' ? 'next poll tick' : 'daemon backoff',
-          terminal: false,
+          ...(terminal
+            ? {}
+            : {
+                retryMode:
+                  reason === 'poll' ? 'next poll tick' : 'daemon backoff',
+              }),
+          terminal,
         },
         after.vim
       )
 
-      return 'retry'
+      return terminal ? 'paused' : 'retry'
     }
     if (code !== 1) {
       // Transient (2) or a failed spawn (-1) — NOT a fixer stall. Retry next cycle

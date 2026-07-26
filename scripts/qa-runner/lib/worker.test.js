@@ -567,6 +567,56 @@ describe('runOne', () => {
     }
   })
 
+  test('pauses instead of retrying an unreachable SSM worker', async () => {
+    const deps = makeDeps({
+      snapshotExec: openPrSnapshotExec(),
+      tickRunner: vi.fn(async () => ({
+        code: 1,
+        signal: null,
+        exitReason:
+          'SSM command cmd-123 Failed (response -1) produced no output',
+        logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+      })),
+      state: {
+        has: vi.fn(() => true),
+        get: vi.fn(() => ({
+          roundCount: 1,
+          noopCount: 0,
+          lastHeadSha: 'abc123',
+          pausedAt: null,
+          pauseReason: null,
+        })),
+        forget: vi.fn(),
+        update: vi.fn(),
+      },
+    })
+
+    const outcome = await runOne(42, 'ci:workflow_run', deps)
+
+    expect(outcome).toBe('paused')
+    expect(deps.state.update).toHaveBeenCalledWith(42, {
+      lastHeadSha: 'abc123',
+      pausedAt: '2024-01-01T00:00:00.000Z',
+      pauseReason: 'worker_ssm_unhealthy',
+    })
+    expect(deps.events.emit).toHaveBeenCalledWith(
+      {
+        type: 'paused',
+        pr: 42,
+        sourceEvent: 'ci:workflow_run',
+        category: 'worker_ssm_unhealthy',
+        detail: 'worker SSM command failed before fixer output',
+        exitCode: 1,
+        signal: null,
+        exitReason:
+          'SSM command cmd-123 Failed (response -1) produced no output',
+        logPath: '/repo/scripts/qa-runner/logs/pr-42.log',
+        terminal: true,
+      },
+      'VIM-20'
+    )
+  })
+
   test('pauses repeated fixer stalls with explicit exit context', async () => {
     const deps = makeDeps({
       snapshotExec: openPrSnapshotExec(),
