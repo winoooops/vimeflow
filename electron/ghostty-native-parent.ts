@@ -593,10 +593,11 @@ export class GhosttyNativeParentController {
     // PTY data can arrive before the renderer has reported pane bounds, and
     // a freshly created surface holds its creation-default grid until the
     // settle window ends — writing history into either wraps it all at the
-    // wrong width. Keep a small tail and flush when the surface is ready.
+    // wrong width. Before the surface exists, keep a small tail; once the
+    // settle timer bounds the wait, preserve every chunk in that window.
     if (!state.surface || state.settleTimer !== null) {
       state.pendingData.push(payload.data)
-      if (state.pendingData.length > MAX_PENDING_CHUNKS) {
+      if (!state.surface && state.pendingData.length > MAX_PENDING_CHUNKS) {
         state.pendingData.shift()
       }
 
@@ -1300,6 +1301,12 @@ export class GhosttyNativeParentController {
       const pending = resizeState.pendingResize
       resizeState.pendingResize = null
       if (pending === null || !canForward()) {
+        return
+      }
+
+      if (resizeState.resizeInFlight) {
+        resizeState.pendingResize = pending
+
         return
       }
 
