@@ -310,6 +310,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
       killEphemeralPtys: vi.fn(),
       setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
+      getPtyReplay: vi.fn().mockResolvedValue(null),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,
         sessions: [],

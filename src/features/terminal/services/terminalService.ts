@@ -4,6 +4,7 @@ import type {
   PTYWriteParams,
   PTYResizeParams,
   PTYKillParams,
+  PtyReplay,
 } from '../types'
 import type {
   SessionList,
@@ -93,6 +94,17 @@ export interface ITerminalService {
    * List all sessions with their status (Alive or Exited)
    */
   listSessions(): Promise<SessionList>
+
+  /**
+   * Replay history for one live PTY, for a pane mounting against a session
+   * that is already running.
+   *
+   * `listSessions` only runs during startup restore, so a pane remounted
+   * later — a layout switch unmounts every pane the new layout has no slot
+   * for — would otherwise build its terminal surface with no history at all.
+   * Resolves `null` once the session is gone.
+   */
+  getPtyReplay(sessionId: string): Promise<PtyReplay | null>
 
   /**
    * Set the active session ID
@@ -415,6 +427,11 @@ export class MockTerminalService implements ITerminalService {
   // Get active sessions for testing
   getActiveSessions(): string[] {
     return Array.from(this.sessions.keys())
+  }
+
+  getPtyReplay(): Promise<PtyReplay | null> {
+    // Mock has no ring buffer to replay from
+    return Promise.resolve(null)
   }
 
   listSessions(): Promise<SessionList> {

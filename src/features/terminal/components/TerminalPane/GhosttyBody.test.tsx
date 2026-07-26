@@ -95,6 +95,7 @@ vi.mock('../../ptySessionMap', () => ({
 const createService = (): ITerminalService =>
   ({
     write: vi.fn(() => Promise.resolve()),
+    getPtyReplay: vi.fn(() => Promise.resolve(null)),
     onData: vi.fn(
       (
         listener: (
@@ -149,7 +150,10 @@ describe('GhosttyBody', () => {
         expect.objectContaining({ ...paneRef, visible: true })
       )
     })
-    expect(focusNativeGhostty).toHaveBeenCalledWith(paneRef)
+
+    expect(focusNativeGhostty).toHaveBeenCalledWith(
+      expect.objectContaining(paneRef)
+    )
 
     rerender(
       <GhosttyBody
@@ -165,7 +169,9 @@ describe('GhosttyBody', () => {
 
     unmount()
 
-    expect(destroyNativeGhostty).toHaveBeenCalledWith(paneRef)
+    expect(destroyNativeGhostty).toHaveBeenCalledWith(
+      expect.objectContaining(paneRef)
+    )
   })
 
   test('destroys the old native surface and attaches the rotated PTY id', async () => {
@@ -203,10 +209,9 @@ describe('GhosttyBody', () => {
     )
 
     await waitFor(() => {
-      expect(destroyNativeGhostty).toHaveBeenCalledWith({
-        sessionId: 'pty-old',
-        paneId: 'pane-1',
-      })
+      expect(destroyNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'pty-old', paneId: 'pane-1' })
+      )
 
       expect(updateNativeGhostty).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -686,10 +691,9 @@ describe('GhosttyBody', () => {
     unmount()
     await Promise.resolve()
 
-    expect(destroyNativeGhostty).toHaveBeenCalledWith({
-      sessionId: 'pty-1',
-      paneId: 'pane-1',
-    })
+    expect(destroyNativeGhostty).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'pty-1', paneId: 'pane-1' })
+    )
   })
 
   test('registers the pty session mapping while mounted', () => {
@@ -845,17 +849,72 @@ describe('GhosttyBody', () => {
     )
 
     await waitFor(() => {
-      expect(sendNativeGhosttyData).toHaveBeenCalledWith({
-        sessionId: 'pty-1',
-        paneId: 'pane-1',
-        data: 'historical output',
-      })
+      expect(sendNativeGhosttyData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          data: 'historical output',
+        })
+      )
     })
 
-    expect(sendNativeGhosttyData).toHaveBeenCalledWith({
-      sessionId: 'pty-1',
-      paneId: 'pane-1',
-      data: 'buffered output',
+    expect(sendNativeGhosttyData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        data: 'buffered output',
+      })
+    )
+  })
+
+  test('hydrates a remounting pane from getPtyReplay and holds live output behind it', async () => {
+    let resolveReplay:
+      | ((replay: { replayData: string; replayEndOffset: number }) => void)
+      | undefined
+    const service = createService()
+    vi.mocked(service.getPtyReplay).mockReturnValue(
+      new Promise((resolve) => {
+        resolveReplay = resolve
+      })
+    )
+
+    render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={service}
+      />
+    )
+
+    await waitFor(() => {
+      expect(service.getPtyReplay).toHaveBeenCalledWith('pty-1')
+      expect(outputListener).not.toBeNull()
+    })
+
+    // Live output while the replay is still in flight: a chunk the replay
+    // already covers, and the chunk that continues from its end.
+    act(() => {
+      outputListener?.('pty-1', 'stale chunk', 5, 11)
+      outputListener?.('pty-1', 'live chunk', 20, 10)
+    })
+
+    expect(sendNativeGhosttyData).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveReplay?.({ replayData: 'ring history', replayEndOffset: 20 })
+      await Promise.resolve()
+    })
+
+    // The surface receives history first, then only the live output the
+    // replay did not cover — never the stale chunk.
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(sendNativeGhosttyData)
+          .mock.calls.map(([request]) => request.data)
+      ).toEqual(['ring history', 'live chunk'])
     })
   })
 
@@ -890,11 +949,13 @@ describe('GhosttyBody', () => {
     )
 
     await waitFor(() => {
-      expect(sendNativeGhosttyData).toHaveBeenCalledWith({
-        sessionId: 'pty-1',
-        paneId: 'pane-1',
-        data: 'historical output',
-      })
+      expect(sendNativeGhosttyData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          data: 'historical output',
+        })
+      )
     })
 
     unmount()
@@ -991,11 +1052,13 @@ describe('GhosttyBody', () => {
     outputListener?.('pty-1', '\u001b]7;file:///repo/live\u0007', 0, 26)
 
     expect(onCwdChange).toHaveBeenCalledWith('/repo/live')
-    expect(sendNativeGhosttyData).toHaveBeenCalledWith({
-      sessionId: 'pty-1',
-      paneId: 'pane-1',
-      data: '\u001b]7;file:///repo/live\u0007',
-    })
+    expect(sendNativeGhosttyData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        data: '\u001b]7;file:///repo/live\u0007',
+      })
+    )
   })
 
   test('skips pane-ready drain events already covered by restored output', async () => {
@@ -1044,10 +1107,12 @@ describe('GhosttyBody', () => {
       data: 'buffered output',
     })
 
-    expect(sendNativeGhosttyData).toHaveBeenCalledWith({
-      sessionId: 'pty-1',
-      paneId: 'pane-1',
-      data: 'next output',
-    })
+    expect(sendNativeGhosttyData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'pty-1',
+        paneId: 'pane-1',
+        data: 'next output',
+      })
+    )
   })
 })

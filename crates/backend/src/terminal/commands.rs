@@ -9,7 +9,7 @@ use crate::debug::debug_log;
 use crate::runtime::EventSink;
 
 use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
-use super::state::{ManagedSession, PtyState, RingBuffer};
+use super::state::{ManagedSession, PtyState, RingBuffer, ALT_SCREEN_ENTER};
 use super::types::*;
 use super::utf8::Utf8ChunkDecoder;
 
@@ -224,6 +224,13 @@ pub(crate) async fn spawn_pty_inner(
     // contract to child TUIs without accepting arbitrary env from IPC.
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    // The app's terminal is unconditionally truecolor, so color-disabling
+    // variables inherited from however the app itself was launched (a CI
+    // runner, an automation harness piping stdout — wdio injects
+    // FORCE_COLOR=0) must not leak into the PTY and silently turn every
+    // TUI monochrome.
+    cmd.env_remove("NO_COLOR");
+    cmd.env_remove("FORCE_COLOR");
 
     // Ensure a UTF-8 locale for character handling. GUI launches frequently
     // inherit no LANG/LC_* (Terminal.app/iTerm2 set them; a dock/Finder or
@@ -506,7 +513,6 @@ pub(crate) fn resize_pty_inner(state: &PtyState, request: ResizePtyRequest) -> R
         request.rows,
         request.cols
     );
-
     state
         .resize(&request.session_id, request.rows, request.cols)
         .map_err(|e| e.to_string())
@@ -735,6 +741,63 @@ pub(crate) fn kill_ephemeral_ptys_inner(state: &PtyState) -> Vec<String> {
     killed
 }
 
+/// Snapshot a live session's ring as replayable text plus the offset the
+/// replay ends at.
+///
+/// Replay everything the live read loop has already published as text, but
+/// stop at the same point it did. If the loop is mid-way through a character
+/// split across reads, those last few bytes haven't been emitted yet — leave
+/// them out so this replay ends exactly where the next live event begins.
+/// Otherwise the two would overlap and the frontend would drop the event that
+/// finishes the character, losing it for good.
+fn replay_snapshot(ring: &Mutex<RingBuffer>) -> (String, u64) {
+    let ring_guard = ring.lock().expect("ring poisoned");
+    let bytes = ring_guard.bytes_snapshot();
+    let end_offset = ring_guard.end_offset();
+    let pending = ring_guard.pending_utf8_carry();
+    let alt_screen = ring_guard.alt_screen();
+    drop(ring_guard);
+
+    let published = bytes.len().saturating_sub(pending);
+    let replayed = String::from_utf8_lossy(&bytes[..published]).to_string();
+    // A pane that was unmounted (Z mode, layout switch) comes back on a BRAND
+    // NEW terminal surface holding only this replay. The agent's one-time
+    // alt-screen enter has long since scrolled out of the ring, so without
+    // re-entering here the surface runs the agent's alt-screen frames on the
+    // primary screen — which reflows and scrolls on resize, jumping the
+    // pane's bottom bar on every shrink. Skip it when the slice still carries
+    // its own enter, which would clear the screen a second time.
+    let replay_data = if alt_screen && !replayed.contains(ALT_SCREEN_ENTER) {
+        format!("{ALT_SCREEN_ENTER}{replayed}")
+    } else {
+        replayed
+    };
+
+    (replay_data, end_offset - pending as u64)
+}
+
+/// Replay snapshot for one live session, for a pane that is mounting against
+/// a PTY that is already running.
+///
+/// `list_sessions` only runs at startup, so a pane remounted later (a layout
+/// switch unmounts every pane the new layout has no slot for) would otherwise
+/// build its surface with no history at all and wait for the agent's next
+/// redraw. Returns `None` once the session is gone.
+pub fn get_pty_replay(state: &PtyState, session_id: &SessionId) -> Option<PtyReplay> {
+    let ring = {
+        let sessions_lock = state.inner_sessions().lock().expect("poisoned");
+        sessions_lock
+            .get(session_id)
+            .map(|session| Arc::clone(&session.ring))
+    }?;
+    let (replay_data, replay_end_offset) = replay_snapshot(&ring);
+
+    Some(PtyReplay {
+        replay_data,
+        replay_end_offset,
+    })
+}
+
 /// List all sessions with their current status and replay data
 pub(crate) fn list_sessions_inner(
     state: &PtyState,
@@ -777,24 +840,11 @@ pub(crate) fn list_sessions_inner(
             };
 
             if let Some((pid, ring)) = live_session {
-                let ring_guard = ring.lock().expect("ring poisoned");
-                let bytes = ring_guard.bytes_snapshot();
-                let end_offset = ring_guard.end_offset();
-                let pending = ring_guard.pending_utf8_carry();
-                drop(ring_guard);
-                // Replay everything the live read loop has already published
-                // as text, but stop at the same point it did. If the loop is
-                // mid-way through a character split across reads, those last
-                // few bytes haven't been emitted yet — leave them out so this
-                // replay ends exactly where the next live event begins.
-                // Otherwise the two would overlap and the frontend would drop
-                // the event that finishes the character, losing it for good.
-                let published = bytes.len().saturating_sub(pending);
-                let replay_data = String::from_utf8_lossy(&bytes[..published]).to_string();
+                let (replay_data, replay_end_offset) = replay_snapshot(&ring);
                 SessionStatus::Alive {
                     pid,
                     replay_data,
-                    replay_end_offset: end_offset - pending as u64,
+                    replay_end_offset,
                 }
             } else {
                 // Lazy reconciliation: cache says alive but PtyState
@@ -1358,6 +1408,46 @@ mod tests {
         let events = Arc::new(crate::runtime::FakeEventSink::new());
 
         (PtyState::new(), cache, events, temp_dir)
+    }
+
+    /// The agent entered the alternate screen long ago and its own redraws
+    /// pushed the toggle out of the ring: a replay onto a brand-new surface
+    /// must re-enter, or the restored frames run on the primary screen and
+    /// reflow on every resize.
+    #[test]
+    fn replay_snapshot_re_enters_a_scrolled_out_alt_screen() {
+        let mut ring = RingBuffer::new(16);
+        ring.append(ALT_SCREEN_ENTER.as_bytes());
+        ring.append(b"0123456789abcdef");
+        let ring = Mutex::new(ring);
+
+        let (replay, _) = replay_snapshot(&ring);
+        assert!(replay.starts_with(ALT_SCREEN_ENTER));
+        assert!(replay.ends_with("abcdef"));
+    }
+
+    /// The slice still carries its own enter — prepending a second one would
+    /// clear the restored screen again.
+    #[test]
+    fn replay_snapshot_keeps_a_single_alt_screen_enter() {
+        let mut ring = RingBuffer::new(64);
+        ring.append(b"\x1b[?1049hframe");
+        let ring = Mutex::new(ring);
+
+        let (replay, _) = replay_snapshot(&ring);
+        assert_eq!(replay.matches(ALT_SCREEN_ENTER).count(), 1);
+    }
+
+    /// A primary-screen session replays untouched.
+    #[test]
+    fn replay_snapshot_leaves_primary_screen_alone() {
+        let mut ring = RingBuffer::new(64);
+        ring.append(b"plain shell output");
+        let ring = Mutex::new(ring);
+
+        let (replay, end) = replay_snapshot(&ring);
+        assert_eq!(replay, "plain shell output");
+        assert_eq!(end, 18);
     }
 
     #[test]

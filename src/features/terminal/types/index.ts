@@ -194,6 +194,14 @@ export interface RestoreData {
   bufferedEvents: { data: string; offsetStart: number; byteLen: number }[]
 }
 
+/** Replay history for one live PTY, fetched when a pane mounts against a
+ * session that is already running. The `number` offset matches
+ * `RestoreData` — Rust serializes the u64 as a JSON number. */
+export interface PtyReplay {
+  replayData: string
+  replayEndOffset: number
+}
+
 /** Handler that receives a buffered PTY event during pane drain. */
 export type PaneEventHandler = (
   data: string,

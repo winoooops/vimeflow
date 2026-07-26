@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-19
-ref_count: 88
+last_updated: 2026-07-26
+ref_count: 89
 ---
 
 # Async Race Conditions
@@ -1054,4 +1054,35 @@ prevent showing previous data.
   queued unmatched nonce-bearing events, and replayed them when pending review
   or finding-thread state revisions changed. Added hook regressions for both
   comment replies and finding-thread replies that arrive before hydration.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 96. Native Ghostty settle buffering dropped output tails
+
+- **Source:** github-codex-connector | PR #742 round 1 | 2026-07-26
+- **Severity:** P1 / HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Primary PTY output arriving during the native Ghostty surface
+  settle window was buffered behind a timer but still used the pre-surface
+  64-chunk tail cap. A remounted pane that received more than 64 chunks before
+  the 120 ms settle expiry could drop hydration or live output before Ghostty
+  ever received it.
+- **Fix:** Kept the tail cap only for the unbounded pre-surface wait, and
+  preserved every chunk once the surface exists and the settle timer bounds the
+  delay. Added a regression test that sends 70 chunks during the settle window
+  and verifies the first and last chunks flush in order.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 97. Native Ghostty resize throttle bypassed the in-flight gate
+
+- **Source:** github-codex-connector | PR #742 round 1 | 2026-07-26
+- **Severity:** P1 / HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native Ghostty resize throttle forwarded its trailing size
+  directly when the timer fired. If the first `resize_pty` acknowledgement was
+  still pending, the timer could start a second resize request and let the first
+  completion clear the shared in-flight flag while the second was still running.
+- **Fix:** Made the throttle expiry requeue the pending size when a resize is
+  in flight, leaving the acknowledgement path to flush the newest pending grid
+  after the gate is released. Added a regression test with a delayed sidecar
+  acknowledgement to prove no second request starts before the first resolves.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
