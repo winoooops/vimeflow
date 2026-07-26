@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn invalid_findings_are_omitted_without_discarding_valid_findings() {
         let t = block(
-            r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[{"scope":"range","path":"a.ts","side":"additions","line":11,"category":"change","text":"missing range fields"},{"scope":"line","path":"a.ts","side":"additions","line":42,"category":"bug","text":"valid"},{"scope":"line","path":"b.ts","side":"deletions","line":"8","category":"bug","text":"wrong line type"}]}"#,
+            r#"{"v":1,"nonce":"n","reviewer":"codex","findings":[{"scope":"range","path":"a.ts","side":"additions","startLine":11,"category":"change","text":"missing range fields"},{"scope":"line","path":"a.ts","side":"additions","line":42,"category":"bug","text":"valid"},{"scope":"line","path":"b.ts","side":"deletions","line":"8","category":"bug","text":"wrong line type"}]}"#,
         );
 
         match extract_agent_review(&t) {

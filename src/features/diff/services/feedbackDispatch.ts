@@ -213,6 +213,7 @@ export const formatReviewRequest = (
   files: ReviewRequestFile[],
   nonce: string
 ): string => {
+  const cleanNonce = stripControls(nonce)
   const unstaged = files.filter((file) => !file.staged)
   const staged = files.filter((file) => file.staged)
 
@@ -234,7 +235,7 @@ export const formatReviewRequest = (
     '>',
     delegatedReviewPrompt
       .trimEnd()
-      .replace('{{NONCE}}', () => stripControls(nonce)),
+      .replace(/\{\{NONCE\}\}/g, cleanNonce),
   ].join('\n')
 }
 
