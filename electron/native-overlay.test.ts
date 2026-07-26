@@ -269,7 +269,7 @@ const activityPopoverRequest = {
   payload: {
     kind: 'popover',
     popover: 'activity',
-    ariaLabel: 'BASH activity details',
+    ariaLabel: 'BASH trace details',
     event: {
       id: 'activity-1',
       kind: 'bash',
@@ -277,6 +277,7 @@ const activityPopoverRequest = {
       status: 'done',
       body: 'npm test',
       tool: 'Bash',
+      label: 'BASH',
       durationMs: 1200,
     },
   },
@@ -1263,6 +1264,10 @@ describe('NativeOverlayController', () => {
       false
     )
 
+    expect(
+      controller.hasActiveShortcutBlockingOverlaySurface(ownerWindow)
+    ).toBe(false)
+
     const tooltipOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
       tooltipRequest
@@ -1287,6 +1292,10 @@ describe('NativeOverlayController', () => {
       true
     )
 
+    expect(
+      controller.hasActiveShortcutBlockingOverlaySurface(ownerWindow)
+    ).toBe(true)
+
     handler(NATIVE_OVERLAY_CLOSE)(
       { sender: electronMock.owner.webContents },
       { surfaceId: dialogRequest.surfaceId, reason: 'renderer' }
@@ -1295,6 +1304,24 @@ describe('NativeOverlayController', () => {
     expect(controller.hasActiveInteractiveOverlaySurface(ownerWindow)).toBe(
       false
     )
+
+    const popoverOpenPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      activityPopoverRequest
+    )
+    await acknowledgeOverlayReady(
+      dialogWindow,
+      activityPopoverRequest.surfaceId
+    )
+    await popoverOpenPromise
+
+    expect(controller.hasActiveInteractiveOverlaySurface(ownerWindow)).toBe(
+      true
+    )
+
+    expect(
+      controller.hasActiveShortcutBlockingOverlaySurface(ownerWindow)
+    ).toBe(false)
   })
 
   test('does not hide a newer active overlay when an older render times out', async () => {

@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-15
-ref_count: 12
+last_updated: 2026-07-26
+ref_count: 15
 ---
 
 # Parser Resilience
@@ -338,3 +338,48 @@ true` and drop the chunk.
 - **Finding:** `extract_agent_reply` selected the last complete block by finding the rightmost close marker and then the nearest preceding open marker. If a valid final JSON payload mentioned `<<<VIMEFLOW_REPLY` inside a text field, that embedded substring became the candidate opener and the parser sliced malformed tail JSON, losing an otherwise valid reply.
 - **Fix:** Replaced the two-sided `rfind` heuristic with a forward scan that pairs each open marker with its nearest following close, records complete blocks, and validates the last recorded block. Added a regression test where the final structured reply text quotes the open marker.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 24. Typed finding-array deserialization let one malformed child discard valid siblings
+
+- **Source:** local-codex | VIM-370 pre-PR review | 2026-07-20
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/review.rs`
+- **Finding:** The delegated-review block used `Vec<FindingDto>`, so Serde rejected the entire block when any array member was not an object or carried a wrong-typed field. One malformed range could therefore discard unrelated valid findings and force the frontend to render the whole response as an off-file note.
+- **Fix:** Deserialize finding members as `serde_json::Value`, validate each member independently, retain valid siblings, and report the omitted-member count through the typed review event. Regression coverage mixes missing range fields and a wrong-typed line with a valid line finding, proving only the malformed members are omitted.
+- **Commit:** same commit as this entry
+
+### 25. Partial parser salvage compacted stable finding ordinals
+
+- **Source:** github-codex-connector | PR #716 round 1 | 2026-07-20
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/review.rs`, `src/features/diff/hooks/useAgentReview.ts`
+- **Finding:** Omitting malformed entries compacted the valid findings array, and the frontend rebuilt reply-thread ordinals from that compacted position. A later `target: "finding"` reply still used the finding's original position in the review block, so it could attach to the wrong finding or disappear.
+- **Fix:** Preserve the original 1-based array position as a typed `ordinal` while validating each finding, carry it through the generated binding, and key frontend thread targets from that value. Regression coverage places an invalid entry before a valid finding and verifies the valid thread remains addressable as finding 2.
+- **Commit:** same commit as this entry
+
+### 26. Promoted code-mode exec commands kept opaque wrapper arguments
+
+- **Source:** github-codex-connector | PR #720 round 1 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex code-mode `custom_tool_call` records that contained only `tools.exec_command(...)` were promoted to `exec_command`, but their activity-card args still came from the raw JavaScript cell input. The UI rendered a Bash activity with a `$` prompt followed by wrapper code such as `const result = await tools.exec_command({ cmd: 'git status' })` instead of the actual shell command.
+- **Fix:** Reused the JavaScript token walker to extract literal `cmd` or `command` fields from nested `tools.exec_command({...})` calls, including simple string const aliases, before falling back to the raw custom input summary. Regression coverage pins direct parser extraction and verifies promoted code-mode exec events emit `args: "false"` for both running and completed activity events.
+- **Commit:** same commit as this entry
+
+### 27. Promoted code-mode apply_patch kept escaped JavaScript wrapper arguments
+
+- **Source:** github-codex-connector | PR #720 round 2 | 2026-07-22
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex code-mode `custom_tool_call` records that contained only `tools.apply_patch(...)` were promoted to `apply_patch`, but the activity-card args and test-file classifier still read the raw JavaScript cell input. Because the patch text lived inside an escaped string literal, the path extractor never saw `*** Update File:` lines, so the UI could show wrapper code instead of the patched path and fail to mark test-file patches correctly.
+- **Fix:** Added a narrow `tools.apply_patch(...)` string-argument extractor that reuses the existing JavaScript token walker, decodes inline string literals or simple const aliases, and feeds the decoded patch text back through `extract_patch_paths` for both args and `is_test_file`. Regression coverage pins direct extraction and verifies a promoted code-mode patch to `src/App.test.tsx` emits readable path args and `isTestFile: true` for running and completed activity events.
+- **Commit:** same commit as this entry
+
+### 28. JavaScript string decoder corrupted valid hex and Unicode escapes
+
+- **Source:** github-codex-connector | PR #740 round 1 | 2026-07-26
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** The Codex code-mode JavaScript string decoder only handled a small escape table and treated all other escape introducers as literal characters after dropping the backslash. Valid `\xHH`, `\uHHHH`, and `\u{...}` string literals in `exec_command` args, workdirs, or `apply_patch` text were reconstructed incorrectly.
+- **Fix:** Added explicit hex, fixed-width Unicode, braced Unicode, and UTF-16 surrogate-pair decoding. Malformed hex/unicode forms now make the extractor abstain instead of returning corrupted text, with regression coverage for command extraction and patch-path extraction.
+- **Commit:** same commit as this entry

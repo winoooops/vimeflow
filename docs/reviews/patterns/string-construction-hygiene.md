@@ -2,8 +2,8 @@
 id: string-construction-hygiene
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-19
-ref_count: 1
+last_updated: 2026-07-26
+ref_count: 2
 ---
 
 # String Construction Hygiene
@@ -35,4 +35,13 @@ trim the accumulator before interpolation.
 - **File:** `crates/backend/src/runtime/state.rs`
 - **Finding:** `e2e_start_kimi_watcher` wrote `session_index.jsonl` with `format!("{{\"sessionId\":\"{}\",\"sessionDir\":\"{}\",\"workDir\":\"{}\"}}\n", ...)`. If the working directory contained `"` or `\\`, the JSONL line became malformed and the Kimi locator silently failed to resolve the seeded wire file.
 - **Fix:** Replaced manual interpolation with `serde_json::json!({"sessionId": session_dir_name, "sessionDir": ..., "workDir": cwd}).to_string()` followed by a newline.
+- **Commit:** same commit as this entry
+
+### 3. Single-occurrence placeholder replacement left structured nonce stale
+
+- **Source:** github-codex-connector | PR #740 round 1 | 2026-07-26
+- **Severity:** P1 / HIGH
+- **File:** `src/features/diff/services/feedbackDispatch.ts`
+- **Finding:** `formatReviewRequest` used single-occurrence string replacement for `{{NONCE}}` even though the delegated review prompt contains both a follow-up example and the final `VIMEFLOW_REVIEW` block. The final block could retain the literal placeholder and be ignored by the nonce gate.
+- **Fix:** Sanitized the nonce once, replaced every placeholder with an ES2020-compatible global regex, and added a regression assertion that the formatted prompt contains no `{{NONCE}}` marker.
 - **Commit:** same commit as this entry

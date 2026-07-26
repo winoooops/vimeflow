@@ -44,6 +44,9 @@ interface AgentStatusPanelProps {
   reservoirSwell?: SwellVariant
   snapshotKey?: string | null
   reserveWindowControls?: boolean
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
 }
 
 // Exported so WorkspaceView can target this width as the
@@ -310,6 +313,9 @@ export const AgentStatusPanel = ({
   reservoirSwell = 'soft-mound',
   snapshotKey = null,
   reserveWindowControls = false,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
 }: AgentStatusPanelProps): ReactElement => {
   const bodyState = useRetainedBodyState({
     agentStatus,
@@ -604,9 +610,20 @@ export const AgentStatusPanel = ({
                   diff={liveDiff}
                   pathLabel={liveFile?.path}
                   onActivate={canActivate ? handleLiveActivate : undefined}
+                  showDiffShortcut={showDiffShortcut}
+                  showDiffAriaShortcut={showDiffAriaShortcut}
+                  matchesShowDiffShortcut={matchesShowDiffShortcut}
                 />
               )}
-              <ActivityFeed events={feedEvents} />
+              <ActivityFeed
+                events={feedEvents}
+                changedFiles={effectiveFiles}
+                cwd={bodyCwd}
+                onOpenDiff={onOpenDiff}
+                showDiffShortcut={showDiffShortcut}
+                showDiffAriaShortcut={showDiffAriaShortcut}
+                matchesShowDiffShortcut={matchesShowDiffShortcut}
+              />
               <FilesChanged
                 files={effectiveFiles}
                 loading={effectiveLoading}

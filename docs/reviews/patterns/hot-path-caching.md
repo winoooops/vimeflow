@@ -2,8 +2,8 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-07-21
-ref_count: 5
+last_updated: 2026-07-26
+ref_count: 6
 ---
 
 # Hot-Path Caching
@@ -129,4 +129,13 @@ feature.
 - **File:** `crates/backend/src/agent/adapter/kimi/locator.rs`
 - **Finding:** The process-start cache stored the first lookup result even when the platform source returned `None`. A transient `/proc` or macOS `ps` miss could therefore disable process-owned session tie-breaking for the locator lifetime and fall back to activity-based selection for same-cwd Kimi sessions.
 - **Fix:** Changed the cache to store only successful `ProcessStartEvidence` values, leaving misses retryable on the next poll. Added a regression test proving a missing first `/proc` read does not prevent a later successful process-start resolution from being used.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Codex custom apply-patch arguments reparsed per helper
+
+- **Source:** github-claude | PR #740 round 2 | 2026-07-26
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Code-mode `apply_patch` custom tool calls computed patch paths separately for argument summarization and test-file detection. Each helper invocation reran JS tokenization, const-binding tracking, and string decoding over the same embedded patch body.
+- **Fix:** Compute the patch path list once when starting the custom tool call, then pass the shared slice into both the summary helper and the test-file classifier.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

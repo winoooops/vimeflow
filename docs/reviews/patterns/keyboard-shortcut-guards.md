@@ -3,7 +3,7 @@ id: keyboard-shortcut-guards
 category: keyboard-shortcuts
 created: 2026-05-18
 last_updated: 2026-07-26
-ref_count: 17
+ref_count: 18
 ---
 
 # Keyboard Shortcut Guards
@@ -590,3 +590,33 @@ against three classes of false-fire:
   Added a SplitView regression that dispatches the resize chord from a recorder
   target and verifies the split ratio does not change.
 - **Commit:** same commit as this entry
+ 
+### 45. Tooltip shortcut bypassed editor and terminal focus guards
+
+- **Source:** github-claude | PR #726 round 1 | 2026-07-22
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ActivityEvent.tsx`
+- **Finding:** The activity trace tooltip installed a capture-phase document
+  shortcut for the rebindable Show diff action, but it only checked whether the
+  tooltip was open. A hover-open tooltip could therefore react to the focus-diff
+  chord while keyboard focus remained in CodeMirror or the terminal, bypassing
+  the same guard policy used by the global dock shortcut owner.
+- **Fix:** Added a local guard that skips the tooltip shortcut when either the
+  keyboard event target or `document.activeElement` is inside `.cm-editor` or
+  the terminal container, with regression coverage for both focused surfaces.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 46. Independently open trace tooltips shared one global shortcut
+
+- **Source:** github-claude | PR #740 round 1 | 2026-07-26
+- **Severity:** MEDIUM
+- **File:** `src/features/agent-status/components/ActivityEvent.tsx`
+- **Finding:** Each trace row tooltip owned its own capture-phase document
+  listener for the Show diff shortcut. A row opened by hover and another row
+  opened by keyboard focus could therefore both handle one shortcut event,
+  dispatching two different file diffs in the same keypress.
+- **Fix:** Moved shortcut ownership coordination to `ActivityFeed` with a
+  single active tooltip owner id. `ActivityEvent` keeps the local listener and
+  editor/terminal guards, but only the parent-designated owner installs and
+  responds to the document shortcut.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

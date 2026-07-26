@@ -1243,6 +1243,7 @@ const NativeOverlayActivityPopover = ({
     request,
     close,
   })
+  const showDiffActionId = request.payload.showDiffActionId
 
   return (
     <>
@@ -1281,7 +1282,22 @@ const NativeOverlayActivityPopover = ({
         aria-label={request.payload.ariaLabel}
         className={ACTIVITY_CARD_SURFACE}
       >
-        <NativeOverlayActivityCard event={request.payload.event} now={now} />
+        <NativeOverlayActivityCard
+          event={request.payload.event}
+          now={now}
+          showDiffShortcut={request.payload.showDiffShortcut}
+          showDiffAriaShortcut={request.payload.showDiffAriaShortcut}
+          onShowDiff={
+            showDiffActionId === undefined
+              ? undefined
+              : (): void => {
+                  void nativeOverlayHostBridge()?.action({
+                    surfaceId: request.surfaceId,
+                    actionId: showDiffActionId,
+                  })
+                }
+          }
+        />
       </Popover>
     </>
   )
