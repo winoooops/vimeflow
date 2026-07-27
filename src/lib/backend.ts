@@ -48,6 +48,19 @@ export interface BackendApi {
   setKeymapCaptureActive?: (active: boolean) => void
   e2e?: {
     dispatchCommandPaletteShortcut: () => Promise<boolean>
+    /** Visible grid of a native Ghostty pane, rows joined by '\n'. Null when
+     *  the pane has no live surface. Test-only — the Metal-backed NSView is
+     *  invisible to the DOM and to WebDriver screenshots. */
+    readGhosttyGrid: (request: {
+      sessionId: string
+      paneId: string
+    }) => Promise<string | null>
+    /** Fingerprint of the presented frame — advances when a new frame hits
+     *  the screen. Test-only. */
+    readGhosttyPresentation: (request: {
+      sessionId: string
+      paneId: string
+    }) => Promise<string | null>
   }
 
   settings?: SettingsBridge

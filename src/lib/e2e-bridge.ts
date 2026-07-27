@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty ghostty
 import type { Terminal } from '@xterm/xterm'
 import { __dispatchBackendEventForE2e, invoke } from './backend'
 import { getAllPtySessionIds } from '../features/terminal/ptySessionMap'
@@ -162,6 +163,52 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
+/// Visible grid of a native Ghostty pane, rows joined by '\n'.
+///
+/// `readPaneBuffer` above only sees xterm.js. On the macOS native path the
+/// terminal is a Metal-backed NSView with no DOM presence, so a spec that
+/// wants to know what the terminal actually holds has to ask main, which
+/// asks the Swift bridge. Pass a `ptyId` to pick one pane of a split.
+export async function readGhosttyGridForE2e(
+  ptyId?: string
+): Promise<string | null> {
+  const selector = ptyId
+    ? `[data-testid="native-ghostty-pane"][data-pty-id="${CSS.escape(ptyId)}"]`
+    : '[data-testid="native-ghostty-pane"]'
+  const pane = document.querySelector<HTMLElement>(selector)
+  const sessionId = pane?.dataset.ptyId
+  const paneId = pane?.dataset.paneId
+  if (!sessionId || !paneId) {
+    return null
+  }
+
+  return (
+    (await window.vimeflow?.e2e?.readGhosttyGrid({ sessionId, paneId })) ?? null
+  )
+}
+
+/// Presentation fingerprint twin of `readGhosttyGridForE2e`.
+export async function readGhosttyPresentationForE2e(
+  ptyId?: string
+): Promise<string | null> {
+  const selector = ptyId
+    ? `[data-testid="native-ghostty-pane"][data-pty-id="${CSS.escape(ptyId)}"]`
+    : '[data-testid="native-ghostty-pane"]'
+  const pane = document.querySelector<HTMLElement>(selector)
+  const sessionId = pane?.dataset.ptyId
+  const paneId = pane?.dataset.paneId
+  if (!sessionId || !paneId) {
+    return null
+  }
+
+  return (
+    (await window.vimeflow?.e2e?.readGhosttyPresentation({
+      sessionId,
+      paneId,
+    })) ?? null
+  )
+}
+
 export async function dispatchCommandPaletteShortcutForE2e(): Promise<boolean> {
   const handledByElectron =
     await window.vimeflow?.e2e?.dispatchCommandPaletteShortcut()
@@ -213,6 +260,8 @@ if (import.meta.env.VITE_E2E) {
     listActivePtySessions: async (): Promise<string[]> =>
       invoke<string[]>('list_active_pty_sessions'),
     dispatchCommandPaletteShortcut: dispatchCommandPaletteShortcutForE2e,
+    readGhosttyGrid: readGhosttyGridForE2e,
+    readGhosttyPresentation: readGhosttyPresentationForE2e,
     startBrowserPaneBoundsCapture,
     clearBrowserPaneBoundsCaptures,
     stopBrowserPaneBoundsCapture,

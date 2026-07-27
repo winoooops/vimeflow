@@ -49,6 +49,8 @@ import {
 import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_PRESENTATION_PROBE,
+  GHOSTTY_NATIVE_READ_GRID,
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_SECONDARY_ATTACH,
   GHOSTTY_NATIVE_SECONDARY_DATA,
@@ -188,6 +190,18 @@ const e2eBridge =
             ipcRenderer.invoke(
               E2E_COMMAND_PALETTE_SHORTCUT
             ) as Promise<boolean>,
+          // The native Ghostty surface paints through Metal into an NSView,
+          // so neither the DOM nor a WebDriver screenshot can see it. This
+          // is how a spec asserts on what the terminal actually holds.
+          readGhosttyGrid: (request: unknown): Promise<string | null> =>
+            ipcRenderer.invoke(GHOSTTY_NATIVE_READ_GRID, request) as Promise<
+              string | null
+            >,
+          readGhosttyPresentation: (request: unknown): Promise<string | null> =>
+            ipcRenderer.invoke(
+              GHOSTTY_NATIVE_PRESENTATION_PROBE,
+              request
+            ) as Promise<string | null>,
         },
       }
     : {}

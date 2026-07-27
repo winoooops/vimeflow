@@ -8,6 +8,8 @@ import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
 import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_PRESENTATION_PROBE,
+  GHOSTTY_NATIVE_READ_GRID,
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_SECONDARY_ATTACH,
   GHOSTTY_NATIVE_SECONDARY_DATA,
@@ -44,6 +46,8 @@ interface GhosttyNativePayloadByKind {
   data: GhosttyNativeDataRequest
   focus: GhosttyNativePaneRequest
   destroy: GhosttyNativePaneRequest
+  readGrid: GhosttyNativePaneRequest
+  presentationProbe: GhosttyNativePaneRequest
   secondaryAttach: GhosttyNativeSecondaryAttachRequest
   secondaryData: GhosttyNativeSecondaryDataRequest
   secondaryFocus: GhosttyNativeSecondaryRequest
@@ -87,6 +91,9 @@ interface GhosttyNativeParentAddon {
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
+  // Test-only grid reader; absent on addons built before it was added.
+  readGrid?: (surface: GhosttyNativeSurface) => string | null
+  readPresentationProbe?: (surface: GhosttyNativeSurface) => string | null
   destroy: (surface: GhosttyNativeSurface) => void
   addSecondary?: (
     surface: GhosttyNativeSurface,
@@ -347,6 +354,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
       return typeof value.data === 'string'
     case 'focus':
     case 'destroy':
+    case 'readGrid':
+    case 'presentationProbe':
       return true
     case 'secondaryFocus':
     case 'secondaryRemove':
@@ -449,6 +458,16 @@ export class GhosttyNativeParentController {
 
     ipcMain.handle(GHOSTTY_NATIVE_DESTROY, (_event, payload) =>
       this.destroy(requireNativePayload('destroy', payload))
+    )
+
+    ipcMain.handle(GHOSTTY_NATIVE_READ_GRID, (_event, payload) =>
+      this.readGrid(requireNativePayload('readGrid', payload))
+    )
+
+    ipcMain.handle(GHOSTTY_NATIVE_PRESENTATION_PROBE, (_event, payload) =>
+      this.readPresentationProbe(
+        requireNativePayload('presentationProbe', payload)
+      )
     )
 
     ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_ATTACH, (event, payload) =>
@@ -622,6 +641,43 @@ export class GhosttyNativeParentController {
     addon.write(state.surface, payload.data)
 
     return { enabled: true }
+  }
+
+  /** Test-only. Returns null when the pane has no live surface. */
+  private readPresentationProbe(
+    payload: GhosttyNativePaneRequest
+  ): string | null {
+    if (!this.enabled()) {
+      return null
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (!state?.surface) {
+      return null
+    }
+
+    return (
+      this.getOptionalAddon()?.readPresentationProbe?.(state.surface) ?? null
+    )
+  }
+
+  /** Test-only. Returns null when the pane has no live surface. */
+  private readGrid(payload: GhosttyNativePaneRequest): string | null {
+    if (!this.enabled()) {
+      return null
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon) {
+      return null
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (!state?.surface) {
+      return null
+    }
+
+    return addon.readGrid?.(state.surface) ?? null
   }
 
   private focus(payload: GhosttyNativePaneRequest): { enabled: boolean } {
