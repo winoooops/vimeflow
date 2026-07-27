@@ -117,6 +117,7 @@ interface GhosttyNativeParentDeps {
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
   packaged?: boolean
+  allowE2eIpc?: boolean
   resourcesPath?: string
   addon?: GhosttyNativeParentAddon
   inputBlocked?: (win: BrowserWindow) => boolean
@@ -401,6 +402,8 @@ export class GhosttyNativeParentController {
 
   private readonly packaged: boolean
 
+  private readonly allowE2eIpc: boolean
+
   private readonly nativeParentDir: string
 
   private readonly inputBlocked: (win: BrowserWindow) => boolean
@@ -422,6 +425,7 @@ export class GhosttyNativeParentController {
     this.platform = deps.platform ?? process.platform
     this.env = deps.env ?? process.env
     this.packaged = deps.packaged ?? false
+    this.allowE2eIpc = deps.allowE2eIpc ?? false
     this.nativeParentDir = nativeParentDir(
       this.packaged,
       deps.resourcesPath ?? process.resourcesPath
@@ -460,15 +464,17 @@ export class GhosttyNativeParentController {
       this.destroy(requireNativePayload('destroy', payload))
     )
 
-    ipcMain.handle(GHOSTTY_NATIVE_READ_GRID, (_event, payload) =>
-      this.readGrid(requireNativePayload('readGrid', payload))
-    )
-
-    ipcMain.handle(GHOSTTY_NATIVE_PRESENTATION_PROBE, (_event, payload) =>
-      this.readPresentationProbe(
-        requireNativePayload('presentationProbe', payload)
+    if (this.allowE2eIpc) {
+      ipcMain.handle(GHOSTTY_NATIVE_READ_GRID, (_event, payload) =>
+        this.readGrid(requireNativePayload('readGrid', payload))
       )
-    )
+
+      ipcMain.handle(GHOSTTY_NATIVE_PRESENTATION_PROBE, (_event, payload) =>
+        this.readPresentationProbe(
+          requireNativePayload('presentationProbe', payload)
+        )
+      )
+    }
 
     ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_ATTACH, (event, payload) =>
       this.attachSecondary(

@@ -552,6 +552,8 @@ const setupApp = async (): Promise<void> => {
   browserPaneController = setupBrowserPaneIpc()
   ghosttyNativeController?.dispose()
 
+  const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
+
   const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
     process.platform,
     process.env,
@@ -566,6 +568,7 @@ const setupApp = async (): Promise<void> => {
     ghosttyNativeController = setupGhosttyNativeParent({
       sidecar: spawnedSidecar,
       packaged: app.isPackaged,
+      allowE2eIpc: allowE2eBackendMethods,
       inputBlocked: (win) =>
         nativeOverlayController?.hasActiveInteractiveOverlaySurface(win) ===
         true,
@@ -621,7 +624,6 @@ const setupApp = async (): Promise<void> => {
       console.warn('Workspace flush failed during teardown', error)
     },
   })
-  const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
 
   ipcMain.handle(
     BACKEND_INVOKE,

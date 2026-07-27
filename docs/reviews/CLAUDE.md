@@ -68,7 +68,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
-| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 6        | 3    | 2026-07-09   |
+| [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 14       | 5    | 2026-07-27   |

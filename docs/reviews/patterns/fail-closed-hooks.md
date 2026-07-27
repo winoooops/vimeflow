@@ -2,8 +2,8 @@
 id: fail-closed-hooks
 category: security
 created: 2026-04-20
-last_updated: 2026-07-09
-ref_count: 3
+last_updated: 2026-07-27
+ref_count: 4
 ---
 
 # Fail-Closed Security Hooks
@@ -120,3 +120,19 @@ When building any subprocess-based security hook for a CLI tool that uses
   handler so all e2e-only IPC exposure in `main.ts` is blocked in packaged
   builds.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Native Ghostty diagnostic IPC readers skipped the E2E runtime guard
+
+- **Source:** github-codex-connector | PR #746 | 2026-07-27
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The test-only `ghostty-native:read-grid` and
+  `ghostty-native:presentation-probe` handlers were registered whenever the
+  native-parent controller registered IPC. Packaged macOS builds therefore had
+  main-process handlers capable of returning visible terminal contents even
+  though preload only exposes them for E2E.
+- **Fix:** Added an explicit `allowE2eIpc` controller dependency, defaulted it
+  closed, and wired main to pass the existing unpackaged E2E runtime guard.
+  Covered both the default-deny and explicit-allow registration paths in
+  `electron/ghostty-native-parent.test.ts`.
+- **Commit:** same commit as this entry
