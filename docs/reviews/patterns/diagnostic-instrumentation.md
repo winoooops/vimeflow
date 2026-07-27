@@ -2,7 +2,7 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-06-15
+last_updated: 2026-07-26
 ref_count: 3
 ---
 
@@ -151,4 +151,13 @@ The discipline:
 - **File:** `src/features/browser/browserBridge.ts` `setBrowserPaneBounds` L134
 - **Finding:** Because the capture was recorded before `bridge()?.setBounds(request)` was awaited, the WDIO smoke test could observe hidden/restored captures even when the preload/main `setBounds` IPC rejected, was miswired, or became unavailable after capture started. `waitForBoundsCapture` only reads the renderer-side log, so a broken native path could still let the test pass without proving the WebContentsView was actually hidden or restored.
 - **Fix:** Same structural change as #12: await `bri.setBounds(request)` first, then push to `browserPaneBoundsCaptures` only when capture is active. The promise resolving from the bridge is the acknowledgement that the request reached the main process; capture is now a post-success observability record rather than a pre-forward intent log.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Debug gate re-parsed the same env var instead of reusing the shared flag
+
+- **Source:** github-claude | PR #739 round 2 | 2026-07-26
+- **Severity:** LOW
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`
+- **Finding:** `vimeflowGhosttyCreate` gated `TerminalDebugLog.enable(...)` by directly reading `VIMEFLOW_GHOSTTY_DEBUG`, while the same bridge file already had a shared `vimeflowGhosttyDebugEnabled` switch for resize diagnostics. If the accepted debug value ever changed in one place, print traces and GhosttyTerminal metrics/render/lifecycle logs could diverge.
+- **Fix:** Reused `vimeflowGhosttyDebugEnabled` at the `TerminalDebugLog.enable(...)` call site so all Ghostty bridge diagnostics share one gate.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

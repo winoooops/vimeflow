@@ -22,7 +22,44 @@ pub struct RingBuffer {
     bytes: VecDeque<u8>,
     capacity: usize,
     end_offset: u64,
+    /// Raw bytes at the buffer tail belonging to an incomplete UTF-8
+    /// sequence still held by the read loop's `Utf8ChunkDecoder` (0..=3).
+    /// Raw-byte storage is untouched — this only marks how much of the
+    /// tail has NOT been published as decoded pty-data yet, so a hydration
+    /// snapshot (`list_sessions`) can report a replay boundary consistent
+    /// with the event stream's offsets. Updated under the same lock as
+    /// `append`, so `(bytes, end_offset, pending)` always agree.
+    pending_utf8_carry: usize,
+    /// Whether the stream has left the terminal on the alternate screen.
+    ///
+    /// Tracked separately from the bytes because the ring drops from the
+    /// front: an agent enters the alternate screen once at startup, and its
+    /// own redraws evict that toggle within seconds. A replay taken later
+    /// would then restore the content onto the PRIMARY screen, which reflows
+    /// and scrolls on resize where the alternate screen clips — the pane's
+    /// bottom bar lifts off the bottom edge on every shrink.
+    alt_screen: bool,
+    /// Tail of the previous chunk, so a mode sequence split across two PTY
+    /// reads is still matched.
+    mode_scan_tail: Vec<u8>,
 }
+
+/// Alternate-screen enter/exit toggles, longest first so the scan below
+/// cannot match `ESC[?47h` inside `ESC[?1047h`.
+const ALT_SCREEN_TOGGLES: [(&[u8], bool); 6] = [
+    (b"\x1b[?1049h", true),
+    (b"\x1b[?1049l", false),
+    (b"\x1b[?1047h", true),
+    (b"\x1b[?1047l", false),
+    (b"\x1b[?47h", true),
+    (b"\x1b[?47l", false),
+];
+
+/// The longest toggle is 8 bytes, so at most 7 can dangle across a chunk edge.
+const MODE_SCAN_CARRY: usize = 7;
+
+/// Sequence that re-enters the alternate screen ahead of replayed content.
+pub const ALT_SCREEN_ENTER: &str = "\x1b[?1049h";
 
 impl RingBuffer {
     pub fn new(capacity: usize) -> Self {
@@ -30,6 +67,9 @@ impl RingBuffer {
             bytes: VecDeque::with_capacity(capacity),
             capacity,
             end_offset: 0,
+            pending_utf8_carry: 0,
+            alt_screen: false,
+            mode_scan_tail: Vec::new(),
         }
     }
 
@@ -37,6 +77,7 @@ impl RingBuffer {
     /// the first appended byte in the lifetime stream).
     pub fn append(&mut self, chunk: &[u8]) -> u64 {
         let chunk_start = self.end_offset;
+        self.track_screen_mode(chunk);
 
         let need_drain = self
             .bytes
@@ -60,6 +101,46 @@ impl RingBuffer {
 
     pub fn end_offset(&self) -> u64 {
         self.end_offset
+    }
+
+    /// Record how many tail bytes are an unpublished incomplete UTF-8
+    /// carry. Call under the same lock as the `append` it describes.
+    pub fn set_pending_utf8_carry(&mut self, len: usize) {
+        self.pending_utf8_carry = len;
+    }
+
+    /// Tail bytes not yet published as decoded pty-data (0..=3).
+    pub fn pending_utf8_carry(&self) -> usize {
+        self.pending_utf8_carry
+    }
+
+    /// Whether a replay of this buffer must re-enter the alternate screen.
+    pub fn alt_screen(&self) -> bool {
+        self.alt_screen
+    }
+
+    /// Follow the alternate-screen toggles carried by the raw stream, keeping
+    /// only the last one in the chunk — that is the mode the terminal ends in.
+    //
+    // ponytail: literal match on the three documented mode pairs, which is
+    // what agents actually emit. A parameterized form (`ESC[?1049;...h`)
+    // would need a real CSI parser — add one when a stream needs it.
+    fn track_screen_mode(&mut self, chunk: &[u8]) {
+        let mut window = std::mem::take(&mut self.mode_scan_tail);
+        window.extend_from_slice(chunk);
+
+        for start in 0..window.len() {
+            let rest = &window[start..];
+            if let Some(&(_, enters)) = ALT_SCREEN_TOGGLES
+                .iter()
+                .find(|(seq, _)| rest.starts_with(seq))
+            {
+                self.alt_screen = enters;
+            }
+        }
+
+        let keep = window.len().min(MODE_SCAN_CARRY);
+        self.mode_scan_tail = window.split_off(window.len() - keep);
     }
 }
 
@@ -607,6 +688,64 @@ mod tests {
         }
         assert_eq!(buf.end_offset(), 20);
         assert_eq!(buf.bytes_snapshot().len(), 4);
+    }
+
+    /// The whole point: an agent enters the alternate screen once, then its
+    /// own redraws push that toggle out of the ring. The bytes are gone but
+    /// the mode must survive, or a replay restores onto the primary screen.
+    #[test]
+    fn ring_buffer_remembers_alt_screen_after_the_toggle_scrolls_out() {
+        let mut buf = RingBuffer::new(16);
+        buf.append(b"\x1b[?1049h");
+        assert!(buf.alt_screen());
+
+        buf.append(&[b'x'; 64]);
+        assert!(
+            !buf.bytes_snapshot().windows(8).any(|w| w == b"\x1b[?1049h"),
+            "toggle must have been evicted for this test to mean anything"
+        );
+        assert!(buf.alt_screen(), "mode must outlive its bytes");
+    }
+
+    #[test]
+    fn ring_buffer_alt_screen_follows_the_last_toggle() {
+        let mut buf = RingBuffer::new(1024);
+        assert!(!buf.alt_screen());
+
+        buf.append(b"\x1b[?1049h");
+        buf.append(b"\x1b[?1049l");
+        assert!(!buf.alt_screen(), "agent exited the alternate screen");
+
+        buf.append(b"\x1b[?47h and later \x1b[?1049l then \x1b[?1047h");
+        assert!(buf.alt_screen(), "last toggle in the chunk wins");
+    }
+
+    /// PTY reads slice anywhere, so a toggle can straddle two chunks.
+    #[test]
+    fn ring_buffer_matches_alt_screen_toggle_split_across_chunks() {
+        let mut buf = RingBuffer::new(1024);
+        buf.append(b"output\x1b[?10");
+        assert!(!buf.alt_screen());
+
+        buf.append(b"49h");
+        assert!(buf.alt_screen(), "split toggle must still be matched");
+    }
+
+    #[test]
+    fn ring_buffer_pending_utf8_carry_defaults_zero_and_updates() {
+        use super::RingBuffer;
+        let mut buf = RingBuffer::new(16);
+        assert_eq!(buf.pending_utf8_carry(), 0);
+
+        buf.append(b"caf\xC3");
+        buf.set_pending_utf8_carry(1);
+        assert_eq!(buf.pending_utf8_carry(), 1);
+
+        buf.append(b"\xA9");
+        buf.set_pending_utf8_carry(0);
+        assert_eq!(buf.pending_utf8_carry(), 0);
+        // Raw storage stays byte-pure regardless of the carry marker.
+        assert_eq!(buf.bytes_snapshot(), b"caf\xC3\xA9");
     }
 
     #[test]

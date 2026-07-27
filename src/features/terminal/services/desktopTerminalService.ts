@@ -5,6 +5,7 @@ import type {
   PTYWriteParams,
   PTYResizeParams,
   PTYKillParams,
+  PtyReplay,
 } from '../types'
 import type {
   SpawnPtyRequest,
@@ -335,6 +336,10 @@ export class DesktopTerminalService implements ITerminalService {
 
   async listSessions(): Promise<SessionList> {
     return invoke<SessionList>('list_sessions')
+  }
+
+  async getPtyReplay(sessionId: string): Promise<PtyReplay | null> {
+    return invoke<PtyReplay | null>('get_pty_replay', { sessionId })
   }
 
   async setActiveSession(id: string): Promise<void> {

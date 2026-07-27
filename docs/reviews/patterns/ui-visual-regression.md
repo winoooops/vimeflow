@@ -2,8 +2,8 @@
 id: ui-visual-regression
 category: code-quality
 created: 2026-06-11
-last_updated: 2026-07-23
-ref_count: 21
+last_updated: 2026-07-25
+ref_count: 22
 ---
 
 # UI Visual Regression
@@ -408,4 +408,20 @@ test case for the state that triggers the collision.
   the turn count, leaving the fixed body reserved for quota bars. Added a
   regression test that renders all four metrics together and asserts the
   budget row stays outside the fixed quota body.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Native Ghostty live resize recomputed edge affinity from mismatched bounds
+
+- **Source:** github-codex-connector | PR #739 round 1 | 2026-07-25
+- **Severity:** P1 / HIGH
+- **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`
+- **Finding:** During AppKit live resize, the bridge computed the native view's
+  autoresizing mask from the old container frame but the already-updated parent
+  bounds. That mismatched snapshot could make right- or top-anchored panes lose
+  their edge affinity, so skipped renderer frames let the surface visibly drift
+  until the settle-time snap.
+- **Fix:** Stored the last renderer-applied container frame together with the
+  matching parent bounds, then used that coherent snapshot when arming live
+  resize prediction. The fallback still uses current bounds for initial states
+  before any renderer frame has landed.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -500,6 +500,16 @@ mod router {
                 let res = state.list_sessions()?;
                 encode_result(res)
             }
+            "get_pty_replay" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                encode_result(state.get_pty_replay(&p.session_id))
+            }
             "kill_ephemeral_ptys" => {
                 let res = state.kill_ephemeral_ptys();
                 encode_result(res)

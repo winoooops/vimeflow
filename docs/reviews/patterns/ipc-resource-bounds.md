@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-18
-ref_count: 4
+last_updated: 2026-07-27
+ref_count: 5
 ---
 
 # IPC Resource Bounds
@@ -185,4 +185,19 @@ not become repeated unhandled main-process failures.
 - **Fix:** Bound the aggregate record count and serialized store size, reject an
   oversized file before reading it, filter oversized malformed siblings, and
   leave unsupported or oversized durable files untouched.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Native Ghostty pane epochs need IPC shape validation
+
+- **Source:** github-codex-connector | PR #744 round 1 | 2026-07-27
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native parent IPC pane payload accepted any optional `epoch`
+  value even though the destroy guard compares epochs by primitive identity.
+  A malformed renderer payload could store an object epoch, causing later
+  destroy requests to compare unequal and retain native surfaces until the cap
+  is reached.
+- **Fix:** Required `epoch` to be absent or a non-empty string in the shared pane
+  payload validator and added regression coverage for object and empty-string
+  epochs at the update/destroy IPC boundary.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
