@@ -2,8 +2,8 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-07-09
-ref_count: 12
+last_updated: 2026-07-27
+ref_count: 13
 ---
 
 # Cross-Platform Paths
@@ -142,3 +142,16 @@ consider using path libraries for cross-platform code.
 - **Finding:** The review-request payload listed only repo-relative paths, so an agent pane running from a descendant cwd such as `/repo/packages/app` could resolve `src/a.ts` under the descendant instead of the reviewed repository root.
 - **Fix:** Threaded the current repo root into `useRequestReview`, included an absolute prompt path beside the repo-relative path, and kept the stored review snapshot repo-relative so returned findings still place against the diff.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. E2E fixture command split checkout paths containing spaces
+
+- **Source:** github-codex-connector | PR #746 round 1 | 2026-07-27
+- **Severity:** P2 / MEDIUM
+- **File:** `tests/e2e/terminal/specs/ghostty-altscreen-remount.spec.ts`
+- **Finding:** The Ghostty remount spec interpolated the resolved fixture path
+  into `AGENT_COMMAND` without shell quoting. Checkouts under directories with
+  spaces caused the shell to split the path and launch Node with a truncated
+  script argument.
+- **Fix:** Added POSIX single-quote escaping for the fixture path before
+  constructing the fallback `node ...` command.
+- **Commit:** same commit as this entry

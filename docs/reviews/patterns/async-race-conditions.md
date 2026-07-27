@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-26
-ref_count: 89
+last_updated: 2026-07-27
+ref_count: 90
 ---
 
 # Async Race Conditions
@@ -1086,3 +1086,15 @@ prevent showing previous data.
   after the gate is released. Added a regression test with a delayed sidecar
   acknowledgement to prove no second request starts before the first resolves.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 98. Ghostty resize stability check sampled the same frame twice
+
+- **Source:** github-codex-connector | PR #746 round 1 | 2026-07-27
+- **Severity:** P2 / MEDIUM
+- **File:** `tests/e2e/terminal/specs/ghostty-altscreen-remount.spec.ts`
+- **Finding:** The remount spec compared two immediate grid reads after each
+  resize shortcut, so it could declare the composer settled while still reading
+  the same pre-SIGWINCH or intermediate frame.
+- **Fix:** Inserted a polling interval before each stability comparison so a
+  settled anchor means the composer remained stable across time.
+- **Commit:** same commit as this entry

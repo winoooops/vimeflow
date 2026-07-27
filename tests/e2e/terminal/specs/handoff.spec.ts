@@ -49,11 +49,6 @@ const pressShortcut = async (code: string, key: string): Promise<void> => {
   )
 }
 
-const slotCount = async (): Promise<number> =>
-  await browser.execute(
-    () => document.querySelectorAll('[data-testid="split-view-slot"]').length
-  )
-
 const startAgent = async (ptyId: string): Promise<void> => {
   await writePty(ptyId, 'claude\r')
 

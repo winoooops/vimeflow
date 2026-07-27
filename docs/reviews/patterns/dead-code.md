@@ -2,8 +2,8 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-07-26
-ref_count: 9
+last_updated: 2026-07-27
+ref_count: 10
 ---
 
 # Dead Code
@@ -154,4 +154,16 @@ code and should be removed.
   dedicated test block remained as a parallel resolver maintained only by tests.
 - **Fix:** Removed the obsolete resolver export and its dedicated tests, leaving
   the span-aware resolver as the only boundary-resolution implementation.
+- **Commit:** same commit as this entry
+
+### 14. Handoff spec kept an unused slot-count helper
+
+- **Source:** github-claude | PR #746 round 1 | 2026-07-27
+- **Severity:** LOW
+- **File:** `tests/e2e/terminal/specs/handoff.spec.ts`
+- **Finding:** The `slotCount` helper was declared in the opt-in handoff spec
+  but had no call sites, leaving a stale diagnostic helper that implied missing
+  layout assertions.
+- **Fix:** Removed the unused helper so the stage-setter spec only carries
+  active setup and diagnostic code.
 - **Commit:** same commit as this entry

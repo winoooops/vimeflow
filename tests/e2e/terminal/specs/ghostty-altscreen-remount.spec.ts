@@ -27,9 +27,11 @@ const COMPOSER_MARKER = 'manual mode'
 // alt-screen enter, bottom-anchored composer stack, full redraw on SIGWINCH).
 // VIMEFLOW_E2E_AGENT=claude swaps the real agent back in for local runs.
 const REAL_AGENT = process.env.VIMEFLOW_E2E_AGENT
+const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", "'\\''")}'`
 const AGENT_COMMAND =
   REAL_AGENT ??
-  `node ${path.resolve(__dirname, '..', 'altscreen-agent-fixture.cjs')}`
+  `node ${shellQuote(path.resolve(__dirname, '..', 'altscreen-agent-fixture.cjs'))}`
 
 /** Reach a two-pane vertical split from whatever the profile restored.
  *
@@ -212,6 +214,7 @@ const settledComposerAnchor = async (
 ): Promise<ComposerAnchor> => {
   let previous = await composerAnchor(ptyId)
   for (let attempt = 0; attempt < 40; attempt++) {
+    await browser.pause(100)
     const current = await composerAnchor(ptyId)
 
     // Reading the grid while ghostty is reflowing can come back empty for a
