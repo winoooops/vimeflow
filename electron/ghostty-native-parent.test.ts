@@ -6,6 +6,8 @@ import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_FOCUS,
+  GHOSTTY_NATIVE_PRESENTATION_PROBE,
+  GHOSTTY_NATIVE_READ_GRID,
   GHOSTTY_NATIVE_SECONDARY_ATTACH,
   GHOSTTY_NATIVE_SECONDARY_DATA,
   GHOSTTY_NATIVE_SECONDARY_REMOVE,
@@ -340,6 +342,41 @@ describe('ghostty native parent', () => {
         { sessionId: 'pty-1', paneId: 'pane-1', epoch: '' }
       )
     ).toThrow('invalid ghostty native parent destroy payload')
+  })
+
+  test('registers test-only grid readers only when e2e IPC is allowed', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+    })
+
+    expect(handlers.has(GHOSTTY_NATIVE_READ_GRID)).toBe(false)
+    expect(handlers.has(GHOSTTY_NATIVE_PRESENTATION_PROBE)).toBe(false)
+
+    controller.dispose()
+    handlers.clear()
+
+    const e2eController = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      allowE2eIpc: true,
+    })
+
+    expect(handlers.has(GHOSTTY_NATIVE_READ_GRID)).toBe(true)
+    expect(handlers.has(GHOSTTY_NATIVE_PRESENTATION_PROBE)).toBe(true)
+
+    e2eController.dispose()
+
+    expect(handlers.has(GHOSTTY_NATIVE_READ_GRID)).toBe(false)
+    expect(handlers.has(GHOSTTY_NATIVE_PRESENTATION_PROBE)).toBe(false)
   })
 
   test('returns disabled instead of throwing when addon artifacts are missing', () => {

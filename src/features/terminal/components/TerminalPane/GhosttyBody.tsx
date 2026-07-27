@@ -840,6 +840,10 @@ export const GhosttyBody = ({
     <div
       ref={containerRef}
       data-testid="native-ghostty-pane"
+      // The surface itself is a native NSView with no DOM presence; these
+      // carry the pane identity a test needs to ask main for its grid.
+      data-pty-id={ptyId}
+      data-pane-id={paneId}
       className="h-full w-full"
       onFocus={(): void => {
         void focusNativeSurface()

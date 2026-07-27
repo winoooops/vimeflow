@@ -8,6 +8,8 @@ import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
 import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
+  GHOSTTY_NATIVE_PRESENTATION_PROBE,
+  GHOSTTY_NATIVE_READ_GRID,
   GHOSTTY_NATIVE_FOCUS,
   GHOSTTY_NATIVE_SECONDARY_ATTACH,
   GHOSTTY_NATIVE_SECONDARY_DATA,
@@ -44,6 +46,8 @@ interface GhosttyNativePayloadByKind {
   data: GhosttyNativeDataRequest
   focus: GhosttyNativePaneRequest
   destroy: GhosttyNativePaneRequest
+  readGrid: GhosttyNativePaneRequest
+  presentationProbe: GhosttyNativePaneRequest
   secondaryAttach: GhosttyNativeSecondaryAttachRequest
   secondaryData: GhosttyNativeSecondaryDataRequest
   secondaryFocus: GhosttyNativeSecondaryRequest
@@ -87,6 +91,9 @@ interface GhosttyNativeParentAddon {
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
+  // Test-only grid reader; absent on addons built before it was added.
+  readGrid?: (surface: GhosttyNativeSurface) => string | null
+  readPresentationProbe?: (surface: GhosttyNativeSurface) => string | null
   destroy: (surface: GhosttyNativeSurface) => void
   addSecondary?: (
     surface: GhosttyNativeSurface,
@@ -110,6 +117,7 @@ interface GhosttyNativeParentDeps {
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
   packaged?: boolean
+  allowE2eIpc?: boolean
   resourcesPath?: string
   addon?: GhosttyNativeParentAddon
   inputBlocked?: (win: BrowserWindow) => boolean
@@ -347,6 +355,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
       return typeof value.data === 'string'
     case 'focus':
     case 'destroy':
+    case 'readGrid':
+    case 'presentationProbe':
       return true
     case 'secondaryFocus':
     case 'secondaryRemove':
@@ -392,6 +402,8 @@ export class GhosttyNativeParentController {
 
   private readonly packaged: boolean
 
+  private readonly allowE2eIpc: boolean
+
   private readonly nativeParentDir: string
 
   private readonly inputBlocked: (win: BrowserWindow) => boolean
@@ -413,6 +425,7 @@ export class GhosttyNativeParentController {
     this.platform = deps.platform ?? process.platform
     this.env = deps.env ?? process.env
     this.packaged = deps.packaged ?? false
+    this.allowE2eIpc = deps.allowE2eIpc ?? false
     this.nativeParentDir = nativeParentDir(
       this.packaged,
       deps.resourcesPath ?? process.resourcesPath
@@ -451,6 +464,18 @@ export class GhosttyNativeParentController {
       this.destroy(requireNativePayload('destroy', payload))
     )
 
+    if (this.allowE2eIpc) {
+      ipcMain.handle(GHOSTTY_NATIVE_READ_GRID, (_event, payload) =>
+        this.readGrid(requireNativePayload('readGrid', payload))
+      )
+
+      ipcMain.handle(GHOSTTY_NATIVE_PRESENTATION_PROBE, (_event, payload) =>
+        this.readPresentationProbe(
+          requireNativePayload('presentationProbe', payload)
+        )
+      )
+    }
+
     ipcMain.handle(GHOSTTY_NATIVE_SECONDARY_ATTACH, (event, payload) =>
       this.attachSecondary(
         event.sender,
@@ -482,6 +507,8 @@ export class GhosttyNativeParentController {
     ipcMain.removeHandler(GHOSTTY_NATIVE_DATA)
     ipcMain.removeHandler(GHOSTTY_NATIVE_FOCUS)
     ipcMain.removeHandler(GHOSTTY_NATIVE_DESTROY)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_READ_GRID)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_PRESENTATION_PROBE)
     ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_ATTACH)
     ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_DATA)
     ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_FOCUS)
@@ -622,6 +649,43 @@ export class GhosttyNativeParentController {
     addon.write(state.surface, payload.data)
 
     return { enabled: true }
+  }
+
+  /** Test-only. Returns null when the pane has no live surface. */
+  private readPresentationProbe(
+    payload: GhosttyNativePaneRequest
+  ): string | null {
+    if (!this.enabled()) {
+      return null
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (!state?.surface) {
+      return null
+    }
+
+    return (
+      this.getOptionalAddon()?.readPresentationProbe?.(state.surface) ?? null
+    )
+  }
+
+  /** Test-only. Returns null when the pane has no live surface. */
+  private readGrid(payload: GhosttyNativePaneRequest): string | null {
+    if (!this.enabled()) {
+      return null
+    }
+
+    const addon = this.getOptionalAddon()
+    if (!addon) {
+      return null
+    }
+
+    const state = this.getExistingPaneState(payload)
+    if (!state?.surface) {
+      return null
+    }
+
+    return addon.readGrid?.(state.surface) ?? null
   }
 
   private focus(payload: GhosttyNativePaneRequest): { enabled: boolean } {

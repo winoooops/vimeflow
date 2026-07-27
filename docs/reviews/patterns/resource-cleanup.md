@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-12
-ref_count: 25
+last_updated: 2026-07-27
+ref_count: 26
 ---
 
 # Resource Cleanup
@@ -325,4 +325,19 @@ causes listener accumulation and duplicate event handling.
 - **File:** `src/features/sessions/hooks/useSessionManager.ts`
 - **Finding:** Exact-identity agent resumes reserved the canonical latest-resume key for an agent type and cwd, but the reservation was not tied to the restarted pane's lifecycle. After the pane was closed, later legacy panes in the same cwd could still be downgraded to generic because the stale reservation remained.
 - **Fix:** Track canonical latest-resume claims by owner PTY, roll back uncommitted claims, and release committed claims from restart disposal, pane removal, and session removal. Added a regression test that removes an exact-resumed pane and verifies a later legacy pane still receives the latest-resume command.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Test-only native Ghostty IPC handlers must be removed during dispose
+
+- **Source:** github-claude | PR #746 round 1 | 2026-07-27
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The controller registered E2E-only Ghostty diagnostic IPC
+  handlers behind `allowE2eIpc`, but `dispose()` removed only the standard
+  Ghostty channels. A future setup after dispose could hit Electron's
+  duplicate `ipcMain.handle` registration error for the stale diagnostic
+  channels.
+- **Fix:** Added unconditional `ipcMain.removeHandler` calls for the diagnostic
+  grid and presentation-probe channels in `dispose()`. Expanded the E2E IPC
+  registration test to assert those handlers disappear after disposal.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

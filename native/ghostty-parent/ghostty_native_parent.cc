@@ -32,6 +32,9 @@ using SetForegroundColorFn = void (*)(void *, const char *);
 using SetFontFamilyFn = void (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
+using ReadGridFn = char *(*)(void *);
+using PresentationProbeFn = char *(*)(void *);
+using FreeStringFn = void (*)(char *);
 using AddSecondaryFn = void (*)(void *, InputCallback, ResizeCallback,
                                 FocusCallback, void *, const char *);
 using SetSecondaryVisibleFn = void (*)(void *, bool, const char *);
@@ -51,6 +54,9 @@ struct BridgeApi {
   SetFontFamilyFn set_font_family = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
+  ReadGridFn read_grid = nullptr;
+  PresentationProbeFn presentation_probe = nullptr;
+  FreeStringFn free_string = nullptr;
   AddSecondaryFn add_secondary = nullptr;
   SetSecondaryVisibleFn set_secondary_visible = nullptr;
   RemoveSecondaryFn remove_secondary = nullptr;
@@ -222,6 +228,12 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
                  reinterpret_cast<void **>(&bridge.focus)) &&
+      LoadSymbol(env, "vimeflow_ghostty_read_grid",
+                 reinterpret_cast<void **>(&bridge.read_grid)) &&
+      LoadSymbol(env, "vimeflow_ghostty_presentation_probe",
+                 reinterpret_cast<void **>(&bridge.presentation_probe)) &&
+      LoadSymbol(env, "vimeflow_ghostty_free_string",
+                 reinterpret_cast<void **>(&bridge.free_string)) &&
       LoadSymbol(env, "vimeflow_ghostty_add_secondary",
                  reinterpret_cast<void **>(&bridge.add_secondary)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_secondary_visible",
@@ -889,6 +901,68 @@ napi_value Write(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+// Test-only reader: the native surface paints through Metal into an NSView,
+// so its contents are invisible to the DOM and to WebDriver screenshots.
+// Returns the visible grid as one string, rows separated by '\n', or null.
+napi_value ReadGrid(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 1) {
+    return Throw(env, "readGrid(surface) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  char *text = bridge.read_grid(surface->swift_surface);
+  if (text == nullptr) {
+    return nullptr;
+  }
+
+  napi_value result;
+  napi_status status =
+      napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &result);
+  bridge.free_string(text);
+  if (status != napi_ok) {
+    return nullptr;
+  }
+
+  return result;
+}
+
+// Diagnostics twin of ReadGrid: what Core Animation is presenting right now.
+napi_value ReadPresentationProbe(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 1) {
+    return Throw(env, "readPresentationProbe(surface) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr || surface->swift_surface == nullptr) {
+    return nullptr;
+  }
+
+  char *text = bridge.presentation_probe(surface->swift_surface);
+  if (text == nullptr) {
+    return nullptr;
+  }
+
+  napi_value result;
+  napi_status status =
+      napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &result);
+  bridge.free_string(text);
+  if (status != napi_ok) {
+    return nullptr;
+  }
+
+  return result;
+}
+
 napi_value AddSecondary(napi_env env, napi_callback_info info) {
   size_t argc = 5;
   napi_value args[5];
@@ -1093,6 +1167,10 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr},
       {"focus", nullptr, Focus, nullptr, nullptr, nullptr, napi_default,
        nullptr},
+      {"readGrid", nullptr, ReadGrid, nullptr, nullptr, nullptr, napi_default,
+       nullptr},
+      {"readPresentationProbe", nullptr, ReadPresentationProbe, nullptr,
+       nullptr, nullptr, napi_default, nullptr},
       {"addSecondary", nullptr, AddSecondary, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"setSecondaryVisible", nullptr, SetSecondaryVisible, nullptr, nullptr,

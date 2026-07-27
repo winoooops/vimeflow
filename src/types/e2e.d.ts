@@ -18,6 +18,8 @@ declare global {
       emitBackendEvent(event: string, payload: unknown): void
       listActivePtySessions(): Promise<string[]>
       dispatchCommandPaletteShortcut(): Promise<boolean>
+      readGhosttyGrid(ptyId?: string): Promise<string | null>
+      readGhosttyPresentation(ptyId?: string): Promise<string | null>
       startBrowserPaneBoundsCapture(): boolean
       clearBrowserPaneBoundsCaptures(): void
       stopBrowserPaneBoundsCapture(): void

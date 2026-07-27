@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IOSurface
 import GhosttyTerminal
 
 /// Diagnostics switch shared by the bridge's trace points (see VIMEFLOW_GHOSTTY_DEBUG).
@@ -742,6 +743,38 @@ private final class EmbeddedGhosttySurface: NSObject {
         session.receive(text)
     }
 
+    /// Fingerprint of what Core Animation is PRESENTING right now, as
+    /// `id=<layer-contents identity>,seed=<IOSurface seed>`.
+    ///
+    /// Diagnostics only. `readViewportText` proves what the GRID holds; this
+    /// probes the other end — whether the presented frame is still changing.
+    /// Ghostty presents through a swap chain of IOSurfaces assigned to the
+    /// layer's `contents`, so the identity alternates per presented frame,
+    /// and the seed bumps when a surface is rewritten in place. Either value
+    /// changing between two reads means a new frame reached the screen.
+    func presentationFingerprint() -> String {
+        let contents = terminalView.layer?.contents as AnyObject?
+        let identity = contents.map { UInt(bitPattern: ObjectIdentifier($0).hashValue) } ?? 0
+        var seed: UInt32 = 0
+        if let contents, CFGetTypeID(contents as CFTypeRef) == IOSurfaceGetTypeID() {
+            // ObjC IOSurface bridges to the CF handle directly.
+            seed = IOSurfaceGetSeed(contents as! IOSurfaceRef)
+        }
+
+        return "id=\(identity),seed=\(seed)"
+    }
+
+    /// The visible grid as text, one line per row.
+    ///
+    /// Nothing in production reads this — it exists so tests can assert on
+    /// what the terminal ACTUALLY holds. The native surface renders through
+    /// Metal into an NSView, so it is invisible to both the DOM and a
+    /// WebDriver screenshot; without this the whole native path can only be
+    /// checked by a human watching the screen.
+    func readViewportText() -> String? {
+        session.readViewportText()
+    }
+
     func addSecondary(
         inputCallback: VimeflowGhosttyInputCallback?,
         resizeCallback: VimeflowGhosttyResizeCallback?,
@@ -1325,6 +1358,55 @@ public func vimeflowGhosttyWrite(
         guard let surface = liveSurface(from: pointer) else { return }
         surface.receive(text)
     }
+}
+
+/// Read one surface's visible grid as UTF-8 text. Caller owns the returned
+/// buffer and must hand it back to `vimeflow_ghostty_free_string`.
+@_cdecl("vimeflow_ghostty_read_grid")
+public func vimeflowGhosttyReadGrid(
+    _ surfacePointer: UnsafeMutableRawPointer?
+) -> UnsafeMutablePointer<CChar>? {
+    guard let surfacePointer else {
+        return nil
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let text = mainActorSync { () -> String? in
+        liveSurface(from: pointer)?.readViewportText()
+    }
+
+    guard let text else {
+        return nil
+    }
+
+    return strdup(text)
+}
+
+/// Presentation fingerprint for one surface — see `presentationFingerprint`.
+/// Caller frees via `vimeflow_ghostty_free_string`.
+@_cdecl("vimeflow_ghostty_presentation_probe")
+public func vimeflowGhosttyPresentationProbe(
+    _ surfacePointer: UnsafeMutableRawPointer?
+) -> UnsafeMutablePointer<CChar>? {
+    guard let surfacePointer else {
+        return nil
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let text = mainActorSync { () -> String? in
+        liveSurface(from: pointer)?.presentationFingerprint()
+    }
+
+    guard let text else {
+        return nil
+    }
+
+    return strdup(text)
+}
+
+@_cdecl("vimeflow_ghostty_free_string")
+public func vimeflowGhosttyFreeString(_ pointer: UnsafeMutablePointer<CChar>?) {
+    free(pointer)
 }
 
 @_cdecl("vimeflow_ghostty_add_secondary")
