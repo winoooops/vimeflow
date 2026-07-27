@@ -263,6 +263,41 @@ describe('ghostty native parent', () => {
     ).toThrow('invalid ghostty native parent update payload')
   })
 
+  test('seeds the surface resize-throttle knob without clobbering an override', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+    const previous = process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS
+
+    try {
+      delete process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS
+      setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      }).dispose()
+
+      expect(process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS).toBe('96')
+
+      process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS = '0'
+      setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      }).dispose()
+
+      expect(process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS).toBe('0')
+    } finally {
+      if (previous === undefined) {
+        delete process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS
+      } else {
+        process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS = previous
+      }
+    }
+  })
+
   test('rejects invalid native pane epoch payload', () => {
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
