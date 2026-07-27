@@ -507,6 +507,8 @@ export class GhosttyNativeParentController {
     ipcMain.removeHandler(GHOSTTY_NATIVE_DATA)
     ipcMain.removeHandler(GHOSTTY_NATIVE_FOCUS)
     ipcMain.removeHandler(GHOSTTY_NATIVE_DESTROY)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_READ_GRID)
+    ipcMain.removeHandler(GHOSTTY_NATIVE_PRESENTATION_PROBE)
     ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_ATTACH)
     ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_DATA)
     ipcMain.removeHandler(GHOSTTY_NATIVE_SECONDARY_FOCUS)

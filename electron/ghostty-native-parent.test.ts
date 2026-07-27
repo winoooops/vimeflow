@@ -374,6 +374,9 @@ describe('ghostty native parent', () => {
     expect(handlers.has(GHOSTTY_NATIVE_PRESENTATION_PROBE)).toBe(true)
 
     e2eController.dispose()
+
+    expect(handlers.has(GHOSTTY_NATIVE_READ_GRID)).toBe(false)
+    expect(handlers.has(GHOSTTY_NATIVE_PRESENTATION_PROBE)).toBe(false)
   })
 
   test('returns disabled instead of throwing when addon artifacts are missing', () => {
