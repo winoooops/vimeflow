@@ -420,6 +420,16 @@ export class GhosttyNativeParentController {
     this.addon = deps.addon ?? null
     this.inputBlocked = deps.inputBlocked ?? ((): boolean => false)
     this.shortcutInputBlocked = deps.shortcutInputBlocked ?? this.inputBlocked
+
+    // The forked surface wrapper coalesces resize at the
+    // ghostty_surface_set_size boundary and reads this knob from the host
+    // process environment once, at first surface creation — which is after
+    // this constructor runs. The fork ships a conservative 32ms default
+    // (just past the engine's own 25ms window); 96 is vimeflow's tuning,
+    // the winner of a hands-on A/B across 0/32/48/64/96 on live Claude
+    // Code panes. A value already present in the launch environment wins,
+    // so per-run experiments stay possible.
+    process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS ??= '96'
   }
 
   registerIpc(): void {
