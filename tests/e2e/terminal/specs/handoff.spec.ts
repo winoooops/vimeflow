@@ -5,6 +5,11 @@
 // over the very same instance for a recorded demo — eliminating every
 // "your environment differs from mine" gap in one move.
 
+// Top-level declarations in an import-less spec land in the global script
+// scope and collide across files under `tsc -p tests/e2e`; the empty export
+// makes this a module.
+export {}
+
 const COMPOSER_MARKER = 'manual mode'
 
 const readGrid = async (ptyId: string): Promise<string> =>

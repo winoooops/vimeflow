@@ -1,4 +1,9 @@
 // cspell:ignore Ghostty ghostty COLORTERM
+// Top-level declarations in an import-less spec land in the global script
+// scope and collide across files under `tsc -p tests/e2e`; the empty export
+// makes this a module.
+export {}
+
 // The campaign that produced this spec lost days to an environment mismatch:
 // wdio injected FORCE_COLOR=0 into the app process, the PTY children
 // inherited it, and every agent under test rendered monochrome — a different
