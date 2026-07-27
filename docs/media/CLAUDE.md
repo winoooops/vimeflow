@@ -1,38 +1,45 @@
 # Media — Visual Documentation Assets
 
-Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Capture new assets from a running `npm run electron:dev` build. Older assets may predate the Electron migration; keep captions accurate when replacing them.
+Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Capture new assets from a running build — use `VIMEFLOW_USER_DATA_DIR=/tmp/vimeflow-demo npm run electron:dev:ghostty` so the demo profile never touches your real sessions. Older assets may predate the current UI; keep captions accurate when replacing them.
 
 ## Inventory
 
-| Asset                      | Used in                      | Source                                                                         |
-| -------------------------- | ---------------------------- | ------------------------------------------------------------------------------ |
-| `hero-init.gif`            | README hero                  | Kooha (WebM, VP8) → ffmpeg (1.5× speed, 15 fps, 1280px wide, 80-color palette) |
-| `workspace-overview.png`   | "What's Built" header        | Active-window screenshot                                                       |
-| `agent-status-sidebar.png` | Agent Status Sidebar section | Active-window screenshot, cropped to right panel                               |
-| `git-diff.png`             | Feature Modules section      | Active-window screenshot                                                       |
-| `editor-vim.png`           | Feature Modules section      | Active-window screenshot                                                       |
-| `terminal-nvim.png`        | "Use Vimeflow" section       | Active-window screenshot — Neovim dashboard inside a Vimeflow terminal pane    |
+| Asset                  | Used in                            | Scenario                                                                                          |
+| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `hero-workspace.gif`   | README hero                        | Create a session in a demo project, launch `claude` in a Ghostty pane, agent panel streams traces |
+| `ghostty-resize.gif`   | "Native Ghostty Terminals" section | Drag a pane divider (or window edge) while a terminal renders live — show the smooth reflow       |
+| `ghostty-tui.png`      | "Native Ghostty Terminals" section | `nvim` full-screen in one pane, an agent session beside it                                        |
+| `multi-agent-grid.png` | "Many Agents, One Workspace"       | Quad layout — `claude`, `codex`, `kimi`, `opencode` one per pane, status panel expanded           |
+| `agent-context.png`    | "Reading the status sidebar"       | PLACEHOLDER — crop of the context-reservoir gauge from the expanded agent sidebar                 |
+| `agent-cache.png`      | "Reading the status sidebar"       | PLACEHOLDER — crop of the cache-rate ring from the expanded agent sidebar                         |
+| `agent-traces.png`     | "Reading the status sidebar"       | PLACEHOLDER — crop of the tool-call count + traces list from the expanded agent sidebar           |
+| `usage-bars.png`       | "Many Agents" → Plan usage         | Agent status card with model, turn count, and the 5-hour + weekly plan-usage bars (Claude)        |
+| `kimi-usage.png`       | "Many Agents" → Plan usage         | Kimi Code plan-usage card (`kimi-code/k3`) with the "Turn off plan-usage tracking" control        |
+| `hunk-review.png`      | "Review Changes Hunk By Hunk"      | Diff dock (`⌘G`): a resolved review thread on a changed line (comment → agent reply → resolved)   |
+| `command-palette.png`  | "Command Palette And Settings"     | Palette open (`⌘;`) with fuzzy-matched commands visible                                           |
+| `theme-tour.gif`       | "BYOT: Bring Your Own Theme"       | `:theme` live-previewing the built-in themes                                                      |
+| `linux-workspace.png`  | "On Linux"                         | PLACEHOLDER — Vimeflow running the full workspace on Linux (xterm.js terminals)                   |
 
-## Capture pipeline (hero gif)
+## Capture pipeline (macOS)
 
-Kooha records WebM cleanly without dropping frames; ffmpeg converts to a small, smooth GIF afterward.
+Keep the window at a fixed size for every asset so crops and aspect ratios match across the README. The app opens at its default 1400×900 (no bounds are persisted), so just launch fresh and don't resize between shots.
 
-1. Open Kooha → Preferences → Format = WebM (VP9 or VP8), Save Location = `docs/media/`, Frame Rate = 30, audio off.
-2. Record the scenario (open new terminal → `claude` + Enter → wait for sidebar expand → `/init` + Enter → ~5 s of tool calls → Stop).
-3. Convert to GIF:
+**Screenshots** — `⌘⇧4`, then `Space`, then click the window: captures the active window with rounded corners and shadow on a transparent background. Save as PNG into `docs/media/`.
 
-   ```bash
-   # Pick the most recent recording explicitly — a bare glob silently picks
-   # only the first match if multiple takes are present, or fails opaquely
-   # when none match.
-   WEBM=$(ls -t docs/media/Kooha-*.webm 2>/dev/null | head -1)
-   [ -z "$WEBM" ] && { echo "No Kooha WebM in docs/media/" >&2; exit 1; }
+**Recordings** — `⌘⇧5` → "Record Selected Portion" → drag the region to the window bounds → record the scenario → stop from the menu bar. The `.mov` lands in the configured save location; convert to GIF:
 
-   ffmpeg -y -i "$WEBM" \
-     -vf "setpts=PTS/1.5,fps=15,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=80[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
-     -loop 0 docs/media/hero-init.gif
-   ```
+```bash
+# Pick the most recent recording explicitly — a bare glob silently picks
+# only the first match if multiple takes are present, or fails opaquely
+# when none match.
+MOV=$(ls -t ~/Desktop/Screen*.mov 2>/dev/null | head -1)
+[ -z "$MOV" ] && { echo "No screen recording found" >&2; exit 1; }
 
-   Adjust `setpts=PTS/N` for speed, `max_colors=N` for size. Target ≤ 6 MB for GitHub README embed performance.
+ffmpeg -y -i "$MOV" \
+  -vf "setpts=PTS/1.5,fps=15,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=80[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+  -loop 0 docs/media/<name>.gif
+```
 
-4. Delete the WebM source after the GIF is verified.
+Adjust `setpts=PTS/N` for speed, `max_colors=N` for size. Target ≤ 6 MB per GIF for GitHub README embed performance. Delete the `.mov` source after the GIF is verified.
+
+(The Linux pipeline recorded WebM with Kooha and used the same ffmpeg conversion.)
