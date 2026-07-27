@@ -2,7 +2,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clickBySelector } from '../../shared/actions.js'
-import { switchToLayout, waitForPaneCount } from '../../shared/splitView.js'
+import { waitForPaneCount } from '../../shared/splitView.js'
 
 // A layout switch unmounts every pane the new layout has no slot for, which
 // destroys that pane's native Ghostty surface. The pane comes back on a fresh
@@ -65,24 +65,50 @@ const openVerticalSplit = async (): Promise<void> => {
     return
   }
 
-  await switchToLayout('Vertical split')
+  // Under the native-overlay build both the command palette and the layout
+  // menu live in native overlay windows the DOM cannot reach. `cycle-layout`
+  // (Cmd+backslash) walks the built-in layouts instead, and the layout
+  // attribute is the only reliable target: a single-pane session renders
+  // vsplit as one filled slot plus one EMPTY slot, so slot counts cannot be
+  // trusted here.
+  const currentLayout = async (): Promise<string | null> =>
+    await browser.execute(
+      () =>
+        document
+          .querySelector('[data-testid="split-view"]')
+          ?.getAttribute('data-layout') ?? null
+    )
+  for (
+    let attempt = 0;
+    attempt < 8 && (await currentLayout()) !== 'vsplit';
+    attempt++
+  ) {
+    await browser.execute(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: '\\',
+          code: 'Backslash',
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+    })
+    await browser.pause(400)
+  }
+  if ((await currentLayout()) !== 'vsplit') {
+    const scene = await browser.execute(() => ({
+      layout: document
+        .querySelector('[data-testid="split-view"]')
+        ?.getAttribute('data-layout'),
+      slots: document.querySelectorAll('[data-testid="split-view-slot"]')
+        .length,
+    }))
 
-  await browser.waitUntil(
-    async () =>
-      await browser.execute(
-        () =>
-          document.querySelectorAll('[data-testid="split-view-slot"]')
-            .length === 2 ||
-          document.querySelector('[data-testid="split-view-empty-slot"]') !==
-            null
-      ),
-    {
-      timeout: 10_000,
-      interval: 250,
-      timeoutMsg:
-        'vertical split produced neither a second pane nor an empty slot',
-    }
-  )
+    throw new Error(
+      `could not reach a two-pane layout via cycle-layout: ${JSON.stringify(scene)}`
+    )
+  }
 
   const hasEmptySlot = await browser.execute(
     () =>

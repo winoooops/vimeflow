@@ -1,3 +1,4 @@
+import { clickBySelector } from '../../shared/actions.js'
 import { switchToLayout, waitForPaneCount } from '../../shared/splitView.js'
 
 const assertWorkspaceVisible = async (

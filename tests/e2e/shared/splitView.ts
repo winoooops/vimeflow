@@ -109,10 +109,13 @@ export const runPaletteCommand = async (command: string): Promise<void> => {
       { timeout: 5_000, interval: 100 }
     )
     .catch(async (): Promise<never> => {
-      const state = await browser.execute((selector: string) => ({
-        value: document.querySelector<HTMLInputElement>(selector)?.value,
-        body: document.body.innerText.slice(0, 200),
-      }))
+      const state = await browser.execute(
+        (selector: string) => ({
+          value: document.querySelector<HTMLInputElement>(selector)?.value,
+          body: document.body.innerText.slice(0, 200),
+        }),
+        PALETTE_INPUT
+      )
 
       throw new Error(
         `command palette matched nothing for ${command}: ${JSON.stringify(state)}`
