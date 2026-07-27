@@ -378,7 +378,8 @@ function isPanePayload(
   return (
     isRecord(value) &&
     isNonEmptyString(value.sessionId) &&
-    isNonEmptyString(value.paneId)
+    isNonEmptyString(value.paneId) &&
+    (value.epoch === undefined || isNonEmptyString(value.epoch))
   )
 }
 

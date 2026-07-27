@@ -263,6 +263,50 @@ describe('ghostty native parent', () => {
     ).toThrow('invalid ghostty native parent update payload')
   })
 
+  test('rejects invalid native pane epoch payload', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon: {
+        create: vi.fn(),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+      },
+    })
+
+    expect(() =>
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+          epoch: { mount: 1 },
+        }
+      )
+    ).toThrow('invalid ghostty native parent update payload')
+
+    expect(() =>
+      handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+        { sender: {} },
+        { sessionId: 'pty-1', paneId: 'pane-1', epoch: '' }
+      )
+    ).toThrow('invalid ghostty native parent destroy payload')
+  })
+
   test('returns disabled instead of throwing when addon artifacts are missing', () => {
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
