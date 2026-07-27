@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-07-05
-ref_count: 4
+last_updated: 2026-07-21
+ref_count: 5
 ---
 
 # Authoritative Completion Guard
@@ -121,4 +121,36 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   matched handles are consumed only when the add returns `ok`, and agent-authored
   annotations bypass the pending-comment cap because they are not user feedback
   awaiting dispatch. Added regression coverage for cap-blocked replies.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 8. Promoted code-mode exec finalized before authoritative process exit
+
+- **Source:** github-codex-connector | PR #720 round 1 | 2026-07-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Code-mode `exec` calls that contained a single nested
+  `tools.exec_command(...)` were promoted to the `exec_command` UI label but
+  still used the generic output completion mode. A `custom_tool_call_output`
+  could therefore finalize the Bash card as done before the authoritative
+  `exec_command_end` event carried a non-zero exit code.
+- **Fix:** Coupled promoted code-mode exec calls to `CompletionMode::ExecCommandEnd`
+  so their output event is ignored until the authoritative command-end event
+  arrives. Added a regression test proving a failed nested exec stays in-flight
+  through `custom_tool_call_output` and emits failed on `exec_command_end`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 9. Promoted code-mode apply_patch finalized before patch_apply_end
+
+- **Source:** github-codex-connector | PR #720 round 2 | 2026-07-21
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Code-mode `exec` calls that contained only a nested
+  `tools.apply_patch(...)` were promoted to the `apply_patch` UI label, but
+  completion-mode selection still checked the raw payload name. A
+  `custom_tool_call_output` could remove the in-flight call before
+  `patch_apply_end` reported the authoritative patch success or failure.
+- **Fix:** Selected `CompletionMode::PatchApplyEnd` from the resolved semantic
+  tool name so both direct and code-mode-promoted `apply_patch` calls wait for
+  `patch_apply_end`. Added a regression test proving the promoted call remains
+  pending through generic output and emits failed when `patch_apply_end` fails.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

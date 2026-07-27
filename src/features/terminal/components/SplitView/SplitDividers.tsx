@@ -1,5 +1,11 @@
 // cspell:ignore vsplit hsplit vdiv hdiv subcomponent
-import { Fragment, useCallback, type ReactElement, type RefObject } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useCallback,
+  type ReactElement,
+  type RefObject,
+} from 'react'
 import { ResizeHandle } from '@/components/ResizeHandle'
 import { useSplitDivider } from './useSplitDivider'
 import {
@@ -14,6 +20,13 @@ export interface SplitDividersProps {
   containerRef: RefObject<HTMLElement | null>
   ratios: LayoutRatios
   onRatioChange: (axis: RatioAxis, ratios: readonly number[]) => void
+  /** Publish each boundary's nudge so a command can resize a pane while a
+   *  terminal holds focus — the handles' own key bindings need focus they
+   *  never get. Keyed `"<axis>:<trackIndex>"`. */
+  onRegisterNudge?: (
+    key: string,
+    nudgeBy: ((px: number) => void) | null
+  ) => void
 }
 
 const HANDLE_TEST_ID = 'split-resize-handle'
@@ -69,6 +82,7 @@ const SplitDividerGroup = ({
   dragAxis,
   handles,
   onRatioChange,
+  onRegisterNudge = undefined,
 }: Omit<SplitDividersProps, 'layout'> & DividerGroup): ReactElement => {
   const onTrackChange = useCallback(
     (nextRatios: readonly number[]): void =>
@@ -84,6 +98,14 @@ const SplitDividerGroup = ({
     initialRatios: ratios[trackAxis],
     onRatioChange: onTrackChange,
   })
+
+  const nudgeKey = groupKey(trackAxis, trackIndex)
+  const { nudgeBy } = binding
+  useEffect(() => {
+    onRegisterNudge?.(nudgeKey, nudgeBy)
+
+    return (): void => onRegisterNudge?.(nudgeKey, null)
+  }, [nudgeKey, nudgeBy, onRegisterNudge])
 
   return (
     <Fragment>
@@ -112,6 +134,7 @@ export const SplitDividers = ({
   containerRef,
   ratios,
   onRatioChange,
+  onRegisterNudge = undefined,
 }: SplitDividersProps): ReactElement | null => {
   const specs = layout.dividers
 
@@ -129,6 +152,7 @@ export const SplitDividers = ({
           containerRef={containerRef}
           ratios={ratios}
           onRatioChange={onRatioChange}
+          onRegisterNudge={onRegisterNudge}
           {...group}
         />
       ))}

@@ -450,6 +450,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const newSessionBinding = bindingFor('new-session')
   const sidebarSessionsBinding = bindingFor('sidebar-sessions')
   const sidebarFilesBinding = bindingFor('sidebar-files')
+  const focusDiffBinding = bindingFor('focus-diff')
 
   const sidebarShortcutHint = chordToShortcutInput(sidebarToggleBinding)
 
@@ -3611,6 +3612,13 @@ const WorkspaceViewContent = (): ReactElement => {
               reservoirSwell={reservoirSwell}
               snapshotKey={activePtyBackedPanePtyId ?? null}
               reserveWindowControls={reserveWindowControls}
+              showDiffShortcut={formatShortcut(
+                chordToShortcutInput(focusDiffBinding)
+              )}
+              showDiffAriaShortcut={chordToAriaShortcut(focusDiffBinding)}
+              matchesShowDiffShortcut={(event): boolean =>
+                matches(event, 'focus-diff')
+              }
             />
           )}
         </div>

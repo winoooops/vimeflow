@@ -328,6 +328,42 @@ const CATALOG_LITERAL = [
     rebindable: true,
     defaultCombo: c('KeyZ', 'Mod'),
   },
+  {
+    id: 'pane-width-increase',
+    label: 'Widen active pane',
+    group: 'Panes & Layout',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: c('Equal', 'Mod'),
+  },
+  {
+    id: 'pane-width-decrease',
+    label: 'Narrow active pane',
+    group: 'Panes & Layout',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: c('Minus', 'Mod'),
+  },
+  {
+    id: 'pane-height-increase',
+    label: 'Grow active pane height',
+    group: 'Panes & Layout',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: c('Equal', 'Mod', 'Shift'),
+  },
+  {
+    id: 'pane-height-decrease',
+    label: 'Shrink active pane height',
+    group: 'Panes & Layout',
+    context: 'global',
+    matchPolicy: 'exact',
+    rebindable: true,
+    defaultCombo: c('Minus', 'Mod', 'Shift'),
+  },
 
   // ── Global (MIGRATED — rebindable except fixed settings shortcuts) ──
   {

@@ -336,8 +336,24 @@ test('formatReviewRequest names the scope, coordinate convention, and block (VIM
   )
 
   expect(payload).toContain(
+    '{"v":1,"nonce":"r3v13w","reviewer":"<your name>","findings":[{"path":"<file>","scope":"line","side":"additions","line":1,"category":"bug","text":"..."}]}'
+  )
+  expect(payload).not.toContain('{{NONCE}}')
+
+  expect(payload).toContain(
     'Follow-up example (do not emit this block in the current review reply)'
   )
+})
+
+test('formatReviewRequest documents valid line, range, file, and clean schemas', () => {
+  const payload = formatReviewRequest(reviewedFiles, 'r3v13w')
+
+  expect(payload).toContain('"scope":"line"')
+  expect(payload).toContain('"line":42')
+  expect(payload).toContain('"scope":"range"')
+  expect(payload).toContain('"startLine":88,"endLine":94')
+  expect(payload).toContain('"scope":"file"')
+  expect(payload).toContain('"findings":[]')
 })
 
 test('formatReviewRequest can include absolute prompt paths while preserving JSON paths', () => {

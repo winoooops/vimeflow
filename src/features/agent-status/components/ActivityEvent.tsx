@@ -3,6 +3,8 @@ import {
   type KeyboardEventHandler,
   type ReactElement,
   type Ref,
+  useEffect,
+  useState,
 } from 'react'
 import { Chip } from '@/components/Chip'
 import {
@@ -14,6 +16,7 @@ import {
   computeActivityAgo,
 } from '@/components/NativeOverlayActivityCard'
 import { Tooltip } from '@/components/Tooltip'
+import { TERMINAL_CONTAINER_ID } from '@/features/workspace/containerIds'
 import { useNativeActivityPopoverSource } from '../hooks/useNativeActivityPopover'
 import type { ActivityEvent as ActivityEventType } from '../types/activityEvent'
 
@@ -21,9 +24,16 @@ interface ActivityEventProps {
   ariaPosInSet?: number
   ariaSetSize?: number
   event: ActivityEventType
+  isShowDiffShortcutOwner?: boolean
   now: Date
   onFocus?: FocusEventHandler<HTMLElement>
   onKeyDown?: KeyboardEventHandler<HTMLElement>
+  onShowDiff?: () => void
+  onShowDiffShortcutOpen?: () => void
+  onShowDiffShortcutClose?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
   rowRef?: Ref<HTMLElement>
   tabIndex?: 0 | -1
 }
@@ -41,12 +51,8 @@ export const getLabel = (event: ActivityEventType): string => {
     // unless asked"); the verb-prefixed text is the differentiator.
     return event.tool === 'Edit' ? 'UPDATED TEST' : 'CREATED TEST'
   }
-  // The `kind === 'meta'` branch narrows `event` to ToolActivityEvent
-  // via the discriminated union — `tool` is always present. Drop the
-  // redundant `'tool' in event` guard that misled readers into thinking
-  // it could be absent.
-  if (event.kind === 'meta') {
-    return event.tool.toUpperCase()
+  if ('tool' in event) {
+    return event.label
   }
 
   return event.kind.toUpperCase()
@@ -56,28 +62,116 @@ export const computeAgo = computeActivityAgo
 
 interface ActivityDetailsTooltipProps {
   event: ActivityEventType
+  isShowDiffShortcutOwner?: boolean
   now: Date
   ariaLabel: string
   onActivate?: () => void
+  onShowDiff?: () => void
+  onShowDiffShortcutOpen?: () => void
+  onShowDiffShortcutClose?: () => void
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
+  matchesShowDiffShortcut?: (event: KeyboardEvent) => boolean
   children: ReactElement
+}
+
+const isEditorOrTerminalTarget = (element: Element): boolean =>
+  element.closest('.cm-editor') !== null ||
+  element.closest(`[data-container-id="${TERMINAL_CONTAINER_ID}"]`) !== null
+
+const isGuardedShortcutSurface = (event: KeyboardEvent): boolean => {
+  const target = event.target instanceof Element ? event.target : null
+
+  const activeElement =
+    document.activeElement instanceof Element ? document.activeElement : null
+
+  return (
+    (target !== null && isEditorOrTerminalTarget(target)) ||
+    (activeElement !== null && isEditorOrTerminalTarget(activeElement))
+  )
 }
 
 export const ActivityDetailsTooltip = ({
   event,
+  isShowDiffShortcutOwner = true,
   now,
   ariaLabel,
   onActivate = undefined,
+  onShowDiff = undefined,
+  onShowDiffShortcutOpen = undefined,
+  onShowDiffShortcutClose = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
   children,
 }: ActivityDetailsTooltipProps): ReactElement => {
+  const [open, setOpen] = useState(false)
+
   const { payload, actions } = useNativeActivityPopoverSource({
     event,
     ariaLabel,
     onActivate,
+    onShowDiff,
+    showDiffShortcut,
+    showDiffAriaShortcut,
   })
+
+  useEffect(() => {
+    if (
+      !open ||
+      !isShowDiffShortcutOwner ||
+      onShowDiff === undefined ||
+      matchesShowDiffShortcut === undefined
+    ) {
+      return
+    }
+
+    const handleKeyDown = (keyboardEvent: KeyboardEvent): void => {
+      if (
+        keyboardEvent.repeat ||
+        isGuardedShortcutSurface(keyboardEvent) ||
+        !matchesShowDiffShortcut(keyboardEvent)
+      ) {
+        return
+      }
+
+      keyboardEvent.preventDefault()
+      onShowDiff()
+    }
+
+    document.addEventListener('keydown', handleKeyDown, true)
+
+    return (): void =>
+      document.removeEventListener('keydown', handleKeyDown, true)
+  }, [isShowDiffShortcutOwner, matchesShowDiffShortcut, onShowDiff, open])
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen)
+
+    if (onShowDiff === undefined) {
+      return
+    }
+
+    if (nextOpen) {
+      onShowDiffShortcutOpen?.()
+
+      return
+    }
+
+    onShowDiffShortcutClose?.()
+  }
 
   return (
     <Tooltip
-      content={<NativeOverlayActivityCard event={event} now={now} />}
+      content={
+        <NativeOverlayActivityCard
+          event={event}
+          now={now}
+          onShowDiff={onShowDiff}
+          showDiffShortcut={showDiffShortcut}
+          showDiffAriaShortcut={showDiffAriaShortcut}
+        />
+      }
       placement="left"
       bare
       interactive
@@ -86,6 +180,7 @@ export const ActivityDetailsTooltip = ({
       nativeOverlay
       nativeOverlayPayload={payload}
       nativeOverlayActions={actions}
+      onOpenChange={handleOpenChange}
     >
       {children}
     </Tooltip>
@@ -150,9 +245,16 @@ export const ActivityEvent = ({
   ariaPosInSet = undefined,
   ariaSetSize = undefined,
   event,
+  isShowDiffShortcutOwner = true,
   now,
   onFocus = undefined,
   onKeyDown = undefined,
+  onShowDiff = undefined,
+  onShowDiffShortcutOpen = undefined,
+  onShowDiffShortcutClose = undefined,
+  showDiffShortcut = undefined,
+  showDiffAriaShortcut = undefined,
+  matchesShowDiffShortcut = undefined,
   rowRef = undefined,
   tabIndex = 0,
 }: ActivityEventProps): ReactElement => {
@@ -165,8 +267,15 @@ export const ActivityEvent = ({
   return (
     <ActivityDetailsTooltip
       event={event}
+      isShowDiffShortcutOwner={isShowDiffShortcutOwner}
       now={now}
-      ariaLabel={`${label} activity details`}
+      ariaLabel={`${label} trace details`}
+      onShowDiff={onShowDiff}
+      onShowDiffShortcutOpen={onShowDiffShortcutOpen}
+      onShowDiffShortcutClose={onShowDiffShortcutClose}
+      showDiffShortcut={showDiffShortcut}
+      showDiffAriaShortcut={showDiffAriaShortcut}
+      matchesShowDiffShortcut={matchesShowDiffShortcut}
     >
       <article
         ref={rowRef}

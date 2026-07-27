@@ -2,8 +2,8 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-07-17
-ref_count: 8
+last_updated: 2026-07-26
+ref_count: 9
 ---
 
 # Dead Code
@@ -131,3 +131,27 @@ code and should be removed.
   lookup, and fallback render branch so the pane renderer reflects the
   availability contract directly.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. SplitView ratio ref stayed write-only after keyboard resize refactor
+
+- **Source:** github-claude | PR #741 round 2 | 2026-07-26
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** `ratiosRef` was assigned on every render with a comment claiming
+  the keydown handler read it, but the keyboard pane-resize handler had already
+  moved to live `nudgeByBoundaryRef` callbacks and no longer read the ref.
+- **Fix:** Removed the stale ref and misleading comment so the component only
+  carries state used by the active resize path.
+- **Commit:** same commit as this entry
+
+### 13. Superseded SplitView track resolver remained exported only for tests
+
+- **Source:** github-claude | PR #741 round 2 | 2026-07-26
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/SplitView/SplitView.tsx`
+- **Finding:** `resolvePaneTrackNudge` had no production caller after the
+  span-aware `resolvePaneSpanTrackNudge` replaced it, but the old export and
+  dedicated test block remained as a parallel resolver maintained only by tests.
+- **Fix:** Removed the obsolete resolver export and its dedicated tests, leaving
+  the span-aware resolver as the only boundary-resolution implementation.
+- **Commit:** same commit as this entry

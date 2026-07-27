@@ -83,6 +83,7 @@ const request = (
 })
 
 const finding = (o: Partial<AgentReviewFinding> = {}): AgentReviewFinding => ({
+  ordinal: 1,
   scope: 'line',
   path: 'a.ts',
   side: 'additions',
@@ -98,7 +99,7 @@ const event = (o: Partial<AgentReviewEvent> = {}): AgentReviewEvent => ({
   sessionId: 'pty-1',
   nonce: 'abc',
   reviewer: 'codex',
-  rawText: 'raw block',
+  omittedFindingCount: 0,
   findings: [],
   ...o,
 })
@@ -374,16 +375,46 @@ describe('useAgentReview', () => {
     expect(reviewLevelNotes('owner').map((n) => n.text)).toEqual(['orphan'])
   })
 
-  test('degrades a malformed event (findings:null) to one review-level note', async () => {
+  test('degrades a malformed event without exposing its raw sentinel block', async () => {
     setPendingReviewRequest(request())
     mount()
-    await emit(event({ findings: null, reviewer: null, rawText: 'broken' }))
+    await emit(event({ findings: null, reviewer: null }))
 
     expect(addAnnotationForOwner).not.toHaveBeenCalled()
     const notes = reviewLevelNotes('owner')
     expect(notes).toHaveLength(1)
-    expect(notes[0].text).toBe('broken')
+    expect(notes[0].text).toBe(
+      'The reviewer returned an invalid structured review. Request another review to retry.'
+    )
     expect(notes[0].reviewer).toBe('Reviewer') // fallback label
+  })
+
+  test('places valid findings and reports malformed findings omitted by the parser', async () => {
+    setPendingReviewRequest(request())
+    mount()
+    await emit(
+      event({
+        findings: [finding({ ordinal: 2, text: 'Valid finding.' })],
+        omittedFindingCount: 2,
+      })
+    )
+
+    expect(addAnnotationForOwner).toHaveBeenCalledOnce()
+    expect(addAnnotationForOwner.mock.calls[0][4].metadata.text).toBe(
+      'Valid finding.'
+    )
+
+    expect(reviewLevelNotes('owner').map((note) => note.text)).toEqual([
+      '2 malformed reviewer findings were omitted.',
+    ])
+
+    expect(getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(2)?.kind).toBe(
+      'anchored'
+    )
+
+    expect(
+      getFindingThreadRecord('pty-1', 'abc')?.byOrdinal.get(1)
+    ).toBeUndefined()
   })
 
   test('a clean review (empty findings) places nothing and clears the request', async () => {
@@ -436,7 +467,7 @@ describe('finding-thread transition (VIM-304 PR-3)', () => {
       event({
         findings: [
           finding(), // line 42, in-hunk → anchored, ordinal 1
-          finding({ path: 'other.ts' }), // off-snapshot → review-level, ordinal 2
+          finding({ ordinal: 2, path: 'other.ts' }), // off-snapshot → review-level, ordinal 2
         ],
       })
     )
@@ -550,7 +581,7 @@ const dualEvent = (o: Partial<AgentReviewEvent> = {}): AgentReviewEvent => ({
   sessionId: 'session-1',
   nonce: 'dual',
   reviewer: 'codex',
-  rawText: 'raw',
+  omittedFindingCount: 0,
   findings: [],
   ...o,
 })

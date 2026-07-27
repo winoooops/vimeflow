@@ -1,13 +1,19 @@
-export type ActivityEventKind =
+export type ToolActivityEventKind =
   | 'edit'
   | 'bash'
   | 'read'
   | 'write'
   | 'grep'
   | 'glob'
-  | 'think'
-  | 'user'
+  | 'plan'
+  | 'wait'
+  | 'agent'
+  | 'web'
+  | 'interaction'
+  | 'external'
   | 'meta'
+
+export type ActivityEventKind = ToolActivityEventKind | 'think' | 'user'
 
 export interface BaseActivityEvent {
   id: string
@@ -25,8 +31,9 @@ export interface BaseActivityEvent {
 }
 
 export interface ToolActivityEvent extends BaseActivityEvent {
-  kind: 'edit' | 'bash' | 'read' | 'write' | 'grep' | 'glob' | 'meta'
+  kind: ToolActivityEventKind
   tool: string
+  label: string
   durationMs: number | null
   diff?: { added: number; removed: number }
   bashResult?: { passed: number; total: number }

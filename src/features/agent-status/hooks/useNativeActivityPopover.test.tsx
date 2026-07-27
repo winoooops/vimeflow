@@ -15,6 +15,7 @@ const event: ActivityEvent = {
   status: 'done',
   body: 'npm test',
   tool: 'Bash',
+  label: 'BASH',
   durationMs: 1200,
 }
 
@@ -26,7 +27,7 @@ const request: NativeOverlayActivityPopoverRequest = {
   payload: {
     kind: 'popover',
     popover: 'activity',
-    ariaLabel: 'BASH activity details',
+    ariaLabel: 'BASH trace details',
     event,
     activateActionId: 'activity:activate',
   },
@@ -43,7 +44,7 @@ describe('native activity popover hooks', () => {
     const { result } = renderHook(() =>
       useNativeActivityPopoverSource({
         event,
-        ariaLabel: 'BASH activity details',
+        ariaLabel: 'BASH trace details',
         onActivate,
       })
     )
@@ -58,6 +59,32 @@ describe('native activity popover hooks', () => {
       action()
     }
     expect(onActivate).toHaveBeenCalledOnce()
+  })
+
+  test('keeps Show diff in the owner renderer with its resolved shortcut', () => {
+    const onShowDiff = vi.fn()
+
+    const { result } = renderHook(() =>
+      useNativeActivityPopoverSource({
+        event,
+        ariaLabel: 'BASH trace details',
+        onShowDiff,
+        showDiffShortcut: '⌘G',
+        showDiffAriaShortcut: 'Meta+g',
+      })
+    )
+
+    expect(result.current.payload.showDiffShortcut).toBe('⌘G')
+    expect(result.current.payload.showDiffAriaShortcut).toBe('Meta+g')
+    const actionId = result.current.payload.showDiffActionId
+    expect(actionId).toBeDefined()
+
+    const action = result.current.actions.get(actionId!)
+    expect(typeof action).toBe('function')
+    if (typeof action === 'function') {
+      action()
+    }
+    expect(onShowDiff).toHaveBeenCalledOnce()
   })
 
   test('recognizes only complete activity popover requests', () => {

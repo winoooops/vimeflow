@@ -3,7 +3,7 @@ id: custom-pane-layout-preservation
 category: correctness
 created: 2026-06-19
 last_updated: 2026-06-22
-ref_count: 5
+ref_count: 6
 ---
 
 # Custom Pane Layout Preservation

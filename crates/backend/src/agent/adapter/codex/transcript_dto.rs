@@ -77,6 +77,8 @@ pub(super) struct CodexPayloadDto {
     #[serde(default, deserialize_with = "lenient_string")]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
+    pub namespace: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
     pub message: Option<String>,
     /// The completed agent reply on a `task_complete` event_msg (VIM-283).
     #[serde(default, deserialize_with = "lenient_string")]
@@ -175,6 +177,17 @@ mod tests {
         assert!(matches!(missing.payload_type(), CodexPayloadType::Other));
         let nonstring: CodexPayloadDto = serde_json::from_str(r#"{"type":42}"#).unwrap();
         assert!(matches!(nonstring.payload_type(), CodexPayloadType::Other));
+    }
+
+    #[test]
+    fn codex_payload_preserves_function_call_namespace() {
+        let payload: CodexPayloadDto = serde_json::from_str(
+            r#"{"type":"function_call","name":"send_message","namespace":"collaboration"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(payload.name.as_deref(), Some("send_message"));
+        assert_eq!(payload.namespace.as_deref(), Some("collaboration"));
     }
 
     #[test]

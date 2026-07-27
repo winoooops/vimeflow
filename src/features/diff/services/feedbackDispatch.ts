@@ -6,6 +6,7 @@ import {
   type ReviewCommentCategory,
 } from '../hooks/useFeedbackBatch'
 import type { ReviewedFile } from './pendingReviewRequests'
+import delegatedReviewPrompt from '../prompts/delegated-review.prompt.md?raw'
 
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
@@ -212,6 +213,7 @@ export const formatReviewRequest = (
   files: ReviewRequestFile[],
   nonce: string
 ): string => {
+  const cleanNonce = stripControls(nonce)
   const unstaged = files.filter((file) => !file.staged)
   const staged = files.filter((file) => file.staged)
 
@@ -231,23 +233,7 @@ export const formatReviewRequest = (
     `> Delegate a code review of ${files.length === 1 ? 'this' : 'these'} ${files.length} change${files.length === 1 ? '' : 's'}:`,
     ...groups,
     '>',
-    '> Anchor each finding with diff-side line numbers: "additions" uses new-file lines, "deletions" uses old-file lines.',
-    '> In the JSON block, use the repo-relative path before the parentheses as each finding path.',
-    '> category is one of: "bug", "suggestion", "change", "question". scope is "line", "range", or "file".',
-    '> Anchor shapes: "line" uses side + line; "range" uses side + startLine + endLine; "file" uses neither.',
-    '> Keep this nonce for later turns. If the user later asks you to address these findings, end that later reply with VIMEFLOW_REPLY using this same nonce.',
-    '> In that later block, target each finding by its 1-based position in the findings array and include every decision you made.',
-    '> Follow-up status is one of: "reply", "clarify", "resolved", "deferred", or "rejected".',
-    '> Follow-up example (do not emit this block in the current review reply):',
-    '> <<<VIMEFLOW_REPLY',
-    `> {"v":1,"nonce":"${nonce}","replies":[{"target":"finding","id":1,"status":"resolved","text":"..."}]}`,
-    '> VIMEFLOW_REPLY>>>',
-    '>',
-    '> When done, end your reply with this exact block — echo the nonce verbatim and self-report the reviewer name.',
-    '> Also give a one-line overview in your normal reply (not in the block), especially if there is little to report.',
-    '> <<<VIMEFLOW_REVIEW',
-    `> {"v":1,"nonce":"${nonce}","reviewer":"<your name>","findings":[{"path":"<file>","scope":"line","side":"additions","line":1,"category":"bug","text":"..."}]}`,
-    '> VIMEFLOW_REVIEW>>>',
+    delegatedReviewPrompt.trimEnd().replace(/\{\{NONCE\}\}/g, cleanNonce),
   ].join('\n')
 }
 

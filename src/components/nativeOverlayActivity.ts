@@ -1,11 +1,21 @@
+const NATIVE_OVERLAY_ACTIVITY_TOOL_KINDS = [
+  'edit',
+  'bash',
+  'read',
+  'write',
+  'grep',
+  'glob',
+  'plan',
+  'wait',
+  'agent',
+  'web',
+  'interaction',
+  'external',
+  'meta',
+] as const
+
 type NativeOverlayActivityToolKind =
-  | 'edit'
-  | 'bash'
-  | 'read'
-  | 'write'
-  | 'grep'
-  | 'glob'
-  | 'meta'
+  (typeof NATIVE_OVERLAY_ACTIVITY_TOOL_KINDS)[number]
 
 export type NativeOverlayActivityEventKind =
   | NativeOverlayActivityToolKind
@@ -24,6 +34,7 @@ export type NativeOverlayActivityEvent =
   | (NativeOverlayActivityEventBase & {
       kind: NativeOverlayActivityToolKind
       tool: string
+      label: string
       durationMs: number | null
       diff?: { added: number; removed: number }
       bashResult?: { passed: number; total: number }
@@ -42,6 +53,9 @@ export interface NativeOverlayActivityPopoverPayload {
   ariaLabel: string
   event: NativeOverlayActivityEvent
   activateActionId?: string
+  showDiffActionId?: string
+  showDiffShortcut?: string
+  showDiffAriaShortcut?: string
 }
 
 export interface NativeOverlayActivityPopoverRequest {
@@ -66,13 +80,7 @@ const isFiniteNumber = (value: unknown): value is number =>
 const isActivityToolKind = (
   value: unknown
 ): value is NativeOverlayActivityToolKind =>
-  value === 'edit' ||
-  value === 'bash' ||
-  value === 'read' ||
-  value === 'write' ||
-  value === 'grep' ||
-  value === 'glob' ||
-  value === 'meta'
+  NATIVE_OVERLAY_ACTIVITY_TOOL_KINDS.some((kind) => kind === value)
 
 const isCountPair = (value: unknown, first: string, second: string): boolean =>
   isRecord(value) &&
@@ -102,6 +110,7 @@ const isActivityEvent = (
   return (
     isActivityToolKind(value.kind) &&
     typeof value.tool === 'string' &&
+    typeof value.label === 'string' &&
     (value.durationMs === null || isFiniteNumber(value.durationMs)) &&
     (value.diff === undefined || isCountPair(value.diff, 'added', 'removed')) &&
     (value.bashResult === undefined ||
@@ -121,7 +130,13 @@ export const isNativeOverlayActivityPopoverPayload = (
   typeof value.ariaLabel === 'string' &&
   isActivityEvent(value.event) &&
   (value.activateActionId === undefined ||
-    typeof value.activateActionId === 'string')
+    typeof value.activateActionId === 'string') &&
+  (value.showDiffActionId === undefined ||
+    typeof value.showDiffActionId === 'string') &&
+  (value.showDiffShortcut === undefined ||
+    typeof value.showDiffShortcut === 'string') &&
+  (value.showDiffAriaShortcut === undefined ||
+    typeof value.showDiffAriaShortcut === 'string')
 
 export const isNativeActivityPopoverRequest = (
   value: unknown
