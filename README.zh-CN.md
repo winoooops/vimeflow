@@ -64,12 +64,12 @@ Vimeflow 不是在浏览器里模拟终端。macOS arm64 打包版本把**真正
   <tr>
     <td width="33%" valign="top"><img src="docs/media/agent-context.png" alt="代理状态侧栏中的上下文蓄水池仪表" width="100%" /></td>
     <td width="33%" valign="top"><img src="docs/media/agent-cache.png" alt="代理状态侧栏中的缓存命中率环" width="100%" /></td>
-    <td width="33%" valign="top"><img src="docs/media/agent-traces.png" alt="代理状态侧栏中的工具调用轨迹" width="100%" /></td>
+    <td width="33%" valign="top"><img src="docs/media/agent-traces.png" alt="代理状态侧栏中的轨迹（Traces）列表 —— 每条工具调用的参数与结果状态" width="100%" /></td>
   </tr>
   <tr>
     <td valign="top"><b>上下文蓄水池</b> —— 模型的上下文窗口还剩多少，随着对话变长像水箱一样往下排；水位的颜色还会随用量变化，让你在撞到上限之前就先有感觉。</td>
     <td valign="top"><b>缓存命中率</b> —— 这一轮有多少来自缓存，画成一个环；环越满，这一轮就越便宜、越快。</td>
-    <td valign="top"><b>工具调用与轨迹</b> —— 实时计数，外加一份可滚动、层层堆叠的历史，记录代理触发过的每一个工具。</td>
+    <td valign="top"><b>轨迹（Traces）</b> —— 一份可滚动的历史，记录代理触发过的每一个工具：工具名、参数与结果，最新的在最上面。</td>
   </tr>
 </table>
 

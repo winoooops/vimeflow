@@ -64,12 +64,12 @@ The panel isn't just a readout — it's three live gauges you can trust at a gla
   <tr>
     <td width="33%" valign="top"><img src="docs/media/agent-context.png" alt="Context reservoir gauge in the agent status sidebar" width="100%" /></td>
     <td width="33%" valign="top"><img src="docs/media/agent-cache.png" alt="Cache-rate ring in the agent status sidebar" width="100%" /></td>
-    <td width="33%" valign="top"><img src="docs/media/agent-traces.png" alt="Tool-call traces in the agent status sidebar" width="100%" /></td>
+    <td width="33%" valign="top"><img src="docs/media/agent-traces.png" alt="The Traces feed in the agent status sidebar — recent tool calls with arguments and result status" width="100%" /></td>
   </tr>
   <tr>
     <td valign="top"><b>Context reservoir</b> — how much of the model's context window is left, draining like a tank as the conversation grows. The fill even shifts color as it climbs, so you feel the ceiling coming before you hit it.</td>
     <td valign="top"><b>Cache rate</b> — the share of this turn served from cache, drawn as a ring; the fuller it reads, the cheaper and faster the turn.</td>
-    <td valign="top"><b>Tool calls &amp; traces</b> — a live count plus a stacked, scrollable history of every tool the agent has fired.</td>
+    <td valign="top"><b>Traces</b> — a scrollable history of every tool the agent has fired: tool, arguments, and result, newest first.</td>
   </tr>
 </table>
 
