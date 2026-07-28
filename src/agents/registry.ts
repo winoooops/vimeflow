@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty ghostty winsize unthrottled
 import {
   ClaudeCode,
   Codex,
@@ -41,6 +42,17 @@ export interface AgentDef extends PaneIdentity {
   } | null
   Icon?: AgentIcon
   /**
+   * Engine-side resize coalescing for this agent's native Ghostty surface,
+   * in milliseconds (0 = unthrottled). Content-dependent: an alt-screen TUI
+   * that fully repaints on every winsize needs ~96ms so the engine's reflow
+   * can keep up with a drag, while a primary-screen transcript that never
+   * re-emits its scrollback renders best unthrottled — throttled jumps read
+   * as blinking there. Values from a hands-on A/B across 0/32/48/64/96 on
+   * live panes. Rule for new agents: full-frame repaint per winsize → ~96;
+   * partial/in-place updates → 0.
+   */
+  resizeThrottleMs: number
+  /**
    * Set only for agents that have no readable usage/quota API: the status card
    * renders this notice + a link to the upstream feature request instead of
    * 5-hour / weekly bars. Currently opencode (see sst/opencode#16017); cleared
@@ -57,6 +69,7 @@ export const AGENTS = {
     glyph: '∴',
     Icon: ClaudeCode,
     model: 'sonnet-4',
+    resizeThrottleMs: 96,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--resume',
@@ -73,6 +86,7 @@ export const AGENTS = {
     glyph: '◇',
     Icon: Codex,
     model: 'gpt-5-codex',
+    resizeThrottleMs: 0,
     resumeCommands: {
       latest: 'resume --last',
       byIdPrefix: 'resume',
@@ -89,6 +103,9 @@ export const AGENTS = {
     glyph: '☾',
     Icon: Kimi,
     model: 'k2.7',
+    // pi-tui's destructive full renders flicker at ANY throttle; tracked
+    // upstream (MoonshotAI/kimi-code#2324). Re-evaluate when that lands.
+    resizeThrottleMs: 0,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--session',
@@ -105,6 +122,7 @@ export const AGENTS = {
     glyph: '$',
     Icon: Shell,
     model: null,
+    resizeThrottleMs: 0,
     resumeCommands: null,
     accent: 'var(--color-agent-shell-accent)',
     accentDim: 'var(--color-agent-shell-accent-dim)',
@@ -118,6 +136,7 @@ export const AGENTS = {
     glyph: '◈',
     Icon: OpenCode,
     model: null,
+    resizeThrottleMs: 0,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--session',
