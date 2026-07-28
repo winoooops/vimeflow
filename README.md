@@ -73,9 +73,15 @@ The panel isn't just a readout — it's three live gauges you can trust at a gla
   </tr>
 </table>
 
+Collapse the sidebar and those two shrink into a compact rail — the reservoir and cache ring, still readable in a glance:
+
+<div align="center">
+  <img src="docs/media/agent-rail-collapsed.png" alt="The collapsed sidebar rail — a compact vertical context reservoir (CTX) above a small cache ring" width="90" />
+</div>
+
 ### Plan usage, where the API allows it
 
-For agents that expose it, the panel tracks your remaining quota right beside the model — session and weekly, ticking down live as you work.
+For agents that expose it, the panel tracks your session and weekly usage live, right beside the model — so you can push your coding plan as far as it'll go.
 
 <div align="center">
   <img src="docs/media/usage-bars.png" alt="Agent status card showing the model, a turn count, and plan-usage bars for the 5-hour session and weekly usage, each with a percentage remaining" width="520" />
@@ -93,7 +99,7 @@ Kimi Code shows the very same bars — with a one-click switch to turn the track
 
 ## Review Changes Hunk By Hunk
 
-A full inline review surface docked beside your terminals — not a shell-out to `git diff`. Diffs render through **Pierre**'s engine (`@pierre/diffs`), themed to match your workspace, with the changed-files list one pane over. You act on hunks in place — **stage or unstage a single hunk**, **discard a hunk or a whole file** (confirmed first) — and review here is a conversation, not a monologue: **leave a line-level comment and the working agent answers it in the same thread**, fixes the code, and marks it resolved. Want a second opinion? **Request review** hands the diff to a tertiary reviewer — dispatch it to another agent, or copy the prompt and take it wherever you like. Either way you step through the edits hunk by hunk and catch a bad change while it's still being written, without ever leaving the window.
+A full inline review surface docked beside your terminals — not a shell-out to `git diff`. Diffs render through **Pierre**'s engine (`@pierre/diffs`), themed to match your workspace, with the changed-files list one pane over. You act on hunks in place — **stage or unstage a single hunk**, **discard a hunk or a whole file** — and review here is a conversation, not a monologue: **leave a line-level comment and the working agent answers it in the same thread**, fixes the code, and marks it resolved. Want a second opinion? **Request review** hands the diff to a tertiary reviewer — dispatch it to another agent, or copy the prompt and take it wherever you like. Either way you step through the edits hunk by hunk and catch a bad change while it's still being written, without ever leaving the window.
 
 <div align="center">
   <img src="docs/media/hunk-review.png" alt="A resolved review thread on a changed line in the diff dock: a comment asking to improve accessibility, answered by the agent and marked resolved" width="900" />

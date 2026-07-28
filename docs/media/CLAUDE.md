@@ -4,22 +4,23 @@ Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Capt
 
 ## Inventory
 
-| Asset                  | Used in                            | Scenario                                                                                           |
-| ---------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `hero-workspace.gif`   | README hero                        | Create a session in a demo project, launch `claude` in a Ghostty pane, agent panel streams traces  |
-| `ghostty-resize.gif`   | "Native Ghostty Terminals" section | Drag a pane divider (or window edge) while a terminal renders live — show the smooth reflow        |
-| `ghostty-tui.png`      | "Native Ghostty Terminals" section | `nvim` full-screen in one pane, an agent session beside it                                         |
-| `multi-agent-grid.png` | "Many Agents, One Workspace"       | Quad layout — `claude`, `codex`, `kimi`, `opencode` one per pane, status panel expanded            |
-| `agent-context.png`    | "Reading the status sidebar"       | Context-reservoir gauge (fill + % + tokens left) from the expanded agent sidebar                   |
-| `agent-cache.png`      | "Reading the status sidebar"       | Cache-rate ring ("CACHED THIS TURN") with cached / wrote / fresh counts                            |
-| `agent-traces.png`     | "Reading the status sidebar"       | The Traces feed — a list of recent tool calls (tool · args · result) from the agent sidebar        |
-| `usage-bars.png`       | "Many Agents" → Plan usage         | Agent status card with model, turn count, and the 5-hour + weekly plan-usage bars (Claude)         |
-| `kimi-usage.png`       | "Many Agents" → Plan usage         | Kimi Code plan-usage card (`kimi-code/k3`) with the "Turn off plan-usage tracking" control         |
-| `hunk-review.png`      | "Review Changes Hunk By Hunk"      | Diff dock (`⌘G`): a resolved review thread on a changed line (comment → agent reply → resolved)    |
-| `worktree-chip.png`    | "Seamless Worktree Integration"    | The git chip's copy popover (Copy worktree / path / branch) over the worktree → branch status chip |
-| `command-palette.png`  | "Command Palette And Settings"     | Palette open (`⌘;`) with fuzzy-matched commands visible                                            |
-| `theme-tour.gif`       | "BYOT: Bring Your Own Theme"       | `:theme` live-previewing the built-in themes                                                       |
-| `linux-workspace.png`  | "On Linux"                         | Vimeflow running the full workspace on Linux (xterm.js terminals)                                  |
+| Asset                      | Used in                            | Scenario                                                                                           |
+| -------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `hero-workspace.gif`       | README hero                        | Create a session in a demo project, launch `claude` in a Ghostty pane, agent panel streams traces  |
+| `ghostty-resize.gif`       | "Native Ghostty Terminals" section | Drag a pane divider (or window edge) while a terminal renders live — show the smooth reflow        |
+| `ghostty-tui.png`          | "Native Ghostty Terminals" section | `nvim` full-screen in one pane, an agent session beside it                                         |
+| `multi-agent-grid.png`     | "Many Agents, One Workspace"       | Quad layout — `claude`, `codex`, `kimi`, `opencode` one per pane, status panel expanded            |
+| `agent-context.png`        | "Reading the status sidebar"       | Context-reservoir gauge (fill + % + tokens left) from the expanded agent sidebar                   |
+| `agent-cache.png`          | "Reading the status sidebar"       | Cache-rate ring ("CACHED THIS TURN") with cached / wrote / fresh counts                            |
+| `agent-traces.png`         | "Reading the status sidebar"       | The Traces feed — a list of recent tool calls (tool · args · result) from the agent sidebar        |
+| `agent-rail-collapsed.png` | "Reading the status sidebar"       | Collapsed sidebar rail — the compact vertical context reservoir (CTX) above the small cache ring   |
+| `usage-bars.png`           | "Many Agents" → Plan usage         | Agent status card with model, turn count, and the 5-hour + weekly plan-usage bars (Claude)         |
+| `kimi-usage.png`           | "Many Agents" → Plan usage         | Kimi Code plan-usage card (`kimi-code/k3`) with the "Turn off plan-usage tracking" control         |
+| `hunk-review.png`          | "Review Changes Hunk By Hunk"      | Diff dock (`⌘G`): a resolved review thread on a changed line (comment → agent reply → resolved)    |
+| `worktree-chip.png`        | "Seamless Worktree Integration"    | The git chip's copy popover (Copy worktree / path / branch) over the worktree → branch status chip |
+| `command-palette.png`      | "Command Palette And Settings"     | Palette open (`⌘;`) with fuzzy-matched commands visible                                            |
+| `theme-tour.gif`           | "BYOT: Bring Your Own Theme"       | `:theme` live-previewing the built-in themes                                                       |
+| `linux-workspace.png`      | "On Linux"                         | Vimeflow running the full workspace on Linux (xterm.js terminals)                                  |
 
 ## Capture pipeline (macOS)
 
