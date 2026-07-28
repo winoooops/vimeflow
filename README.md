@@ -58,26 +58,22 @@ Try it:
 
 ### Reading the status sidebar
 
-The panel isn't just a readout — it's three live gauges you can trust at a glance:
+The panel isn't just a readout — it's a stack of live gauges you can trust at a glance (and they fold into a compact rail when you collapse the sidebar):
 
 <table>
   <tr>
-    <td width="33%" valign="top"><img src="docs/media/agent-context.png" alt="Context reservoir gauge in the agent status sidebar" width="100%" /></td>
-    <td width="33%" valign="top"><img src="docs/media/agent-cache.png" alt="Cache-rate ring in the agent status sidebar" width="100%" /></td>
-    <td width="33%" valign="top"><img src="docs/media/agent-traces.png" alt="The Traces feed in the agent status sidebar — recent tool calls with arguments and result status" width="100%" /></td>
+    <td width="28%" valign="top"><img src="docs/media/agent-context.png" alt="Context reservoir gauge in the agent status sidebar" width="100%" /></td>
+    <td width="28%" valign="top"><img src="docs/media/agent-cache.png" alt="Cache-rate ring in the agent status sidebar" width="100%" /></td>
+    <td width="28%" valign="top"><img src="docs/media/agent-traces.png" alt="The Traces feed in the agent status sidebar — recent tool calls with arguments and result status" width="100%" /></td>
+    <td width="16%" valign="top" align="center"><img src="docs/media/agent-rail-collapsed.png" alt="The collapsed sidebar rail — a compact vertical context reservoir above a small cache ring" width="52" /></td>
   </tr>
   <tr>
     <td valign="top"><b>Context reservoir</b> — how much of the model's context window is left, draining like a tank as the conversation grows. The fill even shifts color as it climbs, so you feel the ceiling coming before you hit it.</td>
     <td valign="top"><b>Cache rate</b> — the share of this turn served from cache, drawn as a ring; the fuller it reads, the cheaper and faster the turn.</td>
     <td valign="top"><b>Traces</b> — a scrollable history of every tool the agent has fired: tool, arguments, and result, newest first.</td>
+    <td valign="top"><b>Collapsed</b> — the reservoir + ring, folded into one compact rail.</td>
   </tr>
 </table>
-
-Collapse the sidebar and those two shrink into a compact rail — the reservoir and cache ring, still readable in a glance:
-
-<div align="center">
-  <img src="docs/media/agent-rail-collapsed.png" alt="The collapsed sidebar rail — a compact vertical context reservoir (CTX) above a small cache ring" width="90" />
-</div>
 
 ### Plan usage, where the API allows it
 
