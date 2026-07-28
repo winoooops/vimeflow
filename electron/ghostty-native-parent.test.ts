@@ -265,39 +265,115 @@ describe('ghostty native parent', () => {
     ).toThrow('invalid ghostty native parent update payload')
   })
 
-  test('seeds the surface resize-throttle knob without clobbering an override', () => {
+  test('forwards the per-pane resize throttle to the addon only on change', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
+      setResizeThrottleMs: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
       onEvent: vi.fn(() => vi.fn()),
       shutdown: vi.fn(() => Promise.resolve()),
     } as unknown as Sidecar
-    const previous = process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS
 
-    try {
-      delete process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS
-      setupGhosttyNativeParent({
-        sidecar,
-        platform: 'darwin',
-        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
-      }).dispose()
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
 
-      expect(process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS).toBe('96')
-
-      process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS = '0'
-      setupGhosttyNativeParent({
-        sidecar,
-        platform: 'darwin',
-        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
-      }).dispose()
-
-      expect(process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS).toBe('0')
-    } finally {
-      if (previous === undefined) {
-        delete process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS
-      } else {
-        process.env.GHOSTTY_SURFACE_RESIZE_THROTTLE_MS = previous
-      }
+    const update = (resizeThrottleMs: number): void => {
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+          resizeThrottleMs,
+        }
+      )
     }
+
+    update(96)
+    update(96)
+
+    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(1)
+    expect(addon.setResizeThrottleMs).toHaveBeenCalledWith(surface, 96)
+
+    // Agent detection can reclassify a running pane mid-session.
+    update(0)
+
+    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(2)
+    expect(addon.setResizeThrottleMs).toHaveBeenLastCalledWith(surface, 0)
+
+    // A recreated surface starts from the fork's defaults, so the same value
+    // must be forwarded again — a kept cache would dedupe it away and
+    // silently strip the throttle from the new surface.
+    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
+      { sender: {} },
+      { sessionId: 'pty-1', paneId: 'pane-1' }
+    )
+    update(0)
+
+    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(3)
+    expect(addon.setResizeThrottleMs).toHaveBeenLastCalledWith(surface, 0)
+
+    controller.dispose()
+  })
+
+  test('rejects resize throttle payloads outside the millisecond domain', () => {
+    const sidecar = {
+      invoke: vi.fn(() => Promise.resolve(undefined)),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } as unknown as Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon: {
+        create: vi.fn(),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+      },
+    })
+
+    // An unbounded value would arm the fork's dispatch timer effectively
+    // forever and freeze the surface's metric sync.
+    for (const resizeThrottleMs of [-1, Number.MAX_VALUE, Number.NaN]) {
+      expect(() =>
+        handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+          { sender: {} },
+          {
+            sessionId: 'pty-1',
+            paneId: 'pane-1',
+            cwd: '/tmp',
+            visible: true,
+            parentHeight: 900,
+            bounds: { x: 10, y: 20, width: 300, height: 200 },
+            resizeThrottleMs,
+          }
+        )
+      ).toThrow('invalid ghostty native parent update payload')
+    }
+
+    controller.dispose()
   })
 
   test('rejects invalid native pane epoch payload', () => {
