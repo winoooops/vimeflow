@@ -149,7 +149,7 @@ Try it:
 Everything above runs on Linux too — same workspace, same panes, same agent observability. The one swap: xterm.js does the terminal honors instead of native Ghostty (that embed is macOS-only for now). Package it as an AppImage, `chmod +x`, and you're off.
 
 <div align="center">
-  <img src="docs/media/linux-workspace.png" alt="Vimeflow running on Linux (placeholder — a real screenshot is coming)" width="900" />
+  <img src="docs/media/linux-workspace.png" alt="Vimeflow running the full workspace on Linux, with xterm.js terminal panes" width="900" />
 </div>
 
 ## Current Support

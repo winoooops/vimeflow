@@ -149,7 +149,7 @@ The Lens 主题系统内置了一批主题 —— **Catppuccin**（默认深色�
 上面这一切在 Linux 上照样跑 —— 一样的工作区、一样的 pane、一样的代理可观测性。唯一的区别：终端由 xterm.js 顶上，而不是原生 Ghostty（那个内置目前仅限 macOS）。打包成 AppImage，`chmod +x`，就能开跑。
 
 <div align="center">
-  <img src="docs/media/linux-workspace.png" alt="Vimeflow 在 Linux 上运行（占位图 —— 真实截图即将补上）" width="900" />
+  <img src="docs/media/linux-workspace.png" alt="Vimeflow 在 Linux 上运行完整工作区，终端 pane 由 xterm.js 承载" width="900" />
 </div>
 
 ## 当前支持范围
