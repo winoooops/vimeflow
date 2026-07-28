@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-25
-ref_count: 93
+last_updated: 2026-07-28
+ref_count: 94
 ---
 
 # Documentation Accuracy
@@ -947,4 +947,13 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Removed the duplicate block and kept one explanation directly above
   the live-resize guard, leaving the debug print as code without a second copy
   of the same prose.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 100. Retired README hero asset remained after media inventory refresh
+
+- **Source:** github-claude | PR #747 round 1 | 2026-07-28
+- **Severity:** MEDIUM
+- **File:** `docs/media/hero-init.gif`
+- **Finding:** The README hero moved to `docs/media/hero-workspace.gif` and the media inventory listed only the refreshed assets, but the old 6.2MB `hero-init.gif` binary still remained in the repository.
+- **Fix:** Deleted the orphaned `docs/media/hero-init.gif` asset so the tree matches the refreshed README references and media inventory.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
