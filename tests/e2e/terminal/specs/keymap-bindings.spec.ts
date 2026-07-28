@@ -364,6 +364,20 @@ const waitForSplitViewDisplayed = async (): Promise<void> => {
   })
 }
 
+const hasRegisteredTerminalSession = async (): Promise<boolean> =>
+  (await activePtySessionIds()).length > 0 && (await isSplitViewDisplayed())
+
+const waitForRegisteredTerminalSession = async (
+  timeout: number,
+  timeoutMsg: string
+): Promise<void> => {
+  await browser.waitUntil(async () => hasRegisteredTerminalSession(), {
+    timeout,
+    interval: 250,
+    timeoutMsg,
+  })
+}
+
 const clickSingleLayoutAction = async (): Promise<void> => {
   const clicked = await browser.execute(() => {
     const buttons = Array.from(
@@ -513,19 +527,26 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 
     // Ensure a terminal session (and therefore a split-view) exists. The
     // app may launch with zero sessions depending on restore state.
+    let createdSession = false
     if (!(await isSplitViewDisplayed())) {
       await createNewSessionWithDefaults()
+      createdSession = true
     }
 
-    await browser.waitUntil(
-      async () =>
-        (await activePtySessionIds()).length > 0 &&
-        (await isSplitViewDisplayed()),
-      {
-        timeout: 20_000,
-        interval: 250,
-        timeoutMsg: 'terminal session did not register',
+    try {
+      await waitForRegisteredTerminalSession(
+        5_000,
+        'initial terminal session did not register'
+      )
+    } catch {
+      if (!createdSession) {
+        await createNewSessionWithDefaults()
       }
+    }
+
+    await waitForRegisteredTerminalSession(
+      20_000,
+      'terminal session did not register'
     )
     await waitForSplitViewDisplayed()
   })
