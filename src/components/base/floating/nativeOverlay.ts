@@ -1,5 +1,7 @@
+// cspell:ignore ghostty
 import { isMacPlatform } from '@/lib/formatShortcut'
 import { createLogger } from '@/lib/log'
+import type { PaneLayoutDefinition } from '@/features/terminal/layout-registry'
 import type { NativeOverlayActivityPopoverPayload } from '../../nativeOverlayActivity'
 
 export type {
@@ -66,6 +68,7 @@ export interface NativeOverlayMenuSubAction {
   icon?: string
   pressed?: boolean
   disabled?: boolean
+  closeOnSelect?: boolean
 }
 
 export interface NativeOverlayMenuCompositeItem {
@@ -181,6 +184,21 @@ export interface NativeOverlayNewSessionDialogPayload {
   actions: NativeOverlayNewSessionActions
 }
 
+export interface NativeOverlayLayoutCreatorActions {
+  cancel: string
+  save: string
+}
+
+export interface NativeOverlayLayoutCreatorDialogPayload {
+  kind: 'dialog'
+  dialog: 'layout-creator'
+  ariaLabel: string
+  existingLayouts: readonly PaneLayoutDefinition[]
+  seedLayout?: PaneLayoutDefinition
+  editLayout?: PaneLayoutDefinition
+  actions: NativeOverlayLayoutCreatorActions
+}
+
 export interface NativeOverlaySessionSwitcherItem {
   id: string
   title: string
@@ -206,6 +224,7 @@ export interface NativeOverlaySessionSwitcherDialogPayload {
 export type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
+  | NativeOverlayLayoutCreatorDialogPayload
   | NativeOverlaySessionSwitcherDialogPayload
 
 // Native overlay payloads are plain data only. Each rich surface gets a narrow
@@ -322,7 +341,9 @@ export type NativeOverlayActionHandler =
     }
 
 interface NativeOverlaySession {
-  actions: ReadonlyMap<string, NativeOverlayActionHandler>
+  actions:
+    | ReadonlyMap<string, NativeOverlayActionHandler>
+    | ((actionId: string) => NativeOverlayActionHandler | undefined)
   onClose: () => void
 }
 
@@ -386,7 +407,9 @@ const runActionAndReport = (
 }
 
 export const isNativeOverlayFeatureEnabled = (): boolean =>
-  import.meta.env.VITE_NATIVE_OVERLAY === '1'
+  import.meta.env.VITE_NATIVE_OVERLAY === '1' ||
+  (typeof window !== 'undefined' &&
+    window.vimeflow?.ghosttyNative !== undefined)
 
 export const selectFloatingTransport = (
   nativeOverlay: boolean
@@ -408,7 +431,10 @@ const handleAction = (event: unknown): void => {
     return
   }
 
-  const action = session.actions.get(event.actionId)
+  const action =
+    typeof session.actions === 'function'
+      ? session.actions(event.actionId)
+      : session.actions.get(event.actionId)
   if (action === undefined) {
     return
   }

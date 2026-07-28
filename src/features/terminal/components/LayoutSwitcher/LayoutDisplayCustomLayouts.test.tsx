@@ -18,6 +18,7 @@ interface NativeOverlayAction {
   label: string
   icon?: string
   pressed?: boolean
+  closeOnSelect?: boolean
 }
 
 interface NativeOverlayCompositeItem {
@@ -226,7 +227,8 @@ describe('customLayoutMenuItems', () => {
       screen.getByRole('button', { name: 'Duplicate Main + bottom row' })
     )
 
-    await openMenu()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+
     await user.click(
       screen.getByRole('button', { name: 'Delete Main + bottom row' })
     )
@@ -330,6 +332,7 @@ describe('customLayoutMenuItems', () => {
           id: expect.any(String),
           label: 'Duplicate Main + bottom row',
           icon: 'content_copy',
+          closeOnSelect: false,
         }),
         expect.objectContaining({
           id: expect.any(String),
@@ -353,24 +356,19 @@ describe('customLayoutMenuItems', () => {
       nativeBridge.action({
         surfaceId: firstRequest.surfaceId,
         actionId: duplicateAction?.id ?? '',
+        closeOnSelect: false,
       })
     })
 
     expect(onDuplicateCustomLayout).toHaveBeenCalledWith(
       'custom:template-main-bottom-row'
     )
-
-    await user.click(trigger)
-    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledTimes(2))
-
-    const secondRequest = nativeBridge.open.mock
-      .calls[1][0] as CapturedNativeOverlayRequest
-    const secondCustomRow = findCustomNativeOverlayRow(secondRequest)
+    expect(nativeBridge.open).toHaveBeenCalledOnce()
 
     act(() => {
       nativeBridge.action({
-        surfaceId: secondRequest.surfaceId,
-        actionId: secondCustomRow.id,
+        surfaceId: firstRequest.surfaceId,
+        actionId: customRow.id,
       })
     })
 

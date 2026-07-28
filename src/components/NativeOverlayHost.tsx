@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
+import { LayoutCreatorModal } from '@/features/terminal/components/LayoutCreator'
 import {
   ACTIVITY_CARD_SURFACE,
   NativeOverlayActivityCard,
@@ -25,6 +26,7 @@ import type {
   NativeOverlayMenuRequest,
   NativeOverlayMenuSection,
   NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayLayoutCreatorDialogPayload,
   NativeOverlayNewSessionCommandOption,
   NativeOverlayNewSessionDialogPayload,
   NativeOverlayRequest,
@@ -71,6 +73,10 @@ type NativeOverlayCommandPaletteRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlayCommandPaletteDialogPayload
 }
 
+type NativeOverlayLayoutCreatorRequest = NativeOverlayDialogRequest & {
+  payload: NativeOverlayLayoutCreatorDialogPayload
+}
+
 type NativeOverlaySessionSwitcherRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlaySessionSwitcherDialogPayload
 }
@@ -109,6 +115,8 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
     'command-palette' ||
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
       'new-session' ||
+    (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+      'layout-creator' ||
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
       'session-switcher')
 
@@ -1232,6 +1240,35 @@ const NativeOverlayNewSession = ({
   )
 }
 
+const NativeOverlayLayoutCreator = ({
+  request,
+}: {
+  request: NativeOverlayLayoutCreatorRequest
+}): ReactElement => {
+  const payload = request.payload
+
+  const dispatchAction = (actionId: string, query?: string): void => {
+    void nativeOverlayHostBridge()?.action({
+      surfaceId: request.surfaceId,
+      actionId,
+      ...(query === undefined ? {} : { closeOnSelect: false, query }),
+    })
+  }
+
+  return (
+    <LayoutCreatorModal
+      isOpen
+      existingLayouts={payload.existingLayouts}
+      seedLayout={payload.seedLayout}
+      editLayout={payload.editLayout}
+      onSave={(definition): void => {
+        dispatchAction(payload.actions.save, JSON.stringify(definition))
+      }}
+      onCancel={(): void => dispatchAction(payload.actions.cancel)}
+    />
+  )
+}
+
 const NativeOverlayActivityPopover = ({
   request,
   close,
@@ -1497,6 +1534,14 @@ export const NativeOverlayHost = ({
         )
       }
 
+      if (request.payload.dialog === 'layout-creator') {
+        return (
+          <NativeOverlayLayoutCreator
+            request={request as NativeOverlayLayoutCreatorRequest}
+          />
+        )
+      }
+
       return (
         <NativeOverlayCommandPalette
           request={request as NativeOverlayCommandPaletteRequest}
@@ -1638,7 +1683,9 @@ export const NativeOverlayHost = ({
                         onClick={(event): void => {
                           event.stopPropagation()
                           if (action.disabled !== true) {
-                            dispatchAction(action.id)
+                            dispatchAction(action.id, {
+                              closeOnSelect: action.closeOnSelect,
+                            })
                           }
                         }}
                       />

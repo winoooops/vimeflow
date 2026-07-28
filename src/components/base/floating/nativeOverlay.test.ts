@@ -1,6 +1,8 @@
+// cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   __resetNativeOverlayForTest,
+  isNativeOverlayFeatureEnabled,
   nativeOverlayThemeSnapshot,
   openNativeOverlay,
   type NativeOverlayActionEvent,
@@ -115,6 +117,23 @@ describe('nativeOverlayThemeSnapshot', () => {
         '--shadow-modal': 'var(--shadow-test-modal)',
       },
     })
+  })
+})
+
+describe('isNativeOverlayFeatureEnabled', () => {
+  test('enables native overlays when the native Ghostty bridge exists', () => {
+    window.vimeflow = {
+      invoke: <T>(): Promise<T> => Promise.resolve(null as T),
+      listen: vi.fn(() => Promise.resolve(vi.fn())),
+      ghosttyNative: {
+        update: vi.fn(() => Promise.resolve()),
+        data: vi.fn(() => Promise.resolve()),
+        focus: vi.fn(() => Promise.resolve()),
+        destroy: vi.fn(() => Promise.resolve()),
+      },
+    }
+
+    expect(isNativeOverlayFeatureEnabled()).toBe(true)
   })
 })
 

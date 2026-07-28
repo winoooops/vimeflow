@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type {
   NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayLayoutCreatorDialogPayload,
   NativeOverlayRequest,
 } from '@/components/base/floating/nativeOverlay'
 import { NativeOverlayHost } from './NativeOverlayHost'
@@ -93,6 +94,7 @@ const compositeRequest: NativeOverlayRequest = {
                 id: 'duplicate-custom',
                 label: 'Duplicate Main + bottom',
                 icon: 'content_copy',
+                closeOnSelect: false,
               },
               {
                 id: 'toggle-custom',
@@ -285,6 +287,25 @@ const newSessionRequest: NativeOverlayRequest = {
       selectPanePrefix: 'new-session:select-pane:',
       pickLayoutPrefix: 'new-session:pick-layout:',
       pickCommandPrefix: 'new-session:pick-command:',
+    },
+  },
+}
+
+const layoutCreatorRequest: NativeOverlayRequest & {
+  payload: NativeOverlayLayoutCreatorDialogPayload
+} = {
+  surfaceId: 'dialog-layout-creator',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'layout-creator',
+    ariaLabel: 'Layout Creator',
+    existingLayouts: [],
+    actions: {
+      cancel: 'layout-creator:cancel',
+      save: 'layout-creator:save',
     },
   },
 }
@@ -814,6 +835,44 @@ describe('NativeOverlayHost', () => {
     })
   })
 
+  test('renders layout creator requests and returns the saved layout', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender(layoutCreatorRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Layout Creator',
+    })
+    expect(screen.queryByText('Click cells')).not.toBeInTheDocument()
+    // eslint-disable-next-line testing-library/no-node-access -- layout overflow contract
+    const scrollRegion = dialog.querySelector('.overflow-y-auto')
+    expect(scrollRegion).not.toHaveClass('[scrollbar-gutter:stable]')
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Layout name' }),
+      'Review layout'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-layout-creator',
+      actionId: 'layout-creator:save',
+      closeOnSelect: false,
+      query: expect.any(String),
+    })
+
+    const action = bridge.action.mock.calls[
+      bridge.action.mock.calls.length - 1
+    ]?.[0] as { query?: string } | undefined
+    expect(JSON.parse(action?.query ?? '')).toMatchObject({
+      schemaVersion: 1,
+      title: 'Review layout',
+      source: 'workspace',
+    })
+  })
+
   test('renders session switcher dialog requests and dispatches the commit action', async () => {
     const user = userEvent.setup()
     const bridge = installNativeOverlayHostBridge()
@@ -1041,8 +1100,9 @@ describe('NativeOverlayHost', () => {
     expect(bridge.action).toHaveBeenCalledWith({
       surfaceId: 'surface-3',
       actionId: 'duplicate-custom',
+      closeOnSelect: false,
     })
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 
   test('renders copy detail rows with anchor width and copied feedback', async () => {

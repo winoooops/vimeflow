@@ -80,6 +80,7 @@ interface NativeOverlayMenuSubAction {
   icon?: string
   pressed?: boolean
   disabled?: boolean
+  closeOnSelect?: boolean
 }
 
 interface NativeOverlayMenuCompositeItem {
@@ -195,6 +196,51 @@ interface NativeOverlayNewSessionDialogPayload {
   actions: NativeOverlayNewSessionActions
 }
 
+interface NativeOverlayLayoutCreatorTrack {
+  id: string
+  units: number
+  minPx?: number
+}
+
+interface NativeOverlayLayoutCreatorSlot {
+  id: string
+  rect: {
+    col: number
+    row: number
+    colSpan: number
+    rowSpan: number
+  }
+  accepts?: readonly string[]
+}
+
+interface NativeOverlayLayoutCreatorDefinition {
+  schemaVersion: number
+  id: string
+  title: string
+  source: 'builtin' | 'workspace'
+  tracks: {
+    columns: readonly NativeOverlayLayoutCreatorTrack[]
+    rows: readonly NativeOverlayLayoutCreatorTrack[]
+  }
+  slots: readonly NativeOverlayLayoutCreatorSlot[]
+  addOrder: readonly string[]
+}
+
+interface NativeOverlayLayoutCreatorActions {
+  cancel: string
+  save: string
+}
+
+interface NativeOverlayLayoutCreatorDialogPayload {
+  kind: 'dialog'
+  dialog: 'layout-creator'
+  ariaLabel: string
+  existingLayouts: readonly NativeOverlayLayoutCreatorDefinition[]
+  seedLayout?: NativeOverlayLayoutCreatorDefinition
+  editLayout?: NativeOverlayLayoutCreatorDefinition
+  actions: NativeOverlayLayoutCreatorActions
+}
+
 interface NativeOverlaySessionSwitcherItem {
   id: string
   title: string
@@ -220,6 +266,7 @@ interface NativeOverlaySessionSwitcherDialogPayload {
 type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
+  | NativeOverlayLayoutCreatorDialogPayload
   | NativeOverlaySessionSwitcherDialogPayload
 
 type SerializableOverlayPayload =
@@ -300,6 +347,7 @@ interface NativeOverlayRecord {
   parentMinimized: () => void
   parentClosing: () => void
   parentClosed: () => void
+  menuBlurred: () => void
   ownerBeforeInput: (event: ElectronEvent, input: Input) => void
   activeSurfaceId: string | null
   activeTooltipSurfaceId: string | null
@@ -335,6 +383,10 @@ const MAX_NEW_SESSION_PANES = 16
 const MAX_NEW_SESSION_COMMANDS = 64
 const MAX_NEW_SESSION_AREA_ROWS = 16
 const MAX_NEW_SESSION_AREA_COLUMNS = 16
+const MAX_LAYOUT_CREATOR_LAYOUTS = 200
+const MAX_LAYOUT_CREATOR_TRACKS = 24
+const MAX_LAYOUT_CREATOR_SLOTS = 16
+const MAX_LAYOUT_CREATOR_ACCEPTS = 8
 const MAX_THEME_VARIABLES = 512
 const MAX_SESSION_SWITCHER_ITEMS = 500
 
@@ -404,6 +456,12 @@ const isString = (value: unknown): value is string =>
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
+const isNonNegativeInteger = (value: unknown): value is number =>
+  isFiniteNumber(value) && Number.isInteger(value) && value >= 0
+
+const isPositiveInteger = (value: unknown): value is number =>
+  isFiniteNumber(value) && Number.isInteger(value) && value > 0
+
 const isBoundedArray = <T>(
   value: unknown,
   maxLength: number,
@@ -431,7 +489,9 @@ const isMenuSubAction = (value: unknown): value is NativeOverlayMenuSubAction =>
   isString(value.label) &&
   (value.icon === undefined || typeof value.icon === 'string') &&
   (value.pressed === undefined || typeof value.pressed === 'boolean') &&
-  (value.disabled === undefined || typeof value.disabled === 'boolean')
+  (value.disabled === undefined || typeof value.disabled === 'boolean') &&
+  (value.closeOnSelect === undefined ||
+    typeof value.closeOnSelect === 'boolean')
 
 const isMenuItem = (value: unknown): value is NativeOverlayMenuItem => {
   if (!isRecord(value)) {
@@ -660,6 +720,85 @@ const isNewSessionDialogPayload = (
   ) &&
   isNewSessionActions(value.actions)
 
+const isLayoutCreatorTrack = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorTrack =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isFiniteNumber(value.units) &&
+  value.units > 0 &&
+  (value.minPx === undefined ||
+    (isFiniteNumber(value.minPx) && value.minPx >= 0))
+
+const isLayoutCreatorSlot = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorSlot =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isRecord(value.rect) &&
+  isNonNegativeInteger(value.rect.col) &&
+  isNonNegativeInteger(value.rect.row) &&
+  isPositiveInteger(value.rect.colSpan) &&
+  isPositiveInteger(value.rect.rowSpan) &&
+  (value.accepts === undefined ||
+    isBoundedArray(
+      value.accepts,
+      MAX_LAYOUT_CREATOR_ACCEPTS,
+      (entry): entry is string => isString(entry)
+    ))
+
+const isLayoutCreatorDefinition = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorDefinition =>
+  isRecord(value) &&
+  Number.isInteger(value.schemaVersion) &&
+  isString(value.id) &&
+  isString(value.title) &&
+  (value.source === 'builtin' || value.source === 'workspace') &&
+  isRecord(value.tracks) &&
+  isNonEmptyBoundedArray(
+    value.tracks.columns,
+    MAX_LAYOUT_CREATOR_TRACKS,
+    isLayoutCreatorTrack
+  ) &&
+  isNonEmptyBoundedArray(
+    value.tracks.rows,
+    MAX_LAYOUT_CREATOR_TRACKS,
+    isLayoutCreatorTrack
+  ) &&
+  isNonEmptyBoundedArray(
+    value.slots,
+    MAX_LAYOUT_CREATOR_SLOTS,
+    isLayoutCreatorSlot
+  ) &&
+  isNonEmptyBoundedArray(
+    value.addOrder,
+    MAX_LAYOUT_CREATOR_SLOTS,
+    (entry): entry is string => isString(entry)
+  )
+
+const isLayoutCreatorActions = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorActions =>
+  isRecord(value) && isString(value.cancel) && isString(value.save)
+
+const isLayoutCreatorDialogPayload = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorDialogPayload =>
+  isRecord(value) &&
+  value.dialog === 'layout-creator' &&
+  isString(value.ariaLabel) &&
+  isBoundedArray(
+    value.existingLayouts,
+    MAX_LAYOUT_CREATOR_LAYOUTS,
+    isLayoutCreatorDefinition
+  ) &&
+  (value.seedLayout === undefined ||
+    isLayoutCreatorDefinition(value.seedLayout)) &&
+  (value.editLayout === undefined ||
+    isLayoutCreatorDefinition(value.editLayout)) &&
+  isLayoutCreatorActions(value.actions)
+
 const isSessionSwitcherItem = (
   value: unknown
 ): value is NativeOverlaySessionSwitcherItem =>
@@ -695,6 +834,7 @@ const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
   value.kind === 'dialog' &&
   (isCommandPaletteDialogPayload(value) ||
     isNewSessionDialogPayload(value) ||
+    isLayoutCreatorDialogPayload(value) ||
     isSessionSwitcherDialogPayload(value))
 
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
@@ -954,8 +1094,17 @@ export class NativeOverlayController {
 
     record.syncBounds()
     if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
+      const needsKeyboardFocus =
+        payload.payload.kind === 'dialog' &&
+        payload.payload.dialog === 'layout-creator'
+      record.menu.window.setFocusable(needsKeyboardFocus)
       record.menu.window.setIgnoreMouseEvents(false)
-      record.menu.window.showInactive()
+      if (needsKeyboardFocus) {
+        record.menu.window.show()
+        record.menu.window.focus()
+      } else {
+        record.menu.window.showInactive()
+      }
       // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
       // still land behind it. The screen-saver level reliably places this
       // transparent overlay window above that native surface while it is open.
@@ -1252,7 +1401,7 @@ export class NativeOverlayController {
 
     const closeForOwnerDeactivation = (): void => {
       const record = this.overlays.get(parent.id)
-      if (!record) {
+      if (!record || record.menu.window.isFocused()) {
         return
       }
 
@@ -1335,6 +1484,7 @@ export class NativeOverlayController {
     parent.on('minimize', closeForOwnerDeactivation)
     parent.on('close', parentClosing)
     parent.on('closed', parentClosed)
+    menu.window.on('blur', closeForOwnerDeactivation)
     parent.webContents.on('before-input-event', ownerBeforeInput)
 
     const record: NativeOverlayRecord = {
@@ -1347,6 +1497,7 @@ export class NativeOverlayController {
       parentMinimized: closeForOwnerDeactivation,
       parentClosing,
       parentClosed,
+      menuBlurred: closeForOwnerDeactivation,
       ownerBeforeInput,
       activeSurfaceId: null,
       activeTooltipSurfaceId: null,
@@ -1386,6 +1537,7 @@ export class NativeOverlayController {
     record.parent.removeListener('minimize', record.parentMinimized)
     record.parent.removeListener('close', record.parentClosing)
     record.parent.removeListener('closed', record.parentClosed)
+    record.menu.window.removeListener('blur', record.menuBlurred)
     record.parent.webContents.removeListener(
       'before-input-event',
       record.ownerBeforeInput
@@ -1458,6 +1610,7 @@ export class NativeOverlayController {
       if (!overlayWindow.isDestroyed()) {
         overlayWindow.webContents.send(NATIVE_OVERLAY_CLEAR)
         overlayWindow.hide()
+        overlayWindow.setFocusable(false)
         overlayWindow.setAlwaysOnTop(false)
         overlayWindow.setIgnoreMouseEvents(true)
       }

@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+// cspell:ignore ghostty
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { PaneLayoutDefinition } from '../../layout-registry'
 import { LayoutCreatorModal } from './LayoutCreatorModal'
 
@@ -28,7 +29,134 @@ const fullFourByFourLayout = {
   })),
 }
 
+let restorePlatform: (() => void) | null = null
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  emitAction: (event: unknown) => void
+} => {
+  const open = vi.fn(() => Promise.resolve({ accepted: true }))
+  let actionListener: ((event: unknown) => void) | null = null
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: 'MacIntel',
+  })
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    ghosttyNative: {
+      update: vi.fn(() => Promise.resolve()),
+      data: vi.fn(() => Promise.resolve()),
+      focus: vi.fn(() => Promise.resolve()),
+      destroy: vi.fn(() => Promise.resolve()),
+    },
+    nativeOverlay: {
+      open,
+      close: vi.fn(() => Promise.resolve()),
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn((callback: (event: unknown) => void) => {
+        actionListener = callback
+
+        return vi.fn()
+      }),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return {
+    open,
+    emitAction: (event): void => actionListener?.(event),
+  }
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  restorePlatform?.()
+  restorePlatform = null
+  delete window.vimeflow
+})
+
 describe('LayoutCreatorModal', () => {
+  test('uses the native dialog BrowserWindow when requested', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      window.navigator,
+      'platform'
+    )
+    restorePlatform = (): void => {
+      if (originalPlatform === undefined) {
+        delete (window.navigator as unknown as { platform?: string }).platform
+
+        return
+      }
+
+      Object.defineProperty(window.navigator, 'platform', originalPlatform)
+    }
+    const bridge = installNativeOverlayBridge()
+    const onSave = vi.fn<SaveSpy>()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        nativeOverlay
+        existingLayouts={[]}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+    expect(bridge.open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'dialog',
+        payload: expect.objectContaining({
+          dialog: 'layout-creator',
+          ariaLabel: 'Layout Creator',
+        }),
+      })
+    )
+
+    expect(screen.getByRole('dialog', { hidden: true })).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+
+    const request = bridge.open.mock.calls[0]?.[0] as
+      | { surfaceId?: string }
+      | undefined
+    bridge.emitAction({
+      surfaceId: request?.surfaceId,
+      actionId: 'layout-creator:save',
+      closeOnSelect: false,
+      query: JSON.stringify({
+        schemaVersion: 1,
+        id: 'custom:untrusted',
+        title: 'Native layout',
+        source: 'workspace',
+        tracks: {
+          columns: [{ id: 'col-0', units: 24 }],
+          rows: [{ id: 'row-0', units: 24 }],
+        },
+        slots: [
+          {
+            id: 'slot:p0',
+            rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+          },
+        ],
+        addOrder: ['slot:p0'],
+      }),
+    })
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Native layout',
+      source: 'workspace',
+    })
+    expect(onSave.mock.calls[0]?.[0].id).not.toBe('custom:untrusted')
+  })
+
   test('saves the current draft as a canonical custom pane layout', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn<SaveSpy>()

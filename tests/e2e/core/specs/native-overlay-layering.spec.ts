@@ -255,6 +255,34 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
     `) as Promise<CssRect | null>
   })
 
+const getOverlayDialogRect = async (): Promise<CssRect | null> =>
+  browser.electron.execute(async (electron: ElectronModule) => {
+    const overlay = electron.webContents
+      .getAllWebContents()
+      .find((contents) => {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
+
+        return mode === '1' || mode === 'menu'
+      })
+
+    if (!overlay) {
+      return null
+    }
+
+    return overlay.executeJavaScript(`
+      (() => {
+        const rect = document
+          .querySelector('[role="dialog"]')
+          ?.getBoundingClientRect()
+        return rect
+          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          : null
+      })()
+    `) as Promise<CssRect | null>
+  })
+
 const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   browser.electron.execute((electron: ElectronModule) => {
     const parent =
@@ -337,6 +365,10 @@ const changedPixelCount = (
   return changed
 }
 
+const sampledPixelCount = (bounds: Bounds): number =>
+  (Math.floor((bounds.right - bounds.left) / 2) + 1) *
+  (Math.floor((bounds.bottom - bounds.top) / 2) + 1)
+
 const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
   await browser.waitUntil(
     async () => {
@@ -406,30 +438,36 @@ const waitForLayoutDisplayAnchor = async (): Promise<CssRect> => {
 const waitForOverlayPaint = async (
   before: DecodedPng,
   mapping: PixelMapping,
-  targetRect: CssRect
+  targetRect: CssRect,
+  surface: 'menu' | 'dialog'
 ): Promise<void> => {
   await browser.waitUntil(
     async () => {
-      const menuRect = await getOverlayMenuRect()
-      if (menuRect === null) {
+      const surfaceRect =
+        surface === 'menu'
+          ? await getOverlayMenuRect()
+          : await getOverlayDialogRect()
+      if (surfaceRect === null) {
         return false
       }
 
-      const overlapRect = intersectCssRect(menuRect, targetRect)
+      const overlapRect = intersectCssRect(surfaceRect, targetRect)
       if (overlapRect === null) {
         return false
       }
 
       const after = captureScreen()
-      return (
-        changedPixelCount(before, after, mapCssRect(overlapRect, mapping)) > 50
-      )
+      const bounds = mapCssRect(overlapRect, mapping)
+      const changed = changedPixelCount(before, after, bounds)
+
+      return surface === 'dialog'
+        ? changed / sampledPixelCount(bounds) > 0.2
+        : changed > 50
     },
     {
       timeout: 5_000,
       interval: 150,
-      timeoutMsg:
-        'NativeOverlay menu did not visibly paint above the real Ghostty NSView',
+      timeoutMsg: `NativeOverlay ${surface} did not visibly paint above the real Ghostty NSView`,
     }
   )
 }
@@ -512,7 +550,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
     }
     await waitForOverlayMenu()
 
-    await waitForOverlayPaint(before, mapping, paneRect)
+    await waitForOverlayPaint(before, mapping, paneRect, 'menu')
 
     const checkbox = await clickEnabledOverlayCheckbox(validationMode)
     if (checkbox === null) {
@@ -542,5 +580,253 @@ describe('NativeOverlay BrowserWindow layering', () => {
         timeoutMsg: 'NativeOverlay layout checkbox action did not reach React',
       }
     )
+  }).timeout(90_000)
+
+  it('renders the custom layout dialog above the real Ghostty NSView', async function () {
+    if (process.platform !== 'darwin') {
+      this.skip()
+    }
+
+    const hasNativeBridge = await browser.execute(() =>
+      Boolean(window.vimeflow?.ghosttyNative)
+    )
+    if (!hasNativeBridge) {
+      this.skip()
+    }
+
+    const paneRect = await waitForRealNativeGhosttyPane()
+    await waitForLayoutDisplayAnchor()
+    const before = captureScreen()
+    const mapping = await mapViewportToScreenPixels()
+
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>(
+          'button[aria-label="Configure displayed layouts"]'
+        )
+        ?.click()
+    })
+    await waitForOverlayMenu()
+
+    const clicked = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        const overlay = electron.webContents
+          .getAllWebContents()
+          .find((contents) => {
+            const mode = new URL(contents.getURL()).searchParams.get(
+              'nativeOverlay'
+            )
+
+            return mode === '1' || mode === 'menu'
+          })
+
+        if (!overlay) {
+          return false
+        }
+
+        return overlay.executeJavaScript(`
+          (() => {
+            const item = Array.from(
+              document.querySelectorAll('[role="menuitem"]')
+            ).find((element) =>
+              element.textContent?.includes('Create custom layout')
+            )
+            if (!(item instanceof HTMLElement)) {
+              return false
+            }
+            item.click()
+            return true
+          })()
+        `) as Promise<boolean>
+      }
+    )
+    if (!clicked) {
+      throw new Error('Create custom layout menu item unavailable')
+    }
+
+    await browser.waitUntil(
+      async () => (await getOverlayDialogRect()) !== null,
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg: 'Layout Creator did not render in the overlay window',
+      }
+    )
+
+    const localDialogState = await browser.execute(() => {
+      const content = document.querySelector(
+        '[data-workspace-overlay-id="layout-creator"]'
+      )
+      const dialog = content?.closest<HTMLElement>('[role="dialog"]')
+
+      return dialog === null || dialog === undefined
+        ? null
+        : {
+            nativeOverlayActive: dialog.dataset.nativeOverlayActive === 'true',
+            opacity: getComputedStyle(dialog).opacity,
+          }
+    })
+    expect(localDialogState).toEqual({
+      nativeOverlayActive: true,
+      opacity: '0',
+    })
+
+    const overlayWindowState = await browser.electron.execute(
+      (electron: ElectronModule) => {
+        const overlay = electron.BrowserWindow.getAllWindows().find(
+          (window) => {
+            const mode = new URL(window.webContents.getURL()).searchParams.get(
+              'nativeOverlay'
+            )
+
+            return mode === '1' || mode === 'menu'
+          }
+        )
+
+        return overlay === undefined
+          ? null
+          : {
+              alwaysOnTop: overlay.isAlwaysOnTop(),
+              focused: overlay.isFocused(),
+              visible: overlay.isVisible(),
+            }
+      }
+    )
+    expect(overlayWindowState).toEqual({
+      alwaysOnTop: true,
+      focused: true,
+      visible: true,
+    })
+
+    await waitForOverlayPaint(before, mapping, paneRect, 'dialog')
+
+    const trackCounts = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        const overlay = electron.webContents
+          .getAllWebContents()
+          .find((contents) => {
+            const mode = new URL(contents.getURL()).searchParams.get(
+              'nativeOverlay'
+            )
+
+            return mode === '1' || mode === 'menu'
+          })
+        if (!overlay) {
+          return null
+        }
+
+        return overlay.executeJavaScript(`
+          (async () => {
+            const read = (axis) => {
+              const button = document.querySelector(
+                \`button[aria-label="Add \${axis}"]\`
+              )
+              const value = Array.from(button?.parentElement?.children ?? [])
+                .find((child) => /^\\d+$/.test(child.textContent?.trim() ?? ''))
+              return Number(value?.textContent)
+            }
+            const before = { cols: read('Cols'), rows: read('Rows') }
+            document.querySelector('button[aria-label="Add Cols"]')?.click()
+            await new Promise((resolve) => setTimeout(resolve, 100))
+            document.querySelector('button[aria-label="Add Rows"]')?.click()
+            await new Promise((resolve) => setTimeout(resolve, 1_000))
+            return {
+              before,
+              after: { cols: read('Cols'), rows: read('Rows') },
+            }
+          })()
+        `) as Promise<{
+          before: { cols: number; rows: number }
+          after: { cols: number; rows: number }
+        }>
+      }
+    )
+    expect(trackCounts?.after).toEqual({
+      cols: (trackCounts?.before.cols ?? 0) + 1,
+      rows: (trackCounts?.before.rows ?? 0) + 1,
+    })
+
+    const editorState = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        const overlay = electron.BrowserWindow.getAllWindows().find(
+          (window) => {
+            const mode = new URL(window.webContents.getURL()).searchParams.get(
+              'nativeOverlay'
+            )
+
+            return mode === '1' || mode === 'menu'
+          }
+        )
+        const parent = overlay?.getParentWindow()
+        if (!overlay || !parent) {
+          return null
+        }
+
+        const beforeName = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const input = document.querySelector('input[aria-label="Layout name"]')
+            input?.focus()
+            return input?.value ?? ''
+          })()
+        `)) as string
+        overlay.webContents.sendInputEvent({ type: 'char', keyCode: 'Z' })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const afterName = (await overlay.webContents.executeJavaScript(`
+          document.querySelector('input[aria-label="Layout name"]')?.value ?? ''
+        `)) as string
+
+        await overlay.webContents.executeJavaScript(`
+          Array.from(document.querySelectorAll('button'))
+            .find((button) => button.textContent?.includes('Code · JSON/YAML'))
+            ?.click()
+        `)
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const beforeCode = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const textarea = document.querySelector('textarea')
+            textarea?.focus()
+            textarea?.setSelectionRange(textarea.value.length, textarea.value.length)
+            return textarea?.value ?? ''
+          })()
+        `)) as string
+        overlay.webContents.sendInputEvent({ type: 'char', keyCode: ' ' })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const afterCode = (await overlay.webContents.executeJavaScript(`
+          document.querySelector('textarea')?.value ?? ''
+        `)) as string
+
+        parent.setBounds({ ...parent.getBounds(), height: 600 })
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        const scroll = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const region = document.querySelector('[role="dialog"] .overflow-y-auto')
+            if (!(region instanceof HTMLElement)) {
+              return null
+            }
+            region.scrollTop = region.scrollHeight
+            return {
+              overflowY: getComputedStyle(region).overflowY,
+              scrollable: region.scrollHeight > region.clientHeight,
+              scrolled: region.scrollTop > 0,
+            }
+          })()
+        `)) as {
+          overflowY: string
+          scrollable: boolean
+          scrolled: boolean
+        } | null
+
+        return { beforeName, afterName, beforeCode, afterCode, scroll }
+      }
+    )
+    expect(editorState).toMatchObject({
+      afterName: `${editorState?.beforeName ?? ''}Z`,
+      afterCode: `${editorState?.beforeCode ?? ''} `,
+      scroll: {
+        overflowY: 'auto',
+        scrollable: true,
+        scrolled: true,
+      },
+    })
   }).timeout(90_000)
 })

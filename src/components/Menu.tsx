@@ -759,6 +759,7 @@ interface MenuRowNativeOverlayAction {
   icon?: string
   pressed?: boolean
   disabled?: boolean
+  closeOnSelect?: boolean
   onSelect: () => NativeOverlayActionResult
 }
 
@@ -1300,6 +1301,7 @@ const nativeMenuSubActionFromRowAction = (
     ? {}
     : { pressed: nativeAction.pressed }),
   ...(nativeAction.disabled === true ? { disabled: true } : {}),
+  ...(nativeAction.closeOnSelect === false ? { closeOnSelect: false } : {}),
 })
 
 const nativeMenuCompositeActionsFromRowActions = (
@@ -1307,20 +1309,28 @@ const nativeMenuCompositeActionsFromRowActions = (
   id: string,
   close: () => void
 ): NativeMenuCompositeActions => {
-  const extraActions = new Map<string, () => NativeOverlayActionResult>()
+  const extraActions = new Map<string, NativeOverlayActionHandler>()
 
   const actions = nativeOverlayActions.map((nativeAction, actionIndex) => {
     const actionId = `${id}:action:${String(actionIndex)}`
-    extraActions.set(actionId, (): NativeOverlayActionResult => {
+
+    const run = (): NativeOverlayActionResult => {
       if (nativeAction.disabled === true) {
         return
       }
 
       const result = nativeAction.onSelect()
-      close()
+      if (nativeAction.closeOnSelect !== false) {
+        close()
+      }
 
       return result
-    })
+    }
+
+    extraActions.set(
+      actionId,
+      nativeAction.closeOnSelect === false ? { retainSession: true, run } : run
+    )
 
     return nativeMenuSubActionFromRowAction(nativeAction, actionId)
   })
