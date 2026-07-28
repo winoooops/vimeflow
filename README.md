@@ -20,6 +20,7 @@ Vimeflow is an Electron desktop app backed by a Rust sidecar (`vimeflow-backend`
 
 - [Native Ghostty terminals on macOS](#native-ghostty-terminals-on-macos)
 - [Many agents in one workspace](#many-agents-in-one-workspace)
+- [Pick up where you left off](#pick-up-where-you-left-off)
 - [Review changes hunk by hunk](#review-changes-hunk-by-hunk)
 - [Worktree integration](#worktree-integration)
 - [Command palette and settings](#command-palette-and-settings)
@@ -97,6 +98,16 @@ Kimi Code shows the same bars, with a one-click control to disable tracking enti
 <sub><i>Kimi Code plan usage is opt-in — fetching it sends your configured Kimi credentials to the Kimi API. Detection, transcript tailing, and activity tracking otherwise stay entirely local (`~/.kimi-code/`).</i></sub>
 
 <sub><i>OpenCode exposes no usage-quota API, so there are no bars to draw — the status card links the upstream request ([sst/opencode#16017](https://github.com/sst/opencode/issues/16017)) instead. It's detected through a small auto-installed bridge plugin that reads model, context window (sized from OpenCode's models.dev cache), and tool activity with zero credential access.</i></sub>
+
+## Pick Up Where You Left Off
+
+Closing Vimeflow doesn't end your agents' day. The workspace remembers every session — its layout, its panes, and the conversation running in each one — and the next launch brings it all back: each agent pane re-issues its own resume command (`claude --resume`, `codex resume`, and friends) against the exact conversation it was in. A workspace full of half-finished tasks reopens as a workspace full of half-finished tasks, not a row of empty prompts.
+
+<div align="center">
+  <img src="docs/media/session-resume.gif" alt="Reopening Vimeflow: three agent panes each re-issue their resume command and return to the exact conversations they were in" width="900" />
+</div>
+
+<sub><i>Sessions restore together with their layouts. Each detected agent resumes by conversation id; a pane with nothing to resume simply comes back as a fresh shell.</i></sub>
 
 ## Review Changes Hunk by Hunk
 
