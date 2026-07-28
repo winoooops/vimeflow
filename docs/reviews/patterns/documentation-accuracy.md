@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-25
-ref_count: 93
+last_updated: 2026-07-28
+ref_count: 96
 ---
 
 # Documentation Accuracy
@@ -947,4 +947,40 @@ Stale documentation misleads future contributors and review agents.
 - **Fix:** Removed the duplicate block and kept one explanation directly above
   the live-resize guard, leaving the debug print as code without a second copy
   of the same prose.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 100. Retired README hero asset remained after media inventory refresh
+
+- **Source:** github-claude | PR #747 round 1 | 2026-07-28
+- **Severity:** MEDIUM
+- **File:** `docs/media/hero-init.gif`
+- **Finding:** The README hero moved to `docs/media/hero-workspace.gif` and the media inventory listed only the refreshed assets, but the old 6.2MB `hero-init.gif` binary still remained in the repository.
+- **Fix:** Deleted the orphaned `docs/media/hero-init.gif` asset so the tree matches the refreshed README references and media inventory.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 101. README walkthrough used Vim-only command aliases for default users
+
+- **Source:** github-codex-connector | PR #747 round 1 | 2026-07-28
+- **Severity:** P2 / MEDIUM
+- **File:** `README.md`
+- **Finding:** The README told fresh-install users to run `:vsplit`, `:split`, `:only`, and `:tabnew`, but those aliases are registered only when the Vim keymap preset is selected. The default `vimeflow` preset would leave the walkthrough commands inert.
+- **Fix:** Replaced walkthrough steps with always-available `:layout` and `:new` commands, and documented the Vim preset requirement only where the Vim-flavored aliases are mentioned.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 102. README trace-feed copy overclaimed complete tool-call history
+
+- **Source:** github-codex-connector | PR #747 round 1 | 2026-07-28
+- **Severity:** P2 / MEDIUM
+- **File:** `README.md`
+- **Finding:** The README described the agent trace feed as a complete history of every tool call, but backend replay summaries and frontend live state both cap `recentToolCalls` at 50 completed calls.
+- **Fix:** Reworded the English and Chinese README trace descriptions to say the panel shows the 50 most recent completed tool calls, newest first.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 103. README attributed manual review-thread resolution to the agent
+
+- **Source:** github-claude | PR #747 round 1 | 2026-07-28
+- **Severity:** MEDIUM
+- **File:** `README.md`
+- **Finding:** The README feature tour said the working agent answered a line-level review comment, fixed the code, and marked the thread resolved. In the product, resolving the review thread is a manual user confirmation action.
+- **Fix:** Reworded the English and Chinese README paragraphs and hunk-review image alt text so the agent only replies/fixes, and the user marks the thread resolved when satisfied.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
