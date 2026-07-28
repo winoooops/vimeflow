@@ -33,7 +33,7 @@ Vimeflow doesn't emulate a terminal in the browser. Packaged macOS arm64 builds 
 Try it:
 
 1. Launch a packaged macOS build, or `npm run electron:dev:ghostty` from source.
-2. Press `⌘;` and run `:vsplit` to add a second pane.
+2. Press `⌘;`, run `:layout`, and choose a two-pane layout.
 3. Start an agent in one pane and `nvim .` in the other — both are real PTYs.
 
 For terminal working-directory sync, `zsh` and `fish` usually emit OSC 7 automatically. For `bash`, run:
@@ -44,7 +44,7 @@ For terminal working-directory sync, `zsh` and `fish` usually emit OSC 7 automat
 
 ## Many Agents, One Workspace
 
-Every coding-agent CLI crams its state into a one-line statusline you have to squint at. Vimeflow gives each agent a readable panel instead — model, context window, and a live **trace feed** — detected automatically, no wrapper commands and no ceremony; just run the CLI you already use. The trace feed is a scrollable **history of every tool the agent has run**, sorted into semantic traces per agent (Claude, Codex, Kimi, and OpenCode each get their own profile), each with a **Show diff** shortcut when it touched the working tree. So you see not just what the agent is doing this second, but everything it has already done — and can jump straight to the change any step made.
+Every coding-agent CLI crams its state into a one-line statusline you have to squint at. Vimeflow gives each agent a readable panel instead — model, context window, and a live **trace feed** — detected automatically, no wrapper commands and no ceremony; just run the CLI you already use. The trace feed keeps the **50 most recent completed tool calls**, sorted into semantic traces per agent (Claude, Codex, Kimi, and OpenCode each get their own profile), each with a **Show diff** shortcut when it touched the working tree. So you see not just what the agent is doing this second, but the recent trail it left behind — and can jump straight to the change a step made.
 
 <div align="center">
   <img src="docs/media/multi-agent-grid.png" alt="Claude Code, Codex CLI, Kimi Code, and OpenCode each running in its own pane with the agent status panel expanded" width="900" />
@@ -53,7 +53,7 @@ Every coding-agent CLI crams its state into a one-line statusline you have to sq
 Try it:
 
 1. Click **+** in the sidebar — the New Session dialog takes a session name, a working directory, and optionally the agent command to launch with it.
-2. Press `⌘;` and run `:layout` to pick a multi-pane arrangement (or `:vsplit` / `:split` vim-style).
+2. Press `⌘;` and run `:layout` to pick a multi-pane arrangement.
 3. Run `claude`, `codex`, `kimi`, or `opencode` in any pane — the status panel picks each one up as it starts.
 
 ### Reading the status sidebar
@@ -70,7 +70,7 @@ The panel isn't just a readout — it's a stack of live gauges you can trust at 
   <tr>
     <td valign="top"><b>Context reservoir</b> — how much of the model's context window is left, draining like a tank as the conversation grows. The fill even shifts color as it climbs, so you feel the ceiling coming before you hit it.</td>
     <td valign="top"><b>Cache rate</b> — the share of this turn served from cache, drawn as a ring; the fuller it reads, the cheaper and faster the turn.</td>
-    <td valign="top"><b>Traces</b> — a scrollable history of every tool the agent has fired: tool, arguments, and result, newest first.</td>
+    <td valign="top"><b>Traces</b> — the 50 most recent completed tool calls: tool, arguments, and result, newest first.</td>
     <td valign="top"><b>Collapsed</b> — the reservoir + ring, folded into one compact rail.</td>
   </tr>
 </table>
@@ -120,7 +120,7 @@ Better still, the worktree an agent lives in **decides what you see**: the **fil
 
 ## Command Palette And Settings
 
-The palette borrows shamelessly from the greats — vim's `:` commands, Neovim's muscle memory, and Zed's fuzzy launcher. `⌘;` opens it: `:tabnew` for a new session, `:vsplit` / `:split` / `:only` for layouts, `:open-diff`, `:open-editor`, `:theme`, `:settings`, `:goto`, and friends — with fuzzy matching and per-command shortcuts. The settings dialog covers the rest: appearance, keymap, coding agents, editor, terminal, version control, and more.
+The palette borrows shamelessly from the greats — command-line speed, Neovim's muscle memory, and Zed's fuzzy launcher. `⌘;` opens it: `:new` for a new session, `:layout` for panes, `:open-diff`, `:open-editor`, `:theme`, `:settings`, `:goto`, and friends — with fuzzy matching and per-command shortcuts. Select the Vim keymap preset if you want Vim-flavored aliases like `:tabnew`, `:vsplit`, `:split`, and `:only`. The settings dialog covers the rest: appearance, keymap, coding agents, editor, terminal, version control, and more.
 
 <div align="center">
   <img src="docs/media/command-palette.png" alt="The vim-style command palette open over the workspace showing layout and diff commands" width="900" />
@@ -129,7 +129,7 @@ The palette borrows shamelessly from the greats — vim's `:` commands, Neovim's
 Try it:
 
 1. Press `⌘;` and type a few letters — commands fuzzy-match as you type.
-2. Run `:tabnew` to spin up a session, `:goto` to jump between sessions.
+2. Run `:new` to spin up a session, `:goto` to jump between sessions.
 3. Open **Settings** (bottom of the sidebar) to remap keys under **Keymap** or configure agent launchers under **Coding Agents**.
 
 ## BYOT: Bring Your Own Theme
