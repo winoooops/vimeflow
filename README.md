@@ -106,6 +106,16 @@ Try it:
 3. Pick a file in the changed-files list and stage, unstage, or discard individual hunks.
 4. Tune hunk rendering under **Settings → Version Control → Hunk Appearance**.
 
+## Seamless Worktree Integration
+
+Multi-agent work means multiple git worktrees — and losing track of which one you're staring at. Vimeflow won't let you. It **watches each agent's terminal and auto-detects when it enters a worktree** — an `Entering worktree(...)`, a bare `cd`, an `EnterWorktree` skill report, an OSC 7 hint — and **hot-switches** the pane to match, no reload, no fuss. The **git chip** in the status bar always shows exactly where you are (`worktree → branch`), one click from copying the worktree name, its path, or the branch.
+
+<div align="center">
+  <img src="docs/media/worktree-chip.png" alt="The git chip's copy popover — Copy worktree (readme-refresh), Copy path, and Copy branch (docs/readme-refresh) — above the status-bar chip showing worktree to branch" width="560" />
+</div>
+
+Better still, the worktree an agent lives in **decides what you see**: the **file explorer** follows into that tree, and **diff review** scopes its changed-files list and hunks to that worktree — so you're always reviewing the code the agent is actually touching, not a stale checkout. Cleaner reviews, sharper quality gates, and zero _"wait, which branch is this?"_
+
 ## Command Palette And Settings
 
 The palette borrows shamelessly from the greats — vim's `:` commands, Neovim's muscle memory, and Zed's fuzzy launcher. `⌘;` opens it: `:tabnew` for a new session, `:vsplit` / `:split` / `:only` for layouts, `:open-diff`, `:open-editor`, `:theme`, `:settings`, `:goto`, and friends — with fuzzy matching and per-command shortcuts. The settings dialog covers the rest: appearance, keymap, coding agents, editor, terminal, version control, and more.
@@ -141,8 +151,6 @@ Everything above runs on Linux too — same workspace, same panes, same agent ob
 <div align="center">
   <img src="docs/media/linux-workspace.png" alt="Vimeflow running on Linux (placeholder — a real screenshot is coming)" width="900" />
 </div>
-
-<sub><i>Placeholder — a real Linux capture is on the way.</i></sub>
 
 ## Current Support
 

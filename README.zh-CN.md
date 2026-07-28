@@ -106,6 +106,16 @@ Kimi Code 也会显示同样的用量条 —— 还带一个一键关掉整个�
 3. 在变更文件列表里挑一个文件，然后暂存、取消暂存或丢弃单个 hunk。
 4. 在 **Settings → Version Control → Hunk Appearance** 中调整 hunk 的渲染样式。
 
+## 无缝的 Worktree 集成
+
+多代理协作意味着多个 git worktree —— 也意味着很容易搞不清自己正在看哪一个。Vimeflow 不会让这种事发生。它会**盯着每个代理的终端，自动识别它何时进入了某个 worktree** —— 一句 `Entering worktree(...)`、一次 `cd`、一份 `EnterWorktree` skill 报告，或是一个 OSC 7 提示 —— 然后**热切换**当前 pane 与之对齐，无需重载，毫不费力。状态栏里的 **git chip** 始终显示你此刻的确切位置（`worktree → branch`），一键即可复制 worktree 名称、路径或分支。
+
+<div align="center">
+  <img src="docs/media/worktree-chip.png" alt="git chip 的复制弹层 —— Copy worktree（readme-refresh）、Copy path、Copy branch（docs/readme-refresh），上方是显示 worktree → branch 的状态栏 chip" width="560" />
+</div>
+
+更妙的是，代理所在的 worktree **决定了你看到什么**：**文件浏览器**跟随进入那棵目录树，**diff 审查**也把变更文件列表和 hunk 限定在那个 worktree —— 于是你审查的永远是代理真正在改的代码，而不是某个过时的检出。审查更干净，质量门更靠谱，再也不用问「等等，这是哪个分支来着？」
+
 ## 命令面板与设置
 
 这个命令面板毫不客气地借鉴了前辈们的精华 —— vim 的 `:` 命令、Neovim 的肌肉记忆，还有 Zed 的模糊启动器。`⌘;` 打开它：`:tabnew` 新建会话，`:vsplit` / `:split` / `:only` 切换布局，还有 `:open-diff`、`:open-editor`、`:theme`、`:settings`、`:goto` 等命令 —— 支持模糊匹配，每条命令都能配自己的快捷键。剩下的交给设置对话框：外观、按键映射、编码代理、编辑器、终端、版本控制等。
@@ -141,8 +151,6 @@ The Lens 主题系统内置了一批主题 —— **Catppuccin**（默认深色�
 <div align="center">
   <img src="docs/media/linux-workspace.png" alt="Vimeflow 在 Linux 上运行（占位图 —— 真实截图即将补上）" width="900" />
 </div>
-
-<sub><i>占位图 —— 真实的 Linux 截图马上就来。</i></sub>
 
 ## 当前支持范围
 
