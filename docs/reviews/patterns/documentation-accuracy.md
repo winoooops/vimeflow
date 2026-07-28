@@ -3,7 +3,7 @@ id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
 last_updated: 2026-07-28
-ref_count: 95
+ref_count: 96
 ---
 
 # Documentation Accuracy
@@ -974,4 +974,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `README.md`
 - **Finding:** The README described the agent trace feed as a complete history of every tool call, but backend replay summaries and frontend live state both cap `recentToolCalls` at 50 completed calls.
 - **Fix:** Reworded the English and Chinese README trace descriptions to say the panel shows the 50 most recent completed tool calls, newest first.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 103. README attributed manual review-thread resolution to the agent
+
+- **Source:** github-claude | PR #747 round 1 | 2026-07-28
+- **Severity:** MEDIUM
+- **File:** `README.md`
+- **Finding:** The README feature tour said the working agent answered a line-level review comment, fixed the code, and marked the thread resolved. In the product, resolving the review thread is a manual user confirmation action.
+- **Fix:** Reworded the English and Chinese README paragraphs and hunk-review image alt text so the agent only replies/fixes, and the user marks the thread resolved when satisfied.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

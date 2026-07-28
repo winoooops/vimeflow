@@ -95,10 +95,10 @@ Kimi Code shows the very same bars — with a one-click switch to turn the track
 
 ## Review Changes Hunk By Hunk
 
-A full inline review surface docked beside your terminals — not a shell-out to `git diff`. Diffs render through **Pierre**'s engine (`@pierre/diffs`), themed to match your workspace, with the changed-files list one pane over. You act on hunks in place — **stage or unstage a single hunk**, **discard a hunk or a whole file** — and review here is a conversation, not a monologue: **leave a line-level comment and the working agent answers it in the same thread**, fixes the code, and marks it resolved. Want a second opinion? **Request review** hands the diff to a tertiary reviewer — dispatch it to another agent, or copy the prompt and take it wherever you like. Either way you step through the edits hunk by hunk and catch a bad change while it's still being written, without ever leaving the window.
+A full inline review surface docked beside your terminals — not a shell-out to `git diff`. Diffs render through **Pierre**'s engine (`@pierre/diffs`), themed to match your workspace, with the changed-files list one pane over. You act on hunks in place — **stage or unstage a single hunk**, **discard a hunk or a whole file** — and review here is a conversation, not a monologue: **leave a line-level comment and the working agent answers it in the same thread**, then fixes the code while you keep the final **Resolve** click for when you're satisfied. Want a second opinion? **Request review** hands the diff to a tertiary reviewer — dispatch it to another agent, or copy the prompt and take it wherever you like. Either way you step through the edits hunk by hunk and catch a bad change while it's still being written, without ever leaving the window.
 
 <div align="center">
-  <img src="docs/media/hunk-review.png" alt="A resolved review thread on a changed line in the diff dock: a comment asking to improve accessibility, answered by the agent and marked resolved" width="900" />
+  <img src="docs/media/hunk-review.png" alt="A review thread on a changed line in the diff dock: a comment asking to improve accessibility, answered by the agent, then resolved by the user" width="900" />
 </div>
 
 Try it:
