@@ -692,14 +692,18 @@ void SendPtyTransportDatagram(const std::string &json) {
   }
 }
 
-// Starts the release handshake for a live surface's slot after its fd
-// failed a TIOCSWINSZ. Lock order: protocol -> slot.
-void StartPtySlotRelease(SurfaceHandle *surface, int role) {
+// Starts the release handshake for the exact live slot lease whose fd failed a
+// TIOCSWINSZ. Lock order: protocol -> slot.
+void StartPtySlotRelease(SurfaceHandle *surface, int role,
+                         uint64_t failed_lease_id) {
   std::string json;
   {
     std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
     PtyFdSlot &slot = surface->pty_slots[role];
     std::lock_guard<std::mutex> slot_lock(slot.mtx);
+    if (slot.lease_id != failed_lease_id || !slot.failed) {
+      return;
+    }
     if (slot.state != PtyFdSlot::State::Bound &&
         slot.state != PtyFdSlot::State::NativeActive) {
       return;
@@ -732,6 +736,7 @@ void StartPtySlotRelease(SurfaceHandle *surface, int role) {
 void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
                          int rows) {
   bool need_release = false;
+  uint64_t failed_lease_id = 0;
   {
     PtyFdSlot &slot = surface->pty_slots[role];
     std::lock_guard<std::mutex> lock(slot.mtx);
@@ -755,10 +760,11 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
       // ownership returns to Rust via the release handshake (bounded gap).
       slot.failed = true;
       need_release = slot.state != PtyFdSlot::State::Releasing;
+      failed_lease_id = slot.lease_id;
     }
   }
   if (need_release) {
-    StartPtySlotRelease(surface, role);
+    StartPtySlotRelease(surface, role, failed_lease_id);
   }
 }
 
