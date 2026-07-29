@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-12
-ref_count: 49
+last_updated: 2026-07-29
+ref_count: 50
 ---
 
 # Error Surfacing
@@ -502,4 +502,16 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Store the `register()` result in a local before asserting it. The
   side effect now runs in every build mode, while debug builds still check the
   expected invariant.
+- **Commit:** same commit as this entry
+
+### 50. Native PTY protocol datagram send failures were dropped
+
+- **Source:** github-claude | PR #754 round 2 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `SendPtyTransportDatagram` discarded `send()` failures, so a failed
+  native-ready, request-fd, or release retry could leave Rust and native
+  ownership state stale with no diagnostic trail.
+- **Fix:** Retry interrupted sends and log non-recoverable send failures with the
+  datagram type plus errno details so transport failures are observable.
 - **Commit:** same commit as this entry

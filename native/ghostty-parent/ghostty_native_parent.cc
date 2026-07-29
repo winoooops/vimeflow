@@ -6,8 +6,10 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cinttypes>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -658,7 +660,31 @@ void SendPtyTransportDatagram(const std::string &json) {
   if (g_pty_fd_transport_parent < 0) {
     return;
   }
-  send(g_pty_fd_transport_parent, json.data(), json.size(), 0);
+  std::string type;
+  const char *message_type =
+      ExtractJsonString(json, "t", &type) ? type.c_str() : "unknown";
+  while (true) {
+    const ssize_t sent =
+        send(g_pty_fd_transport_parent, json.data(), json.size(), 0);
+    if (sent < 0 && errno == EINTR) {
+      continue;
+    }
+    if (sent < 0) {
+      const int send_errno = errno;
+      fprintf(stderr,
+              "vimeflow: failed to send PTY transport datagram type=%s: "
+              "%s (errno=%d)\n",
+              message_type, strerror(send_errno), send_errno);
+      return;
+    }
+    if (static_cast<size_t>(sent) != json.size()) {
+      fprintf(stderr,
+              "vimeflow: short PTY transport datagram send type=%s: sent %zd "
+              "of %zu bytes\n",
+              message_type, sent, json.size());
+    }
+    return;
+  }
 }
 
 void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,

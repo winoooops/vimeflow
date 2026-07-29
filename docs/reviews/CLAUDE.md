@@ -79,7 +79,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 30       | 13   | 2026-07-14   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 49   | 2026-07-12   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 50       | 50   | 2026-07-29   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 2        | 1    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
