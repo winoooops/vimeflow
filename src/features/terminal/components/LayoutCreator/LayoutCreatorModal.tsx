@@ -58,6 +58,7 @@ export interface LayoutCreatorModalProps {
   onSave: (definition: PaneLayoutDefinition) => void
   onCancel: () => void
   nativeOverlay?: boolean
+  nativeSaveError?: string | null
 }
 
 interface GridCell {
@@ -797,6 +798,7 @@ export const LayoutCreatorModal = ({
   onSave,
   onCancel,
   nativeOverlay = false,
+  nativeSaveError = null,
 }: LayoutCreatorModalProps): ReactElement | null => {
   const titleId = useId()
   const descriptionId = useId()
@@ -838,6 +840,12 @@ export const LayoutCreatorModal = ({
       setCodeText(serializeDraftLayout(draft, codeFormat))
     }
   }, [codeDirty, codeFormat, draft])
+
+  useEffect(() => {
+    if (nativeSaveError !== null) {
+      setSaveError(nativeSaveError)
+    }
+  }, [nativeSaveError])
 
   const updateDraft = useCallback((next: DraftPaneLayout): void => {
     setDraft(next)
@@ -934,8 +942,19 @@ export const LayoutCreatorModal = ({
                 existingIds,
                 existingId
               )
-              if (definition !== null) {
+
+              if (definition === null) {
+                throw new Error('Invalid layout')
+              }
+
+              try {
                 onSave(definition)
+                setSaveError(null)
+              } catch (error) {
+                setSaveError(
+                  error instanceof Error ? error.message : 'Invalid layout'
+                )
+                throw error
               }
             },
           },

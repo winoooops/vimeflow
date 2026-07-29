@@ -301,8 +301,9 @@ export interface NativeOverlayActionEvent {
 export interface NativeOverlayActionResultEvent {
   surfaceId: string
   actionId: string
-  feedback: 'copy'
+  feedback?: 'copy'
   ok: boolean
+  error?: string
 }
 
 export interface NativeOverlayCloseEvent {
@@ -406,17 +407,19 @@ const bridge = (): NativeOverlayBridge | undefined =>
 
 const reportActionResult = (
   event: NativeOverlayActionEvent,
-  ok: boolean
+  ok: boolean,
+  error?: string
 ): void => {
-  if (event.feedback === undefined) {
+  if (ok && event.feedback === undefined) {
     return
   }
 
   void bridge()?.actionResult({
     surfaceId: event.surfaceId,
     actionId: event.actionId,
-    feedback: event.feedback,
     ok,
+    ...(event.feedback === undefined ? {} : { feedback: event.feedback }),
+    ...(error === undefined ? {} : { error }),
   })
 }
 
@@ -429,7 +432,11 @@ const runActionAndReport = (
       const result = await run(event)
       reportActionResult(event, result === true)
     } catch (error) {
-      reportActionResult(event, false)
+      reportActionResult(
+        event,
+        false,
+        error instanceof Error ? error.message : 'Action failed'
+      )
       log.warn('action failed', error)
     }
   })()

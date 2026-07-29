@@ -308,8 +308,9 @@ interface NativeOverlayActionEvent {
 interface NativeOverlayActionResultEvent {
   surfaceId: string
   actionId: string
-  feedback: 'copy'
+  feedback?: 'copy'
   ok: boolean
+  error?: string
 }
 
 interface NativeOverlayReadyEvent {
@@ -896,8 +897,9 @@ const isActionResultEvent = (
   isRecord(value) &&
   isString(value.surfaceId) &&
   isString(value.actionId) &&
-  value.feedback === 'copy' &&
-  typeof value.ok === 'boolean'
+  (value.feedback === undefined || value.feedback === 'copy') &&
+  typeof value.ok === 'boolean' &&
+  (value.error === undefined || isString(value.error))
 
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)

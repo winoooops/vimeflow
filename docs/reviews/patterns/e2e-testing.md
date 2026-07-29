@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-29
-ref_count: 20
+ref_count: 21
 ---
 
 # E2E Testing
@@ -491,4 +491,18 @@ already exists` before the spec could assert agent status rendering.
 - **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`, `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
 - **Finding:** The macOS native-overlay smoke measured the full dialog backdrop when deciding whether the layout creator visibly painted above Ghostty, so a real panel could fail the pixel-ratio threshold. The Linux keymap smoke also assumed terminal registration and dialog teardown had completed under the same short timing budget, which broke under the parallel CI worker load.
 - **Fix:** The overlay smoke now measures the layout-creator surface itself. The keymap smoke retries session creation, records terminal registration diagnostics, explicitly waits out non-switcher dialogs before Ctrl+Tab assertions, and resets the keymap preset before testing the default session-switcher chord.
+- **Commit:** same commit as this entry
+
+### 42. Retained native overlay menus must be closed before dependent smoke assertions
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The native-overlay layering spec toggled a displayed-layout
+  checkbox, whose native menu action intentionally retains the overlay session,
+  then the next test clicked the layout trigger again while that menu could
+  still be open. The trigger is a toggle, so the second test could close or
+  reuse stale menu state and time out waiting for the layout-creator dialog.
+- **Fix:** Close any retained native overlay menu after the checkbox assertion
+  and defensively before the dialog smoke opens a fresh menu.
 - **Commit:** same commit as this entry

@@ -30,13 +30,13 @@ const fullFourByFourLayout = {
 }
 
 let restorePlatform: (() => void) | null = null
+let nativeOverlayActionListener: ((event: unknown) => void) | null = null
 
 const installNativeOverlayBridge = (): {
   open: ReturnType<typeof vi.fn>
   emitAction: (event: unknown) => void
 } => {
   const open = vi.fn(() => Promise.resolve({ accepted: true }))
-  let actionListener: ((event: unknown) => void) | null = null
 
   Object.defineProperty(window.navigator, 'platform', {
     configurable: true,
@@ -58,7 +58,7 @@ const installNativeOverlayBridge = (): {
       actionResult: vi.fn(() => Promise.resolve()),
       resume: vi.fn(() => Promise.resolve()),
       onAction: vi.fn((callback: (event: unknown) => void) => {
-        actionListener = callback
+        nativeOverlayActionListener = callback
 
         return vi.fn()
       }),
@@ -68,7 +68,7 @@ const installNativeOverlayBridge = (): {
 
   return {
     open,
-    emitAction: (event): void => actionListener?.(event),
+    emitAction: (event): void => nativeOverlayActionListener?.(event),
   }
 }
 
@@ -155,6 +155,72 @@ describe('LayoutCreatorModal', () => {
       source: 'workspace',
     })
     expect(onSave.mock.calls[0]?.[0].id).not.toBe('custom:untrusted')
+  })
+
+  test('reports invalid native saves instead of silently no-oping', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      window.navigator,
+      'platform'
+    )
+    restorePlatform = (): void => {
+      if (originalPlatform === undefined) {
+        delete (window.navigator as unknown as { platform?: string }).platform
+
+        return
+      }
+
+      Object.defineProperty(window.navigator, 'platform', originalPlatform)
+    }
+    const bridge = installNativeOverlayBridge()
+    const onSave = vi.fn<SaveSpy>()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        nativeOverlay
+        existingLayouts={[]}
+        onSave={onSave}
+        onCancel={vi.fn()}
+      />
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    const request = bridge.open.mock.calls[0]?.[0] as
+      | { surfaceId?: string }
+      | undefined
+    bridge.emitAction({
+      surfaceId: request?.surfaceId,
+      actionId: 'layout-creator:save',
+      closeOnSelect: false,
+      query: '{',
+    })
+
+    await waitFor(() =>
+      expect(window.vimeflow?.nativeOverlay?.actionResult).toHaveBeenCalledWith(
+        {
+          surfaceId: request?.surfaceId,
+          actionId: 'layout-creator:save',
+          ok: false,
+          error: 'Invalid layout',
+        }
+      )
+    )
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  test('surfaces native save errors in the overlay form', () => {
+    render(
+      <LayoutCreatorModal
+        isOpen
+        nativeSaveError="Invalid layout"
+        existingLayouts={[]}
+        onSave={vi.fn<SaveSpy>()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Invalid layout')).toBeInTheDocument()
   })
 
   test('saves the current draft as a canonical custom pane layout', async () => {

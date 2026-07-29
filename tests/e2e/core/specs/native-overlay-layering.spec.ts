@@ -283,6 +283,34 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
     `) as Promise<CssRect | null>
   })
 
+const closeOverlayMenuIfPresent = async (): Promise<void> => {
+  if ((await getOverlayMenuRect()) === null) {
+    return
+  }
+
+  await browser.electron.execute(async (electron: ElectronModule) => {
+    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+      const mode = new URL(window.webContents.getURL()).searchParams.get(
+        'nativeOverlay'
+      )
+
+      return mode === '1' || mode === 'menu'
+    })
+
+    overlay?.webContents.sendInputEvent({
+      type: 'keyDown',
+      keyCode: 'Escape',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  })
+
+  await browser.waitUntil(async () => (await getOverlayMenuRect()) === null, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'NativeOverlay menu did not close before next smoke assertion',
+  })
+}
+
 const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   browser.electron.execute((electron: ElectronModule) => {
     const parent =
@@ -524,6 +552,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
     }
 
     const paneRect = await waitForRealNativeGhosttyPane()
+    await closeOverlayMenuIfPresent()
     await waitForLayoutDisplayAnchor()
     const before = captureScreen()
     const mapping = await mapViewportToScreenPixels()
@@ -580,6 +609,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
         timeoutMsg: 'NativeOverlay layout checkbox action did not reach React',
       }
     )
+    await closeOverlayMenuIfPresent()
   }).timeout(90_000)
 
   it('renders the custom layout dialog above the real Ghostty NSView', async function () {
@@ -626,10 +656,8 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
         return overlay.executeJavaScript(`
           (() => {
-            const item = Array.from(
-              document.querySelectorAll('[role="menuitem"]')
-            ).find((element) =>
-              element.textContent?.includes('Create custom layout')
+            const item = document.querySelector(
+              '[role="menuitem"][aria-label="Create custom layout"]'
             )
             if (!(item instanceof HTMLElement)) {
               return false

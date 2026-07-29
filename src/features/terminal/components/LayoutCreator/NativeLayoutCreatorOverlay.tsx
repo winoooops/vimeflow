@@ -20,6 +20,7 @@ const asPaneLayoutDefinition = (
 export const renderNativeLayoutCreatorOverlay: NativeOverlayHostDialogRenderer =
   ({
     request,
+    actionResult,
     dispatchAction,
   }: NativeOverlayHostDialogRendererContext): ReactElement | null => {
     if (request.payload.dialog !== 'layout-creator') {
@@ -28,12 +29,18 @@ export const renderNativeLayoutCreatorOverlay: NativeOverlayHostDialogRenderer =
 
     const payload = request.payload as NativeOverlayLayoutCreatorDialogPayload
 
+    const nativeSaveError =
+      actionResult?.actionId === payload.actions.save && !actionResult.ok
+        ? (actionResult.error ?? 'Invalid layout')
+        : null
+
     return (
       <LayoutCreatorModal
         isOpen
         existingLayouts={asPaneLayoutDefinitions(payload.existingLayouts)}
         seedLayout={asPaneLayoutDefinition(payload.seedLayout)}
         editLayout={asPaneLayoutDefinition(payload.editLayout)}
+        nativeSaveError={nativeSaveError}
         onSave={(definition): void => {
           dispatchAction({
             actionId: payload.actions.save,

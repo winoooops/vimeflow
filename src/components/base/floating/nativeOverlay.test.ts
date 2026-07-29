@@ -275,4 +275,42 @@ describe('openNativeOverlay', () => {
       ok: false,
     })
   })
+
+  test('reports retained action exceptions even without feedback', async () => {
+    const open = deferredOpen()
+    const bridge = installBridge([open.promise])
+
+    const result = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([
+        [
+          'save',
+          {
+            retainSession: true,
+            run: (): void => {
+              throw new Error('Invalid layout')
+            },
+          },
+        ],
+      ]),
+      onClose: vi.fn(),
+    })
+
+    open.resolve({ accepted: true })
+    await expect(result).resolves.toBe(true)
+
+    bridge.action({
+      surfaceId: 'surface-1',
+      actionId: 'save',
+      closeOnSelect: false,
+    })
+
+    await Promise.resolve()
+
+    expect(bridge.actionResult).toHaveBeenCalledWith({
+      surfaceId: 'surface-1',
+      actionId: 'save',
+      ok: false,
+      error: 'Invalid layout',
+    })
+  })
 })

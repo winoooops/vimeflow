@@ -81,10 +81,19 @@ export interface NativeOverlayHostDialogActionRequest {
   query?: string
 }
 
+export interface NativeOverlayHostActionResult {
+  surfaceId: string
+  actionId: string
+  feedback?: 'copy'
+  ok: boolean
+  error?: string
+}
+
 export interface NativeOverlayHostDialogRendererContext {
   request: NativeOverlayDialogRequest
   close: () => void
   dispatchAction: (request: NativeOverlayHostDialogActionRequest) => void
+  actionResult: NativeOverlayHostActionResult | null
 }
 
 export type NativeOverlayHostDialogRenderer = (
@@ -137,21 +146,19 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
       'session-switcher')
 
-const isCopyActionResult = (
+const isActionResult = (
   value: unknown
-): value is {
-  surfaceId: string
-  actionId: string
-  feedback: 'copy'
-  ok: boolean
-} =>
+): value is NativeOverlayHostActionResult =>
   typeof value === 'object' &&
   value !== null &&
   !Array.isArray(value) &&
   typeof (value as { surfaceId?: unknown }).surfaceId === 'string' &&
   typeof (value as { actionId?: unknown }).actionId === 'string' &&
-  (value as { feedback?: unknown }).feedback === 'copy' &&
-  typeof (value as { ok?: unknown }).ok === 'boolean'
+  ((value as { feedback?: unknown }).feedback === undefined ||
+    (value as { feedback?: unknown }).feedback === 'copy') &&
+  typeof (value as { ok?: unknown }).ok === 'boolean' &&
+  ((value as { error?: unknown }).error === undefined ||
+    typeof (value as { error?: unknown }).error === 'string')
 
 const isNativeOverlayKeyboardEvent = (
   value: unknown
@@ -1337,6 +1344,10 @@ export const NativeOverlayHost = ({
 }): ReactElement | null => {
   const [request, setRequest] = useState<NativeOverlayRequest | null>(null)
   const [copiedActionId, setCopiedActionId] = useState<string | null>(null)
+
+  const [actionResult, setActionResult] =
+    useState<NativeOverlayHostActionResult | null>(null)
+
   const requestRef = useRef<NativeOverlayRequest | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
   requestRef.current = request
@@ -1395,6 +1406,7 @@ export const NativeOverlayHost = ({
       if (isMenuLayerRequest) {
         applyThemeSnapshot(payload.theme)
         clearCopyFeedback()
+        setActionResult(null)
         setRequest(payload)
 
         return
@@ -1403,17 +1415,19 @@ export const NativeOverlayHost = ({
       if (mode === 'tooltip' && isTooltipRequest(payload)) {
         applyThemeSnapshot(payload.theme)
         clearCopyFeedback()
+        setActionResult(null)
         setRequest(payload)
       }
     })
 
     const cleanupClear = bridge.onClear(() => {
       clearCopyFeedback()
+      setActionResult(null)
       setRequest(null)
     })
 
     const cleanupActionResult = bridge.onActionResult((payload) => {
-      if (!isCopyActionResult(payload) || !payload.ok) {
+      if (!isActionResult(payload)) {
         return
       }
 
@@ -1422,7 +1436,11 @@ export const NativeOverlayHost = ({
         return
       }
 
-      showCopyFeedback(payload.actionId)
+      setActionResult(payload)
+
+      if (payload.feedback === 'copy' && payload.ok) {
+        showCopyFeedback(payload.actionId)
+      }
     })
 
     const cleanupKeyDown = bridge.onKeyDown((payload) => {
@@ -1461,6 +1479,7 @@ export const NativeOverlayHost = ({
     }
 
     clearCopyFeedback()
+    setActionResult(null)
     setRequest(null)
     void nativeOverlayHostBridge()?.close({
       surfaceId: current.surfaceId,
@@ -1481,6 +1500,7 @@ export const NativeOverlayHost = ({
 
       if (closeOnSelect) {
         clearCopyFeedback()
+        setActionResult(null)
         setRequest(null)
       }
 
@@ -1556,6 +1576,7 @@ export const NativeOverlayHost = ({
           request,
           close,
           dispatchAction: dispatchDialogAction,
+          actionResult,
         })
       }
 
