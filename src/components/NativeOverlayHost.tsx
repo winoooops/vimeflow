@@ -9,7 +9,6 @@ import {
 } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
-import { LayoutCreatorModal } from '@/features/terminal/components/LayoutCreator'
 import {
   ACTIVITY_CARD_SURFACE,
   NativeOverlayActivityCard,
@@ -26,7 +25,6 @@ import type {
   NativeOverlayMenuRequest,
   NativeOverlayMenuSection,
   NativeOverlayCommandPaletteDialogPayload,
-  NativeOverlayLayoutCreatorDialogPayload,
   NativeOverlayNewSessionCommandOption,
   NativeOverlayNewSessionDialogPayload,
   NativeOverlayRequest,
@@ -73,13 +71,32 @@ type NativeOverlayCommandPaletteRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlayCommandPaletteDialogPayload
 }
 
-type NativeOverlayLayoutCreatorRequest = NativeOverlayDialogRequest & {
-  payload: NativeOverlayLayoutCreatorDialogPayload
-}
-
 type NativeOverlaySessionSwitcherRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlaySessionSwitcherDialogPayload
 }
+
+export interface NativeOverlayHostDialogActionRequest {
+  actionId: string
+  closeOnSelect?: boolean
+  query?: string
+}
+
+export interface NativeOverlayHostDialogRendererContext {
+  request: NativeOverlayDialogRequest
+  close: () => void
+  dispatchAction: (request: NativeOverlayHostDialogActionRequest) => void
+}
+
+export type NativeOverlayHostDialogRenderer = (
+  context: NativeOverlayHostDialogRendererContext
+) => ReactElement | null
+
+export type NativeOverlayHostDialogRenderers = Partial<
+  Record<
+    NativeOverlayDialogRequest['payload']['dialog'],
+    NativeOverlayHostDialogRenderer
+  >
+>
 
 const COPY_FEEDBACK_MS = 1300
 
@@ -1240,35 +1257,6 @@ const NativeOverlayNewSession = ({
   )
 }
 
-const NativeOverlayLayoutCreator = ({
-  request,
-}: {
-  request: NativeOverlayLayoutCreatorRequest
-}): ReactElement => {
-  const payload = request.payload
-
-  const dispatchAction = (actionId: string, query?: string): void => {
-    void nativeOverlayHostBridge()?.action({
-      surfaceId: request.surfaceId,
-      actionId,
-      ...(query === undefined ? {} : { closeOnSelect: false, query }),
-    })
-  }
-
-  return (
-    <LayoutCreatorModal
-      isOpen
-      existingLayouts={payload.existingLayouts}
-      seedLayout={payload.seedLayout}
-      editLayout={payload.editLayout}
-      onSave={(definition): void => {
-        dispatchAction(payload.actions.save, JSON.stringify(definition))
-      }}
-      onCancel={(): void => dispatchAction(payload.actions.cancel)}
-    />
-  )
-}
-
 const NativeOverlayActivityPopover = ({
   request,
   close,
@@ -1342,8 +1330,10 @@ const NativeOverlayActivityPopover = ({
 
 export const NativeOverlayHost = ({
   mode = 'menu',
+  dialogRenderers = {},
 }: {
   mode?: 'menu' | 'tooltip'
+  dialogRenderers?: NativeOverlayHostDialogRenderers
 }): ReactElement | null => {
   const [request, setRequest] = useState<NativeOverlayRequest | null>(null)
   const [copiedActionId, setCopiedActionId] = useState<string | null>(null)
@@ -1478,6 +1468,32 @@ export const NativeOverlayHost = ({
     })
   }, [clearCopyFeedback])
 
+  const dispatchDialogAction = useCallback(
+    ({
+      actionId,
+      closeOnSelect = false,
+      query = undefined,
+    }: NativeOverlayHostDialogActionRequest): void => {
+      const current = requestRef.current
+      if (current === null) {
+        return
+      }
+
+      if (closeOnSelect) {
+        clearCopyFeedback()
+        setRequest(null)
+      }
+
+      void nativeOverlayHostBridge()?.action({
+        surfaceId: current.surfaceId,
+        actionId,
+        closeOnSelect,
+        ...(query === undefined ? {} : { query }),
+      })
+    },
+    [clearCopyFeedback]
+  )
+
   if (request === null) {
     return null
   }
@@ -1534,20 +1550,25 @@ export const NativeOverlayHost = ({
         )
       }
 
-      if (request.payload.dialog === 'layout-creator') {
+      const renderDialog = dialogRenderers[request.payload.dialog]
+      if (renderDialog !== undefined) {
+        return renderDialog({
+          request,
+          close,
+          dispatchAction: dispatchDialogAction,
+        })
+      }
+
+      if (request.payload.dialog === 'command-palette') {
         return (
-          <NativeOverlayLayoutCreator
-            request={request as NativeOverlayLayoutCreatorRequest}
+          <NativeOverlayCommandPalette
+            request={request as NativeOverlayCommandPaletteRequest}
+            close={close}
           />
         )
       }
 
-      return (
-        <NativeOverlayCommandPalette
-          request={request as NativeOverlayCommandPaletteRequest}
-          close={close}
-        />
-      )
+      return null
     }
 
     return null

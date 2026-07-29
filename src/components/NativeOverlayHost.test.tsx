@@ -838,22 +838,39 @@ describe('NativeOverlayHost', () => {
   test('renders layout creator requests and returns the saved layout', async () => {
     const user = userEvent.setup()
     const bridge = installNativeOverlayHostBridge()
-    render(<NativeOverlayHost />)
+    render(
+      <NativeOverlayHost
+        dialogRenderers={{
+          'layout-creator': ({ request: overlayRequest, dispatchAction }) => (
+            <div role="dialog" aria-label={overlayRequest.payload.ariaLabel}>
+              <button
+                type="button"
+                onClick={(): void => {
+                  dispatchAction({
+                    actionId: 'layout-creator:save',
+                    closeOnSelect: false,
+                    query: JSON.stringify({
+                      schemaVersion: 1,
+                      title: 'Review layout',
+                      source: 'workspace',
+                    }),
+                  })
+                }}
+              >
+                Save & apply
+              </button>
+            </div>
+          ),
+        }}
+      />
+    )
 
     bridge.emitRender(layoutCreatorRequest)
 
     const dialog = await screen.findByRole('dialog', {
       name: 'Layout Creator',
     })
-    expect(screen.queryByText('Click cells')).not.toBeInTheDocument()
-    // eslint-disable-next-line testing-library/no-node-access -- layout overflow contract
-    const scrollRegion = dialog.querySelector('.overflow-y-auto')
-    expect(scrollRegion).not.toHaveClass('[scrollbar-gutter:stable]')
-
-    await user.type(
-      screen.getByRole('textbox', { name: 'Layout name' }),
-      'Review layout'
-    )
+    expect(dialog).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Save & apply' }))
 
     expect(bridge.action).toHaveBeenCalledWith({

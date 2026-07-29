@@ -1093,22 +1093,23 @@ export class NativeOverlayController {
     }
 
     record.syncBounds()
+
+    const needsKeyboardFocus =
+      payload.payload.kind === 'dialog' &&
+      payload.payload.dialog === 'layout-creator'
+
     if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
-      const needsKeyboardFocus =
-        payload.payload.kind === 'dialog' &&
-        payload.payload.dialog === 'layout-creator'
       record.menu.window.setFocusable(needsKeyboardFocus)
       record.menu.window.setIgnoreMouseEvents(false)
-      if (needsKeyboardFocus) {
-        record.menu.window.show()
-        record.menu.window.focus()
-      } else {
-        record.menu.window.showInactive()
-      }
       // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
       // still land behind it. The screen-saver level reliably places this
       // transparent overlay window above that native surface while it is open.
       record.menu.window.setAlwaysOnTop(true, 'screen-saver')
+      if (needsKeyboardFocus) {
+        record.menu.window.show()
+      } else {
+        record.menu.window.showInactive()
+      }
       record.menu.window.moveTop()
     }
     record.activeSurfaceId = payload.surfaceId
@@ -1129,6 +1130,10 @@ export class NativeOverlayController {
       this.closeSurface(payload.surfaceId, 'renderer', false)
 
       return { accepted: false, reason: 'render-timeout' }
+    }
+
+    if (needsKeyboardFocus && !record.menu.window.isDestroyed()) {
+      record.menu.window.focus()
     }
 
     return { accepted: true }

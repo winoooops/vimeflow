@@ -1,7 +1,6 @@
 // cspell:ignore ghostty
 import { isMacPlatform } from '@/lib/formatShortcut'
 import { createLogger } from '@/lib/log'
-import type { PaneLayoutDefinition } from '@/features/terminal/layout-registry'
 import type { NativeOverlayActivityPopoverPayload } from '../../nativeOverlayActivity'
 
 export type {
@@ -189,13 +188,43 @@ export interface NativeOverlayLayoutCreatorActions {
   save: string
 }
 
+export interface NativeOverlayLayoutCreatorTrack {
+  readonly id: string
+  readonly units: number
+  readonly minPx?: number
+}
+
+export interface NativeOverlayLayoutCreatorSlot {
+  readonly id: string
+  readonly rect: {
+    readonly col: number
+    readonly row: number
+    readonly colSpan: number
+    readonly rowSpan: number
+  }
+  readonly accepts?: readonly string[]
+}
+
+export interface NativeOverlayLayoutCreatorDefinition {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly title: string
+  readonly source: string
+  readonly tracks: {
+    readonly columns: readonly NativeOverlayLayoutCreatorTrack[]
+    readonly rows: readonly NativeOverlayLayoutCreatorTrack[]
+  }
+  readonly slots: readonly NativeOverlayLayoutCreatorSlot[]
+  readonly addOrder: readonly string[]
+}
+
 export interface NativeOverlayLayoutCreatorDialogPayload {
   kind: 'dialog'
   dialog: 'layout-creator'
   ariaLabel: string
-  existingLayouts: readonly PaneLayoutDefinition[]
-  seedLayout?: PaneLayoutDefinition
-  editLayout?: PaneLayoutDefinition
+  existingLayouts: readonly NativeOverlayLayoutCreatorDefinition[]
+  seedLayout?: NativeOverlayLayoutCreatorDefinition
+  editLayout?: NativeOverlayLayoutCreatorDefinition
   actions: NativeOverlayLayoutCreatorActions
 }
 
