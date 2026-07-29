@@ -287,8 +287,8 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
         const content = document.querySelector(
           '[data-workspace-overlay-id="layout-creator"]'
         )
-        const panel = content?.parentElement ?? content
-        const rect = panel?.getBoundingClientRect()
+        const dialog = content?.closest('[role="dialog"]') ?? content
+        const rect = dialog?.getBoundingClientRect()
         return rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
           : null

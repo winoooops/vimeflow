@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-29
-ref_count: 22
+ref_count: 23
 ---
 
 # E2E Testing
@@ -521,4 +521,21 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Map the owner pane rect and overlay surface rect through their own
   BrowserWindow content bounds before intersecting screen-pixel bounds, and
   sample the opaque dialog panel instead of the inner layout-creator content.
+- **Commit:** same commit as this entry
+
+### 44. Native overlay z-order probes must sample the guaranteed overlay layer
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke confirmed the layout
+  creator BrowserWindow was visible, focused, and always on top, but the final
+  pixel assertion still sampled only the dialog panel. On CI window geometry
+  where the panel does not overlap the native terminal pane, the z-order proof
+  fails even though the dialog/backdrop layer is the surface that must cover the
+  Ghostty NSView.
+- **Fix:** Resolve the layout creator content to its closest `[role="dialog"]`
+  before mapping overlay pixels, so the smoke samples the full dialog/backdrop
+  layer for z-order while the content selector still proves the renderer and
+  later controls are present.
 - **Commit:** same commit as this entry
