@@ -1,16 +1,24 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <node_api.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <cinttypes>
+#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <limits.h>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -70,6 +78,28 @@ struct BridgeApi {
   DestroyFn destroy = nullptr;
 };
 
+// One winsize-ownership fd slot (VIM-399 Phase 2). Two per surface, keyed by
+// role: primary (OnResize) and secondary/burner (OnSecondaryResize). The
+// mutex serializes state transitions and (in Phase 3) ioctl vs close, which
+// is what makes a reused fd number unreachable.
+struct PtyFdSlot {
+  std::mutex mtx;
+  int fd = -1;
+  enum class State { Empty, Bound, NativeActive, Releasing } state =
+      State::Empty;
+  std::string session_id;
+  uint64_t generation = 0;
+  uint64_t lease_id = 0;
+  // Latest size the engine reported — the RELEASING flush source and, from
+  // Phase 3 on, what a release carries as its last-applied size.
+  int last_columns = 0;
+  int last_rows = 0;
+  bool has_last_size = false;
+};
+
+constexpr int kPtyRolePrimary = 0;
+constexpr int kPtyRoleSecondary = 1;
+
 struct SurfaceHandle {
   napi_env env = nullptr;
   napi_threadsafe_function input_tsfn = nullptr;
@@ -84,6 +114,7 @@ struct SurfaceHandle {
   std::atomic_bool callbacks_released = false;
   std::atomic_bool secondary_callbacks_released = true;
   std::mutex callback_mutex;
+  PtyFdSlot pty_slots[2];
 };
 
 struct InputPayload {
@@ -117,7 +148,7 @@ napi_value Throw(napi_env env, const char *message) {
 // created BEFORE the sidecar spawns. The addon owns the parent end for its
 // lifetime (Phase 2 receives PTY fds on it); the child end is inherited by
 // the sidecar as stdio[3] and closed here once the spawn completes.
-int g_pty_fd_transport_parent = -1;
+std::atomic<int> g_pty_fd_transport_parent{-1};
 int g_pty_fd_transport_child = -1;
 
 bool SetCloexec(int fd) {
@@ -125,10 +156,16 @@ bool SetCloexec(int fd) {
   return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) >= 0;
 }
 
+// Winsize-ownership protocol (VIM-399 Phase 2) — implementation lives after
+// the surface callbacks; these run early in the file.
+void StartPtyFdTransportThread();
+void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,
+                       int rows);
+
 // createPtyFdTransport() -> child fd number. Idempotent: repeat calls return
 // the existing child end so a retried spawn cannot orphan a pair.
 napi_value CreatePtyFdTransport(napi_env env, napi_callback_info) {
-  if (g_pty_fd_transport_parent < 0) {
+  if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
     int fds[2] = {-1, -1};
     if (socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) != 0) {
       return Throw(env, "pty fd transport socketpair failed");
@@ -140,8 +177,9 @@ napi_value CreatePtyFdTransport(napi_env env, napi_callback_info) {
       close(fds[1]);
       return Throw(env, "pty fd transport cloexec failed");
     }
-    g_pty_fd_transport_parent = fds[0];
+    g_pty_fd_transport_parent.store(fds[0], std::memory_order_release);
     g_pty_fd_transport_child = fds[1];
+    StartPtyFdTransportThread();
   }
 
   napi_value result = nullptr;
@@ -405,6 +443,7 @@ void OnResize(void *context, int columns, int rows) {
   }
 
   auto *surface = static_cast<SurfaceHandle *>(context);
+  RecordPtySlotSize(surface, kPtyRolePrimary, columns, rows);
   napi_threadsafe_function tsfn =
       AcquireSurfaceCallback(surface, &SurfaceHandle::resize_tsfn);
   if (tsfn == nullptr) {
@@ -449,6 +488,7 @@ void OnSecondaryResize(void *context, int columns, int rows) {
   }
 
   auto *surface = static_cast<SurfaceHandle *>(context);
+  RecordPtySlotSize(surface, kPtyRoleSecondary, columns, rows);
   napi_threadsafe_function tsfn =
       AcquireSecondaryCallback(surface, &SurfaceHandle::secondary_resize_tsfn);
   if (tsfn == nullptr) {
@@ -543,6 +583,540 @@ void OnRenamePane(void *context) {
   napi_release_threadsafe_function(tsfn, napi_tsfn_release);
 }
 
+// ---------------------------------------------------------------------------
+// Winsize-ownership protocol (VIM-399 Phase 2)
+//
+// Wire peer: crates/backend/src/terminal/fd_broker.rs (protocol authority).
+// One JSON object per datagram. Inbound: fd (carries a descriptor),
+// activate-ack, release-ack, detach. Outbound: native-ready, release
+// (retried until acked), request-fd.
+//
+// ponytail: hand-rolled JSON field extraction — the peer is serde_json with
+// fixed flat shapes (UUID session ids, integers); swap in a JSON library if
+// the protocol ever grows nesting or escaping.
+// ---------------------------------------------------------------------------
+
+struct PendingPtyFd {
+  int fd = -1;
+  uint64_t generation = 0;
+  uint64_t lease_id = 0;
+};
+
+struct PtyBindIntent {
+  SurfaceHandle *surface = nullptr;
+  int role = kPtyRolePrimary;
+};
+
+// Where a release-ack lands: a live slot (flush + close) or an orphan fd
+// from a destroyed surface (close only). Keyed by lease id.
+struct UnackedRelease {
+  SurfaceHandle *surface = nullptr; // nullptr → orphan
+  int role = kPtyRolePrimary;
+  int orphan_fd = -1;
+  std::string json;
+  std::chrono::steady_clock::time_point last_sent;
+};
+
+// Lock ordering (deadlock-free by construction): g_pty_protocol_mutex may
+// nest slot.mtx or callback_mutex inside it; never the reverse. The
+// transport thread only dereferences a SurfaceHandle under the protocol
+// mutex, and surface teardown detaches from every protocol structure under
+// that same mutex BEFORE the handle is freed — so the thread can never race
+// a finalizer into a dangling pointer.
+std::mutex g_pty_protocol_mutex;
+std::map<std::string, PendingPtyFd> g_pending_pty_fds;
+std::map<std::string, PtyBindIntent> g_pty_bind_intents;
+std::map<uint64_t, UnackedRelease> g_unacked_releases;
+// lease id → live binding, for routing activate-ack / release-ack / detach.
+std::map<uint64_t, std::pair<SurfaceHandle *, int>> g_pty_lease_slots;
+
+bool ExtractJsonString(const std::string &json, const char *key,
+                       std::string *out) {
+  const std::string needle = std::string("\"") + key + "\":\"";
+  const size_t start = json.find(needle);
+  if (start == std::string::npos) {
+    return false;
+  }
+  const size_t value_start = start + needle.size();
+  const size_t end = json.find('"', value_start);
+  if (end == std::string::npos) {
+    return false;
+  }
+  *out = json.substr(value_start, end - value_start);
+  return true;
+}
+
+bool ExtractJsonU64(const std::string &json, const char *key, uint64_t *out) {
+  const std::string needle = std::string("\"") + key + "\":";
+  const size_t start = json.find(needle);
+  if (start == std::string::npos) {
+    return false;
+  }
+  *out = strtoull(json.c_str() + start + needle.size(), nullptr, 10);
+  return true;
+}
+
+void SendPtyTransportDatagram(const std::string &json) {
+  const int transport_fd =
+      g_pty_fd_transport_parent.load(std::memory_order_acquire);
+  if (transport_fd < 0) {
+    return;
+  }
+  std::string type;
+  const char *message_type =
+      ExtractJsonString(json, "t", &type) ? type.c_str() : "unknown";
+  while (true) {
+    const ssize_t sent = send(transport_fd, json.data(), json.size(), 0);
+    if (sent < 0 && errno == EINTR) {
+      continue;
+    }
+    if (sent < 0) {
+      const int send_errno = errno;
+      fprintf(stderr,
+              "vimeflow: failed to send PTY transport datagram type=%s: "
+              "%s (errno=%d)\n",
+              message_type, strerror(send_errno), send_errno);
+      return;
+    }
+    if (static_cast<size_t>(sent) != json.size()) {
+      fprintf(stderr,
+              "vimeflow: short PTY transport datagram send type=%s: sent %zd "
+              "of %zu bytes\n",
+              message_type, sent, json.size());
+    }
+    return;
+  }
+}
+
+void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,
+                       int rows) {
+  PtyFdSlot &slot = surface->pty_slots[role];
+  std::lock_guard<std::mutex> lock(slot.mtx);
+  if (slot.state == PtyFdSlot::State::Empty) {
+    return;
+  }
+  if (columns <= 0 || rows <= 0) {
+    return;
+  }
+  slot.last_columns = columns;
+  slot.last_rows = rows;
+  slot.has_last_size = true;
+}
+
+std::string PtyMessageJson(const char *type, const std::string &session_id,
+                           uint64_t generation, uint64_t lease_id,
+                           const char *role) {
+  char buf[512];
+  if (role != nullptr) {
+    snprintf(buf, sizeof(buf),
+             "{\"t\":\"%s\",\"sessionId\":\"%s\",\"generation\":%" PRIu64
+             ",\"leaseId\":%" PRIu64 ",\"role\":\"%s\"}",
+             type, session_id.c_str(), generation, lease_id, role);
+  } else {
+    snprintf(buf, sizeof(buf),
+             "{\"t\":\"%s\",\"sessionId\":\"%s\",\"generation\":%" PRIu64
+             ",\"leaseId\":%" PRIu64 "}",
+             type, session_id.c_str(), generation, lease_id);
+  }
+  return buf;
+}
+
+// Enqueues a size through the ordinary JS resize path — the RELEASING flush.
+void EnqueuePtyResizeFlush(SurfaceHandle *surface, int role, int columns,
+                           int rows) {
+  if (columns <= 0 || rows <= 0) {
+    return;
+  }
+  if (role == kPtyRolePrimary) {
+    OnResize(surface, columns, rows);
+  } else {
+    OnSecondaryResize(surface, columns, rows);
+  }
+}
+
+// Binds a delivered fd to a surface slot and announces native-ready. Caller
+// holds g_pty_protocol_mutex.
+void CompletePtyBindLocked(SurfaceHandle *surface, int role,
+                           const std::string &session_id,
+                           const PendingPtyFd &pending) {
+  PtyFdSlot &slot = surface->pty_slots[role];
+  {
+    std::lock_guard<std::mutex> lock(slot.mtx);
+    if (slot.fd >= 0) {
+      close(slot.fd);
+    }
+    slot.fd = pending.fd;
+    slot.state = PtyFdSlot::State::Bound;
+    slot.session_id = session_id;
+    slot.generation = pending.generation;
+    slot.lease_id = pending.lease_id;
+    slot.last_columns = 0;
+    slot.last_rows = 0;
+    slot.has_last_size = false;
+  }
+  g_pty_lease_slots[pending.lease_id] = {surface, role};
+  SendPtyTransportDatagram(PtyMessageJson(
+      "native-ready", session_id, pending.generation, pending.lease_id,
+      role == kPtyRolePrimary ? "primary" : "secondary"));
+}
+
+// Detaches one role slot from the protocol because its surface is going
+// away (Destroy, RemoveSecondary, finalizer). Caller holds
+// g_pty_protocol_mutex. The fd is orphaned into the unacked record so ack
+// routing never dereferences a freed SurfaceHandle; the release itself is
+// still sent + retried so Rust reacquires ownership cleanly.
+void OrphanReleasePtySlotLocked(SurfaceHandle *surface, int role,
+                                std::vector<std::string> *out_sends) {
+  PtyFdSlot &slot = surface->pty_slots[role];
+  std::lock_guard<std::mutex> lock(slot.mtx);
+  if (slot.state == PtyFdSlot::State::Empty) {
+    return;
+  }
+  const uint64_t lease_id = slot.lease_id;
+  g_pty_lease_slots.erase(lease_id);
+
+  if (slot.state == PtyFdSlot::State::Releasing) {
+    // A release is already in flight with a surface-routed record: convert
+    // it to an orphan so completion only closes the fd.
+    auto it = g_unacked_releases.find(lease_id);
+    if (it != g_unacked_releases.end()) {
+      it->second.surface = nullptr;
+      it->second.orphan_fd = slot.fd;
+    } else if (slot.fd >= 0) {
+      close(slot.fd);
+    }
+  } else {
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "{\"t\":\"release\",\"sessionId\":\"%s\",\"generation\":%" PRIu64
+             ",\"leaseId\":%" PRIu64 ",\"rows\":%d,\"cols\":%d}",
+             slot.session_id.c_str(), slot.generation, lease_id,
+             slot.has_last_size ? slot.last_rows : 0,
+             slot.has_last_size ? slot.last_columns : 0);
+    UnackedRelease record;
+    record.surface = nullptr;
+    record.role = role;
+    record.orphan_fd = slot.fd;
+    record.json = buf;
+    record.last_sent = std::chrono::steady_clock::now();
+    g_unacked_releases[lease_id] = record;
+    out_sends->push_back(record.json);
+  }
+  slot.fd = -1;
+  slot.state = PtyFdSlot::State::Empty;
+  slot.session_id.clear();
+  slot.has_last_size = false;
+}
+
+// Full surface teardown: intents, both role slots, lease routes. MUST run
+// before the SurfaceHandle is freed.
+void DetachSurfaceFromPtyProtocol(SurfaceHandle *surface) {
+  std::vector<std::string> sends;
+  {
+    std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    for (auto it = g_pty_bind_intents.begin();
+         it != g_pty_bind_intents.end();) {
+      it = it->second.surface == surface ? g_pty_bind_intents.erase(it)
+                                         : std::next(it);
+    }
+    OrphanReleasePtySlotLocked(surface, kPtyRolePrimary, &sends);
+    OrphanReleasePtySlotLocked(surface, kPtyRoleSecondary, &sends);
+  }
+  for (const auto &json : sends) {
+    SendPtyTransportDatagram(json);
+  }
+}
+
+void DetachSecondaryFromPtyProtocol(SurfaceHandle *surface) {
+  std::vector<std::string> sends;
+  {
+    std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    OrphanReleasePtySlotLocked(surface, kPtyRoleSecondary, &sends);
+  }
+  for (const auto &json : sends) {
+    SendPtyTransportDatagram(json);
+  }
+}
+
+void HandlePtyActivateAck(uint64_t lease_id) {
+  std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+  auto it = g_pty_lease_slots.find(lease_id);
+  if (it == g_pty_lease_slots.end()) {
+    return;
+  }
+  PtyFdSlot &slot = it->second.first->pty_slots[it->second.second];
+  std::lock_guard<std::mutex> slot_lock(slot.mtx);
+  if (slot.state == PtyFdSlot::State::Bound && slot.lease_id == lease_id) {
+    slot.state = PtyFdSlot::State::NativeActive;
+  }
+}
+
+void HandlePtyReleaseAck(uint64_t lease_id) {
+  std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+  auto it = g_unacked_releases.find(lease_id);
+  if (it == g_unacked_releases.end()) {
+    return;
+  }
+  const UnackedRelease record = it->second;
+  g_unacked_releases.erase(it);
+  if (record.surface == nullptr) {
+    if (record.orphan_fd >= 0) {
+      close(record.orphan_fd);
+    }
+    return;
+  }
+  g_pty_lease_slots.erase(lease_id);
+  PtyFdSlot &slot = record.surface->pty_slots[record.role];
+  int flush_columns = 0;
+  int flush_rows = 0;
+  {
+    std::lock_guard<std::mutex> slot_lock(slot.mtx);
+    if (slot.state != PtyFdSlot::State::Releasing ||
+        slot.lease_id != lease_id) {
+      return;
+    }
+    if (slot.fd >= 0) {
+      close(slot.fd);
+      slot.fd = -1;
+    }
+    slot.state = PtyFdSlot::State::Empty;
+    flush_columns = slot.last_columns;
+    flush_rows = slot.last_rows;
+    slot.session_id.clear();
+    slot.has_last_size = false;
+  }
+  // Rust owns the winsize again: flush the newest size recorded during
+  // RELEASING through the ordinary JS path so it is applied, not skipped.
+  // Runs under the protocol mutex on purpose: teardown detaches under this
+  // same mutex before the handle is freed, so the pointer cannot dangle
+  // here. Ordering stays protocol → slot / protocol → callback_mutex.
+  EnqueuePtyResizeFlush(record.surface, record.role, flush_columns,
+                        flush_rows);
+}
+
+void HandlePtyInboundMessage(const std::string &json, int received_fd) {
+  std::string type;
+  if (!ExtractJsonString(json, "t", &type)) {
+    if (received_fd >= 0) {
+      close(received_fd);
+    }
+    return;
+  }
+
+  if (type == "fd") {
+    std::string session_id;
+    uint64_t generation = 0;
+    uint64_t lease_id = 0;
+    if (received_fd < 0 || !ExtractJsonString(json, "sessionId", &session_id) ||
+        !ExtractJsonU64(json, "generation", &generation) ||
+        !ExtractJsonU64(json, "leaseId", &lease_id)) {
+      if (received_fd >= 0) {
+        close(received_fd);
+      }
+      return;
+    }
+    PtyBindIntent intent;
+    bool has_intent = false;
+    PendingPtyFd pending{received_fd, generation, lease_id};
+    {
+      std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+      auto existing = g_pending_pty_fds.find(session_id);
+      if (existing != g_pending_pty_fds.end()) {
+        // Superseded delivery: the old descriptor is stale — close it.
+        close(existing->second.fd);
+        g_pending_pty_fds.erase(existing);
+      }
+      auto intent_it = g_pty_bind_intents.find(session_id);
+      if (intent_it != g_pty_bind_intents.end()) {
+        intent = intent_it->second;
+        has_intent = true;
+        g_pty_bind_intents.erase(intent_it);
+      } else {
+        g_pending_pty_fds[session_id] = pending;
+      }
+      if (has_intent) {
+        CompletePtyBindLocked(intent.surface, intent.role, session_id,
+                              pending);
+      }
+    }
+    return;
+  }
+
+  if (received_fd >= 0) {
+    close(received_fd);
+  }
+
+  if (type == "activate-ack") {
+    uint64_t lease_id = 0;
+    if (ExtractJsonU64(json, "leaseId", &lease_id)) {
+      HandlePtyActivateAck(lease_id);
+    }
+    return;
+  }
+
+  if (type == "release-ack") {
+    uint64_t lease_id = 0;
+    if (ExtractJsonU64(json, "leaseId", &lease_id)) {
+      HandlePtyReleaseAck(lease_id);
+    }
+    return;
+  }
+
+  if (type == "detach") {
+    std::string session_id;
+    uint64_t lease_id = 0;
+    if (!ExtractJsonString(json, "sessionId", &session_id) ||
+        !ExtractJsonU64(json, "leaseId", &lease_id)) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    auto pending = g_pending_pty_fds.find(session_id);
+    if (pending != g_pending_pty_fds.end() &&
+        pending->second.lease_id == lease_id) {
+      close(pending->second.fd);
+      g_pending_pty_fds.erase(pending);
+    }
+    g_pty_bind_intents.erase(session_id);
+    // A bound slot for this lease: Rust already retired it (the session is
+    // gone), so close directly — no release handshake.
+    auto route = g_pty_lease_slots.find(lease_id);
+    if (route != g_pty_lease_slots.end()) {
+      PtyFdSlot &slot = route->second.first->pty_slots[route->second.second];
+      std::lock_guard<std::mutex> slot_lock(slot.mtx);
+      if (slot.lease_id == lease_id && slot.fd >= 0) {
+        close(slot.fd);
+        slot.fd = -1;
+        slot.state = PtyFdSlot::State::Empty;
+        slot.session_id.clear();
+        slot.has_last_size = false;
+      }
+      g_pty_lease_slots.erase(route);
+    }
+    return;
+  }
+}
+
+// Retries unacked releases (idempotent by lease) so a dropped ack on a
+// healthy channel can only delay, never strand.
+void RetryUnackedPtyReleases() {
+  const auto now = std::chrono::steady_clock::now();
+  std::vector<std::string> to_send;
+  {
+    std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    for (auto &entry : g_unacked_releases) {
+      if (now - entry.second.last_sent > std::chrono::milliseconds(500)) {
+        entry.second.last_sent = now;
+        to_send.push_back(entry.second.json);
+      }
+    }
+  }
+  for (const auto &json : to_send) {
+    SendPtyTransportDatagram(json);
+  }
+}
+
+// Transport death: close everything unilaterally — Rust reclaims all leases
+// on its side, so no acks are coming and none are needed.
+void ShutdownPtyProtocol() {
+  std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+  const int transport_fd =
+      g_pty_fd_transport_parent.exchange(-1, std::memory_order_acq_rel);
+  if (transport_fd >= 0) {
+    close(transport_fd);
+  }
+  for (auto &entry : g_pending_pty_fds) {
+    close(entry.second.fd);
+  }
+  g_pending_pty_fds.clear();
+  g_pty_bind_intents.clear();
+  for (auto &entry : g_unacked_releases) {
+    if (entry.second.orphan_fd >= 0) {
+      close(entry.second.orphan_fd);
+    }
+  }
+  g_unacked_releases.clear();
+  for (auto &entry : g_pty_lease_slots) {
+    PtyFdSlot &slot = entry.second.first->pty_slots[entry.second.second];
+    std::lock_guard<std::mutex> slot_lock(slot.mtx);
+    if (slot.fd >= 0) {
+      close(slot.fd);
+      slot.fd = -1;
+    }
+    slot.state = PtyFdSlot::State::Empty;
+    slot.session_id.clear();
+    slot.has_last_size = false;
+  }
+  g_pty_lease_slots.clear();
+}
+
+void PtyFdTransportThreadMain() {
+  std::vector<char> buf(4096);
+  while (true) {
+    const int transport_fd =
+        g_pty_fd_transport_parent.load(std::memory_order_acquire);
+    if (transport_fd < 0) {
+      return;
+    }
+    struct pollfd pfd = {transport_fd, POLLIN, 0};
+    const int ready = poll(&pfd, 1, 200);
+    if (ready < 0 && errno != EINTR) {
+      ShutdownPtyProtocol();
+      return;
+    }
+    RetryUnackedPtyReleases();
+    if (ready <= 0) {
+      continue;
+    }
+
+    struct iovec iov = {buf.data(), buf.size()};
+    union {
+      struct cmsghdr align;
+      char bytes[64];
+    } cmsg_buf = {};
+    struct msghdr msg = {};
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cmsg_buf.bytes;
+    msg.msg_controllen = sizeof(cmsg_buf.bytes);
+
+    const ssize_t len = recvmsg(transport_fd, &msg, 0);
+    if (len < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      // Peer closed (ECONNRESET on macOS) or hard error either way.
+      ShutdownPtyProtocol();
+      return;
+    }
+    if (len == 0) {
+      ShutdownPtyProtocol();
+      return;
+    }
+
+    int received_fd = -1;
+    for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr;
+         cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+      if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+        memcpy(&received_fd, CMSG_DATA(cmsg), sizeof(received_fd));
+        if (received_fd >= 0) {
+          // Sender-side close-on-exec does not transfer.
+          const int flags = fcntl(received_fd, F_GETFD);
+          if (flags >= 0) {
+            fcntl(received_fd, F_SETFD, flags | FD_CLOEXEC);
+          }
+        }
+      }
+    }
+
+    HandlePtyInboundMessage(std::string(buf.data(), (size_t)len),
+                            received_fd);
+  }
+}
+
+void StartPtyFdTransportThread() {
+  std::thread(PtyFdTransportThreadMain).detach();
+}
+
 void CallJsInput(napi_env env, napi_value callback, void *, void *data) {
   std::unique_ptr<InputPayload> payload(static_cast<InputPayload *>(data));
   if (env == nullptr || callback == nullptr || payload == nullptr) {
@@ -634,6 +1208,10 @@ void FinalizeSurface(napi_env env, void *data, void *) {
   if (surface == nullptr) {
     return;
   }
+
+  // Scrub every winsize-protocol structure BEFORE the delete below — the
+  // transport thread only touches surfaces it can still find there.
+  DetachSurfaceFromPtyProtocol(surface);
 
   if (surface->swift_surface != nullptr && bridge.destroy != nullptr) {
     bridge.destroy(surface->swift_surface);
@@ -1136,6 +1714,7 @@ napi_value RemoveSecondary(napi_env env, napi_callback_info info) {
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
   if (surface != nullptr && surface->swift_surface != nullptr) {
+    DetachSecondaryFromPtyProtocol(surface);
     bridge.remove_secondary(surface->swift_surface);
     ReleaseSecondaryCallbacks(surface);
   }
@@ -1214,11 +1793,76 @@ napi_value Destroy(napi_env env, napi_callback_info info) {
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
   if (surface != nullptr && surface->swift_surface != nullptr) {
+    DetachSurfaceFromPtyProtocol(surface);
     bridge.destroy(surface->swift_surface);
     surface->swift_surface = nullptr;
     ReleaseSecondaryCallbacks(surface);
     ReleaseSurfaceCallbacks(surface);
   }
+
+  return nullptr;
+}
+
+// bindPty(surface, role, sessionId): joins session-owned transport state
+// (the pending fd from Rust) to handle-owned native state (the role slot).
+// With no pending fd — surface recreation after a release — it records a
+// bind intent and asks Rust for a fresh transfer; Rust answers once the
+// previous lease retires. Generation and lease live purely between Rust and
+// this addon: Electron main only knows the sessionId.
+napi_value BindPty(napi_env env, napi_callback_info info) {
+  size_t argc = 3;
+  napi_value args[3];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 3) {
+    return Throw(env, "bindPty(surface, role, sessionId) expected");
+  }
+
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface == nullptr) {
+    return nullptr;
+  }
+
+  char role_buf[16] = {0};
+  size_t role_len = 0;
+  if (napi_get_value_string_utf8(env, args[1], role_buf, sizeof(role_buf),
+                                 &role_len) != napi_ok) {
+    return Throw(env, "bindPty role must be a string");
+  }
+  const int role =
+      strcmp(role_buf, "secondary") == 0 ? kPtyRoleSecondary : kPtyRolePrimary;
+
+  char session_buf[128] = {0};
+  size_t session_len = 0;
+  if (napi_get_value_string_utf8(env, args[2], session_buf,
+                                 sizeof(session_buf),
+                                 &session_len) != napi_ok ||
+      session_len == 0) {
+    return Throw(env, "bindPty sessionId must be a non-empty string");
+  }
+  const std::string session_id(session_buf, session_len);
+
+  if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
+    return nullptr; // Transport never established: async path only.
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
+      return nullptr;
+    }
+    auto pending = g_pending_pty_fds.find(session_id);
+    if (pending != g_pending_pty_fds.end()) {
+      const PendingPtyFd fd_entry = pending->second;
+      g_pending_pty_fds.erase(pending);
+      CompletePtyBindLocked(surface, role, session_id, fd_entry);
+      return nullptr;
+    }
+    g_pty_bind_intents[session_id] = PtyBindIntent{surface, role};
+  }
+  char buf[256];
+  snprintf(buf, sizeof(buf), "{\"t\":\"request-fd\",\"sessionId\":\"%s\"}",
+           session_id.c_str());
+  SendPtyTransportDatagram(buf);
 
   return nullptr;
 }
@@ -1263,6 +1907,8 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr, napi_default, nullptr},
       {"notifyPtyFdTransportSpawned", nullptr, NotifyPtyFdTransportSpawned,
        nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"bindPty", nullptr, BindPty, nullptr, nullptr, nullptr, napi_default,
+       nullptr},
   };
   napi_define_properties(env, exports,
                          sizeof(descriptors) / sizeof(descriptors[0]),

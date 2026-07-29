@@ -19,7 +19,8 @@ async fn main() {
     // Claim the fd-passing transport (VIM-399) before anything can spawn a
     // subprocess: stdio[3] inheritance clears close-on-exec, and a leaked
     // transport end would wedge EOF/channel-failure detection.
-    if vimeflow_lib::fd_transport::claim_inherited_transport().is_some() {
+    let pty_fd_transport = vimeflow_lib::fd_transport::claim_inherited_transport();
+    if pty_fd_transport.is_some() {
         log::info!("pty fd transport claimed on fd 3");
     }
 
@@ -43,6 +44,12 @@ async fn main() {
 
     let sink: Arc<dyn EventSink> = Arc::new(ipc::StdoutEventSink::new(tx.clone()));
     let state = Arc::new(BackendState::new(app_data_dir, sink));
+
+    // Winsize-ownership broker (VIM-399): PTY masters get offered to the
+    // native addon over the claimed transport for engine-side TIOCSWINSZ.
+    if let Some(transport_fd) = pty_fd_transport {
+        state.start_fd_broker(transport_fd);
+    }
 
     // Restore the persisted kimi plan-usage consent before any agent attaches.
     state.load_kimi_usage_consent();

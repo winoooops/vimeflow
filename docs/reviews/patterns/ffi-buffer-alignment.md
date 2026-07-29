@@ -3,7 +3,7 @@ id: ffi-buffer-alignment
 category: security
 created: 2026-07-29
 last_updated: 2026-07-29
-ref_count: 0
+ref_count: 1
 ---
 
 # FFI Buffer Alignment
@@ -31,4 +31,17 @@ the C type that will be read from or written into that memory.
 - **Fix:** Replaced the raw arrays with a `repr(C)` `ControlMessageBuffer`
   wrapper whose zero-length `libc::cmsghdr` field raises the allocation
   alignment, and added a regression test for the alignment invariant.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. Native parent SCM_RIGHTS receive buffer was not cmsghdr-aligned
+
+- **Source:** github-codex-connector | PR #754 round 1 | 2026-07-29
+- **Severity:** P1 / HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native parent received PTY fds into a raw `char` ancillary
+  control buffer, then passed it through `CMSG_FIRSTHDR`/`CMSG_NXTHDR`, which
+  dereference `cmsghdr` and require suitable alignment.
+- **Fix:** Replaced the raw array with a union containing a `cmsghdr` member and
+  the byte storage, so the control buffer has at least `cmsghdr` alignment
+  before the CMSG macros read it.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

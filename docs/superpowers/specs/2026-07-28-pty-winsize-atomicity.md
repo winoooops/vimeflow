@@ -163,6 +163,16 @@ where Electron main already resolves `sessionId:paneId` to a handle — joins
 session-owned transport state to handle-owned native state. No new registry
 abstraction in Electron.
 
+> **Phase 2 implementation note**: the JS-facing `bindPty` signature is
+> `(surface, role, sessionId)` — generation and lease live purely between
+> Rust and the addon (Electron main never sees them), so the addon resolves
+> the pending entry by session id. Safe because Rust serializes to one
+> active lease per session and a superseding delivery closes the older
+> pending fd. The spec tuple still governs every wire message and staleness
+> check. Likewise `request-fd` is sent by the addon (from inside `bindPty`
+> when no pending fd exists) rather than by Electron main — same wire
+> message, one fewer API surface.
+
 ### Transport bootstrap (finding 3)
 
 `spawnSidecar` (`electron/sidecar.ts:488`) exposes only stdio 0–2 today, and

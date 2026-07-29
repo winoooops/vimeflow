@@ -129,6 +129,68 @@ pub fn send_fd(channel: RawFd, payload: &[u8], fd: RawFd) -> io::Result<()> {
     }
 }
 
+/// Sends a plain datagram (no descriptor) — the ack/control messages of the
+/// ownership protocol.
+pub fn send_datagram(channel: RawFd, payload: &[u8]) -> io::Result<()> {
+    assert!(!payload.is_empty() && payload.len() <= MAX_MESSAGE_BYTES);
+    loop {
+        // SAFETY: payload is a valid buffer for the duration of the call.
+        let sent = unsafe {
+            libc::send(
+                channel,
+                payload.as_ptr() as *const libc::c_void,
+                payload.len(),
+                0,
+            )
+        };
+        if sent >= 0 {
+            return Ok(());
+        }
+        let err = last_error();
+        if err.kind() != io::ErrorKind::Interrupted {
+            return Err(err);
+        }
+    }
+}
+
+/// [`recv_fd`] with a poll timeout. Returns `Ok(None)` when nothing arrived
+/// within `timeout` — used by tests and by receivers that must also service
+/// retries.
+pub fn recv_fd_timeout(
+    channel: RawFd,
+    buf: &mut [u8],
+    timeout: std::time::Duration,
+) -> io::Result<Option<(usize, Option<OwnedFd>)>> {
+    let mut pollfd = libc::pollfd {
+        fd: channel,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let millis = timeout.as_millis().min(i32::MAX as u128) as libc::c_int;
+    // SAFETY: pollfd is a valid out-struct for the duration of the call.
+    let ready = unsafe { libc::poll(&mut pollfd, 1, millis) };
+    if ready < 0 {
+        let err = last_error();
+        if err.kind() == io::ErrorKind::Interrupted {
+            return Ok(None);
+        }
+        return Err(err);
+    }
+    if ready == 0 {
+        return Ok(None);
+    }
+    if pollfd.revents & libc::POLLIN == 0 {
+        if pollfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "fd transport peer closed",
+            ));
+        }
+        return Ok(None);
+    }
+    recv_fd(channel, buf).map(Some)
+}
+
 /// Receives one datagram: the payload bytes and, when present, the passed
 /// descriptor. The fd is marked `FD_CLOEXEC` immediately — sender-side
 /// close-on-exec does not transfer — and returned as an `OwnedFd` (RAII, so

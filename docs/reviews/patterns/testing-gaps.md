@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-07-21
-ref_count: 43
+last_updated: 2026-07-29
+ref_count: 44
 ---
 
 # Testing Gaps
@@ -880,4 +880,17 @@ filesystem scope restrictions).
   verify that the pinned registry contained 55 unique entries.
 - **Fix:** Changed the uniqueness assertion to compare
   `new Set(CODEX_BUILT_IN_TOOLS).size` to the expected registry count.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Native PTY binding role arguments had no regression coverage
+
+- **Source:** github-claude | PR #754 round 1 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.test.ts`
+- **Finding:** The new native parent `bindPty` call sites wired primary and
+  secondary PTY fd ownership roles but tests did not assert the role strings or
+  session ids passed to the addon.
+- **Fix:** Added focused assertions for primary surface creation and secondary
+  attach, covering `bindPty(surface, 'primary', hostSessionId)` and
+  `bindPty(surface, 'secondary', secondarySessionId)`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

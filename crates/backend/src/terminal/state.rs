@@ -187,6 +187,12 @@ pub struct PtyState {
     sessions: Arc<Mutex<HashMap<SessionId, ManagedSession>>>,
     /// Ids of ephemeral (burner) PTYs — reaped by kill_ephemeral_ptys.
     ephemeral_ptys: Arc<Mutex<HashSet<SessionId>>>,
+    /// The winsize-ownership broker (VIM-399), installed at bootstrap when
+    /// the fd transport is available. `None` → async resize path only.
+    /// PtyState → broker → (reader thread holds a PtyState clone) is a
+    /// deliberate process-lifetime cycle; nothing here is ever dropped.
+    #[cfg(unix)]
+    fd_broker: Arc<Mutex<Option<Arc<super::fd_broker::FdBroker>>>>,
 }
 
 /// Reason why `PtyState::try_insert` rejected a new session — returned to
@@ -251,10 +257,31 @@ fn read_foreground_leader(_master: &(dyn MasterPty + Send)) -> Option<i32> {
 impl PtyState {
     /// Create a new empty PTY state
     pub fn new() -> Self {
-        Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-            ephemeral_ptys: Arc::new(Mutex::new(HashSet::new())),
-        }
+        Self::default()
+    }
+
+    /// Installs the winsize-ownership broker (VIM-399). Called once at
+    /// bootstrap when the fd transport was claimed.
+    #[cfg(unix)]
+    pub fn set_fd_broker(&self, broker: Arc<super::fd_broker::FdBroker>) {
+        *self.fd_broker.lock().expect("fd_broker lock") = Some(broker);
+    }
+
+    /// The installed broker, if the fd transport is active.
+    #[cfg(unix)]
+    pub fn fd_broker(&self) -> Option<Arc<super::fd_broker::FdBroker>> {
+        self.fd_broker.lock().expect("fd_broker lock").clone()
+    }
+
+    /// The raw master fd and generation for a live session — what the
+    /// broker dups to answer a `request-fd`. `None` when the session is
+    /// gone or the platform can't expose the fd.
+    #[cfg(unix)]
+    pub fn master_fd_and_generation(&self, session_id: &str) -> Option<(std::os::fd::RawFd, u64)> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        let session = sessions.get(session_id)?;
+        let fd = session.master.as_raw_fd()?;
+        Some((fd, session.generation))
     }
 
     /// Allocate the next generation number
