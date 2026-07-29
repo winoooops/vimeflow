@@ -79,6 +79,7 @@ enum WireMessage {
         #[serde(rename = "sessionId")]
         session_id: String,
     },
+    Ping,
     Detach {
         #[serde(rename = "sessionId")]
         session_id: String,
@@ -227,7 +228,14 @@ impl FdBroker {
                 std::time::Duration::from_millis(500),
             ) {
                 Ok(Some(result)) => result,
-                Ok(None) => continue,
+                Ok(None) => {
+                    if self.has_leases() && self.probe_transport().is_err() {
+                        log::warn!("fd broker: transport probe failed; reclaiming all leases");
+                        self.reclaim_all();
+                        return;
+                    }
+                    continue;
+                }
                 Err(err) => {
                     log::warn!("fd broker: transport error ({err}); reclaiming all leases");
                     self.reclaim_all();
@@ -255,6 +263,20 @@ impl FdBroker {
         let mut inner = self.inner.lock().expect("broker lock");
         inner.leases.clear();
         inner.deferred_requests.clear();
+    }
+
+    fn has_leases(&self) -> bool {
+        !self
+            .inner
+            .lock()
+            .expect("broker lock")
+            .leases
+            .is_empty()
+    }
+
+    fn probe_transport(&self) -> std::io::Result<()> {
+        let payload = serde_json::to_vec(&WireMessage::Ping).expect("serialize ping message");
+        fd_transport::send_datagram(self.transport_fd, &payload)
     }
 
     fn handle(&self, msg: WireMessage, pty: &PtyState) {
@@ -336,6 +358,7 @@ impl FdBroker {
             }
             // Rust never receives its own outbound message kinds.
             WireMessage::Fd { .. }
+            | WireMessage::Ping
             | WireMessage::ActivateAck { .. }
             | WireMessage::ReleaseAck { .. }
             | WireMessage::Detach { .. } => {}
