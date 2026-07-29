@@ -45,6 +45,7 @@ import { spawnSidecar, type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import { SettingsWindowController } from './settings-window'
 import {
+  createPtyFdTransportBeforeSpawn,
   isGhosttyNativeParentEnabled,
   setupGhosttyNativeParent,
   type GhosttyNativeParentController,
@@ -541,10 +542,24 @@ const setupApp = async (): Promise<void> => {
     registerAppProtocol()
   }
 
+  const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
+    process.platform,
+    process.env,
+    app.isPackaged
+  )
+
+  // The fd-passing socketpair must exist before the sidecar spawns so the
+  // child end can ride in as stdio[3] (VIM-399).
+  const ptyFdTransport = ghosttyNativeParentEnabled
+    ? createPtyFdTransportBeforeSpawn(app.isPackaged, process.resourcesPath)
+    : null
+
   const spawnedSidecar = spawnSidecar({
     binary: resolveSidecarBin(),
     appDataDir: app.getPath('userData'),
+    transportFd: ptyFdTransport?.transportFd,
   })
+  ptyFdTransport?.onSpawned()
 
   sidecar = spawnedSidecar
   browserPaneController?.dispose()
@@ -553,12 +568,6 @@ const setupApp = async (): Promise<void> => {
   ghosttyNativeController?.dispose()
 
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
-
-  const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
-    process.platform,
-    process.env,
-    app.isPackaged
-  )
 
   if (ghosttyNativeParentEnabled) {
     // Preload checks process.env before exposing window.vimeflow.ghosttyNative.

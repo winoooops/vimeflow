@@ -71,7 +71,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 14       | 5    | 2026-07-27   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 14       | 6    | 2026-07-27   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
@@ -81,6 +81,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
 | [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 49   | 2026-07-12   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
+| [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 1        | 0    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 40       | 19   | 2026-07-13   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 21       | 8    | 2026-07-20   |
@@ -98,7 +99,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 14       | 10   | 2026-07-27   |
-| [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 0    | 2026-06-14   |
+| [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 1    | 2026-06-14   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 19       | 12   | 2026-07-22   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 3        | 2    | 2026-07-26   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 11   | 2026-07-05   |

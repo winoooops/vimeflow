@@ -3,7 +3,7 @@ id: ipc-trust-boundary
 category: security
 created: 2026-06-12
 last_updated: 2026-06-18
-ref_count: 1
+ref_count: 2
 ---
 
 # IPC Trust Boundary

@@ -1,5 +1,8 @@
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <node_api.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cstdlib>
@@ -107,6 +110,52 @@ BridgeApi bridge;
 
 napi_value Throw(napi_env env, const char *message) {
   napi_throw_error(env, nullptr, message);
+  return nullptr;
+}
+
+// PTY winsize-atomicity transport (VIM-399): an AF_UNIX/SOCK_DGRAM socketpair
+// created BEFORE the sidecar spawns. The addon owns the parent end for its
+// lifetime (Phase 2 receives PTY fds on it); the child end is inherited by
+// the sidecar as stdio[3] and closed here once the spawn completes.
+int g_pty_fd_transport_parent = -1;
+int g_pty_fd_transport_child = -1;
+
+bool SetCloexec(int fd) {
+  int flags = fcntl(fd, F_GETFD);
+  return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) >= 0;
+}
+
+// createPtyFdTransport() -> child fd number. Idempotent: repeat calls return
+// the existing child end so a retried spawn cannot orphan a pair.
+napi_value CreatePtyFdTransport(napi_env env, napi_callback_info) {
+  if (g_pty_fd_transport_parent < 0) {
+    int fds[2] = {-1, -1};
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) != 0) {
+      return Throw(env, "pty fd transport socketpair failed");
+    }
+    // CLOEXEC on both our copies; Node's spawn machinery dups the child end
+    // into the sidecar regardless, and nothing else may inherit either end.
+    if (!SetCloexec(fds[0]) || !SetCloexec(fds[1])) {
+      close(fds[0]);
+      close(fds[1]);
+      return Throw(env, "pty fd transport cloexec failed");
+    }
+    g_pty_fd_transport_parent = fds[0];
+    g_pty_fd_transport_child = fds[1];
+  }
+
+  napi_value result = nullptr;
+  napi_create_int32(env, g_pty_fd_transport_child, &result);
+  return result;
+}
+
+// notifyPtyFdTransportSpawned(): the sidecar now holds its inherited copy, so
+// the parent-process copy of the child end must close for EOF detection.
+napi_value NotifyPtyFdTransportSpawned(napi_env env, napi_callback_info) {
+  if (g_pty_fd_transport_child >= 0) {
+    close(g_pty_fd_transport_child);
+    g_pty_fd_transport_child = -1;
+  }
   return nullptr;
 }
 
@@ -1210,6 +1259,10 @@ napi_value Init(napi_env env, napi_value exports) {
        napi_default, nullptr},
       {"destroy", nullptr, Destroy, nullptr, nullptr, nullptr, napi_default,
        nullptr},
+      {"createPtyFdTransport", nullptr, CreatePtyFdTransport, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
+      {"notifyPtyFdTransportSpawned", nullptr, NotifyPtyFdTransportSpawned,
+       nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports,
                          sizeof(descriptors) / sizeof(descriptors[0]),

@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-07-27
-ref_count: 5
+ref_count: 6
 ---
 
 # IPC Resource Bounds

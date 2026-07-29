@@ -3,7 +3,7 @@ id: unsafe-block-safety-comments
 category: security
 created: 2026-06-14
 last_updated: 2026-06-14
-ref_count: 0
+ref_count: 1
 ---
 
 # Unsafe Block Safety Comments
