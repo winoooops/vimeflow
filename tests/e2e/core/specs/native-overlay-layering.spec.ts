@@ -279,9 +279,11 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
 
     return overlay.executeJavaScript(`
       (() => {
-        const rect = document
-          .querySelector('[data-workspace-overlay-id="layout-creator"]')
-          ?.getBoundingClientRect()
+        const content = document.querySelector(
+          '[data-workspace-overlay-id="layout-creator"]'
+        )
+        const panel = content?.parentElement ?? content
+        const rect = panel?.getBoundingClientRect()
         return rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
           : null
@@ -363,6 +365,32 @@ const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
     }
   })
 
+const mapOverlayViewportToScreenPixels = async (): Promise<PixelMapping> =>
+  browser.electron.execute((electron: ElectronModule) => {
+    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+      const mode = new URL(window.webContents.getURL()).searchParams.get(
+        'nativeOverlay'
+      )
+
+      return mode === '1' || mode === 'menu'
+    })
+
+    if (overlay === undefined) {
+      throw new Error('Electron overlay window unavailable')
+    }
+
+    const bounds = overlay.getContentBounds()
+    const display = electron.screen.getDisplayMatching(bounds)
+    const scale = display.scaleFactor
+
+    return {
+      offsetX: bounds.x * scale,
+      offsetY: bounds.y * scale,
+      scaleX: scale,
+      scaleY: scale,
+    }
+  })
+
 const mapCssRect = (rect: CssRect, mapping: PixelMapping): Bounds => ({
   left: Math.round((mapping.offsetX ?? 0) + rect.x * mapping.scaleX),
   top: Math.round((mapping.offsetY ?? 0) + rect.y * mapping.scaleY),
@@ -374,22 +402,17 @@ const mapCssRect = (rect: CssRect, mapping: PixelMapping): Bounds => ({
   ),
 })
 
-const intersectCssRect = (a: CssRect, b: CssRect): CssRect | null => {
-  const x = Math.max(a.x, b.x)
-  const y = Math.max(a.y, b.y)
-  const right = Math.min(a.x + a.width, b.x + b.width)
-  const bottom = Math.min(a.y + a.height, b.y + b.height)
+const intersectBounds = (a: Bounds, b: Bounds): Bounds | null => {
+  const left = Math.max(a.left, b.left)
+  const top = Math.max(a.top, b.top)
+  const right = Math.min(a.right, b.right)
+  const bottom = Math.min(a.bottom, b.bottom)
 
-  if (right <= x || bottom <= y) {
+  if (right <= left || bottom <= top) {
     return null
   }
 
-  return {
-    x,
-    y,
-    width: right - x,
-    height: bottom - y,
-  }
+  return { left, top, right, bottom }
 }
 
 const changedPixelCount = (
@@ -490,10 +513,11 @@ const waitForLayoutDisplayAnchor = async (): Promise<CssRect> => {
 
 const waitForOverlayPaint = async (
   before: DecodedPng,
-  mapping: PixelMapping,
   targetRect: CssRect,
   surface: 'menu' | 'dialog'
 ): Promise<void> => {
+  const targetMapping = await mapViewportToScreenPixels()
+
   await browser.waitUntil(
     async () => {
       const surfaceRect =
@@ -504,17 +528,19 @@ const waitForOverlayPaint = async (
         return false
       }
 
-      const overlapRect = intersectCssRect(surfaceRect, targetRect)
-      if (overlapRect === null) {
+      const surfaceMapping = await mapOverlayViewportToScreenPixels()
+      const surfaceBounds = mapCssRect(surfaceRect, surfaceMapping)
+      const targetBounds = mapCssRect(targetRect, targetMapping)
+      const overlapBounds = intersectBounds(surfaceBounds, targetBounds)
+      if (overlapBounds === null) {
         return false
       }
 
       const after = captureScreen()
-      const bounds = mapCssRect(overlapRect, mapping)
-      const changed = changedPixelCount(before, after, bounds)
+      const changed = changedPixelCount(before, after, overlapBounds)
 
       if (surface === 'dialog') {
-        return changed > 50 || changed / sampledPixelCount(bounds) > 0.2
+        return changed > 50 || changed / sampledPixelCount(overlapBounds) > 0.2
       }
 
       return changed > 50
@@ -582,7 +608,6 @@ describe('NativeOverlay BrowserWindow layering', () => {
     await closeOverlayMenuIfPresent()
     await waitForLayoutDisplayAnchor()
     const before = captureScreen()
-    const mapping = await mapViewportToScreenPixels()
     const validationMode = await browser.execute<LayoutValidationMode, []>(
       () => {
         const compactReadout = document.querySelector(
@@ -606,7 +631,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
     }
     await waitForOverlayMenu()
 
-    await waitForOverlayPaint(before, mapping, paneRect, 'menu')
+    await waitForOverlayPaint(before, paneRect, 'menu')
 
     const checkbox = await clickEnabledOverlayCheckbox(validationMode)
     if (checkbox === null) {
@@ -654,7 +679,6 @@ describe('NativeOverlay BrowserWindow layering', () => {
     const paneRect = await waitForRealNativeGhosttyPane()
     await waitForLayoutDisplayAnchor()
     const before = captureScreen()
-    const mapping = await mapViewportToScreenPixels()
 
     await browser.execute(() => {
       document
@@ -749,7 +773,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
       visible: true,
     })
 
-    await waitForOverlayPaint(before, mapping, paneRect, 'dialog')
+    await waitForOverlayPaint(before, paneRect, 'dialog')
 
     const trackCounts = await browser.electron.execute(
       async (electron: ElectronModule) => {

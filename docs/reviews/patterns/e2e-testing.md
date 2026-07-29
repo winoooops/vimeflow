@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-29
-ref_count: 21
+ref_count: 22
 ---
 
 # E2E Testing
@@ -505,4 +505,20 @@ already exists` before the spec could assert agent status rendering.
   reuse stale menu state and time out waiting for the layout-creator dialog.
 - **Fix:** Close any retained native overlay menu after the checkbox assertion
   and defensively before the dialog smoke opens a fresh menu.
+- **Commit:** same commit as this entry
+
+### 43. Native overlay paint checks must map each window's viewport independently
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke proved the layout
+  creator BrowserWindow was visible, focused, and always on top, then failed
+  the final pixel-diff assertion because it intersected owner-window CSS rects
+  with overlay-window CSS rects before converting to screen pixels. Any async
+  bounds drift or dialog panel/content mismatch made the sample region fragile
+  even when the native overlay actually painted above the Ghostty NSView.
+- **Fix:** Map the owner pane rect and overlay surface rect through their own
+  BrowserWindow content bounds before intersecting screen-pixel bounds, and
+  sample the opaque dialog panel instead of the inner layout-creator content.
 - **Commit:** same commit as this entry
