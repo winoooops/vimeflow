@@ -46,6 +46,14 @@ export const useNativeActivityPopoverHost = ({
     [setMousePassthrough]
   )
 
+  useEffect(() => {
+    if (!passthroughRef.current) {
+      return
+    }
+
+    setMousePassthrough?.(true)
+  }, [request, setMousePassthrough])
+
   const cancelClose = useCallback((): void => {
     if (closeTimerRef.current === null) {
       return

@@ -58,4 +58,35 @@ describe('useNativeActivityPopoverHost', () => {
 
     expect(close).toHaveBeenCalledOnce()
   })
+
+  test('reapplies active passthrough when the request refreshes', () => {
+    const close = vi.fn()
+    const setMousePassthrough = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ currentRequest }) =>
+        useNativeActivityPopoverHost({
+          request: currentRequest,
+          close,
+          setMousePassthrough,
+        }),
+      {
+        initialProps: { currentRequest: request },
+      }
+    )
+
+    fireEvent.mouseMove(document, { clientX: 0, clientY: 0 })
+    expect(setMousePassthrough).toHaveBeenCalledTimes(1)
+    expect(setMousePassthrough).toHaveBeenLastCalledWith(true)
+
+    rerender({
+      currentRequest: {
+        ...request,
+        anchorRect: { ...request.anchorRect, x: request.anchorRect.x + 1 },
+      },
+    })
+
+    expect(setMousePassthrough).toHaveBeenCalledTimes(2)
+    expect(setMousePassthrough).toHaveBeenLastCalledWith(true)
+  })
 })
