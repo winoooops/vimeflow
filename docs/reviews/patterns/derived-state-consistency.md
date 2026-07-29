@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-20
-ref_count: 26
+last_updated: 2026-07-29
+ref_count: 27
 ---
 
 # Derived State Consistency
@@ -459,4 +459,19 @@ base data is technically "correct."
 - **Fix:** Clamp the retained batch start and then floor it to the current
   batch-size boundary in the Recent-session path. Added a rerender regression
   test that expands from five visible indicators to ten while Recent is active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Activity popover passthrough cache survived same-surface refreshes
+
+- **Source:** github-codex-connector | PR #758 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/useNativeActivityPopoverHost.ts`
+- **Finding:** The activity popover hook cached the last requested mouse
+  passthrough state, but the native overlay refresh path resets the
+  BrowserWindow to capture mouse events again when the same surface is reopened.
+  If the hook still believed passthrough was active, the next outside movement
+  skipped the IPC resend and the overlay could block adjacent trace-row hovers.
+- **Fix:** Reapply the active passthrough state when the native popover request
+  refreshes, and added a hook regression test that rerenders a same-surface
+  request after entering passthrough mode.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -16,6 +16,7 @@ const containsPoint = (
 interface NativeActivityPopoverHostOptions {
   request: NativeOverlayActivityPopoverRequest
   close: () => void
+  setMousePassthrough?: (passthrough: boolean) => void
 }
 
 interface NativeActivityPopoverHost {
@@ -27,9 +28,31 @@ interface NativeActivityPopoverHost {
 export const useNativeActivityPopoverHost = ({
   request,
   close,
+  setMousePassthrough,
 }: NativeActivityPopoverHostOptions): NativeActivityPopoverHost => {
   const [now, setNow] = useState(() => new Date())
   const closeTimerRef = useRef<number | null>(null)
+  const passthroughRef = useRef(false)
+
+  const updateMousePassthrough = useCallback(
+    (passthrough: boolean): void => {
+      if (passthroughRef.current === passthrough) {
+        return
+      }
+
+      passthroughRef.current = passthrough
+      setMousePassthrough?.(passthrough)
+    },
+    [setMousePassthrough]
+  )
+
+  useEffect(() => {
+    if (!passthroughRef.current) {
+      return
+    }
+
+    setMousePassthrough?.(true)
+  }, [request, setMousePassthrough])
 
   const cancelClose = useCallback((): void => {
     if (closeTimerRef.current === null) {
@@ -73,23 +96,33 @@ export const useNativeActivityPopoverHost = ({
         isOverCard ||
         containsPoint(request.anchorRect, event.clientX, event.clientY)
       ) {
+        updateMousePassthrough(false)
         cancelClose()
 
         return
       }
 
+      updateMousePassthrough(true)
+      scheduleClose()
+    }
+
+    const handleMouseLeave = (): void => {
+      updateMousePassthrough(true)
       scheduleClose()
     }
 
     document.addEventListener('mousemove', handleMouseMove)
-    document.documentElement.addEventListener('mouseleave', scheduleClose)
+    document.documentElement.addEventListener('mouseleave', handleMouseLeave)
 
     return (): void => {
       document.removeEventListener('mousemove', handleMouseMove)
-      document.documentElement.removeEventListener('mouseleave', scheduleClose)
+      document.documentElement.removeEventListener(
+        'mouseleave',
+        handleMouseLeave
+      )
       cancelClose()
     }
-  }, [cancelClose, request.anchorRect, scheduleClose])
+  }, [cancelClose, request.anchorRect, scheduleClose, updateMousePassthrough])
 
   const dismissWhen = useCallback((event: MouseEvent): boolean => {
     const target = event.target
