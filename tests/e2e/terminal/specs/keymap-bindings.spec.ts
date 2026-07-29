@@ -310,6 +310,121 @@ const hasElement = async (selector: string): Promise<boolean> =>
     selector
   )
 
+const hasNewSessionDialog = async (): Promise<boolean> =>
+  browser.execute(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some(
+      (dialog) => dialog.textContent?.includes('New session') === true
+    )
+  )
+
+const closeNewSessionDialogIfPresent = async (): Promise<void> => {
+  const closed = await browser.execute(() => {
+    const dialog = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="dialog"]')
+    ).find((candidate) => candidate.textContent?.includes('New session'))
+    if (dialog === undefined) {
+      return false
+    }
+
+    const closeButton = dialog.querySelector<HTMLElement>(
+      'button[aria-label="Close"]'
+    )
+    closeButton?.click()
+
+    return closeButton !== null
+  })
+
+  if (!closed) {
+    return
+  }
+
+  await browser.waitUntil(async () => !(await hasNewSessionDialog()), {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'new-session dialog did not close before switching',
+  })
+}
+
+const blockingDialogLabels = async (): Promise<string[]> =>
+  browser.execute(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),' +
+          '[role="alertdialog"]:not([hidden]):not([aria-hidden="true"]),' +
+          '[data-native-overlay-active="true"]'
+      )
+    )
+      .filter(
+        (dialog) =>
+          dialog.getAttribute('data-testid') !== 'session-switcher-dialog'
+      )
+      .map((dialog) =>
+        (
+          dialog.getAttribute('aria-label') ??
+          dialog.textContent ??
+          dialog.dataset.nativeOverlayActive ??
+          'unknown dialog'
+        )
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 80)
+      )
+  )
+
+const dismissBlockingDialogs = async (): Promise<void> => {
+  await browser.execute(() => {
+    const dialogs = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[role="dialog"]:not([hidden]):not([aria-hidden="true"]),' +
+          '[role="alertdialog"]:not([hidden]):not([aria-hidden="true"]),' +
+          '[data-native-overlay-active="true"]'
+      )
+    ).filter(
+      (dialog) =>
+        dialog.getAttribute('data-testid') !== 'session-switcher-dialog'
+    )
+
+    dialogs.forEach((dialog) => {
+      dialog.querySelector<HTMLElement>('button[aria-label="Close"]')?.click()
+      dialog.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        })
+      )
+    })
+  })
+}
+
+const waitForNoBlockingDialogs = async (): Promise<void> => {
+  let lastLabels: string[] = []
+
+  await browser
+    .waitUntil(
+      async () => {
+        await dismissBlockingDialogs()
+        lastLabels = await blockingDialogLabels()
+
+        return lastLabels.length === 0
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg: 'blocking dialogs remained before session switching',
+      }
+    )
+    .catch((error: unknown) => {
+      throw new Error(
+        `blocking dialogs remained before session switching: ${lastLabels.join(
+          ', '
+        )}`,
+        { cause: error }
+      )
+    })
+}
+
 const waitForE2eBridge = async (): Promise<void> => {
   await browser.waitUntil(
     async () =>
@@ -367,15 +482,41 @@ const waitForSplitViewDisplayed = async (): Promise<void> => {
 const hasRegisteredTerminalSession = async (): Promise<boolean> =>
   (await activePtySessionIds()).length > 0 && (await isSplitViewDisplayed())
 
+const terminalSessionRegistrationState = async (): Promise<{
+  ids: string[]
+  splitViewDisplayed: boolean
+}> => ({
+  ids: await activePtySessionIds(),
+  splitViewDisplayed: await isSplitViewDisplayed(),
+})
+
 const waitForRegisteredTerminalSession = async (
   timeout: number,
   timeoutMsg: string
 ): Promise<void> => {
-  await browser.waitUntil(async () => hasRegisteredTerminalSession(), {
-    timeout,
-    interval: 250,
-    timeoutMsg,
-  })
+  let lastState = {
+    ids: [] as string[],
+    splitViewDisplayed: false,
+  }
+
+  await browser
+    .waitUntil(
+      async () => {
+        lastState = await terminalSessionRegistrationState()
+
+        return lastState.ids.length > 0 && lastState.splitViewDisplayed
+      },
+      {
+        timeout,
+        interval: 250,
+        timeoutMsg,
+      }
+    )
+    .catch((error: unknown) => {
+      throw new Error(`${timeoutMsg}: ${JSON.stringify(lastState)}`, {
+        cause: error,
+      })
+    })
 }
 
 const clickSingleLayoutAction = async (): Promise<void> => {
@@ -526,29 +667,30 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
     await waitForE2eBridge()
 
     // Ensure a terminal session (and therefore a split-view) exists. The
-    // app may launch with zero sessions depending on restore state.
-    let createdSession = false
-    if (!(await isSplitViewDisplayed())) {
-      await createNewSessionWithDefaults()
-      createdSession = true
-    }
-
-    try {
-      await waitForRegisteredTerminalSession(
-        5_000,
-        'initial terminal session did not register'
-      )
-    } catch {
-      if (!createdSession) {
+    // Linux E2E smoke job starts many Electron workers at once, so session
+    // creation can occasionally outlive the short initial probe.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (!(await hasRegisteredTerminalSession())) {
         await createNewSessionWithDefaults()
+      }
+
+      try {
+        await waitForRegisteredTerminalSession(
+          45_000,
+          'terminal session did not register'
+        )
+
+        break
+      } catch (error) {
+        if (attempt === 1) {
+          throw error
+        }
       }
     }
 
-    await waitForRegisteredTerminalSession(
-      20_000,
-      'terminal session did not register'
-    )
     await waitForSplitViewDisplayed()
+    await closeNewSessionDialogIfPresent()
+    await waitForNoBlockingDialogs()
   })
 
   it('Cmd+; opens the command palette', async () => {
@@ -665,6 +807,12 @@ describe('VIM-104 keymap + Vim mode keybindings', () => {
 })
 
 describe('session switcher (Ctrl+Tab MRU)', () => {
+  before(async () => {
+    await setPreset('vimeflow')
+    await closeNewSessionDialogIfPresent()
+    await waitForNoBlockingDialogs()
+  })
+
   it('quick tap bounces to the previously active session', async () => {
     // Consume each creation's activation explicitly so no activation is
     // pending by tap time and the taps can assert exact session ids.
@@ -679,6 +827,8 @@ describe('session switcher (Ctrl+Tab MRU)', () => {
       },
       { timeoutMsg: 'first created session was never activated' }
     )
+    await closeNewSessionDialogIfPresent()
+    await waitForNoBlockingDialogs()
 
     await createNewSessionWithDefaults()
     let secondId: string | null = null
@@ -690,13 +840,8 @@ describe('session switcher (Ctrl+Tab MRU)', () => {
       },
       { timeoutMsg: 'second created session was never activated' }
     )
-
-    // The create dialog's exit animation must finish before the chord fires;
-    // the switcher defers to open dialogs by design.
-    await browser.waitUntil(
-      async () => !(await hasElement('[role="dialog"]')),
-      { timeoutMsg: 'new-session dialog did not settle before switching' }
-    )
+    await closeNewSessionDialogIfPresent()
+    await waitForNoBlockingDialogs()
 
     await fireKey({ key: 'Tab', code: 'Tab', ctrlKey: true })
     await fireKeyUp({ key: 'Control', code: 'ControlLeft' })

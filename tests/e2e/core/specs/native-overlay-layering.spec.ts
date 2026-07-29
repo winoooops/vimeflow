@@ -274,7 +274,7 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
     return overlay.executeJavaScript(`
       (() => {
         const rect = document
-          .querySelector('[role="dialog"]')
+          .querySelector('[data-workspace-overlay-id="layout-creator"]')
           ?.getBoundingClientRect()
         return rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }

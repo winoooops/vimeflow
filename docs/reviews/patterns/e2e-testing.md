@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-13
-ref_count: 19
+last_updated: 2026-07-29
+ref_count: 20
 ---
 
 # E2E Testing
@@ -483,3 +483,12 @@ already exists` before the spec could assert agent status rendering.
   the layout switcher instead of spawning throwaway tabs before each shortcut
   assertion.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. CI smoke specs measured transient shell state instead of the specific rendered surface
+
+- **Source:** local-codex | PR #756 CI fix | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`, `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** The macOS native-overlay smoke measured the full dialog backdrop when deciding whether the layout creator visibly painted above Ghostty, so a real panel could fail the pixel-ratio threshold. The Linux keymap smoke also assumed terminal registration and dialog teardown had completed under the same short timing budget, which broke under the parallel CI worker load.
+- **Fix:** The overlay smoke now measures the layout-creator surface itself. The keymap smoke retries session creation, records terminal registration diagnostics, explicitly waits out non-switcher dialogs before Ctrl+Tab assertions, and resets the keymap preset before testing the default session-switcher chord.
+- **Commit:** same commit as this entry
