@@ -2,8 +2,8 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 4
+last_updated: 2026-07-29
+ref_count: 5
 ---
 
 # PTY Session Management
@@ -106,3 +106,29 @@ below preserve their original Tauri-era file paths for auditability.
 - **Finding:** The xterm body registered the lookup that lets agent status resolve an active pane id to the backend PTY id, but the native Ghostty body had no equivalent lifecycle side effect. Ghostty-backed panes could render terminal output while `useAgentStatus` returned early because `getPtySessionId(...)` had no mapping.
 - **Fix:** Added a GhosttyBody mount/cwd lifecycle effect that registers the active PTY id with `registerPtySession` and unregisters it on cleanup, with a component regression test covering registration, cwd updates, and unmount cleanup.
 - **Commit:** same commit as this entry
+
+### 11. PTY fd leases retired only on EOF reader exits
+
+- **Source:** github-codex-connector | PR #754 round 1 | 2026-07-29
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** The PTY reader notified the fd broker only in the EOF arm, so
+  cancellation through `kill_pty` and terminal read errors could exit the loop
+  without sending the generation-stamped detach that retires native fd leases.
+- **Fix:** Moved the broker `on_session_exit` call to common post-loop reader
+  teardown so EOF, cancellation, and read-error exits all retire the matching
+  generation before session state is removed.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Native release before first resize could apply a 0x0 winsize
+
+- **Source:** github-codex-connector | PR #754 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** A bound native surface destroyed before its first resize callback
+  released the PTY lease with the slot's initialized `rows:0, cols:0` values,
+  and the Rust broker applied that size to the live PTY.
+- **Fix:** Track whether the native slot has recorded a positive grid size,
+  send zero dimensions only as the no-recorded-size marker, and make Rust skip
+  release resize application when either dimension is non-positive.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

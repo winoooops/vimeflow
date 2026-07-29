@@ -1328,14 +1328,6 @@ async fn read_pty_output(
                     },
                 )
                 .ok();
-                // Winsize-ownership cleanup rides the transport as a
-                // generation-stamped detach — never the generationless
-                // pty-exit event above (VIM-399: a delayed exit must not
-                // close a newer binding).
-                #[cfg(unix)]
-                if let Some(broker) = state.fd_broker() {
-                    broker.on_session_exit(&session_id, generation);
-                }
                 break;
             }
             Ok(n) => {
@@ -1391,6 +1383,15 @@ async fn read_pty_output(
                 break;
             }
         }
+    }
+
+    // Winsize-ownership cleanup rides the transport as a generation-stamped
+    // detach on every reader exit, including EOF, read errors, and kill_pty
+    // cancellation. The generation guard keeps delayed exits from closing a
+    // newer binding.
+    #[cfg(unix)]
+    if let Some(broker) = state.fd_broker() {
+        broker.on_session_exit(&session_id, generation);
     }
 
     // Clean up session only if this reader's generation still owns it.

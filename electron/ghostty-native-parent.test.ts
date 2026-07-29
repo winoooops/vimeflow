@@ -727,6 +727,49 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('binds the primary PTY slot with the pane session id', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      setFontFamily: vi.fn(),
+      bindPty: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+      { sender: {} },
+      {
+        sessionId: 'host-pty',
+        paneId: 'pane-1',
+        cwd: '/tmp',
+        visible: true,
+        parentHeight: 900,
+        bounds: { x: 10, y: 20, width: 300, height: 200 },
+      }
+    )
+
+    expect(addon.bindPty).toHaveBeenCalledWith(surface, 'primary', 'host-pty')
+
+    controller.dispose()
+  })
+
   test('replays surface-scoped state after preserving secondary on destroy', () => {
     const firstSurface = { id: 'surface-1' }
     const secondSurface = { id: 'surface-2' }
@@ -2107,6 +2150,7 @@ describe('ghostty native parent', () => {
       }),
       setFrame: vi.fn(),
       setFontFamily: vi.fn(),
+      bindPty: vi.fn(),
       write: vi.fn(),
       writeSecondary: vi.fn(),
       focus: vi.fn(),
@@ -2145,6 +2189,20 @@ describe('ghostty native parent', () => {
       expect.any(Function),
       expect.any(Function),
       'bottom'
+    )
+
+    expect(addon.bindPty).toHaveBeenNthCalledWith(
+      1,
+      surface,
+      'primary',
+      'host-pty'
+    )
+
+    expect(addon.bindPty).toHaveBeenNthCalledWith(
+      2,
+      surface,
+      'secondary',
+      'burner-pty'
     )
 
     callbacks.onInput?.('a')

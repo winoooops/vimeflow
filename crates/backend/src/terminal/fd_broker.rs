@@ -339,8 +339,14 @@ impl FdBroker {
                     log::info!(
                         "fd broker: rust reacquired winsize for {session_id} (lease {lease_id}, {cols}x{rows})"
                     );
-                    if let Err(err) = pty.resize(&session_id, rows, cols) {
-                        log::warn!("fd broker: release resize failed for {session_id} ({err})");
+                    if rows > 0 && cols > 0 {
+                        if let Err(err) = pty.resize(&session_id, rows, cols) {
+                            log::warn!("fd broker: release resize failed for {session_id} ({err})");
+                        }
+                    } else {
+                        log::debug!(
+                            "fd broker: release for {session_id} carried no recorded native size"
+                        );
                     }
                 }
                 self.send(&WireMessage::ReleaseAck {

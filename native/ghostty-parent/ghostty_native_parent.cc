@@ -92,6 +92,7 @@ struct PtyFdSlot {
   // Phase 3 on, what a release carries as its last-applied size.
   int last_columns = 0;
   int last_rows = 0;
+  bool has_last_size = false;
 };
 
 constexpr int kPtyRolePrimary = 0;
@@ -667,8 +668,12 @@ void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,
   if (slot.state == PtyFdSlot::State::Empty) {
     return;
   }
+  if (columns <= 0 || rows <= 0) {
+    return;
+  }
   slot.last_columns = columns;
   slot.last_rows = rows;
+  slot.has_last_size = true;
 }
 
 std::string PtyMessageJson(const char *type, const std::string &session_id,
@@ -720,6 +725,7 @@ void CompletePtyBindLocked(SurfaceHandle *surface, int role,
     slot.lease_id = pending.lease_id;
     slot.last_columns = 0;
     slot.last_rows = 0;
+    slot.has_last_size = false;
   }
   g_pty_lease_slots[pending.lease_id] = {surface, role};
   SendPtyTransportDatagram(PtyMessageJson(
@@ -758,7 +764,8 @@ void OrphanReleasePtySlotLocked(SurfaceHandle *surface, int role,
              "{\"t\":\"release\",\"sessionId\":\"%s\",\"generation\":%" PRIu64
              ",\"leaseId\":%" PRIu64 ",\"rows\":%d,\"cols\":%d}",
              slot.session_id.c_str(), slot.generation, lease_id,
-             slot.last_rows, slot.last_columns);
+             slot.has_last_size ? slot.last_rows : 0,
+             slot.has_last_size ? slot.last_columns : 0);
     UnackedRelease record;
     record.surface = nullptr;
     record.role = role;
@@ -771,6 +778,7 @@ void OrphanReleasePtySlotLocked(SurfaceHandle *surface, int role,
   slot.fd = -1;
   slot.state = PtyFdSlot::State::Empty;
   slot.session_id.clear();
+  slot.has_last_size = false;
 }
 
 // Full surface teardown: intents, both role slots, lease routes. MUST run
@@ -848,6 +856,7 @@ void HandlePtyReleaseAck(uint64_t lease_id) {
     flush_columns = slot.last_columns;
     flush_rows = slot.last_rows;
     slot.session_id.clear();
+    slot.has_last_size = false;
   }
   // Rust owns the winsize again: flush the newest size recorded during
   // RELEASING through the ordinary JS path so it is applied, not skipped.
@@ -952,6 +961,7 @@ void HandlePtyInboundMessage(const std::string &json, int received_fd) {
         slot.fd = -1;
         slot.state = PtyFdSlot::State::Empty;
         slot.session_id.clear();
+        slot.has_last_size = false;
       }
       g_pty_lease_slots.erase(route);
     }
@@ -1002,6 +1012,7 @@ void ShutdownPtyProtocol() {
     }
     slot.state = PtyFdSlot::State::Empty;
     slot.session_id.clear();
+    slot.has_last_size = false;
   }
   g_pty_lease_slots.clear();
 }
@@ -1021,12 +1032,15 @@ void PtyFdTransportThreadMain() {
     }
 
     struct iovec iov = {buf.data(), buf.size()};
-    char cmsg_buf[64];
+    union {
+      struct cmsghdr align;
+      char bytes[64];
+    } cmsg_buf = {};
     struct msghdr msg = {};
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
-    msg.msg_control = cmsg_buf;
-    msg.msg_controllen = sizeof(cmsg_buf);
+    msg.msg_control = cmsg_buf.bytes;
+    msg.msg_controllen = sizeof(cmsg_buf.bytes);
 
     const ssize_t len = recvmsg(g_pty_fd_transport_parent, &msg, 0);
     if (len < 0) {
