@@ -45,12 +45,12 @@ does it.
   (`native/ghostty-parent/ghostty_native_parent.cc:353`) and
   `OnSecondaryResize` (`:397`), **before** their nonblocking JS enqueue —
   not in Swift, and not in the fork. The fork's host-managed callback already
-  runs from `HostManaged.resize` *before* Ghostty's grid resize (documented
+  runs from `HostManaged.resize` _before_ Ghostty's grid resize (documented
   in the pinned fork), so an ioctl here lands winsize-before-reflow —
   stock-identical ordering with **zero fork changes**.
 - **Rust's shared ioctl** lives in `PtyState::resize` (`state.rs:537`),
   called from `resize_pty_inner` (`commands.rs:509`). Note:
-  `resize_pty_inner` does *no* other bookkeeping — there is no bookkeeping
+  `resize_pty_inner` does _no_ other bookkeeping — there is no bookkeeping
   to preserve; the async resize IPC simply stops mattering for sessions in
   `NATIVE_ACTIVE` (below).
 
@@ -119,7 +119,7 @@ mirroring activation:
    explicitly.
 
 **Staleness**: messages are validated against `(generation, leaseId)`. The
-lease distinguishes two bindings of the *same* PTY generation (remount /
+lease distinguishes two bindings of the _same_ PTY generation (remount /
 surface recreation), so a delayed `release` from the old surface cannot
 clear ownership of, or restore an obsolete winsize onto, the replacement
 binding. Overlapping remounts additionally serialize: a new `request-fd`
@@ -128,7 +128,7 @@ as exactly one of: the addon received `release-ack`, or transport loss.
 There is no third conclusion — release is retried until acked, and Rust
 acks every idempotent receipt, so a dropped ack is recovered by the next
 retry and can only delay, never block, reacquisition. (Rust's skip flag is
-cleared on the *first* release receipt, so continued retries never prolong
+cleared on the _first_ release receipt, so continued retries never prolong
 skipping.)
 
 **Re-acquisition**: after release/teardown, a recreated surface has no fd.
@@ -226,7 +226,7 @@ semantics for every one of them:
 
 - **codex**: the target — composer transient collapses to codex's own repaint
   latency (few ms).
-- **claude**: keeps its 96ms per-surface resize throttle (that gates *when*
+- **claude**: keeps its 96ms per-surface resize throttle (that gates _when_
   the engine applies a resize; this change only makes the winsize ride each
   applied resize atomically). Expected neutral-to-better; reducing the
   throttle later is out of scope here.
@@ -280,6 +280,7 @@ metadata-only message needs no coalescing, and delaying it would stale the
 cached dimensions.
 
 **Phase 5 — validation.**
+
 - **Native monotonic timestamps** (callback-entry → ioctl-return) prove the
   sub-frame bound; the archived ~34ms diag spec cannot measure <5ms — it is
   retained only as visual regression ("the 20–50ms anomaly class is gone").
@@ -291,16 +292,16 @@ cached dimensions.
 
 ## Risks
 
-| Risk | Mitigation |
-| --- | --- |
+| Risk                                                  | Mitigation                                                                                            |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | fd leak (pane close, sidecar restart, Electron crash) | CLOEXEC both sides (receiver sets after recvmsg); five-route cleanup; leak assertion in Phase 2 tests |
-| zero-writer window during handover/failure | make-before-break overlap on both transitions; bounded duplicates permitted; at-least-one-writer test |
-| dropped ack stranding a session | idempotent release retry; acks confirm, never gate a starting writer |
-| ioctl against a reused fd number | per-slot ownership mutex serializing ioctl vs close |
-| stale messages after remount/generation change | generation carried in every message; stale drops |
-| ioctl blocking the engine IO thread | TIOCSWINSZ on a pty master is microsecond kernel work; timestamped in Phase 5 |
-| bootstrap failure on some setup | feature-detect → stay RUST_OWNED + one warning log; never worse than today |
-| Linux/dev xterm path regression | untouched by design; e2e suite proves it |
+| zero-writer window during handover/failure            | make-before-break overlap on both transitions; bounded duplicates permitted; at-least-one-writer test |
+| dropped ack stranding a session                       | idempotent release retry; acks confirm, never gate a starting writer                                  |
+| ioctl against a reused fd number                      | per-slot ownership mutex serializing ioctl vs close                                                   |
+| stale messages after remount/generation change        | generation carried in every message; stale drops                                                      |
+| ioctl blocking the engine IO thread                   | TIOCSWINSZ on a pty master is microsecond kernel work; timestamped in Phase 5                         |
+| bootstrap failure on some setup                       | feature-detect → stay RUST_OWNED + one warning log; never worse than today                            |
+| Linux/dev xterm path regression                       | untouched by design; e2e suite proves it                                                              |
 
 ## Out of scope
 

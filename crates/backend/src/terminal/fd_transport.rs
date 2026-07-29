@@ -159,6 +159,15 @@ pub fn recv_fd_timeout(
     if ready == 0 {
         return Ok(None);
     }
+    if pollfd.revents & libc::POLLIN == 0 {
+        if pollfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "fd transport peer closed",
+            ));
+        }
+        return Ok(None);
+    }
     recv_fd(channel, buf).map(Some)
 }
 
