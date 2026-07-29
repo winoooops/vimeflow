@@ -985,6 +985,47 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test.each(['hide', 'minimize'])(
+    'parent window %s dismisses a focused layout creator dialog',
+    async (eventName) => {
+      const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        layoutCreatorDialogRequest
+      )
+      const overlayWindow = finishOverlayLoad()
+
+      await acknowledgeOverlayReady(
+        overlayWindow,
+        layoutCreatorDialogRequest.surfaceId
+      )
+      await openPromise
+
+      overlayWindow.isFocused.mockReturnValue(true)
+      overlayWindow.hide.mockClear()
+      overlayWindow.setAlwaysOnTop.mockClear()
+      overlayWindow.setIgnoreMouseEvents.mockClear()
+      electronMock.owner.webContents.focus.mockClear()
+      electronMock.owner.webContents.send.mockClear()
+
+      electronMock.owner.emit(eventName)
+
+      expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+        NATIVE_OVERLAY_CLEAR
+      )
+      expect(overlayWindow.hide).toHaveBeenCalledOnce()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
+      expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+      expect(electronMock.owner.webContents.focus).not.toHaveBeenCalled()
+      expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+        NATIVE_OVERLAY_CLOSED,
+        {
+          surfaceId: layoutCreatorDialogRequest.surfaceId,
+          reason: 'outside',
+        }
+      )
+    }
+  )
+
   test('leaves dialog Tab key events for owner renderer completion', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
@@ -1796,6 +1837,7 @@ describe('NativeOverlayController', () => {
     await openPromise
 
     overlayWindow.webContents.send.mockClear()
+
     const result = {
       surfaceId: layoutCreatorDialogRequest.surfaceId,
       actionId: layoutCreatorDialogRequest.payload.actions.save,

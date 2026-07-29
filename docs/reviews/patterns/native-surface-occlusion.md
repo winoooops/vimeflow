@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-05
-ref_count: 4
+last_updated: 2026-07-29
+ref_count: 5
 ---
 
 # Native Surface Occlusion
@@ -126,4 +126,20 @@ React overlays that drive Electron native WebContentsView visibility must regist
   WebContentsViews visible above the open burner surface.
 - **Fix:** Restored `hasVisibleBurner` to mean any visible burner, regardless of
   whether it renders via local xterm or native Ghostty secondary.
+- **Commit:** same commit as this entry
+
+### 12. Focus guard suppresses native overlay cleanup on owner hide/minimize
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The native overlay owner-deactivation handler used the overlay
+  window's `isFocused()` state to ignore parent blur events, but the same
+  guarded handler was also registered for parent hide and minimize events. A
+  focused layout-creator overlay could therefore remain always-on-top after the
+  owner window was hidden or minimized.
+- **Fix:** Split the parent blur handler from the force-close path. Parent blur
+  still ignores focus transitions into the overlay, while parent hide/minimize
+  and overlay-window blur always run cleanup. Added regression coverage for
+  hiding and minimizing a focused layout-creator dialog.
 - **Commit:** same commit as this entry

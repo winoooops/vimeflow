@@ -1411,7 +1411,7 @@ export class NativeOverlayController {
 
     const closeForOwnerDeactivation = (): void => {
       const record = this.overlays.get(parent.id)
-      if (!record || record.menu.window.isFocused()) {
+      if (!record) {
         return
       }
 
@@ -1425,6 +1425,15 @@ export class NativeOverlayController {
       if (record.activeTooltipSurfaceId !== null) {
         this.closeSurface(record.activeTooltipSurfaceId, 'outside', true, false)
       }
+    }
+
+    const closeForOwnerBlur = (): void => {
+      const record = this.overlays.get(parent.id)
+      if (!record || record.menu.window.isFocused()) {
+        return
+      }
+
+      closeForOwnerDeactivation()
     }
 
     const ownerBeforeInput = (event: ElectronEvent, input: Input): void => {
@@ -1489,7 +1498,7 @@ export class NativeOverlayController {
 
     parent.on('resize', syncBounds)
     parent.on('move', syncBounds)
-    parent.on('blur', closeForOwnerDeactivation)
+    parent.on('blur', closeForOwnerBlur)
     parent.on('hide', closeForOwnerDeactivation)
     parent.on('minimize', closeForOwnerDeactivation)
     parent.on('close', parentClosing)
@@ -1502,7 +1511,7 @@ export class NativeOverlayController {
       menu,
       tooltip,
       syncBounds,
-      parentBlurred: closeForOwnerDeactivation,
+      parentBlurred: closeForOwnerBlur,
       parentHidden: closeForOwnerDeactivation,
       parentMinimized: closeForOwnerDeactivation,
       parentClosing,
