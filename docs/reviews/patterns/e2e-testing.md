@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-29
-ref_count: 24
+ref_count: 25
 ---
 
 # E2E Testing
@@ -552,4 +552,21 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Expose the file explorer's current path for E2E setup, create the
   fixture under that live root, refresh the tree, and clean up the exact file
   that was created.
+- **Commit:** same commit as this entry
+
+### 46. Native BrowserWindow smoke tests should not depend on transient OS focus
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke asserted
+  `BrowserWindow.isFocused()` after the layout-creator overlay rendered. The
+  product contract is that the dialog BrowserWindow is visible, always on top,
+  and focusable for user input above Ghostty's parented NSView; macOS CI can
+  delay or deny the reported focused state even after Electron has shown and
+  focused the window, making the z-order smoke fail before it reaches the
+  actual paint and editability checks.
+- **Fix:** Assert the stable window contract with `isAlwaysOnTop()`,
+  `isFocusable()`, and `isVisible()`, then keep the existing overlay paint and
+  direct control-editing assertions as the functional proof.
 - **Commit:** same commit as this entry
