@@ -24,6 +24,27 @@ pub const TRANSPORT_ENV: &str = "VIMEFLOW_PTY_FD_TRANSPORT";
 /// Maximum payload bytes per transport message (one JSON header).
 pub const MAX_MESSAGE_BYTES: usize = 4096;
 
+const CMSG_CAPACITY: usize = 64; // >= CMSG_SPACE(sizeof(int)) on macOS/Linux
+
+#[repr(C)]
+struct ControlMessageBuffer {
+    bytes: [u8; CMSG_CAPACITY],
+    _align: [libc::cmsghdr; 0],
+}
+
+impl ControlMessageBuffer {
+    fn zeroed() -> Self {
+        Self {
+            bytes: [0u8; CMSG_CAPACITY],
+            _align: [],
+        }
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut libc::c_void {
+        self.bytes.as_mut_ptr().cast()
+    }
+}
+
 fn last_error() -> io::Error {
     io::Error::last_os_error()
 }
@@ -71,15 +92,14 @@ pub fn send_fd(channel: RawFd, payload: &[u8], fd: RawFd) -> io::Result<()> {
         iov_len: payload.len(),
     };
 
-    const CMSG_CAPACITY: usize = 64; // ≥ CMSG_SPACE(sizeof(int)) on macOS/Linux
-    let mut cmsg_buf = [0u8; CMSG_CAPACITY];
+    let mut cmsg_buf = ControlMessageBuffer::zeroed();
     let cmsg_space = unsafe { libc::CMSG_SPACE(std::mem::size_of::<RawFd>() as u32) } as usize;
     assert!(cmsg_space <= CMSG_CAPACITY);
 
     let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
-    msg.msg_control = cmsg_buf.as_mut_ptr() as *mut libc::c_void;
+    msg.msg_control = cmsg_buf.as_mut_ptr();
     msg.msg_controllen = cmsg_space as _;
 
     // SAFETY: cmsg_buf outlives msg; CMSG_FIRSTHDR is non-null because
@@ -121,13 +141,12 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
         iov_len: buf.len(),
     };
 
-    const CMSG_CAPACITY: usize = 64;
-    let mut cmsg_buf = [0u8; CMSG_CAPACITY];
+    let mut cmsg_buf = ControlMessageBuffer::zeroed();
 
     let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
-    msg.msg_control = cmsg_buf.as_mut_ptr() as *mut libc::c_void;
+    msg.msg_control = cmsg_buf.as_mut_ptr();
     msg.msg_controllen = CMSG_CAPACITY as _;
 
     let received = loop {
@@ -186,7 +205,16 @@ pub fn socketpair() -> io::Result<(OwnedFd, OwnedFd)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::mem::align_of;
     use std::os::fd::AsRawFd;
+
+    #[test]
+    fn test_control_message_buffer_is_cmsghdr_aligned() {
+        let mut cmsg_buf = ControlMessageBuffer::zeroed();
+        let address = cmsg_buf.as_mut_ptr() as usize;
+
+        assert_eq!(address % align_of::<libc::cmsghdr>(), 0);
+    }
 
     #[test]
     fn test_send_fd_round_trips_payload_and_descriptor() {
