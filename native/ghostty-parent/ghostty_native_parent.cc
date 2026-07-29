@@ -148,7 +148,7 @@ napi_value Throw(napi_env env, const char *message) {
 // created BEFORE the sidecar spawns. The addon owns the parent end for its
 // lifetime (Phase 2 receives PTY fds on it); the child end is inherited by
 // the sidecar as stdio[3] and closed here once the spawn completes.
-int g_pty_fd_transport_parent = -1;
+std::atomic<int> g_pty_fd_transport_parent{-1};
 int g_pty_fd_transport_child = -1;
 
 bool SetCloexec(int fd) {
@@ -165,7 +165,7 @@ void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,
 // createPtyFdTransport() -> child fd number. Idempotent: repeat calls return
 // the existing child end so a retried spawn cannot orphan a pair.
 napi_value CreatePtyFdTransport(napi_env env, napi_callback_info) {
-  if (g_pty_fd_transport_parent < 0) {
+  if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
     int fds[2] = {-1, -1};
     if (socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) != 0) {
       return Throw(env, "pty fd transport socketpair failed");
@@ -177,7 +177,7 @@ napi_value CreatePtyFdTransport(napi_env env, napi_callback_info) {
       close(fds[1]);
       return Throw(env, "pty fd transport cloexec failed");
     }
-    g_pty_fd_transport_parent = fds[0];
+    g_pty_fd_transport_parent.store(fds[0], std::memory_order_release);
     g_pty_fd_transport_child = fds[1];
     StartPtyFdTransportThread();
   }
@@ -657,15 +657,16 @@ bool ExtractJsonU64(const std::string &json, const char *key, uint64_t *out) {
 }
 
 void SendPtyTransportDatagram(const std::string &json) {
-  if (g_pty_fd_transport_parent < 0) {
+  const int transport_fd =
+      g_pty_fd_transport_parent.load(std::memory_order_acquire);
+  if (transport_fd < 0) {
     return;
   }
   std::string type;
   const char *message_type =
       ExtractJsonString(json, "t", &type) ? type.c_str() : "unknown";
   while (true) {
-    const ssize_t sent =
-        send(g_pty_fd_transport_parent, json.data(), json.size(), 0);
+    const ssize_t sent = send(transport_fd, json.data(), json.size(), 0);
     if (sent < 0 && errno == EINTR) {
       continue;
     }
@@ -1018,6 +1019,11 @@ void RetryUnackedPtyReleases() {
 // on its side, so no acks are coming and none are needed.
 void ShutdownPtyProtocol() {
   std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+  const int transport_fd =
+      g_pty_fd_transport_parent.exchange(-1, std::memory_order_acq_rel);
+  if (transport_fd >= 0) {
+    close(transport_fd);
+  }
   for (auto &entry : g_pending_pty_fds) {
     close(entry.second.fd);
   }
@@ -1046,7 +1052,12 @@ void ShutdownPtyProtocol() {
 void PtyFdTransportThreadMain() {
   std::vector<char> buf(4096);
   while (true) {
-    struct pollfd pfd = {g_pty_fd_transport_parent, POLLIN, 0};
+    const int transport_fd =
+        g_pty_fd_transport_parent.load(std::memory_order_acquire);
+    if (transport_fd < 0) {
+      return;
+    }
+    struct pollfd pfd = {transport_fd, POLLIN, 0};
     const int ready = poll(&pfd, 1, 200);
     if (ready < 0 && errno != EINTR) {
       ShutdownPtyProtocol();
@@ -1068,7 +1079,7 @@ void PtyFdTransportThreadMain() {
     msg.msg_control = cmsg_buf.bytes;
     msg.msg_controllen = sizeof(cmsg_buf.bytes);
 
-    const ssize_t len = recvmsg(g_pty_fd_transport_parent, &msg, 0);
+    const ssize_t len = recvmsg(transport_fd, &msg, 0);
     if (len < 0) {
       if (errno == EINTR) {
         continue;
@@ -1830,12 +1841,15 @@ napi_value BindPty(napi_env env, napi_callback_info info) {
   }
   const std::string session_id(session_buf, session_len);
 
-  if (g_pty_fd_transport_parent < 0) {
+  if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
     return nullptr; // Transport never established: async path only.
   }
 
   {
     std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
+      return nullptr;
+    }
     auto pending = g_pending_pty_fds.find(session_id);
     if (pending != g_pending_pty_fds.end()) {
       const PendingPtyFd fd_entry = pending->second;

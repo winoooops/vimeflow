@@ -3,7 +3,7 @@ id: pty-session-management
 category: backend
 created: 2026-04-09
 last_updated: 2026-07-29
-ref_count: 5
+ref_count: 6
 ---
 
 # PTY Session Management
@@ -131,4 +131,32 @@ below preserve their original Tauri-era file paths for auditability.
 - **Fix:** Track whether the native slot has recorded a positive grid size,
   send zero dimensions only as the no-recorded-size marker, and make Rust skip
   release resize application when either dimension is non-positive.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Native PTY transport shutdown left the parent fd marked live
+
+- **Source:** github-codex-connector | PR #754 round 2 | 2026-07-29
+- **Severity:** P1 / HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native shutdown path cleared descriptor maps and close-owned
+  PTY fds, but left the transport parent fd as the liveness sentinel. Future
+  `bindPty` calls could still register intents and send `request-fd` datagrams
+  after the reader thread had exited.
+- **Fix:** Made the transport parent fd an atomic liveness sentinel, reset and
+  close it during protocol shutdown, and rechecked liveness under the protocol
+  mutex before `bindPty` records a bind intent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. `request-fd` deferral split active-lease check from insertion
+
+- **Source:** github-codex-connector | PR #754 round 2 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** The Rust broker checked whether a session still had an active
+  lease under one lock, released it, then reacquired the lock to insert a
+  deferred request. Session exit in that gap could clear state before the stale
+  deferred request was inserted.
+- **Fix:** Collapsed the active-lease check and deferred-request insertion into
+  one broker lock and returned an answer-now decision before calling
+  `answer_request` outside the lock.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

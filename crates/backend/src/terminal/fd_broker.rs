@@ -359,15 +359,17 @@ impl FdBroker {
                 }
             }
             WireMessage::RequestFd { session_id } => {
-                let previous_active = {
-                    let inner = self.inner.lock().expect("broker lock");
-                    inner.leases.contains_key(&session_id)
-                };
-                if previous_active {
-                    // Serialize re-acquisition: answered on retirement.
+                let answer_now = {
                     let mut inner = self.inner.lock().expect("broker lock");
-                    inner.deferred_requests.insert(session_id);
-                } else {
+                    if inner.leases.contains_key(&session_id) {
+                        // Serialize re-acquisition: answered on retirement.
+                        inner.deferred_requests.insert(session_id.clone());
+                        false
+                    } else {
+                        true
+                    }
+                };
+                if answer_now {
                     self.answer_request(&session_id, pty);
                 }
             }
