@@ -464,6 +464,17 @@ pub(crate) async fn spawn_pty_inner(
         ),
     );
 
+    // Offer the master fd to the winsize-ownership broker (VIM-399). The
+    // addon binds it only for native-ghostty panes; anything never bound is
+    // reclaimed by the pending-map hygiene on detach. A missing broker or
+    // fd means silent degradation to the async resize path.
+    #[cfg(unix)]
+    if let Some(broker) = state.fd_broker() {
+        if let Some((master_fd, generation)) = state.master_fd_and_generation(&request.session_id) {
+            broker.offer_fd(&request.session_id, generation, master_fd);
+        }
+    }
+
     // Spawn blocking thread for PTY read loop (avoids starving async runtime)
     let session_id = request.session_id.clone();
     let state_clone = state.clone();
@@ -1317,6 +1328,14 @@ async fn read_pty_output(
                     },
                 )
                 .ok();
+                // Winsize-ownership cleanup rides the transport as a
+                // generation-stamped detach — never the generationless
+                // pty-exit event above (VIM-399: a delayed exit must not
+                // close a newer binding).
+                #[cfg(unix)]
+                if let Some(broker) = state.fd_broker() {
+                    broker.on_session_exit(&session_id, generation);
+                }
                 break;
             }
             Ok(n) => {
