@@ -960,7 +960,8 @@ describe('NativeOverlayController', () => {
 
     expect(overlayWindow.setFocusable).toHaveBeenCalledWith(true)
     expect(overlayWindow.show).toHaveBeenCalledOnce()
-    expect(overlayWindow.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.focus).toHaveBeenCalledTimes(2)
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledTimes(2)
     expect(overlayWindow.showInactive).not.toHaveBeenCalled()
 
     overlayWindow.isFocused.mockReturnValue(true)
@@ -1769,6 +1770,38 @@ describe('NativeOverlayController', () => {
       NATIVE_OVERLAY_ACTION_RESULT,
       result
     )
+
+    handler(NATIVE_OVERLAY_ACTION_RESULT)(
+      { sender: electronMock.owner.webContents },
+      result
+    )
+
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION_RESULT,
+      result
+    )
+  })
+
+  test('relays owner action results to dialog overlays', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await openPromise
+
+    overlayWindow.webContents.send.mockClear()
+    const result = {
+      surfaceId: layoutCreatorDialogRequest.surfaceId,
+      actionId: layoutCreatorDialogRequest.payload.actions.save,
+      ok: false,
+      error: 'Invalid layout',
+    } as const
 
     handler(NATIVE_OVERLAY_ACTION_RESULT)(
       { sender: electronMock.owner.webContents },

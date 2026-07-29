@@ -1109,6 +1109,8 @@ export class NativeOverlayController {
       record.menu.window.setAlwaysOnTop(true, 'screen-saver')
       if (needsKeyboardFocus) {
         record.menu.window.show()
+        record.menu.window.focus()
+        record.menu.window.webContents.focus()
       } else {
         record.menu.window.showInactive()
       }
@@ -1136,6 +1138,7 @@ export class NativeOverlayController {
 
     if (needsKeyboardFocus && !record.menu.window.isDestroyed()) {
       record.menu.window.focus()
+      record.menu.window.webContents.focus()
     }
 
     return { accepted: true }
@@ -1294,7 +1297,7 @@ export class NativeOverlayController {
       return
     }
 
-    if (surface.kind !== 'menu') {
+    if (surface.kind !== 'menu' && surface.kind !== 'dialog') {
       return
     }
 
