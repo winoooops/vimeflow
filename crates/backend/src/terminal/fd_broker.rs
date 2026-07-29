@@ -300,6 +300,12 @@ impl FdBroker {
                     }
                 };
                 if acked {
+                    // The positive signal Phase 5's "confirm the native
+                    // path is live" check greps for — silent degradation
+                    // must never be mistaken for a working handshake.
+                    log::info!(
+                        "fd broker: native owns winsize for {session_id} (gen {generation}, lease {lease_id})"
+                    );
                     self.send(&WireMessage::ActivateAck {
                         session_id,
                         generation,
@@ -330,6 +336,9 @@ impl FdBroker {
                     }
                 };
                 if apply {
+                    log::info!(
+                        "fd broker: rust reacquired winsize for {session_id} (lease {lease_id}, {cols}x{rows})"
+                    );
                     if let Err(err) = pty.resize(&session_id, rows, cols) {
                         log::warn!("fd broker: release resize failed for {session_id} ({err})");
                     }
