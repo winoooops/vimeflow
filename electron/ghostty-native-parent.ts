@@ -117,6 +117,11 @@ interface GhosttyNativeParentAddon {
   // PTY fd-passing transport (VIM-399); absent on older addon builds.
   createPtyFdTransport?: () => number
   notifyPtyFdTransportSpawned?: () => void
+  bindPty?: (
+    surface: GhosttyNativeSurface,
+    role: 'primary' | 'secondary',
+    sessionId: string
+  ) => void
 }
 
 interface GhosttyNativeParentDeps {
@@ -1240,6 +1245,10 @@ export class GhosttyNativeParentController {
     state.ownerWindow = win
     state.ownerWindowId = win.id
     this.surfaceKeysByWindowId.get(win.id)?.add(key)
+    // Join this session's PTY fd (offered by Rust over the transport) to the
+    // surface's primary slot (VIM-399). No-op on addons without the export
+    // or when the transport is down — the async resize path covers those.
+    addon.bindPty?.(state.surface, 'primary', state.pane.sessionId)
     if (state.secondary) {
       this.attachSecondaryToSurface(addon, state, state.secondary)
     }
@@ -1661,6 +1670,8 @@ export class GhosttyNativeParentController {
       secondary.placement
     )
     secondary.attached = true
+    // Secondary/burner sessions get their own role-keyed fd slot (VIM-399).
+    addon.bindPty?.(state.surface, 'secondary', secondary.sessionId)
     addon.setSecondaryVisible?.(
       state.surface,
       secondary.visible,
