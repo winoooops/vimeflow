@@ -594,6 +594,7 @@ describe('NativeOverlayController', () => {
       { sender: electronMock.owner.webContents },
       { surfaceId: activityPopoverRequest.surfaceId, passthrough: true }
     )
+
     handler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)(
       { sender: menuWindow.webContents },
       { surfaceId: activityPopoverRequest.surfaceId, passthrough: 'yes' }
