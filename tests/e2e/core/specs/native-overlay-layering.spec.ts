@@ -40,6 +40,12 @@ interface PixelMapping {
   offsetY?: number
 }
 
+interface OverlayWindowState {
+  alwaysOnTop: boolean
+  focused: boolean
+  visible: boolean
+}
+
 type ElectronModule = typeof import('electron')
 
 const pngSignature = Buffer.from([
@@ -281,6 +287,25 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
           : null
       })()
     `) as Promise<CssRect | null>
+  })
+
+const getOverlayWindowState = async (): Promise<OverlayWindowState | null> =>
+  browser.electron.execute((electron: ElectronModule) => {
+    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+      const mode = new URL(window.webContents.getURL()).searchParams.get(
+        'nativeOverlay'
+      )
+
+      return mode === '1' || mode === 'menu'
+    })
+
+    return overlay === undefined
+      ? null
+      : {
+          alwaysOnTop: overlay.isAlwaysOnTop(),
+          focused: overlay.isFocused(),
+          visible: overlay.isVisible(),
+        }
   })
 
 const closeOverlayMenuIfPresent = async (): Promise<void> => {
@@ -699,27 +724,23 @@ describe('NativeOverlay BrowserWindow layering', () => {
       opacity: '0',
     })
 
-    const overlayWindowState = await browser.electron.execute(
-      (electron: ElectronModule) => {
-        const overlay = electron.BrowserWindow.getAllWindows().find(
-          (window) => {
-            const mode = new URL(window.webContents.getURL()).searchParams.get(
-              'nativeOverlay'
-            )
+    await browser.waitUntil(
+      async () => {
+        const state = await getOverlayWindowState()
 
-            return mode === '1' || mode === 'menu'
-          }
+        return (
+          state?.alwaysOnTop === true &&
+          state.focused === true &&
+          state.visible === true
         )
-
-        return overlay === undefined
-          ? null
-          : {
-              alwaysOnTop: overlay.isAlwaysOnTop(),
-              focused: overlay.isFocused(),
-              visible: overlay.isVisible(),
-            }
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg: 'Layout Creator overlay window did not become focused',
       }
     )
+    const overlayWindowState = await getOverlayWindowState()
     expect(overlayWindowState).toEqual({
       alwaysOnTop: true,
       focused: true,
