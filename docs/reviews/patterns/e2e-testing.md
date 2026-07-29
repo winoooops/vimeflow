@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-07-29
-ref_count: 23
+ref_count: 24
 ---
 
 # E2E Testing
@@ -538,4 +538,18 @@ already exists` before the spec could assert agent status rendering.
   before mapping overlay pixels, so the smoke samples the full dialog/backdrop
   layer for z-order while the content selector still proves the renderer and
   later controls are present.
+- **Commit:** same commit as this entry
+
+### 45. E2E fixture setup must follow the live app root
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/files-to-editor.spec.ts`
+- **Finding:** The file-to-editor smoke created its fixture under `$HOME` before
+  reading the file explorer's actual root. The explorer root can come from the
+  active PTY cwd, so a fresh Electron E2E session may list a different
+  directory than the one where the fixture was written.
+- **Fix:** Expose the file explorer's current path for E2E setup, create the
+  fixture under that live root, refresh the tree, and clean up the exact file
+  that was created.
 - **Commit:** same commit as this entry

@@ -272,6 +272,7 @@ export const FileExplorer = ({
     <div
       className="flex h-full min-h-0 flex-col px-4 pt-3"
       data-testid="file-explorer"
+      data-current-path={currentPath}
     >
       {/* Header */}
       <div className="mb-1 flex items-center gap-2">
