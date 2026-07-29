@@ -45,6 +45,45 @@ const waitForImmediate = (): Promise<void> =>
     setImmediate(resolve)
   })
 
+describe('Sidecar pty fd transport spawn options', () => {
+  test('transportFd forwards to spawnFn as extra options', () => {
+    const mock = new MockChildProcess()
+    const spawnFn = vi.fn((): MockChildProcess => mock)
+
+    createSidecar({
+      binary: '/fake/vimeflow-backend',
+      appDataDir: '/fake/data',
+      stderr: new PassThrough(),
+      transportFd: 7,
+      spawnFn,
+    })
+
+    expect(spawnFn).toHaveBeenCalledWith(
+      '/fake/vimeflow-backend',
+      ['--app-data-dir', '/fake/data'],
+      { transportFd: 7 }
+    )
+  })
+
+  test('absent transportFd spawns without extra options', () => {
+    const mock = new MockChildProcess()
+    const spawnFn = vi.fn((): MockChildProcess => mock)
+
+    createSidecar({
+      binary: '/fake/vimeflow-backend',
+      appDataDir: '/fake/data',
+      stderr: new PassThrough(),
+      spawnFn,
+    })
+
+    expect(spawnFn).toHaveBeenCalledWith(
+      '/fake/vimeflow-backend',
+      ['--app-data-dir', '/fake/data'],
+      undefined
+    )
+  })
+})
+
 describe('Sidecar frame codec', () => {
   test('response frame round trip resolves matching invoke', async () => {
     const { mock, sidecar } = makeSidecar()

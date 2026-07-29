@@ -16,6 +16,13 @@ async fn main() {
         .target(env_logger::Target::Stderr)
         .init();
 
+    // Claim the fd-passing transport (VIM-399) before anything can spawn a
+    // subprocess: stdio[3] inheritance clears close-on-exec, and a leaked
+    // transport end would wedge EOF/channel-failure detection.
+    if vimeflow_lib::fd_transport::claim_inherited_transport().is_some() {
+        log::info!("pty fd transport claimed on fd 3");
+    }
+
     let app_data_dir = match parse_app_data_dir() {
         Ok(dir) => dir,
         Err(err) => {

@@ -114,6 +114,9 @@ interface GhosttyNativeParentAddon {
   writeSecondary?: (surface: GhosttyNativeSurface, data: string) => void
   focusSecondary?: (surface: GhosttyNativeSurface) => void
   removeSecondary?: (surface: GhosttyNativeSurface) => void
+  // PTY fd-passing transport (VIM-399); absent on older addon builds.
+  createPtyFdTransport?: () => number
+  notifyPtyFdTransportSpawned?: () => void
 }
 
 interface GhosttyNativeParentDeps {
@@ -324,6 +327,48 @@ const loadAddon = (dir: string): GhosttyNativeParentAddon => {
   }
 
   return require(addon) as GhosttyNativeParentAddon
+}
+
+/** Handle for the pre-spawn PTY fd transport bootstrap (VIM-399). */
+export interface PtyFdTransportBootstrap {
+  /** Child end of the socketpair, inherited as the sidecar's stdio[3]. */
+  transportFd: number
+  /** Call once the sidecar spawned so the parent-process copy closes. */
+  onSpawned: () => void
+}
+
+/**
+ * Creates the fd-passing socketpair BEFORE the sidecar spawns; the addon owns
+ * the parent end for its lifetime. Feature-detects: any failure (addon
+ * missing, older addon build, `VIMEFLOW_PTY_FD_DIRECT=0` kill switch)
+ * returns null and the app stays on the async resize path.
+ */
+export const createPtyFdTransportBeforeSpawn = (
+  packaged: boolean,
+  resourcesPath = '',
+  env: NodeJS.ProcessEnv = process.env
+): PtyFdTransportBootstrap | null => {
+  if (env.VIMEFLOW_PTY_FD_DIRECT === '0') {
+    return null
+  }
+
+  try {
+    const addon = loadAddon(nativeParentDir(packaged, resourcesPath))
+    const transportFd = addon.createPtyFdTransport?.()
+    if (transportFd === undefined || transportFd < 0) {
+      return null
+    }
+
+    return {
+      transportFd,
+      onSpawned: (): void => addon.notifyPtyFdTransportSpawned?.(),
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('pty fd transport unavailable; async resize path only', error)
+
+    return null
+  }
 }
 
 function requireNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
