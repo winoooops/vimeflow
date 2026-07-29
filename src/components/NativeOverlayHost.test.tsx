@@ -316,6 +316,7 @@ const installNativeOverlayHostBridge = (): {
   ready: ReturnType<typeof vi.fn>
   action: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
+  setMousePassthrough: ReturnType<typeof vi.fn>
   ownerOverlayClose: ReturnType<typeof vi.fn>
   emitRender: (payload: unknown) => void
   emitClear: () => void
@@ -334,6 +335,7 @@ const installNativeOverlayHostBridge = (): {
   const ready = vi.fn(() => Promise.resolve())
   const action = vi.fn(() => Promise.resolve())
   const close = vi.fn(() => Promise.resolve())
+  const setMousePassthrough = vi.fn(() => Promise.resolve())
   const ownerOverlayClose = vi.fn(() => Promise.resolve())
 
   const handleRenderEvent = (event: Event): void => {
@@ -371,6 +373,7 @@ const installNativeOverlayHostBridge = (): {
       ready,
       action,
       close,
+      setMousePassthrough,
       onRender: vi.fn((callback: (payload: unknown) => void) => {
         renderListener = callback
 
@@ -406,6 +409,7 @@ const installNativeOverlayHostBridge = (): {
     ready,
     action,
     close,
+    setMousePassthrough,
     ownerOverlayClose,
     emitRender: (payload): void => {
       fireEvent(window, new CustomEvent(renderEvent, { detail: payload }))
@@ -495,6 +499,7 @@ describe('NativeOverlayHost', () => {
       name: 'EDIT trace details',
     })
     expect(dialog).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
+    expect(dialog).toHaveClass('!bg-surface-container')
     expect(within(dialog).getByText('App.tsx')).toBeInTheDocument()
     expect(
       within(dialog).getByRole('button', { name: 'Copy trace details' })

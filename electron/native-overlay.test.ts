@@ -7,6 +7,7 @@ import {
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
   NATIVE_OVERLAY_KEYDOWN,
+  NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -560,6 +561,44 @@ describe('NativeOverlayController', () => {
     await acknowledgeOverlayReady(menuWindow, activityPopoverRequest.surfaceId)
     await expect(openPromise).resolves.toEqual({ accepted: true })
     expect(menuWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false)
+  })
+
+  test('lets activity popovers pass pointer events through outside the card', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      activityPopoverRequest
+    )
+    const menuWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(menuWindow, activityPopoverRequest.surfaceId)
+    await openPromise
+    menuWindow.setIgnoreMouseEvents.mockClear()
+
+    handler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)(
+      { sender: menuWindow.webContents },
+      { surfaceId: activityPopoverRequest.surfaceId, passthrough: true }
+    )
+
+    expect(menuWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, {
+      forward: true,
+    })
+
+    handler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)(
+      { sender: menuWindow.webContents },
+      { surfaceId: activityPopoverRequest.surfaceId, passthrough: false }
+    )
+    expect(menuWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false)
+
+    menuWindow.setIgnoreMouseEvents.mockClear()
+    handler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: activityPopoverRequest.surfaceId, passthrough: true }
+    )
+    handler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)(
+      { sender: menuWindow.webContents },
+      { surfaceId: activityPopoverRequest.surfaceId, passthrough: 'yes' }
+    )
+    expect(menuWindow.setIgnoreMouseEvents).not.toHaveBeenCalled()
   })
 
   test('closes active tooltip before opening an interactive menu', async () => {

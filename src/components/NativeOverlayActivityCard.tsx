@@ -19,6 +19,8 @@ import { formatDuration, formatRelativeTime } from '@/lib/relativeTime'
 export const ACTIVITY_CARD_SURFACE =
   'relative w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[10px] border border-outline-variant/45 bg-[color-mix(in_srgb,var(--color-surface-container)_96%,transparent)] font-sans shadow-[0_16px_48px_color-mix(in_srgb,var(--color-surface-container-lowest)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--color-primary-container)_4%,transparent)] backdrop-blur-[20px] backdrop-saturate-[150%]'
 
+export const NATIVE_ACTIVITY_CARD_SURFACE = `${ACTIVITY_CARD_SURFACE} !bg-surface-container`
+
 export const ACTIVITY_KIND_ICON: Record<
   NativeOverlayActivityEventKind,
   string

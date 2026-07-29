@@ -10,7 +10,7 @@ import {
 import { IconButton } from '@/components/IconButton'
 import { Menu } from '@/components/Menu'
 import {
-  ACTIVITY_CARD_SURFACE,
+  NATIVE_ACTIVITY_CARD_SURFACE,
   NativeOverlayActivityCard,
 } from '@/components/NativeOverlayActivityCard'
 import { Popover } from '@/components/Popover'
@@ -36,6 +36,10 @@ import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 
 interface NativeOverlayHostBridge {
   ready: (request: { surfaceId: string }) => Promise<unknown>
+  setMousePassthrough: (request: {
+    surfaceId: string
+    passthrough: boolean
+  }) => Promise<unknown>
   action: (request: {
     surfaceId: string
     actionId: string
@@ -1239,9 +1243,20 @@ const NativeOverlayActivityPopover = ({
   request: NativeOverlayActivityPopoverRequest
   close: () => void
 }): ReactElement => {
+  const setMousePassthrough = useCallback(
+    (passthrough: boolean): void => {
+      void nativeOverlayHostBridge()?.setMousePassthrough({
+        surfaceId: request.surfaceId,
+        passthrough,
+      })
+    },
+    [request.surfaceId]
+  )
+
   const { now, activateActionId, dismissWhen } = useNativeActivityPopoverHost({
     request,
     close,
+    setMousePassthrough,
   })
   const showDiffActionId = request.payload.showDiffActionId
 
@@ -1280,7 +1295,7 @@ const NativeOverlayActivityPopover = ({
         focus="none"
         dismissWhen={dismissWhen}
         aria-label={request.payload.ariaLabel}
-        className={ACTIVITY_CARD_SURFACE}
+        className={NATIVE_ACTIVITY_CARD_SURFACE}
       >
         <NativeOverlayActivityCard
           event={request.payload.event}
@@ -1474,7 +1489,13 @@ export const NativeOverlayHost = ({
   }
 
   if (isNativeActivityPopoverRequest(request)) {
-    return <NativeOverlayActivityPopover request={request} close={close} />
+    return (
+      <NativeOverlayActivityPopover
+        key={request.surfaceId}
+        request={request}
+        close={close}
+      />
+    )
   }
 
   if (!isMenuRequest(request)) {

@@ -17,6 +17,7 @@ import {
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
   NATIVE_OVERLAY_KEYDOWN,
+  NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -246,6 +247,11 @@ interface NativeOverlayRequest {
 interface NativeOverlayCloseRequest {
   surfaceId: string
   reason?: NativeOverlayCloseReason
+}
+
+interface NativeOverlayMousePassthroughRequest {
+  surfaceId: string
+  passthrough: boolean
 }
 
 interface NativeOverlayActionEvent {
@@ -738,6 +744,13 @@ const isCloseRequest = (value: unknown): value is NativeOverlayCloseRequest =>
   isString(value.surfaceId) &&
   (value.reason === undefined || isCloseReason(value.reason))
 
+const isMousePassthroughRequest = (
+  value: unknown
+): value is NativeOverlayMousePassthroughRequest =>
+  isRecord(value) &&
+  isString(value.surfaceId) &&
+  typeof value.passthrough === 'boolean'
+
 const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   isRecord(value) &&
   isString(value.surfaceId) &&
@@ -852,6 +865,7 @@ export class NativeOverlayController {
     ipc.handle(NATIVE_OVERLAY_OPEN, this.handleOpen)
     ipc.handle(NATIVE_OVERLAY_CLOSE, this.handleClose)
     ipc.handle(NATIVE_OVERLAY_READY, this.handleReady)
+    ipc.handle(NATIVE_OVERLAY_MOUSE_PASSTHROUGH, this.handleMousePassthrough)
     ipc.handle(NATIVE_OVERLAY_ACTION, this.handleAction)
     ipc.handle(NATIVE_OVERLAY_ACTION_RESULT, this.handleActionResult)
     ipc.handle(NATIVE_OVERLAY_RESUME, this.handleResume)
@@ -863,6 +877,7 @@ export class NativeOverlayController {
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_OPEN)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_CLOSE)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_READY)
+      this.registeredIpc.removeHandler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION_RESULT)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_RESUME)
@@ -1072,6 +1087,36 @@ export class NativeOverlayController {
     }
 
     this.resolvePendingReady(payload.surfaceId, true)
+  }
+
+  private readonly handleMousePassthrough = (
+    event: IpcMainInvokeEvent,
+    payload: unknown
+  ): void => {
+    if (!isMousePassthroughRequest(payload)) {
+      return
+    }
+
+    const surface = this.surfaceFromOverlaySender(
+      payload.surfaceId,
+      event.sender
+    )
+    if (surface?.kind !== 'popover') {
+      return
+    }
+
+    const overlayWindow = this.overlays.get(surface.parentId)?.menu.window
+    if (overlayWindow === undefined || overlayWindow.isDestroyed()) {
+      return
+    }
+
+    if (payload.passthrough) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+
+      return
+    }
+
+    overlayWindow.setIgnoreMouseEvents(false)
   }
 
   private readonly handleAction = (

@@ -6,11 +6,15 @@ export const NATIVE_OVERLAY_ACTION_RESULT = 'native-overlay:action-result'
 
 export const NATIVE_OVERLAY_RESUME = 'native-overlay:resume'
 
+export const NATIVE_OVERLAY_MOUSE_PASSTHROUGH =
+  'native-overlay:mouse-passthrough'
+
 export type NativeOverlayInvokeChannel =
   | typeof NATIVE_OVERLAY_OPEN
   | typeof NATIVE_OVERLAY_CLOSE
   | typeof NATIVE_OVERLAY_ACTION_RESULT
   | typeof NATIVE_OVERLAY_RESUME
+  | typeof NATIVE_OVERLAY_MOUSE_PASSTHROUGH
 
 export const NATIVE_OVERLAY_ACTION = 'native-overlay:action'
 

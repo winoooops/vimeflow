@@ -42,7 +42,16 @@ describe('useNativeActivityPopoverHost', () => {
   test('closes after the pointer leaves both the anchor and card', async () => {
     vi.useFakeTimers()
     const close = vi.fn()
-    renderHook(() => useNativeActivityPopoverHost({ request, close }))
+    const setMousePassthrough = vi.fn()
+    renderHook(() =>
+      useNativeActivityPopoverHost({ request, close, setMousePassthrough })
+    )
+
+    fireEvent.mouseMove(document, { clientX: 0, clientY: 0 })
+    expect(setMousePassthrough).toHaveBeenCalledWith(true)
+
+    fireEvent.mouseMove(document, { clientX: 650, clientY: 130 })
+    expect(setMousePassthrough).toHaveBeenLastCalledWith(false)
 
     fireEvent.mouseMove(document, { clientX: 0, clientY: 0 })
     await act(() => vi.advanceTimersByTime(150))
