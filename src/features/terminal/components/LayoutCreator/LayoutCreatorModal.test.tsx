@@ -155,6 +155,15 @@ describe('LayoutCreatorModal', () => {
       source: 'workspace',
     })
     expect(onSave.mock.calls[0]?.[0].id).not.toBe('custom:untrusted')
+    await waitFor(() =>
+      expect(window.vimeflow?.nativeOverlay?.actionResult).toHaveBeenCalledWith(
+        {
+          surfaceId: request?.surfaceId,
+          actionId: 'layout-creator:save',
+          ok: true,
+        }
+      )
+    )
   })
 
   test('reports invalid native saves instead of silently no-oping', async () => {
@@ -193,7 +202,23 @@ describe('LayoutCreatorModal', () => {
       surfaceId: request?.surfaceId,
       actionId: 'layout-creator:save',
       closeOnSelect: false,
-      query: '{',
+      query: JSON.stringify({
+        title: 'Overlapping layout',
+        tracks: {
+          columns: [{ id: 'col-0', units: 24 }],
+          rows: [{ id: 'row-0', units: 24 }],
+        },
+        slots: [
+          {
+            id: 'slot:p0',
+            rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+          },
+          {
+            id: 'slot:p1',
+            rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+          },
+        ],
+      }),
     })
 
     await waitFor(() =>
@@ -202,7 +227,7 @@ describe('LayoutCreatorModal', () => {
           surfaceId: request?.surfaceId,
           actionId: 'layout-creator:save',
           ok: false,
-          error: 'Invalid layout',
+          error: 'Imported layout has overlapping panes',
         }
       )
     )

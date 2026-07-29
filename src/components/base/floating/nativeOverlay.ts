@@ -367,6 +367,7 @@ export type NativeOverlayActionHandler =
   | ((event?: NativeOverlayActionEvent) => NativeOverlayActionResult)
   | {
       retainSession: true
+      reportSuccess?: boolean
       run: (event?: NativeOverlayActionEvent) => NativeOverlayActionResult
     }
 
@@ -408,9 +409,10 @@ const bridge = (): NativeOverlayBridge | undefined =>
 const reportActionResult = (
   event: NativeOverlayActionEvent,
   ok: boolean,
-  error?: string
+  error?: string,
+  reportSuccess = false
 ): void => {
-  if (ok && event.feedback === undefined) {
+  if (ok && event.feedback === undefined && !reportSuccess) {
     return
   }
 
@@ -425,12 +427,13 @@ const reportActionResult = (
 
 const runActionAndReport = (
   event: NativeOverlayActionEvent,
-  run: (event: NativeOverlayActionEvent) => NativeOverlayActionResult
+  run: (event: NativeOverlayActionEvent) => NativeOverlayActionResult,
+  reportSuccess = false
 ): void => {
   void (async (): Promise<void> => {
     try {
       const result = await run(event)
-      reportActionResult(event, result === true)
+      reportActionResult(event, result === true, undefined, reportSuccess)
     } catch (error) {
       reportActionResult(
         event,
@@ -486,7 +489,7 @@ const handleAction = (event: unknown): void => {
     return
   }
 
-  runActionAndReport(event, action.run)
+  runActionAndReport(event, action.run, action.reportSuccess === true)
 }
 
 const handleClose = (event: unknown): void => {

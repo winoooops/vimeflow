@@ -93,11 +93,15 @@ const codeFormatOptions = [
 const NATIVE_ACTION_CANCEL = 'layout-creator:cancel'
 const NATIVE_ACTION_SAVE = 'layout-creator:save'
 
+type NativeSavedLayoutResult =
+  | { readonly definition: PaneLayoutDefinition; readonly error?: undefined }
+  | { readonly definition?: undefined; readonly error: string }
+
 const savedLayoutFromNativeQuery = (
   query: string,
   existingIds: ReadonlySet<PaneLayoutDefinition['id']>,
   existingId: CustomPaneLayoutId | undefined
-): PaneLayoutDefinition | null => {
+): NativeSavedLayoutResult => {
   try {
     const value: unknown = JSON.parse(query)
     if (
@@ -106,17 +110,21 @@ const savedLayoutFromNativeQuery = (
       Array.isArray(value) ||
       typeof (value as { title?: unknown }).title !== 'string'
     ) {
-      return null
+      return { error: 'Invalid layout' }
     }
 
-    return definitionFromDraft({
-      title: (value as { title: string }).title,
-      draft: parseDraftLayoutText(query, 'json'),
-      existingIds,
-      existingId,
-    })
-  } catch {
-    return null
+    return {
+      definition: definitionFromDraft({
+        title: (value as { title: string }).title,
+        draft: parseDraftLayoutText(query, 'json'),
+        existingIds,
+        existingId,
+      }),
+    }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Invalid layout',
+    }
   }
 }
 
@@ -932,24 +940,27 @@ export const LayoutCreatorModal = ({
           NATIVE_ACTION_SAVE,
           {
             retainSession: true,
-            run: (event): void => {
+            reportSuccess: true,
+            run: (event): boolean | void => {
               if (event?.query === undefined) {
                 return
               }
 
-              const definition = savedLayoutFromNativeQuery(
+              const result = savedLayoutFromNativeQuery(
                 event.query,
                 existingIds,
                 existingId
               )
 
-              if (definition === null) {
-                throw new Error('Invalid layout')
+              if (result.definition === undefined) {
+                throw new Error(result.error)
               }
 
               try {
-                onSave(definition)
+                onSave(result.definition)
                 setSaveError(null)
+
+                return true
               } catch (error) {
                 setSaveError(
                   error instanceof Error ? error.message : 'Invalid layout'
