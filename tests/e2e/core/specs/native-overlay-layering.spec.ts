@@ -46,6 +46,11 @@ interface OverlayWindowState {
   visible: boolean
 }
 
+interface LocalDialogState {
+  nativeOverlayActive: boolean
+  opacity: string
+}
+
 type ElectronModule = typeof import('electron')
 
 const pngSignature = Buffer.from([
@@ -309,6 +314,39 @@ const getOverlayWindowState = async (): Promise<OverlayWindowState | null> =>
           visible: overlay.isVisible(),
         }
   })
+
+const getParentLocalLayoutDialogState =
+  async (): Promise<LocalDialogState | null> =>
+    browser.electron.execute(async (electron: ElectronModule) => {
+      const parent = electron.BrowserWindow.getAllWindows().find((window) => {
+        const mode = new URL(window.webContents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
+
+        return mode !== '1' && mode !== 'menu' && mode !== 'tooltip'
+      })
+
+      if (parent === undefined) {
+        return null
+      }
+
+      return parent.webContents.executeJavaScript(`
+        (() => {
+          const content = document.querySelector(
+            '[data-workspace-overlay-id="layout-creator"]'
+          )
+          const dialog = content?.closest('[role="dialog"]')
+
+          return dialog instanceof HTMLElement
+            ? {
+                nativeOverlayActive:
+                  dialog.dataset.nativeOverlayActive === 'true',
+                opacity: getComputedStyle(dialog).opacity,
+              }
+            : null
+        })()
+      `) as Promise<LocalDialogState | null>
+    })
 
 const closeOverlayMenuIfPresent = async (): Promise<void> => {
   if ((await getOverlayMenuRect()) === null) {
@@ -732,19 +770,23 @@ describe('NativeOverlay BrowserWindow layering', () => {
       }
     )
 
-    const localDialogState = await browser.execute(() => {
-      const content = document.querySelector(
-        '[data-workspace-overlay-id="layout-creator"]'
-      )
-      const dialog = content?.closest<HTMLElement>('[role="dialog"]')
+    await browser.waitUntil(
+      async () => {
+        const localDialogState = await getParentLocalLayoutDialogState()
 
-      return dialog === null || dialog === undefined
-        ? null
-        : {
-            nativeOverlayActive: dialog.dataset.nativeOverlayActive === 'true',
-            opacity: getComputedStyle(dialog).opacity,
-          }
-    })
+        return (
+          localDialogState?.nativeOverlayActive === true &&
+          localDialogState.opacity === '0'
+        )
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg:
+          'parent renderer did not hide the local Layout Creator dialog for native overlay',
+      }
+    )
+    const localDialogState = await getParentLocalLayoutDialogState()
     expect(localDialogState).toEqual({
       nativeOverlayActive: true,
       opacity: '0',
