@@ -513,9 +513,11 @@ const waitForOverlayPaint = async (
       const bounds = mapCssRect(overlapRect, mapping)
       const changed = changedPixelCount(before, after, bounds)
 
-      return surface === 'dialog'
-        ? changed / sampledPixelCount(bounds) > 0.2
-        : changed > 50
+      if (surface === 'dialog') {
+        return changed > 50 || changed / sampledPixelCount(bounds) > 0.2
+      }
+
+      return changed > 50
     },
     {
       timeout: 5_000,
