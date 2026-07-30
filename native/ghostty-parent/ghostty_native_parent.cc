@@ -674,7 +674,8 @@ void SendPtyTransportDatagramLocked(const std::string &json) {
   const char *message_type =
       ExtractJsonString(json, "t", &type) ? type.c_str() : "unknown";
   while (true) {
-    const ssize_t sent = send(transport_fd, json.data(), json.size(), 0);
+    const ssize_t sent =
+        send(transport_fd, json.data(), json.size(), MSG_DONTWAIT);
     if (sent < 0 && errno == EINTR) {
       continue;
     }
@@ -930,11 +931,12 @@ void EnqueuePtyResizeFlush(SurfaceHandle *surface, int role, int columns,
   }
 }
 
-// Binds a delivered fd to a surface slot and announces native-ready. Caller
-// holds g_pty_protocol_mutex.
+// Binds a delivered fd to a surface slot and queues native-ready for delivery.
+// Caller holds g_pty_protocol_mutex; queued sends run after it is released.
 void CompletePtyBindLocked(SurfaceHandle *surface, int role,
                            const std::string &session_id,
-                           const PendingPtyFd &pending) {
+                           const PendingPtyFd &pending,
+                           std::vector<std::string> *out_sends) {
   PtyFdSlot &slot = surface->pty_slots[role];
   {
     std::lock_guard<std::mutex> lock(slot.mtx);
@@ -952,7 +954,7 @@ void CompletePtyBindLocked(SurfaceHandle *surface, int role,
     slot.failed = false;
   }
   g_pty_lease_slots[pending.lease_id] = {surface, role};
-  SendPtyTransportDatagramLocked(PtyMessageJson(
+  out_sends->push_back(PtyMessageJson(
       "native-ready", session_id, pending.generation, pending.lease_id,
       PtyRoleName(role)));
 }
@@ -1115,6 +1117,7 @@ void HandlePtyInboundMessage(const std::string &json, int received_fd) {
     PtyBindIntent intent;
     bool has_intent = false;
     PendingPtyFd pending{received_fd, generation, lease_id};
+    std::vector<std::string> sends;
     {
       std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
       auto existing = g_pending_pty_fds.find(session_id);
@@ -1133,8 +1136,11 @@ void HandlePtyInboundMessage(const std::string &json, int received_fd) {
       }
       if (has_intent) {
         CompletePtyBindLocked(intent.surface, intent.role, session_id,
-                              pending);
+                              pending, &sends);
       }
+    }
+    for (const std::string &outbound : sends) {
+      SendPtyTransportDatagram(outbound);
     }
     return;
   }
@@ -2045,6 +2051,7 @@ napi_value BindPty(napi_env env, napi_callback_info info) {
     return nullptr; // Transport never established: async path only.
   }
 
+  std::vector<std::string> sends;
   {
     std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
     if (g_pty_fd_transport_parent.load(std::memory_order_acquire) < 0) {
@@ -2054,10 +2061,16 @@ napi_value BindPty(napi_env env, napi_callback_info info) {
     if (pending != g_pending_pty_fds.end()) {
       const PendingPtyFd fd_entry = pending->second;
       g_pending_pty_fds.erase(pending);
-      CompletePtyBindLocked(surface, role, session_id, fd_entry);
-      return nullptr;
+      CompletePtyBindLocked(surface, role, session_id, fd_entry, &sends);
+    } else {
+      g_pty_bind_intents[session_id] = PtyBindIntent{surface, role};
     }
-    g_pty_bind_intents[session_id] = PtyBindIntent{surface, role};
+  }
+  for (const std::string &outbound : sends) {
+    SendPtyTransportDatagram(outbound);
+  }
+  if (!sends.empty()) {
+    return nullptr;
   }
   char buf[256];
   snprintf(buf, sizeof(buf), "{\"t\":\"request-fd\",\"sessionId\":\"%s\"}",

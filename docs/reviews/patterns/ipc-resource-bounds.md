@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-07-30
-ref_count: 7
+ref_count: 8
 ---
 
 # IPC Resource Bounds
@@ -215,4 +215,21 @@ not become repeated unhandled main-process failures.
   boundary before PTY allocation, and changed fd-transport sends to return
   `InvalidInput` instead of asserting on oversized payloads. Added regression
   coverage for both the spawn boundary and transport send helpers.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Native PTY transport sends must not block synchronous IPC paths
+
+- **Source:** github-claude | PR #761 round 4 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `bindPty` could complete a pending fd bind by sending the
+  `native-ready` datagram through a blocking socket syscall while still inside
+  the global PTY protocol mutex on the Electron main thread. A stalled sidecar
+  or full socket buffer could freeze the UI and hold up all other PTY protocol
+  operations behind the same mutex.
+- **Fix:** Split the bind state transition from outbound delivery so
+  `CompletePtyBindLocked` queues the ready datagram while locked and callers
+  send after the critical section. The transport send now uses `MSG_DONTWAIT`,
+  so peer backpressure degrades to a logged failed datagram instead of an
+  unbounded block.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
