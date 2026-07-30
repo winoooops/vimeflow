@@ -9,8 +9,6 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import { SettingsProvider } from '../settings/SettingsProvider'
-import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
-import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -78,6 +76,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
@@ -125,12 +124,6 @@ vi.mock('@pierre/diffs/react', () => ({
 }))
 
 beforeEach(() => {
-  window.localStorage.clear()
-  setActivityPanelCollapsed(false)
-  setDockOpen(false)
-  setDockTab('diff')
-  setDockPosition('bottom')
-
   vi.stubGlobal(
     'ResizeObserver',
     class {

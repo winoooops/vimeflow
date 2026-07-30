@@ -55,6 +55,10 @@ import {
   isTerminalStatus,
 } from '../utils/sessionStatus'
 import {
+  deleteActivityPanelCollapsed,
+  writeActivityPanelCollapsed,
+} from '../utils/activityPanelCollapsedStore'
+import {
   writeCacheHistory,
   deleteCacheHistory,
 } from '../utils/cacheHistoryStore'
@@ -171,6 +175,14 @@ export interface SessionManager {
     sessionId: string,
     paneId: string,
     browserUrl: string
+  ) => void
+  /** Toggle the agent activity panel collapse state for ALL panes in the
+   *  session at once. UI-only state — persisted via localStorage so the
+   *  preference survives restart without flowing through the agent/PTY
+   *  lifecycle. */
+  setSessionActivityPanelCollapsed: (
+    sessionId: string,
+    collapsed: boolean
   ) => void
   /**
    * Update the stable session baseline cwd in React state only.
@@ -1501,6 +1513,7 @@ export const useSessionManager = (
                 workingDirectory,
                 agentType: 'generic',
                 layout,
+                activityPanelCollapsed: false,
                 panes,
                 createdAt: now,
                 lastActivityAt: now,
@@ -1596,6 +1609,7 @@ export const useSessionManager = (
           workingDirectory,
           agentType: 'generic',
           layout: 'single',
+          activityPanelCollapsed: false,
           panes: [
             {
               kind: 'browser',
@@ -1809,6 +1823,14 @@ export const useSessionManager = (
           unregisterPtySession(ptyId)
         }
         restoreDataRef.current.delete(target.id)
+
+        // Replaces the implicit cleanup the Rust PTY cache used to do on
+        // session exit. Without it, every closed session leaves a stale
+        // `vimeflow:sessions:activityPanelCollapsed:<id>` key in
+        // localStorage forever. Runs only on the happy path (after both
+        // kill phases settle) so a partial-kill bail-out doesn't drop
+        // the preference for a session the user can still see.
+        deleteActivityPanelCollapsed(target.id)
 
         const currentActiveId = activeSessionIdRef.current
         let computedFallback = null as string | null
@@ -3095,6 +3117,23 @@ export const useSessionManager = (
     []
   )
 
+  const setSessionActivityPanelCollapsed = useCallback(
+    (sessionId: string, collapsed: boolean): void => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session || session.activityPanelCollapsed === collapsed) {
+        return
+      }
+
+      writeActivityPanelCollapsed(sessionId, collapsed)
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId ? { ...s, activityPanelCollapsed: collapsed } : s
+        )
+      )
+    },
+    []
+  )
+
   const updateSessionCwd = useCallback((id: string, cwd: string): void => {
     const target = sessionsRef.current.find((s) => s.id === id)
     if (!target) {
@@ -3155,6 +3194,7 @@ export const useSessionManager = (
     recordPaneAgentLauncher,
     invalidatePaneAgentSession,
     updateBrowserPaneUrl,
+    setSessionActivityPanelCollapsed,
     updateSessionCwd,
     updateSessionAgentType,
     // Round 12 F2: expose the ref-backed Map. Identity is stable across

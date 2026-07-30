@@ -22,6 +22,9 @@ pub struct CachedSession {
     pub created_at: String, // ISO-8601 UTC
     pub exited: bool,
     pub last_exit_code: Option<i32>,
+    /// Per-pane UI preference for the right activity panel.
+    #[serde(default)]
+    pub activity_panel_collapsed: Option<bool>,
     /// Shell path that was originally spawned for this session.
     #[serde(default)]
     pub last_shell: Option<String>,
@@ -339,6 +342,7 @@ mod tests {
                         created_at: "2026-04-25T07:30:00Z".into(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -584,6 +588,7 @@ mod tests {
                         created_at: "2026-04-26T00:00:00Z".into(),
                         exited: false,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -594,6 +599,7 @@ mod tests {
                         created_at: "2026-04-26T00:01:00Z".into(),
                         exited: true,
                         last_exit_code: None,
+                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -626,11 +632,36 @@ mod tests {
         assert!(snap.active_session_id.is_none());
     }
 
-    /// Backward compatibility: caches written before the
-    /// `activity_panel_collapsed` field was removed must still load —
-    /// serde ignores the unknown field instead of failing the whole cache.
     #[test]
-    fn legacy_activity_panel_collapsed_field_is_ignored_on_load() {
+    fn activity_panel_collapsed_round_trips_through_disk() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+
+        let cache = SessionCache::load(path.clone()).unwrap();
+        cache
+            .mutate(|d| {
+                d.sessions.insert(
+                    "pty-1".into(),
+                    CachedSession {
+                        cwd: "/home/x".into(),
+                        created_at: "2026-05-21T00:00:00Z".into(),
+                        exited: false,
+                        last_exit_code: None,
+                        activity_panel_collapsed: Some(true),
+                        last_shell: None,
+                    },
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        let reloaded = SessionCache::load(path).unwrap().snapshot();
+        let session = reloaded.sessions.get("pty-1").unwrap();
+        assert_eq!(session.activity_panel_collapsed, Some(true));
+    }
+
+    #[test]
+    fn missing_activity_panel_collapsed_field_loads_as_none() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("sessions.json");
         std::fs::write(
@@ -644,8 +675,7 @@ mod tests {
                         "cwd": "/legacy",
                         "created_at": "2026-05-20T00:00:00Z",
                         "exited": false,
-                        "last_exit_code": null,
-                        "activity_panel_collapsed": true
+                        "last_exit_code": null
                     }
                 }
             }"#,
@@ -654,6 +684,6 @@ mod tests {
 
         let cache = SessionCache::load(path).unwrap().snapshot();
         let session = cache.sessions.get("pty-legacy").unwrap();
-        assert_eq!(session.cwd, "/legacy");
+        assert_eq!(session.activity_panel_collapsed, None);
     }
 }

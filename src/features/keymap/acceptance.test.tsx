@@ -18,6 +18,7 @@ const sessions: Session[] = [
     workingDirectory: '/tmp',
     agentType: 'generic',
     layout: 'vsplit',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',

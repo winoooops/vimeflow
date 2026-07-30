@@ -10,6 +10,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -34,6 +35,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -58,6 +60,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -80,6 +83,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -104,6 +108,7 @@ export const mockSessions: Session[] = [
     workingDirectory: '~',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',

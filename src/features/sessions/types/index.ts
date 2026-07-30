@@ -144,6 +144,11 @@ export interface Session {
    * `panes[]` order and the layout's `addOrder`.
    */
   placements?: PanePlacement[]
+  /** Session-scoped collapse state for the right agent activity panel.
+   *  Shared by every pane so switching pane within a session never
+   *  jumps the bar. UI-only: hydrated from localStorage by session id
+   *  and persisted there on toggle. Default `false` (expanded). */
+  activityPanelCollapsed: boolean
   /** At least one pane per session. Step 5a creates single-pane sessions. */
   panes: Pane[]
   currentAction?: string // current action description (e.g., "Creating auth middleware...")

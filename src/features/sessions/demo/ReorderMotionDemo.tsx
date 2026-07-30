@@ -61,6 +61,7 @@ const buildDemoSessions = (): Session[] =>
       workingDirectory: DEMO_CWD,
       agentType: index % 2 === 0 ? 'claude-code' : 'codex',
       layout: index === 2 ? 'vsplit' : 'single',
+      activityPanelCollapsed: false,
       panes: [
         {
           id: 'p0',

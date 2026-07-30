@@ -233,6 +233,9 @@ pub struct SessionInfo {
     #[cfg_attr(test, ts(optional))]
     pub shell: Option<String>,
     pub status: SessionStatus,
+    #[cfg_attr(test, ts(optional))]
+    #[cfg_attr(test, ts(type = "boolean | null"))]
+    pub activity_panel_collapsed: Option<bool>,
     /// Workspace grouping for this PTY, or `None` if it was never grouped.
     /// `skip_serializing_if = "Option::is_none"` omits the field from the
     /// IPC JSON when None instead of emitting `null`, so the generated TS
@@ -277,6 +280,17 @@ pub struct ReorderSessionsRequest {
 pub struct UpdateSessionCwdRequest {
     pub id: String,
     pub cwd: String,
+}
+
+/// Request payload for set_session_activity_panel_collapsed command.
+/// `id` is a PTY id — same convention as SetActiveSessionRequest.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionActivityPanelCollapsedRequest {
+    pub id: String,
+    pub collapsed: bool,
 }
 
 /// One pane within a workspace session snapshot pushed by the frontend.
