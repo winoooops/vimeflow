@@ -23,7 +23,7 @@
 
 #![cfg(unix)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::{Arc, Mutex};
 
@@ -103,8 +103,9 @@ struct Lease {
 struct BrokerInner {
     leases: HashMap<SessionId, Lease>,
     /// Sessions whose `request-fd` is deferred until the previous lease
-    /// retires (release receipt or transport loss).
-    deferred_requests: HashSet<SessionId>,
+    /// retires (release receipt or transport loss), stamped with the
+    /// generation that owned the active lease when the request arrived.
+    deferred_requests: HashMap<SessionId, u64>,
     next_lease_id: u64,
 }
 
@@ -197,9 +198,11 @@ impl FdBroker {
     pub fn on_session_exit(&self, session_id: &str, generation: u64) {
         let lease = {
             let mut inner = self.inner.lock().expect("broker lock");
-            inner.deferred_requests.remove(session_id);
             match inner.leases.get(session_id) {
-                Some(l) if l.generation == generation => inner.leases.remove(session_id),
+                Some(l) if l.generation == generation => {
+                    inner.remove_deferred_if_generation_matches(session_id, generation);
+                    inner.leases.remove(session_id)
+                }
                 _ => None,
             }
         };
@@ -354,15 +357,16 @@ impl FdBroker {
                     lease_id,
                 });
                 if apply {
-                    self.fulfill_deferred(&session_id, pty);
+                    self.fulfill_deferred(&session_id, generation, pty);
                 }
             }
             WireMessage::RequestFd { session_id } => {
                 let answer_now = {
                     let mut inner = self.inner.lock().expect("broker lock");
-                    if inner.leases.contains_key(&session_id) {
+                    if let Some(lease) = inner.leases.get(&session_id) {
                         // Serialize re-acquisition: answered on retirement.
-                        inner.deferred_requests.insert(session_id.clone());
+                        let generation = lease.generation;
+                        inner.deferred_requests.insert(session_id.clone(), generation);
                         false
                     } else {
                         true
@@ -381,10 +385,10 @@ impl FdBroker {
         }
     }
 
-    fn fulfill_deferred(&self, session_id: &str, pty: &PtyState) {
+    fn fulfill_deferred(&self, session_id: &str, generation: u64, pty: &PtyState) {
         let deferred = {
             let mut inner = self.inner.lock().expect("broker lock");
-            inner.deferred_requests.remove(session_id)
+            inner.remove_deferred_if_generation_matches(session_id, generation)
         };
         if deferred {
             self.answer_request(session_id, pty);
@@ -407,6 +411,19 @@ impl BrokerInner {
             .is_some_and(|lease| lease.lease_id == lease_id)
         {
             self.leases.remove(session_id);
+        }
+    }
+
+    fn remove_deferred_if_generation_matches(&mut self, session_id: &str, generation: u64) -> bool {
+        if self
+            .deferred_requests
+            .get(session_id)
+            .is_some_and(|deferred_generation| *deferred_generation == generation)
+        {
+            self.deferred_requests.remove(session_id);
+            true
+        } else {
+            false
         }
     }
 }
@@ -762,6 +779,53 @@ mod tests {
             other => panic!("expected detach, got {other:?}"),
         }
         assert!(!broker.inner.lock().unwrap().leases.contains_key("s1"));
+    }
+
+    #[test]
+    fn test_stale_exit_preserves_current_generation_deferred_request() {
+        let (broker, addon, _pty) = start_broker();
+        let probe = probe_fd();
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
+        let _ = addon.recv();
+
+        addon.send(&WireMessage::RequestFd {
+            session_id: "s1".into(),
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(
+            broker
+                .inner
+                .lock()
+                .unwrap()
+                .deferred_requests
+                .get("s1")
+                .copied(),
+            Some(3)
+        );
+
+        broker.on_session_exit("s1", 2);
+        assert_eq!(
+            broker
+                .inner
+                .lock()
+                .unwrap()
+                .deferred_requests
+                .get("s1")
+                .copied(),
+            Some(3),
+            "stale exit must not clear a deferred request for the current generation"
+        );
+
+        broker.on_session_exit("s1", 3);
+        assert!(
+            !broker
+                .inner
+                .lock()
+                .unwrap()
+                .deferred_requests
+                .contains_key("s1"),
+            "matching exit should clear the deferred request"
+        );
     }
 
     #[test]

@@ -759,6 +759,12 @@ pub(crate) fn kill_ephemeral_ptys_inner(state: &PtyState) -> Vec<String> {
         match state.kill(&id) {
             Ok(()) | Err(super::state::KillError::NotPresent) => {
                 state.set_cancelled(&id);
+                #[cfg(unix)]
+                if let Some(generation) = state.generation(&id) {
+                    if let Some(broker) = state.fd_broker() {
+                        broker.on_session_exit(&id, generation);
+                    }
+                }
                 state.remove(&id);
                 killed.push(id);
             }
@@ -1852,6 +1858,88 @@ mod tests {
         assert!(keep_write.is_ok(), "non-ephemeral PTY must be untouched");
 
         let _ = state.remove(&keep.id);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kill_ephemeral_ptys_retires_fd_broker_lease() {
+        use crate::fd_transport;
+        use crate::terminal::fd_broker::FdBroker;
+        use std::os::fd::AsRawFd;
+        use std::time::Duration;
+
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
+        let broker = FdBroker::start(rust_end.as_raw_fd(), state.clone())
+            .expect("broker should start");
+        state.set_fd_broker(Arc::clone(&broker));
+        std::mem::forget(rust_end);
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let burner = spawn_pty_inner(
+            state.clone(),
+            cache,
+            events,
+            SpawnPtyRequest {
+                session_id: "burner-broker".to_string(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: true,
+            },
+            &[],
+            true,
+        )
+        .await
+        .expect("burner spawn");
+
+        let mut buf = [0u8; fd_transport::MAX_MESSAGE_BYTES];
+        let (len, _fd) = fd_transport::recv_fd_timeout(
+            addon_end.as_raw_fd(),
+            &mut buf,
+            Duration::from_secs(5),
+        )
+        .expect("receive fd")
+        .expect("fd message");
+        let offered: serde_json::Value = serde_json::from_slice(&buf[..len]).expect("parse fd");
+        let generation = offered["generation"].as_u64().expect("generation");
+        let lease_id = offered["leaseId"].as_u64().expect("lease id");
+
+        let ready = serde_json::json!({
+            "t": "native-ready",
+            "sessionId": burner.id,
+            "generation": generation,
+            "leaseId": lease_id,
+            "role": "primary",
+        });
+        fd_transport::send_datagram(
+            addon_end.as_raw_fd(),
+            &serde_json::to_vec(&ready).expect("serialize ready"),
+        )
+        .expect("send native-ready");
+
+        let (len, _fd) = fd_transport::recv_fd_timeout(
+            addon_end.as_raw_fd(),
+            &mut buf,
+            Duration::from_secs(5),
+        )
+        .expect("receive activate ack")
+        .expect("activate ack");
+        let ack: serde_json::Value = serde_json::from_slice(&buf[..len]).expect("parse ack");
+        assert_eq!(ack["t"], "activate-ack");
+        assert!(broker.is_native_owned("burner-broker", generation));
+
+        let killed = kill_ephemeral_ptys_inner(&state);
+
+        assert_eq!(killed, vec!["burner-broker".to_string()]);
+        assert!(
+            !broker.is_native_owned("burner-broker", generation),
+            "ephemeral reap must retire the broker lease before removing the session"
+        );
     }
 
     #[tokio::test]

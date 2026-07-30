@@ -202,3 +202,32 @@ below preserve their original Tauri-era file paths for auditability.
 - **Fix:** Fence the send-failure cleanup by the failed offer's `lease_id`, so
   only the lease created by that call is removed and replacement leases survive.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Stale session exit can clear current-generation deferred fd requests
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** `FdBroker::on_session_exit` generation-guarded active lease
+  removal but cleared `deferred_requests` by session id before that guard. A
+  delayed exit from an older same-id session could delete a `request-fd`
+  deferred by the current generation and leave native reacquisition unanswered.
+- **Fix:** Store the generation with each deferred request and clear it only
+  when the retiring lease generation matches, with a regression test covering a
+  stale exit racing a current-generation deferred request.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Ephemeral PTY reap skipped fd-broker lease retirement
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** `kill_ephemeral_ptys_inner` killed, cancelled, and removed burner
+  PTYs without the broker `on_session_exit` call used by explicit kill and
+  reader-exit teardown. Renderer reload or shutdown could leave native-owned
+  burner leases and bindings alive until delayed reader cleanup or transport
+  loss.
+- **Fix:** Capture each ephemeral session generation before removal and retire
+  the broker lease through `on_session_exit`, with a command-layer test proving
+  burner reap clears native ownership.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
