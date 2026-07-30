@@ -1041,6 +1041,58 @@ describe('Menu.Context', () => {
     expect(onSelect).toHaveBeenCalledOnce()
   })
 
+  test('retains native menu item sessions when close on select is disabled', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const nativeBridge = installNativeOverlayBridge()
+    const onSelect = vi.fn()
+    const retainNativeOverlay = false
+
+    render(
+      <Menu.Context
+        position={{ x: 50, y: 60 }}
+        open
+        nativeOverlay
+        onOpenChange={vi.fn()}
+        aria-label="Layout actions"
+      >
+        <Menu.Item
+          icon="dashboard_customize"
+          nativeOverlayCloseOnSelect={retainNativeOverlay}
+          onSelect={onSelect}
+        >
+          Create custom layout
+        </Menu.Item>
+      </Menu.Context>
+    )
+
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeMenuRequestAt(nativeBridge.open)
+    const firstItem = request.payload.items?.[0]
+
+    expect(firstItem).toMatchObject({
+      id: expect.any(String),
+      label: 'Create custom layout',
+      closeOnSelect: false,
+    })
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: firstItem?.type === 'separator' ? '' : firstItem?.id,
+      })
+
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: firstItem?.type === 'separator' ? '' : firstItem?.id,
+      })
+    })
+
+    expect(onSelect).toHaveBeenCalledTimes(2)
+    expect(nativeBridge.close).not.toHaveBeenCalled()
+  })
+
   test('falls back locally when native reposition is rejected', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')

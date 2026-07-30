@@ -979,6 +979,7 @@ interface MenuItemProps {
   shortcut?: ShortcutInput
   active?: boolean
   disabled?: boolean
+  nativeOverlayCloseOnSelect?: boolean
   onSelect: () => void
   children: ReactNode
 }
@@ -1527,18 +1528,33 @@ const nativeMenuItemFromElement = (
       ...(element.props.shortcut === undefined
         ? {}
         : { shortcut: formatShortcut(element.props.shortcut) }),
+      ...(element.props.nativeOverlayCloseOnSelect === false
+        ? { closeOnSelect: false }
+        : {}),
       ...(disabled ? { disabled: true } : {}),
     },
-    action: (): NativeOverlayActionResult => {
-      if (disabled) {
-        return
-      }
+    action:
+      element.props.nativeOverlayCloseOnSelect === false
+        ? {
+            retainSession: true,
+            run: (): NativeOverlayActionResult => {
+              if (disabled) {
+                return
+              }
 
-      const result = element.props.onSelect()
-      close()
+              return element.props.onSelect()
+            },
+          }
+        : (): NativeOverlayActionResult => {
+            if (disabled) {
+              return
+            }
 
-      return result
-    },
+            const result = element.props.onSelect()
+            close()
+
+            return result
+          },
   }
 }
 
