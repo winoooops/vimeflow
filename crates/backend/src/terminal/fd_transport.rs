@@ -258,7 +258,7 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
         while !cmsg.is_null() {
             if (*cmsg).cmsg_level == libc::SOL_SOCKET && (*cmsg).cmsg_type == libc::SCM_RIGHTS {
                 let expected_len = libc::CMSG_LEN(std::mem::size_of::<RawFd>() as u32) as usize;
-                if (*cmsg).cmsg_len != expected_len {
+                if (*cmsg).cmsg_len as usize != expected_len {
                     close_rights_cmsg_fds(cmsg);
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -299,9 +299,16 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
     Ok((received, fd))
 }
 
+/// Closes every descriptor carried by an `SCM_RIGHTS` control message.
+///
+/// # Safety
+///
+/// `cmsg` must be a non-null pointer returned by `CMSG_FIRSTHDR` or
+/// `CMSG_NXTHDR` for the current `recvmsg` result. Its `cmsg_len` must describe
+/// initialized kernel-written control data in the backing control buffer.
 unsafe fn close_rights_cmsg_fds(cmsg: *mut libc::cmsghdr) {
     let header_len = libc::CMSG_LEN(0) as usize;
-    let cmsg_len = (*cmsg).cmsg_len;
+    let cmsg_len = (*cmsg).cmsg_len as usize;
     if cmsg_len <= header_len {
         return;
     }
