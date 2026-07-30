@@ -50,7 +50,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 34       | 28   | 2026-07-30   |
-| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 16       | 13   | 2026-07-30   |
+| [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 17       | 14   | 2026-07-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 35       | 27   | 2026-07-29   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
@@ -116,4 +116,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Pane Slot Identity](patterns/pane-slot-identity.md)                                                 | correctness        | 7        | 3    | 2026-07-26   |
 | [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 21       | 10   | 2026-07-22   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
-| [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 2        | 1    | 2026-06-22   |
+| [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 6        | 3    | 2026-07-30   |

@@ -3,7 +3,7 @@ id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
 last_updated: 2026-07-30
-ref_count: 13
+ref_count: 14
 ---
 
 # Cross-Platform Paths
@@ -169,3 +169,17 @@ consider using path libraries for cross-platform code.
   re-export, and the binary's inherited-transport claim behind `#[cfg(unix)]`,
   leaving non-Unix builds on the existing async resize path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Unix-only fd broker startup was called from the cross-platform sidecar binary
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/bin/vimeflow-backend.rs`
+- **Finding:** The sidecar binary called `BackendState::start_fd_broker` after
+  constructing `BackendState`, but that method only exists under `#[cfg(unix)]`.
+  Non-Unix targets therefore failed to compile even though the sibling inherited
+  fd-transport claim had already been cfg-gated.
+- **Fix:** Kept the inherited transport binding, transport-claimed log, and
+  broker-start block under `#[cfg(unix)]`, leaving non-Unix builds on the
+  existing async resize path with no unconstrained `None` binding.
+- **Commit:** same commit as this entry

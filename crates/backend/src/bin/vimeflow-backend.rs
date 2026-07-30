@@ -21,8 +21,7 @@ async fn main() {
     // transport end would wedge EOF/channel-failure detection.
     #[cfg(unix)]
     let pty_fd_transport = vimeflow_lib::fd_transport::claim_inherited_transport();
-    #[cfg(not(unix))]
-    let pty_fd_transport = None;
+    #[cfg(unix)]
     if pty_fd_transport.is_some() {
         log::info!("pty fd transport claimed on fd 3");
     }
@@ -50,6 +49,7 @@ async fn main() {
 
     // Winsize-ownership broker (VIM-399): PTY masters get offered to the
     // native addon over the claimed transport for engine-side TIOCSWINSZ.
+    #[cfg(unix)]
     if let Some(transport_fd) = pty_fd_transport {
         state.start_fd_broker(transport_fd);
     }

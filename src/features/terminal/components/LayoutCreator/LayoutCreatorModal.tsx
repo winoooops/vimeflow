@@ -19,6 +19,7 @@ import {
 } from '@/components/Dialog'
 import { IconButton } from '@/components/IconButton'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import type { CustomPaneLayoutId } from '../../../sessions/types'
 import {
   MAX_LAYOUT_TRACKS,
@@ -182,8 +183,6 @@ const outsideGutterButtonBaseClass =
 const outsideColumnGutterButtonClass = `${outsideGutterButtonBaseClass} h-5 w-8`
 
 const outsideRowGutterButtonClass = `${outsideGutterButtonBaseClass} h-8 w-5`
-
-const showTrackStepperTooltips = false
 
 const paneStyleFor = (
   slot: DraftLayoutSlot,
@@ -753,7 +752,7 @@ const TrackStepper = ({
       icon="remove"
       label={`Remove ${label}`}
       size="sm"
-      showTooltip={showTrackStepperTooltips}
+      showTooltip={TOOLTIP_SUPPRESSED}
       disabled={value <= 1}
       className="h-5 w-5"
       onClick={(): void => onChange(value - 1)}
@@ -769,7 +768,7 @@ const TrackStepper = ({
       icon="add"
       label={`Add ${label}`}
       size="sm"
-      showTooltip={showTrackStepperTooltips}
+      showTooltip={TOOLTIP_SUPPRESSED}
       disabled={value >= MAX_LAYOUT_TRACKS}
       className="h-5 w-5"
       onClick={(): void => onChange(value + 1)}
