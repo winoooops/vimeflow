@@ -25,6 +25,7 @@ export type {
   NativeOverlayActionEvent,
   NativeOverlayActionHandler,
   NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayLayoutCreatorDialogPayload,
   NativeOverlayNewSessionDialogPayload,
   NativeOverlaySessionSwitcherDialogPayload,
 } from '@/components/base/floating/nativeOverlay'
@@ -295,11 +296,15 @@ const DialogRoot = ({
   const nativeOverlayQueueRef = useRef<Promise<void>>(Promise.resolve())
   const nativeOverlayGenerationRef = useRef(0)
   const canAttemptNativeRef = useRef(false)
+  const nativeOverlayActionsRef = useRef(nativeOverlayActions)
+  const onOpenChangeRef = useRef(onOpenChange)
 
   const [nativeAttempt, setNativeAttempt] = useState<
     'idle' | 'pending' | 'active' | 'failed'
   >('idle')
   restoreFocusRef.current = restoreFocus
+  nativeOverlayActionsRef.current = nativeOverlayActions
+  onOpenChangeRef.current = onOpenChange
 
   const transport = selectFloatingTransport(nativeOverlay)
 
@@ -387,8 +392,8 @@ const DialogRoot = ({
           theme: nativeOverlayThemeSnapshot(),
         },
         {
-          actions: nativeOverlayActions,
-          onClose: (): void => onOpenChange(false),
+          actions: (actionId) => nativeOverlayActionsRef.current.get(actionId),
+          onClose: (): void => onOpenChangeRef.current(false),
         }
       )
 
@@ -411,14 +416,7 @@ const DialogRoot = ({
     return (): void => {
       cancelled.current = true
     }
-  }, [
-    canAttemptNative,
-    nativeOverlayActions,
-    nativeOverlayPayload,
-    onOpenChange,
-    placement,
-    surfaceId,
-  ])
+  }, [canAttemptNative, nativeOverlayPayload, placement, surfaceId])
 
   const requestClose = useCallback((): void => {
     if (dismissDisabled) {

@@ -1,6 +1,8 @@
+// cspell:ignore ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   __resetNativeOverlayForTest,
+  isNativeOverlayFeatureEnabled,
   nativeOverlayThemeSnapshot,
   openNativeOverlay,
   type NativeOverlayActionEvent,
@@ -115,6 +117,23 @@ describe('nativeOverlayThemeSnapshot', () => {
         '--shadow-modal': 'var(--shadow-test-modal)',
       },
     })
+  })
+})
+
+describe('isNativeOverlayFeatureEnabled', () => {
+  test('enables native overlays when the native Ghostty bridge exists', () => {
+    window.vimeflow = {
+      invoke: <T>(): Promise<T> => Promise.resolve(null as T),
+      listen: vi.fn(() => Promise.resolve(vi.fn())),
+      ghosttyNative: {
+        update: vi.fn(() => Promise.resolve()),
+        data: vi.fn(() => Promise.resolve()),
+        focus: vi.fn(() => Promise.resolve()),
+        destroy: vi.fn(() => Promise.resolve()),
+      },
+    }
+
+    expect(isNativeOverlayFeatureEnabled()).toBe(true)
   })
 })
 
@@ -254,6 +273,80 @@ describe('openNativeOverlay', () => {
       actionId: 'copy',
       feedback: 'copy',
       ok: false,
+    })
+  })
+
+  test('reports retained action success without feedback when requested', async () => {
+    const open = deferredOpen()
+    const bridge = installBridge([open.promise])
+
+    const result = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([
+        [
+          'save',
+          {
+            retainSession: true,
+            reportSuccess: true,
+            run: (): boolean => true,
+          },
+        ],
+      ]),
+      onClose: vi.fn(),
+    })
+
+    open.resolve({ accepted: true })
+    await expect(result).resolves.toBe(true)
+
+    bridge.action({
+      surfaceId: 'surface-1',
+      actionId: 'save',
+      closeOnSelect: false,
+    })
+
+    await Promise.resolve()
+
+    expect(bridge.actionResult).toHaveBeenCalledWith({
+      surfaceId: 'surface-1',
+      actionId: 'save',
+      ok: true,
+    })
+  })
+
+  test('reports retained action exceptions even without feedback', async () => {
+    const open = deferredOpen()
+    const bridge = installBridge([open.promise])
+
+    const result = openNativeOverlay(requestForSurface('surface-1'), {
+      actions: new Map([
+        [
+          'save',
+          {
+            retainSession: true,
+            run: (): void => {
+              throw new Error('Invalid layout')
+            },
+          },
+        ],
+      ]),
+      onClose: vi.fn(),
+    })
+
+    open.resolve({ accepted: true })
+    await expect(result).resolves.toBe(true)
+
+    bridge.action({
+      surfaceId: 'surface-1',
+      actionId: 'save',
+      closeOnSelect: false,
+    })
+
+    await Promise.resolve()
+
+    expect(bridge.actionResult).toHaveBeenCalledWith({
+      surfaceId: 'surface-1',
+      actionId: 'save',
+      ok: false,
+      error: 'Invalid layout',
     })
   })
 })

@@ -4,18 +4,30 @@ import path from 'node:path'
 import { clickBySelector } from '../../shared/actions.js'
 
 const FIXTURE_NAME = 'vimeflow-e2e-fixture.txt'
-const FIXTURE_PATH = path.join(os.homedir(), FIXTURE_NAME)
 const FIXTURE_CONTENT = `__E2E_FIXTURE__ ${Date.now()}\nsecond line\n`
 
+const resolveExplorerPath = (explorerPath: string): string => {
+  if (explorerPath === '~') {
+    return os.homedir()
+  }
+
+  if (explorerPath.startsWith('~/')) {
+    return path.join(os.homedir(), explorerPath.slice(2))
+  }
+
+  return explorerPath
+}
+
 describe('File explorer → editor flow', () => {
-  before(() => {
-    fs.writeFileSync(FIXTURE_PATH, FIXTURE_CONTENT)
-  })
+  let fixturePath: string | null = null
+
   after(() => {
-    try {
-      fs.unlinkSync(FIXTURE_PATH)
-    } catch {
-      // Fixture may already be gone; ignore.
+    if (fixturePath !== null) {
+      try {
+        fs.unlinkSync(fixturePath)
+      } catch {
+        // Fixture may already be gone; ignore.
+      }
     }
   })
 
@@ -31,6 +43,11 @@ describe('File explorer → editor flow', () => {
 
     const explorer = await $('[data-testid="file-explorer"]')
     await explorer.waitForDisplayed({ timeout: 15_000 })
+
+    const explorerPath =
+      (await explorer.getAttribute('data-current-path')) ?? '~'
+    fixturePath = path.join(resolveExplorerPath(explorerPath), FIXTURE_NAME)
+    fs.writeFileSync(fixturePath, FIXTURE_CONTENT)
 
     const refreshButton = await $('[aria-label="Refresh file tree"]')
     await refreshButton.waitForDisplayed({ timeout: 15_000 })

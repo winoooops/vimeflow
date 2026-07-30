@@ -3659,6 +3659,7 @@ const WorkspaceViewContent = (): ReactElement => {
 
       <LayoutCreatorModal
         isOpen={layoutCreatorOpen}
+        nativeOverlay
         existingLayouts={customPaneLayouts}
         seedLayout={layoutCreatorSeedLayout}
         editLayout={layoutCreatorEditLayout}

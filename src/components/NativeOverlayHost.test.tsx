@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type {
   NativeOverlayCommandPaletteDialogPayload,
+  NativeOverlayLayoutCreatorDialogPayload,
   NativeOverlayRequest,
 } from '@/components/base/floating/nativeOverlay'
 import { NativeOverlayHost } from './NativeOverlayHost'
@@ -93,6 +94,7 @@ const compositeRequest: NativeOverlayRequest = {
                 id: 'duplicate-custom',
                 label: 'Duplicate Main + bottom',
                 icon: 'content_copy',
+                closeOnSelect: false,
               },
               {
                 id: 'toggle-custom',
@@ -289,6 +291,25 @@ const newSessionRequest: NativeOverlayRequest = {
   },
 }
 
+const layoutCreatorRequest: NativeOverlayRequest & {
+  payload: NativeOverlayLayoutCreatorDialogPayload
+} = {
+  surfaceId: 'dialog-layout-creator',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'layout-creator',
+    ariaLabel: 'Layout Creator',
+    existingLayouts: [],
+    actions: {
+      cancel: 'layout-creator:cancel',
+      save: 'layout-creator:save',
+    },
+  },
+}
+
 const sessionSwitcherRequest: NativeOverlayRequest = {
   surfaceId: 'dialog-session-switcher',
   kind: 'dialog',
@@ -316,6 +337,7 @@ const installNativeOverlayHostBridge = (): {
   ready: ReturnType<typeof vi.fn>
   action: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
+  setMousePassthrough: ReturnType<typeof vi.fn>
   ownerOverlayClose: ReturnType<typeof vi.fn>
   emitRender: (payload: unknown) => void
   emitClear: () => void
@@ -334,6 +356,7 @@ const installNativeOverlayHostBridge = (): {
   const ready = vi.fn(() => Promise.resolve())
   const action = vi.fn(() => Promise.resolve())
   const close = vi.fn(() => Promise.resolve())
+  const setMousePassthrough = vi.fn(() => Promise.resolve())
   const ownerOverlayClose = vi.fn(() => Promise.resolve())
 
   const handleRenderEvent = (event: Event): void => {
@@ -371,6 +394,7 @@ const installNativeOverlayHostBridge = (): {
       ready,
       action,
       close,
+      setMousePassthrough,
       onRender: vi.fn((callback: (payload: unknown) => void) => {
         renderListener = callback
 
@@ -406,6 +430,7 @@ const installNativeOverlayHostBridge = (): {
     ready,
     action,
     close,
+    setMousePassthrough,
     ownerOverlayClose,
     emitRender: (payload): void => {
       fireEvent(window, new CustomEvent(renderEvent, { detail: payload }))
@@ -495,6 +520,7 @@ describe('NativeOverlayHost', () => {
       name: 'EDIT trace details',
     })
     expect(dialog).toHaveClass('w-[min(24rem,calc(100vw-2rem))]')
+    expect(dialog).toHaveClass('!bg-surface-container')
     expect(within(dialog).getByText('App.tsx')).toBeInTheDocument()
     expect(
       within(dialog).getByRole('button', { name: 'Copy trace details' })
@@ -814,6 +840,61 @@ describe('NativeOverlayHost', () => {
     })
   })
 
+  test('renders layout creator requests and returns the saved layout', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(
+      <NativeOverlayHost
+        dialogRenderers={{
+          'layout-creator': ({ request: overlayRequest, dispatchAction }) => (
+            <div role="dialog" aria-label={overlayRequest.payload.ariaLabel}>
+              <button
+                type="button"
+                onClick={(): void => {
+                  dispatchAction({
+                    actionId: 'layout-creator:save',
+                    closeOnSelect: false,
+                    query: JSON.stringify({
+                      schemaVersion: 1,
+                      title: 'Review layout',
+                      source: 'workspace',
+                    }),
+                  })
+                }}
+              >
+                Save & apply
+              </button>
+            </div>
+          ),
+        }}
+      />
+    )
+
+    bridge.emitRender(layoutCreatorRequest)
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Layout Creator',
+    })
+    expect(dialog).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save & apply' }))
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'dialog-layout-creator',
+      actionId: 'layout-creator:save',
+      closeOnSelect: false,
+      query: expect.any(String),
+    })
+
+    const action = bridge.action.mock.calls[
+      bridge.action.mock.calls.length - 1
+    ]?.[0] as { query?: string } | undefined
+    expect(JSON.parse(action?.query ?? '')).toMatchObject({
+      schemaVersion: 1,
+      title: 'Review layout',
+      source: 'workspace',
+    })
+  })
+
   test('renders session switcher dialog requests and dispatches the commit action', async () => {
     const user = userEvent.setup()
     const bridge = installNativeOverlayHostBridge()
@@ -1041,8 +1122,9 @@ describe('NativeOverlayHost', () => {
     expect(bridge.action).toHaveBeenCalledWith({
       surfaceId: 'surface-3',
       actionId: 'duplicate-custom',
+      closeOnSelect: false,
     })
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 
   test('renders copy detail rows with anchor width and copied feedback', async () => {

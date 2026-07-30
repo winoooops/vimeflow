@@ -3,7 +3,11 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { __resetNativeOverlayForTest } from '@/components/base/floating/nativeOverlay'
-import { Dialog, type NativeOverlayCommandPaletteDialogPayload } from './Dialog'
+import {
+  Dialog,
+  type NativeOverlayActionHandler,
+  type NativeOverlayCommandPaletteDialogPayload,
+} from './Dialog'
 
 const nativeDialogPayload: NativeOverlayCommandPaletteDialogPayload = {
   kind: 'dialog',
@@ -53,11 +57,15 @@ const installNativeOverlayBridge = (
 ): {
   open: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
+  emitAction: (event: unknown) => void
+  emitClose: (event: unknown) => void
 } => {
   const open = vi.fn(() =>
     typeof result === 'boolean' ? Promise.resolve({ accepted: result }) : result
   )
   const close = vi.fn(() => Promise.resolve())
+  let actionListener: ((event: unknown) => void) | null = null
+  let closeListener: ((event: unknown) => void) | null = null
 
   window.vimeflow = {
     invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
@@ -67,12 +75,25 @@ const installNativeOverlayBridge = (
       close,
       actionResult: vi.fn(() => Promise.resolve()),
       resume: vi.fn(() => Promise.resolve()),
-      onAction: vi.fn(() => vi.fn()),
-      onClose: vi.fn(() => vi.fn()),
+      onAction: vi.fn((callback: (event: unknown) => void) => {
+        actionListener = callback
+
+        return vi.fn()
+      }),
+      onClose: vi.fn((callback: (event: unknown) => void) => {
+        closeListener = callback
+
+        return vi.fn()
+      }),
     },
   }
 
-  return { open, close }
+  return {
+    open,
+    close,
+    emitAction: (event): void => actionListener?.(event),
+    emitClose: (event): void => closeListener?.(event),
+  }
 }
 
 const deferredOpen = (): {
@@ -264,6 +285,76 @@ describe('Dialog', () => {
 
     await waitFor(() => expect(bridge.open).toHaveBeenCalledTimes(2))
     expect(bridge.close).not.toHaveBeenCalled()
+  })
+
+  test('updates native callbacks without reopening the surface', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge(true)
+    const firstAction = vi.fn()
+    const latestAction = vi.fn()
+    const firstClose = vi.fn()
+    const latestClose = vi.fn()
+
+    const actions = (
+      handler: () => void
+    ): ReadonlyMap<string, NativeOverlayActionHandler> =>
+      new Map([
+        [
+          nativeDialogPayload.actions.setQuery,
+          { retainSession: true, run: handler },
+        ],
+      ])
+
+    const { rerender } = render(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        nativeOverlayActions={actions(firstAction)}
+        onOpenChange={firstClose}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    const request = bridge.open.mock.calls[0]?.[0] as
+      | { surfaceId: string }
+      | undefined
+    if (request === undefined) {
+      throw new Error('expected native overlay open request')
+    }
+
+    rerender(
+      <Dialog
+        open
+        nativeOverlay
+        nativeOverlayPayload={nativeDialogPayload}
+        nativeOverlayActions={actions(latestAction)}
+        onOpenChange={latestClose}
+        aria-label="Command palette"
+      >
+        <p>Local body</p>
+      </Dialog>
+    )
+
+    await Promise.resolve()
+    expect(bridge.open).toHaveBeenCalledOnce()
+
+    bridge.emitAction({
+      surfaceId: request.surfaceId,
+      actionId: nativeDialogPayload.actions.setQuery,
+      closeOnSelect: false,
+    })
+    await waitFor(() => expect(latestAction).toHaveBeenCalledOnce())
+    expect(firstAction).not.toHaveBeenCalled()
+
+    bridge.emitClose({ surfaceId: request.surfaceId, reason: 'outside' })
+    expect(latestClose).toHaveBeenCalledWith(false)
+    expect(firstClose).not.toHaveBeenCalled()
   })
 
   test('closes a late accepted native dialog after dismissal', async () => {
