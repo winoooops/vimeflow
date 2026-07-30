@@ -1606,13 +1606,11 @@ const WorkspaceViewContent = (): ReactElement => {
   const handleCreateCustomLayout = useCallback((): void => {
     setLayoutCreatorEditId(null)
     setLayoutCreatorOpen(true)
-    setIsLayoutDisplayMenuOpen(false)
   }, [])
 
   const handleEditCustomLayout = useCallback((layoutId: PaneLayoutId): void => {
     setLayoutCreatorEditId(layoutId)
     setLayoutCreatorOpen(true)
-    setIsLayoutDisplayMenuOpen(false)
   }, [])
 
   const handleDuplicateCustomLayout = useCallback(
