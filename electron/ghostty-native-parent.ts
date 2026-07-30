@@ -1421,15 +1421,6 @@ export class GhosttyNativeParentController {
       return
     }
 
-    if (
-      resizeState.lastResize?.cols === cols &&
-      resizeState.lastResize.rows === rows
-    ) {
-      resizeState.pendingResize = null
-
-      return
-    }
-
     // Single-writer rule (VIM-399 Phase 4): once the addon owns the winsize
     // ioctl, this message is metadata only. Keep every distinct size, but
     // serialize the IPC calls so a stale request cannot overtake release.
@@ -1442,6 +1433,8 @@ export class GhosttyNativeParentController {
     ) {
       resizeState.pendingResize = null
       if (resizeState.resizeInFlight) {
+        // A-B-A drag reversals must enter the FIFO even when A is the in-flight
+        // lastResize; only consecutive duplicate queue entries are redundant.
         const lastQueued = resizeState.nativeOwnedResizeQueue.at(-1)
         if (lastQueued?.cols !== cols || lastQueued.rows !== rows) {
           resizeState.nativeOwnedResizeQueue.push({ cols, rows })
@@ -1450,7 +1443,23 @@ export class GhosttyNativeParentController {
         return
       }
 
+      if (
+        resizeState.lastResize?.cols === cols &&
+        resizeState.lastResize.rows === rows
+      ) {
+        return
+      }
+
       this.forwardPtyResize(resizeState, sessionId, cols, rows)
+
+      return
+    }
+
+    if (
+      resizeState.lastResize?.cols === cols &&
+      resizeState.lastResize.rows === rows
+    ) {
+      resizeState.pendingResize = null
 
       return
     }

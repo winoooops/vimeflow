@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-30
-ref_count: 93
+ref_count: 94
 ---
 
 # Async Race Conditions
@@ -1126,4 +1126,18 @@ prevent showing previous data.
 - **Fix:** Added a FIFO queue for native-owned resize metadata and drain it
   ahead of ordinary pending Rust-owned resizes after each acknowledgement.
   Covered the release transition with a delayed-sidecar regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 101. Native-owned resize queue dropped drag reversals
+
+- **Source:** github-codex-connector | PR #759 round 2 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native-owned resize path serialized requests but still ran
+  the shared last-resize dedupe before queueing in-flight metadata. An A-B-A
+  drag could drop the final A while the first A was in flight, letting queued B
+  become the stale final PTY size after Rust reacquired ownership.
+- **Fix:** Check native-owned in-flight resizes before the shared dedupe and
+  dedupe only consecutive queue-tail duplicates there. Added a delayed-sidecar
+  regression test that drains A, B, A across the release transition.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
