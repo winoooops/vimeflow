@@ -118,17 +118,22 @@ pub struct FdBroker {
 impl FdBroker {
     /// Creates the broker and spawns its blocking read loop. `transport_fd`
     /// is the claimed stdio\[3\] end (see `fd_transport::claim_inherited_transport`).
-    pub fn start(transport_fd: RawFd, pty: PtyState) -> Arc<Self> {
+    pub fn start(transport_fd: RawFd, pty: PtyState) -> Option<Arc<Self>> {
         let broker = Arc::new(Self {
             transport_fd,
             inner: Mutex::new(BrokerInner::default()),
         });
         let reader = Arc::clone(&broker);
-        std::thread::Builder::new()
+        if let Err(err) = std::thread::Builder::new()
             .name("pty-fd-broker".into())
             .spawn(move || reader.read_loop(pty))
-            .expect("spawn pty-fd-broker thread");
-        broker
+        {
+            log::warn!(
+                "fd broker: failed to spawn broker thread ({err}); staying on async resize path"
+            );
+            return None;
+        }
+        Some(broker)
     }
 
     /// Whether the native side currently owns the winsize ioctl for this
@@ -146,11 +151,12 @@ impl FdBroker {
     /// Called on session spawn and on deferred `request-fd` fulfillment.
     /// A failure leaves the session `RUST_OWNED` — never worse than today.
     pub fn offer_fd(&self, session_id: &str, generation: u64, master_fd: OwnedFd) {
-        let lease_id = {
+        let (lease_id, retired) = {
             let mut inner = self.inner.lock().expect("broker lock");
             inner.next_lease_id += 1;
             let lease_id = inner.next_lease_id;
-            inner.leases.insert(
+            inner.deferred_requests.remove(session_id);
+            let retired = inner.leases.insert(
                 session_id.to_string(),
                 Lease {
                     lease_id,
@@ -158,8 +164,16 @@ impl FdBroker {
                     native_owned: false,
                 },
             );
-            lease_id
+            (lease_id, retired)
         };
+
+        if let Some(retired) = retired {
+            self.send(&WireMessage::Detach {
+                session_id: session_id.to_string(),
+                generation: retired.generation,
+                lease_id: retired.lease_id,
+            });
+        }
 
         let msg = WireMessage::Fd {
             session_id: session_id.to_string(),
@@ -438,7 +452,8 @@ mod tests {
     fn start_broker() -> (Arc<FdBroker>, AddonSim, PtyState) {
         let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
         let pty = PtyState::default();
-        let broker = FdBroker::start(rust_end.as_raw_fd(), pty.clone());
+        let broker =
+            FdBroker::start(rust_end.as_raw_fd(), pty.clone()).expect("broker should start");
         // The broker does not own rust_end; keep it alive for the test.
         std::mem::forget(rust_end);
         (broker, AddonSim { fd: addon_end }, pty)
@@ -494,8 +509,48 @@ mod tests {
 
         broker.offer_fd("s1", 7, duplicate_fd(probe.as_raw_fd()));
         match addon.recv() {
+            WireMessage::Detach { lease_id, .. } => assert_eq!(lease_id, 1),
+            other => panic!("expected detach message, got {other:?}"),
+        }
+        match addon.recv() {
             WireMessage::Fd { lease_id, .. } => assert_eq!(lease_id, 2, "lease must be fresh"),
             other => panic!("expected fd message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_offer_fd_detaches_retired_lease_before_replacement() {
+        let (broker, addon, _pty) = start_broker();
+        let probe = probe_fd();
+
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
+        match addon.recv() {
+            WireMessage::Fd { lease_id, .. } => assert_eq!(lease_id, 1),
+            other => panic!("expected fd message, got {other:?}"),
+        }
+
+        broker.offer_fd("s1", 4, duplicate_fd(probe.as_raw_fd()));
+        match addon.recv() {
+            WireMessage::Detach {
+                generation,
+                lease_id,
+                ..
+            } => {
+                assert_eq!(generation, 3);
+                assert_eq!(lease_id, 1);
+            }
+            other => panic!("expected detach for retired lease, got {other:?}"),
+        }
+        match addon.recv() {
+            WireMessage::Fd {
+                generation,
+                lease_id,
+                ..
+            } => {
+                assert_eq!(generation, 4);
+                assert_eq!(lease_id, 2);
+            }
+            other => panic!("expected replacement fd message, got {other:?}"),
         }
     }
 
@@ -621,6 +676,7 @@ mod tests {
         // Same-generation remount: fresh lease 2 replaces lease 1.
         broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
+        let _ = addon.recv();
         addon.send(&WireMessage::NativeReady {
             session_id: "s1".into(),
             generation: 3,
@@ -714,7 +770,8 @@ mod tests {
 
         let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
         let pty_state = PtyState::default();
-        let broker = FdBroker::start(rust_end.as_raw_fd(), pty_state.clone());
+        let broker =
+            FdBroker::start(rust_end.as_raw_fd(), pty_state.clone()).expect("broker should start");
         pty_state.set_fd_broker(Arc::clone(&broker));
         std::mem::forget(rust_end);
         let addon = AddonSim { fd: addon_end };
@@ -810,7 +867,7 @@ mod tests {
     fn test_transport_eof_reclaims_all_leases() {
         let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
         let pty = PtyState::default();
-        let broker = FdBroker::start(rust_end.as_raw_fd(), pty);
+        let broker = FdBroker::start(rust_end.as_raw_fd(), pty).expect("broker should start");
         std::mem::forget(rust_end);
         let probe = probe_fd();
         broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));

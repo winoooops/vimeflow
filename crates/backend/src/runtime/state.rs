@@ -116,8 +116,11 @@ impl BackendState {
     /// a no-op world (never called) is the async-resize-path world.
     #[cfg(unix)]
     pub fn start_fd_broker(&self, transport_fd: std::os::fd::RawFd) {
-        let broker = crate::terminal::fd_broker::FdBroker::start(transport_fd, self.pty.clone());
-        self.pty.set_fd_broker(broker);
+        if let Some(broker) =
+            crate::terminal::fd_broker::FdBroker::start(transport_fd, self.pty.clone())
+        {
+            self.pty.set_fd_broker(broker);
+        }
     }
 
     /// Returns test backend state and its event sink.

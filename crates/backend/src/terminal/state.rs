@@ -397,6 +397,13 @@ impl PtyState {
             .map(|bridge_dir| (bridge_dir.clone(), session.shim_dir.clone()))
     }
 
+    /// Current generation for a live PTY session.
+    #[cfg(unix)]
+    pub fn generation(&self, session_id: &SessionId) -> Option<u64> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.get(session_id).map(|session| session.generation)
+    }
+
     /// Remove a PTY session only if its generation matches the expected value.
     /// Prevents a stale reader thread from removing a replacement session.
     pub fn remove_if_generation(

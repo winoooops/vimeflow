@@ -1141,3 +1141,46 @@ prevent showing previous data.
   helper for call sites that already hold `g_pty_protocol_mutex`, so fd load and
   send are serialized with shutdown without deadlocking the bind path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 102. Session-id reuse could strand retired fd leases
+
+- **Source:** github-codex-connector | PR #761 round 4 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** The fd broker keyed active leases by session id and overwrote
+  the old lease before the old reader's generation-stamped cleanup necessarily
+  ran. A rapid kill plus same-id respawn could install the replacement lease,
+  causing the delayed old cleanup to skip detach and leave native holding the
+  retired PTY fd binding.
+- **Fix:** Retire any existing lease with a detach before `offer_fd` installs
+  a replacement, clear stale deferred requests for the same session id, and
+  retire the broker lease synchronously from `kill_pty_inner` before removing
+  the old session from `PtyState`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 103. Best-effort broker bootstrap could still panic
+
+- **Source:** github-codex-connector | PR #761 round 4 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** `FdBroker::start` used `expect` on the broker reader thread
+  spawn. Under thread or resource exhaustion, the sidecar would panic even
+  though the fd transport is supposed to degrade to the older async resize path.
+- **Fix:** Made broker startup return `Option<Arc<FdBroker>>`, log thread
+  spawn failures, and only install the broker into `PtyState` when the reader
+  thread starts successfully.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 104. Native detach left release retries alive
+
+- **Source:** github-codex-connector | PR #761 round 4 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The wire `detach` path closed pending and bound fd state but
+  did not erase an in-flight `g_unacked_releases` entry for the same lease. If
+  a local release had already started, the retry loop could keep resending
+  release datagrams for a dead lease indefinitely.
+- **Fix:** Remove the unacked release record during detach and close its
+  orphan fd, mirroring the existing transport-shutdown cleanup for release
+  records that outlive their surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

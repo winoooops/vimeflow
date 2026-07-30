@@ -594,6 +594,18 @@ pub(crate) fn kill_pty_inner(
     // SIGTERM we still proceed with cleanup so the caller is not blocked.
     let _ = state.wait_for_exit(&request.session_id, std::time::Duration::from_secs(5));
 
+    // Retire the fd broker lease while the old session id is still present
+    // in PtyState. If we wait until after remove(), a rapid same-id respawn
+    // can install a newer generation before the old reader's cleanup runs,
+    // and the generation guard would correctly preserve the new lease while
+    // accidentally leaving the old native binding attached.
+    #[cfg(unix)]
+    if let Some(generation) = state.generation(&request.session_id) {
+        if let Some(broker) = state.fd_broker() {
+            broker.on_session_exit(&request.session_id, generation);
+        }
+    }
+
     // Remove from state (no-op if NotPresent, the safe path above).
     let removed = state.remove(&request.session_id);
 

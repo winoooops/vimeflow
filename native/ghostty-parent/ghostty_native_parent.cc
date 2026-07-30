@@ -1179,6 +1179,13 @@ void HandlePtyInboundMessage(const std::string &json, int received_fd) {
       close(pending->second.fd);
       g_pending_pty_fds.erase(pending);
     }
+    auto release = g_unacked_releases.find(lease_id);
+    if (release != g_unacked_releases.end()) {
+      if (release->second.orphan_fd >= 0) {
+        close(release->second.orphan_fd);
+      }
+      g_unacked_releases.erase(release);
+    }
     g_pty_bind_intents.erase(session_id);
     // A bound slot for this lease: Rust already retired it (the session is
     // gone), so close directly — no release handshake.
