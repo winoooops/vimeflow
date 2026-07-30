@@ -79,7 +79,6 @@ const workspaceTerminalMock = vi.hoisted(() => {
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   }
@@ -366,9 +365,6 @@ describe('WorkspaceView', () => {
     workspaceTerminalMock.service.setActiveSession.mockResolvedValue(undefined)
     workspaceTerminalMock.service.reorderSessions.mockResolvedValue(undefined)
     workspaceTerminalMock.service.updateSessionCwd.mockResolvedValue(undefined)
-    workspaceTerminalMock.service.setSessionActivityPanelCollapsed.mockResolvedValue(
-      undefined
-    )
 
     // Default: clean buffer with no file open. Mirrors the real hook's
     // initial state so existing tests don't see a dirty buffer or get

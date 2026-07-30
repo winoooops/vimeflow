@@ -227,7 +227,6 @@ const makeMockService = (): ITerminalService => ({
   setActiveSession: vi.fn(() => Promise.resolve(undefined)),
   reorderSessions: vi.fn(() => Promise.resolve(undefined)),
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
-  setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
   killEphemeralPtys: vi.fn(),
   setWorkspaceSessions: vi.fn(() => Promise.resolve(undefined)),
 })

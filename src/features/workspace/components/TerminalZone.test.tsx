@@ -57,7 +57,6 @@ const mockService: ITerminalService = {
   setActiveSession: vi.fn().mockResolvedValue(undefined),
   reorderSessions: vi.fn().mockResolvedValue(undefined),
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-  setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   killEphemeralPtys: vi.fn(),
   setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 }

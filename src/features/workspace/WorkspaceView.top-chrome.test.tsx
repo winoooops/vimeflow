@@ -322,7 +322,6 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       setActiveSession: vi.fn().mockResolvedValue(undefined),
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-      setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     })
   })
 

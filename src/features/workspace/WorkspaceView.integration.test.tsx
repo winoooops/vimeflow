@@ -13,7 +13,6 @@ import { WorkspaceView } from './WorkspaceView'
 import { SettingsProvider } from '../settings/SettingsProvider'
 import * as useCodeMirrorModule from '../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../editor/hooks/useVimMode'
-import { createTerminalService } from '../terminal/services/terminalService'
 import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
 import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
@@ -100,7 +99,6 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
@@ -392,15 +390,6 @@ describe('WorkspaceView Integration Tests', () => {
       expect(
         screen.queryByTestId('agent-status-panel-header')
       ).not.toBeInTheDocument()
-
-      // Session-scoped UI state — must NOT call the agent/PTY backend.
-      const serviceResults = vi.mocked(createTerminalService).mock.results
-      const serviceResult = serviceResults[serviceResults.length - 1]
-
-      const service = serviceResult?.value as {
-        setSessionActivityPanelCollapsed: ReturnType<typeof vi.fn>
-      }
-      expect(service.setSessionActivityPanelCollapsed).not.toHaveBeenCalled()
 
       await user.click(screen.getByTestId('activity-toggle-fixed'))
 
