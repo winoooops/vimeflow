@@ -104,6 +104,10 @@ struct PtyFdSlot {
 constexpr int kPtyRolePrimary = 0;
 constexpr int kPtyRoleSecondary = 1;
 
+const char *PtyRoleName(int role) {
+  return role == kPtyRolePrimary ? "primary" : "secondary";
+}
+
 struct SurfaceHandle {
   napi_env env = nullptr;
   napi_threadsafe_function input_tsfn = nullptr;
@@ -660,7 +664,7 @@ bool ExtractJsonU64(const std::string &json, const char *key, uint64_t *out) {
   return true;
 }
 
-void SendPtyTransportDatagram(const std::string &json) {
+void SendPtyTransportDatagramLocked(const std::string &json) {
   const int transport_fd =
       g_pty_fd_transport_parent.load(std::memory_order_acquire);
   if (transport_fd < 0) {
@@ -690,6 +694,11 @@ void SendPtyTransportDatagram(const std::string &json) {
     }
     return;
   }
+}
+
+void SendPtyTransportDatagram(const std::string &json) {
+  std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+  SendPtyTransportDatagramLocked(json);
 }
 
 // Starts the release handshake for the exact live slot lease whose fd failed a
@@ -829,6 +838,9 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
                          int rows) {
   bool need_release = false;
   uint64_t failed_lease_id = 0;
+  int failed_errno = 0;
+  std::string failed_session_id;
+  const char *failed_role = PtyRoleName(role);
   WinsizeTimingReport timing_report;
   const auto callback_entry = std::chrono::steady_clock::now();
   {
@@ -850,6 +862,10 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
     size.ws_row = (unsigned short)rows;
     size.ws_col = (unsigned short)columns;
     const bool ok = ioctl(slot.fd, TIOCSWINSZ, &size) == 0;
+    if (!ok) {
+      failed_errno = errno;
+      failed_session_id = slot.session_id;
+    }
     timing_report = RecordWinsizeTiming(
         (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - callback_entry)
@@ -862,6 +878,13 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
       need_release = slot.state != PtyFdSlot::State::Releasing;
       failed_lease_id = slot.lease_id;
     }
+  }
+  if (failed_errno != 0) {
+    fprintf(stderr,
+            "vimeflow: winsize ioctl failed session=%s role=%s: %s "
+            "(errno=%d)\n",
+            failed_session_id.c_str(), failed_role, strerror(failed_errno),
+            failed_errno);
   }
   if (timing_report.exceeded_sub_frame) {
     fprintf(stderr,
@@ -929,9 +952,9 @@ void CompletePtyBindLocked(SurfaceHandle *surface, int role,
     slot.failed = false;
   }
   g_pty_lease_slots[pending.lease_id] = {surface, role};
-  SendPtyTransportDatagram(PtyMessageJson(
+  SendPtyTransportDatagramLocked(PtyMessageJson(
       "native-ready", session_id, pending.generation, pending.lease_id,
-      role == kPtyRolePrimary ? "primary" : "secondary"));
+      PtyRoleName(role)));
 }
 
 // Detaches one role slot from the protocol because its surface is going

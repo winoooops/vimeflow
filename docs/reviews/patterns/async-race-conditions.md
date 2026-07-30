@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-30
-ref_count: 93
+ref_count: 94
 ---
 
 # Async Race Conditions
@@ -1126,4 +1126,18 @@ prevent showing previous data.
 - **Fix:** Added a FIFO queue for native-owned resize metadata and drain it
   ahead of ordinary pending Rust-owned resizes after each acknowledgement.
   Covered the release transition with a delayed-sidecar regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 101. Native transport send raced with concurrent fd close
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `SendPtyTransportDatagram` loaded the parent transport fd
+  without holding the protocol mutex, then called `send()` while shutdown could
+  exchange and close the same fd under that mutex. A close/reuse race could
+  write a protocol datagram to an unrelated descriptor instead of failing.
+- **Fix:** Split the sender into a mutex-protected public helper and a locked
+  helper for call sites that already hold `g_pty_protocol_mutex`, so fd load and
+  send are serialized with shutdown without deadlocking the bind path.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

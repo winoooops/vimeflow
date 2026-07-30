@@ -128,10 +128,10 @@ describe('Sidecar pty fd transport spawn options', () => {
       appDataDir: '/fake/data',
     })
 
-    expect(childSpawn).toHaveBeenCalledWith(
-      '/fake/vimeflow-backend',
-      ['--app-data-dir', '/fake/data']
-    )
+    expect(childSpawn).toHaveBeenCalledWith('/fake/vimeflow-backend', [
+      '--app-data-dir',
+      '/fake/data',
+    ])
   })
 })
 

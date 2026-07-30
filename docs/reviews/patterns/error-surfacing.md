@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-29
-ref_count: 53
+last_updated: 2026-07-30
+ref_count: 54
 ---
 
 # Error Surfacing
@@ -554,3 +554,18 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Retry interrupted sends and log non-recoverable send failures with the
   datagram type plus errno details so transport failures are observable.
 - **Commit:** same commit as this entry
+
+### 54. Native addon spawn notification threw through app bootstrap
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The fd-transport bootstrap guarded addon loading and socketpair
+  creation, but its returned `onSpawned` callback called
+  `notifyPtyFdTransportSpawned` without a local try/catch. A future native
+  throw there could reject the async app bootstrap instead of degrading to the
+  existing async resize path.
+- **Fix:** Wrapped the notification body in try/catch, logged a warning, and
+  added a regression test proving `onSpawned` does not throw when the addon
+  notification fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

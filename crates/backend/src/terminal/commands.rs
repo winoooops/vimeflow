@@ -27,6 +27,15 @@ fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
 const DEFAULT_UTF8_CTYPE: &str = "en_US.UTF-8";
 #[cfg(not(target_os = "macos"))]
 const DEFAULT_UTF8_CTYPE: &str = "C.UTF-8";
+const MAX_SESSION_ID_LEN: usize = 128;
+
+fn is_valid_session_id(session_id: &str) -> bool {
+    !session_id.is_empty()
+        && session_id.len() <= MAX_SESSION_ID_LEN
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
 
 fn is_utf8_locale(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
@@ -126,6 +135,14 @@ pub(crate) async fn spawn_pty_inner(
 
     log::info!("Using shell: {}", shell);
 
+    // Allow-list session_id to safe characters only (UUID format) and cap its
+    // length before allocating PTY resources. Block-lists miss edge cases like
+    // newlines which enable bash injection in generated bridge scripts; long
+    // IDs can also exceed the fixed fd-transport datagram budget.
+    if !is_valid_session_id(&request.session_id) {
+        return Err(format!("invalid session_id: {}", request.session_id));
+    }
+
     // Create PTY system
     let pty_system = native_pty_system();
 
@@ -159,17 +176,6 @@ pub(crate) async fn spawn_pty_inner(
         .map_err(|e| format!("invalid cwd '{}': {}", raw_cwd.display(), e))?;
     if !cwd.is_dir() {
         return Err(format!("cwd is not a directory: {}", cwd.display()));
-    }
-
-    // Allow-list session_id to safe characters only (UUID format).
-    // Block-lists miss edge cases like newlines which enable bash injection
-    // in generated bridge scripts.
-    if !request
-        .session_id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(format!("invalid session_id: {}", request.session_id));
     }
 
     // Generate statusline bridge files — skipped for ephemeral (burner) PTYs.
@@ -1048,11 +1054,7 @@ pub(crate) fn update_session_cwd_inner(
     request: UpdateSessionCwdRequest,
 ) -> Result<(), String> {
     // UUID-shape allow-list (same as spawn_pty)
-    if !request
-        .id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+    if !is_valid_session_id(&request.id) {
         return Err("invalid session id".into());
     }
     // Canonicalize before storing. `canonicalize` resolves symlinks, strips
@@ -1582,6 +1584,64 @@ mod tests {
 
         // Cleanup
         let _ = state.remove(&"test-session".to_string());
+    }
+
+    #[tokio::test]
+    async fn spawn_pty_rejects_oversized_session_id_before_opening_pty() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let session_id = "s".repeat(MAX_SESSION_ID_LEN + 1);
+
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache,
+            events,
+            SpawnPtyRequest {
+                session_id: session_id.clone(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+            &[],
+            true,
+        )
+        .await;
+
+        assert!(result.is_err(), "oversized session_id must be rejected");
+        assert!(!state.contains(&session_id));
+    }
+
+    #[tokio::test]
+    async fn spawn_pty_allows_max_length_session_id() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let session_id = "s".repeat(MAX_SESSION_ID_LEN);
+
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache,
+            events,
+            SpawnPtyRequest {
+                session_id: session_id.clone(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+            &[],
+            true,
+        )
+        .await;
+
+        assert!(result.is_ok(), "max-length session_id should be accepted");
+        let _ = state.remove(&session_id);
     }
 
     #[tokio::test]

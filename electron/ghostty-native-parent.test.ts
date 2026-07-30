@@ -195,6 +195,34 @@ describe('ghostty native parent', () => {
     expect(notifyPtyFdTransportSpawned).toHaveBeenCalledOnce()
   })
 
+  test('keeps pty fd transport bootstrap alive when spawn notification fails', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const notifyPtyFdTransportSpawned = vi.fn(() => {
+      throw new Error('notify failed')
+    })
+
+    try {
+      const bootstrap = createPtyFdTransportBeforeSpawn(false, '', {}, () => ({
+        create: vi.fn(),
+        setFrame: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+        createPtyFdTransport: vi.fn(() => 7),
+        notifyPtyFdTransportSpawned,
+      }))
+
+      expect(() => bootstrap?.onSpawned()).not.toThrow()
+      expect(warn).toHaveBeenCalledWith(
+        'pty fd transport spawn notification failed; async resize path remains available',
+        expect.any(Error)
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test('skips pty fd transport when direct fd path is disabled', () => {
     const loadNativeAddon = vi.fn()
 

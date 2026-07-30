@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-27
-ref_count: 6
+last_updated: 2026-07-30
+ref_count: 7
 ---
 
 # IPC Resource Bounds
@@ -200,4 +200,19 @@ not become repeated unhandled main-process failures.
 - **Fix:** Required `epoch` to be absent or a non-empty string in the shared pane
   payload validator and added regression coverage for object and empty-string
   epochs at the update/destroy IPC boundary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Renderer-controlled PTY session IDs need length bounds before fd transport
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`, `crates/backend/src/terminal/fd_transport.rs`
+- **Finding:** `spawn_pty` accepted any length of otherwise valid `session_id`,
+  but the fd-transport wire protocol serializes that id into a fixed 4096-byte
+  datagram and asserted the payload length. A renderer-supplied oversized id
+  could panic the broker send path after PTY resources had already been created.
+- **Fix:** Added a 128-byte session-id cap at the spawn/update IPC validation
+  boundary before PTY allocation, and changed fd-transport sends to return
+  `InvalidInput` instead of asserting on oversized payloads. Added regression
+  coverage for both the spawn boundary and transport send helpers.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

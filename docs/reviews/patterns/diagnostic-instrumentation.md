@@ -3,7 +3,7 @@ id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
 last_updated: 2026-07-30
-ref_count: 4
+ref_count: 5
 ---
 
 # Diagnostic Instrumentation
@@ -178,4 +178,18 @@ The discipline:
 - **File:** `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** The connector review identified the same Ghostty resize instrumentation path: first and every 128th successful resize synchronously called `ReportWinsizeTimings` from inside the locked engine callback, and over-5ms samples also wrote directly to stderr there.
 - **Fix:** Routed both diagnostics through the returned `WinsizeTimingReport` and printed after `slot.mtx` was released. The elapsed duration is still captured before the release, so the metric continues to measure the slot mutex plus ioctl work while excluding the diagnostic write.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. TIOCSWINSZ failures lacked errno diagnostics
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** Failed native winsize ioctls only incremented an aggregate
+  failure counter; the immediate stderr diagnostics were gated on success-path
+  timing fields. Operators could see that failures happened but not whether the
+  cause was `EBADF`, `EINVAL`, or another OS error.
+- **Fix:** Captured `errno`, session id, and role immediately after a failed
+  ioctl while the slot still identifies the lease, then emitted a single
+  detailed stderr line after releasing `slot.mtx`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

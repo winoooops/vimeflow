@@ -49,6 +49,27 @@ fn last_error() -> io::Error {
     io::Error::last_os_error()
 }
 
+fn validate_payload(payload: &[u8]) -> io::Result<()> {
+    if payload.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "fd transport payload cannot be empty",
+        ));
+    }
+    if payload.len() > MAX_MESSAGE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "fd transport payload is {} bytes; max is {}",
+                payload.len(),
+                MAX_MESSAGE_BYTES
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Sets `FD_CLOEXEC` so the descriptor never leaks into exec'd children.
 ///
 /// Inheriting via `stdio[3]` clears close-on-exec, and the backend spawns
@@ -85,7 +106,7 @@ pub fn claim_inherited_transport() -> Option<RawFd> {
 /// The kernel installs its own reference to `fd` in flight, so the caller
 /// keeps ownership of its copy regardless of when the receiver reads.
 pub fn send_fd(channel: RawFd, payload: &[u8], fd: RawFd) -> io::Result<()> {
-    assert!(!payload.is_empty() && payload.len() <= MAX_MESSAGE_BYTES);
+    validate_payload(payload)?;
 
     let mut iov = libc::iovec {
         iov_base: payload.as_ptr() as *mut libc::c_void,
@@ -132,7 +153,7 @@ pub fn send_fd(channel: RawFd, payload: &[u8], fd: RawFd) -> io::Result<()> {
 /// Sends a plain datagram (no descriptor) — the ack/control messages of the
 /// ownership protocol.
 pub fn send_datagram(channel: RawFd, payload: &[u8]) -> io::Result<()> {
-    assert!(!payload.is_empty() && payload.len() <= MAX_MESSAGE_BYTES);
+    validate_payload(payload)?;
     loop {
         // SAFETY: payload is a valid buffer for the duration of the call.
         let sent = unsafe {
@@ -326,6 +347,18 @@ mod tests {
         let (n, fd) = recv_fd(rx.as_raw_fd(), &mut buf).expect("recv");
         assert_eq!(&buf[..n], b"nd");
         assert!(fd.is_none());
+    }
+
+    #[test]
+    fn test_send_rejects_oversized_payload_without_panic() {
+        let (tx, _rx) = socketpair().expect("socketpair");
+        let payload = vec![b'x'; MAX_MESSAGE_BYTES + 1];
+
+        let fd_err = send_fd(tx.as_raw_fd(), &payload, tx.as_raw_fd()).expect_err("send fd");
+        assert_eq!(fd_err.kind(), io::ErrorKind::InvalidInput);
+
+        let datagram_err = send_datagram(tx.as_raw_fd(), &payload).expect_err("send datagram");
+        assert_eq!(datagram_err.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]

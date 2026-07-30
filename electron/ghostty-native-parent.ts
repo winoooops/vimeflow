@@ -372,7 +372,17 @@ export const createPtyFdTransportBeforeSpawn = (
 
     return {
       transportFd,
-      onSpawned: (): void => addon.notifyPtyFdTransportSpawned?.(),
+      onSpawned: (): void => {
+        try {
+          addon.notifyPtyFdTransportSpawned?.()
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'pty fd transport spawn notification failed; async resize path remains available',
+            error
+          )
+        }
+      },
     }
   } catch (error) {
     // eslint-disable-next-line no-console

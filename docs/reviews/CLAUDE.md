@@ -62,7 +62,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 101      | 90   | 2026-07-22   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 100      | 93   | 2026-07-30   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 101      | 94   | 2026-07-30   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
@@ -71,7 +71,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 14       | 6    | 2026-07-27   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 15       | 7    | 2026-07-30   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
@@ -79,13 +79,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 30       | 13   | 2026-07-14   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 53       | 53   | 2026-07-30   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 54       | 54   | 2026-07-30   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 2        | 1    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 46       | 25   | 2026-07-29   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 22       | 9    | 2026-07-29   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 16       | 4    | 2026-07-30   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 17       | 5    | 2026-07-30   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 49       | 19   | 2026-07-26   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 4        | 2    | 2026-07-22   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 33       | 22   | 2026-07-25   |
