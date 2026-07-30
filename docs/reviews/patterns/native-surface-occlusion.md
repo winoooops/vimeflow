@@ -159,3 +159,18 @@ React overlays that drive Electron native WebContentsView visibility must regist
   guard used during native modal hand-offs. Updated the controller unit test to
   assert the visible menu path raises before and after renderer readiness.
 - **Commit:** same commit as this entry
+
+### 14. Focus-owned native dialogs must close on app deactivation
+
+- **Source:** github-codex-connector | PR #756 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The layout-creator dialog blur guard suppressed cleanup for both
+  owner blur and overlay-window blur based only on the surface type. Switching
+  to another application could therefore leave the focusable always-on-top
+  native overlay visible above unrelated apps.
+- **Fix:** Kept the layout-creator blur exemption only while Electron reports
+  the Vimeflow app is still active, so internal parent/overlay focus handoff is
+  preserved but true app deactivation closes the surface. Added regression
+  coverage for owner blur and overlay-window blur with `app.isActive()` false.
+- **Commit:** same commit as this entry

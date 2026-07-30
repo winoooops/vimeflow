@@ -218,7 +218,12 @@ const electronMock = vi.hoisted(() => {
     }),
   }
 
+  const app = {
+    isActive: vi.fn((): boolean => true),
+  }
+
   return {
+    app,
     BrowserWindow,
     handlers,
     ipcMain,
@@ -229,6 +234,8 @@ const electronMock = vi.hoisted(() => {
       handlers.clear()
       nextWebContentsId = 20
       owner.reset()
+      app.isActive.mockClear()
+      app.isActive.mockReturnValue(true)
       BrowserWindow.mockClear()
       BrowserWindow.fromWebContents.mockClear()
       ipcMain.handle.mockClear()
@@ -238,6 +245,7 @@ const electronMock = vi.hoisted(() => {
 })
 
 vi.mock('electron', () => ({
+  app: electronMock.app,
   BrowserWindow: electronMock.BrowserWindow,
   ipcMain: electronMock.ipcMain,
 }))
@@ -991,6 +999,58 @@ describe('NativeOverlayController', () => {
       expect.objectContaining({
         surfaceId: layoutCreatorDialogRequest.surfaceId,
       })
+    )
+  })
+
+  test('dismisses a layout creator dialog on owner blur when the app deactivates', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    electronMock.app.isActive.mockReturnValue(false)
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.emit('blur')
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      {
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+        reason: 'outside',
+      }
+    )
+  })
+
+  test('dismisses a layout creator dialog on overlay blur when the app deactivates', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    electronMock.app.isActive.mockReturnValue(false)
+    electronMock.owner.webContents.send.mockClear()
+    overlayWindow.emit('blur')
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      {
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+        reason: 'outside',
+      }
     )
   })
 

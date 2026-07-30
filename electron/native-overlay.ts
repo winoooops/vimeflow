@@ -1,4 +1,5 @@
 import {
+  app,
   BrowserWindow,
   ipcMain,
   shell,
@@ -457,6 +458,8 @@ const isString = (value: unknown): value is string =>
 const isFocusOwnedDialogSurface = (
   surface: NativeOverlaySurface | undefined
 ): boolean => surface?.kind === 'dialog' && surface.dialog === 'layout-creator'
+
+const isInternalFocusHandoff = (): boolean => app.isActive()
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
@@ -1444,7 +1447,10 @@ export class NativeOverlayController {
         record.activeSurfaceId === null
           ? undefined
           : this.surfaces.get(record.activeSurfaceId)
-      if (isFocusOwnedDialogSurface(activeSurface)) {
+      if (
+        isFocusOwnedDialogSurface(activeSurface) &&
+        isInternalFocusHandoff()
+      ) {
         return
       }
 
@@ -1461,7 +1467,10 @@ export class NativeOverlayController {
         record.activeSurfaceId === null
           ? undefined
           : this.surfaces.get(record.activeSurfaceId)
-      if (isFocusOwnedDialogSurface(activeSurface)) {
+      if (
+        isFocusOwnedDialogSurface(activeSurface) &&
+        isInternalFocusHandoff()
+      ) {
         return
       }
 
