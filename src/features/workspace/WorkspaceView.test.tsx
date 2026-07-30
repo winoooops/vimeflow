@@ -19,8 +19,6 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import type { SwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
-import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
-import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 import type { SelectedDiffFile } from '../diff/types'
 import type { SessionList } from '../../bindings'
 import {
@@ -79,6 +77,7 @@ const workspaceTerminalMock = vi.hoisted(() => {
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   }
@@ -339,10 +338,6 @@ describe('WorkspaceView', () => {
     vi.clearAllMocks()
     window.localStorage.clear()
     setSidebarCollapsed(false)
-    setActivityPanelCollapsed(false)
-    setDockOpen(false)
-    setDockTab('diff')
-    setDockPosition('bottom')
     Object.defineProperty(navigator, 'platform', {
       value: 'Linux x86_64',
       configurable: true,
@@ -365,6 +360,9 @@ describe('WorkspaceView', () => {
     workspaceTerminalMock.service.setActiveSession.mockResolvedValue(undefined)
     workspaceTerminalMock.service.reorderSessions.mockResolvedValue(undefined)
     workspaceTerminalMock.service.updateSessionCwd.mockResolvedValue(undefined)
+    workspaceTerminalMock.service.setSessionActivityPanelCollapsed.mockResolvedValue(
+      undefined
+    )
 
     // Default: clean buffer with no file open. Mirrors the real hook's
     // initial state so existing tests don't see a dirty buffer or get

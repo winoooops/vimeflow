@@ -98,6 +98,7 @@ const session = (overrides: Partial<Session> = {}): Session =>
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     layout: 'single',
+    activityPanelCollapsed: false,
     terminalPid: 12345,
     panes: [
       {

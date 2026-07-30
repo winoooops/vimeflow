@@ -19,8 +19,6 @@ import type {
   ReviewComment,
   UseFeedbackBatchReturn,
 } from '../diff/hooks/useFeedbackBatch'
-import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
-import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -156,6 +154,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
@@ -358,11 +357,6 @@ const openDockPanelMock = async (): Promise<HTMLElement> => {
 
 describe('WorkspaceView lifted-subscription contract', () => {
   beforeEach(() => {
-    window.localStorage.clear()
-    setActivityPanelCollapsed(false)
-    setDockOpen(false)
-    setDockTab('diff')
-    setDockPosition('bottom')
     capturedPanelProps.agentStatus = undefined
     capturedPanelProps.gitStatus = undefined
     capturedPanelProps.isRefreshing = undefined

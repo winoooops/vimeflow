@@ -71,6 +71,7 @@ const session: Session = {
   workingDirectory: '/project',
   agentType: 'generic',
   layout: 'vsplit',
+  activityPanelCollapsed: false,
   panes: [shellPane, browserPane],
   createdAt: '2026-05-28T00:00:00.000Z',
   lastActivityAt: '2026-05-28T00:00:00.000Z',

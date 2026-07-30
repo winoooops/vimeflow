@@ -71,6 +71,7 @@ describe('Workspace Types', () => {
         activeSessionId: 'sess-1',
         activeTerminalId: 'term-1',
         sidebarCollapsed: false,
+        activityPanelCollapsed: false,
         contextPanel: {
           active: 'files',
           sidebarWidth: 260,

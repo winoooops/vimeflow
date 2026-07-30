@@ -32,6 +32,7 @@ const mockSession = (overrides: Partial<Session> = {}): Session => ({
   workingDirectory: '/home/test',
   agentType: 'generic',
   layout: 'vsplit',
+  activityPanelCollapsed: false,
   panes: [mockPane({ id: 'p0', active: true })],
   createdAt: '2026-05-12T00:00:00Z',
   lastActivityAt: '2026-05-12T00:00:00Z',
@@ -351,6 +352,7 @@ describe('applyRemovePane', () => {
       [
         mockSession({
           layout: 'quad',
+          activityPanelCollapsed: false,
           panes: [
             mockPane({ id: 'p0', ptyId: 'pty-0', active: true }),
             mockPane({ id: 'p1', ptyId: 'pty-1', active: false }),
@@ -385,6 +387,7 @@ describe('applyRemovePane', () => {
         mockSession({
           status: 'running',
           layout: 'vsplit',
+          activityPanelCollapsed: false,
           panes: [
             mockPane({ id: 'p0', status: 'completed', active: false }),
             mockPane({ id: 'p1', status: 'running', active: true }),

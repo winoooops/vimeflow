@@ -26,6 +26,7 @@ import type {
   PersistedWorkspaceSessionShape,
   PersistedShellPaneShape,
 } from '../workspaceLayoutBridge'
+import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { normalizePanePlacements } from './panePlacements'
 import { sessionFromInfo } from './sessionFromInfo'
 import { deriveShellSessionStatus } from './sessionStatus'
@@ -175,6 +176,7 @@ const buildGroupedSession = (
       registry.getFallbackLayout(layout),
       undefined
     ),
+    activityPanelCollapsed: readActivityPanelCollapsed(workspaceId),
     panes,
     createdAt: now,
     lastActivityAt: now,
@@ -408,6 +410,7 @@ const buildStoreSession = (
       registry.getFallbackLayout(layout),
       shape.placements
     ),
+    activityPanelCollapsed: readActivityPanelCollapsed(shape.id),
     panes,
     createdAt: now,
     lastActivityAt: now,

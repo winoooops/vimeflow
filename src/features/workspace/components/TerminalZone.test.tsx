@@ -57,6 +57,7 @@ const mockService: ITerminalService = {
   setActiveSession: vi.fn().mockResolvedValue(undefined),
   reorderSessions: vi.fn().mockResolvedValue(undefined),
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+  setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   killEphemeralPtys: vi.fn(),
   setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 }
@@ -551,6 +552,7 @@ describe('TerminalZone', () => {
       workingDirectory: '/tmp/a',
       agentType: 'generic',
       layout: 'vsplit',
+      activityPanelCollapsed: false,
       panes: [
         {
           id: 'p0',

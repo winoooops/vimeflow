@@ -13,6 +13,7 @@ describe('isAllowedBackendMethod', () => {
     'set_active_session',
     'reorder_sessions',
     'update_session_cwd',
+    'set_session_activity_panel_collapsed',
     'set_workspace_sessions',
     'load_review_state',
     'save_review_state',

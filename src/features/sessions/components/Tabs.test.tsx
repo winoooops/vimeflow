@@ -12,6 +12,7 @@ const buildSession = (overrides: Partial<Session> = {}): Session => ({
   workingDirectory: '~',
   agentType: 'claude-code',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

@@ -13,21 +13,10 @@ import { WorkspaceView } from './WorkspaceView'
 import { SettingsProvider } from '../settings/SettingsProvider'
 import * as useCodeMirrorModule from '../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../editor/hooks/useVimMode'
-import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
-import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
+import { createTerminalService } from '../terminal/services/terminalService'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
-
-// Both panel-state stores are module-global and persist to localStorage, so
-// reset them before every test to keep dock/activity state from leaking.
-beforeEach(() => {
-  window.localStorage.clear()
-  setActivityPanelCollapsed(false)
-  setDockOpen(false)
-  setDockTab('diff')
-  setDockPosition('bottom')
-})
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({
@@ -99,6 +88,7 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
@@ -390,6 +380,15 @@ describe('WorkspaceView Integration Tests', () => {
       expect(
         screen.queryByTestId('agent-status-panel-header')
       ).not.toBeInTheDocument()
+
+      // Session-scoped UI state — must NOT call the agent/PTY backend.
+      const serviceResults = vi.mocked(createTerminalService).mock.results
+      const serviceResult = serviceResults[serviceResults.length - 1]
+
+      const service = serviceResult?.value as {
+        setSessionActivityPanelCollapsed: ReturnType<typeof vi.fn>
+      }
+      expect(service.setSessionActivityPanelCollapsed).not.toHaveBeenCalled()
 
       await user.click(screen.getByTestId('activity-toggle-fixed'))
 

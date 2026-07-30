@@ -32,8 +32,6 @@ import type {
 } from './components/TerminalZone'
 import type { WorkspaceOverlayRegistrationsProps } from './overlays/WorkspaceOverlayRegistrations'
 import { BUILTIN_PANE_LAYOUT_REGISTRY } from '@/features/terminal/layout-registry'
-import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
-import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -226,6 +224,7 @@ const createMockSession = (id: string, name: string): Session => ({
   workingDirectory: '/home/user',
   agentType: 'claude-code',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -294,10 +293,6 @@ describe('WorkspaceView - Command Palette Integration', () => {
     overlayRegistrationPropsSpy.mockClear()
     backendListeners.clear()
     window.vimeflow = {} as typeof window.vimeflow
-    setActivityPanelCollapsed(false)
-    setDockOpen(false)
-    setDockTab('diff')
-    setDockPosition('bottom')
 
     // Create mock sessions
     mockSessions = [
@@ -332,6 +327,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       updatePaneAgentType: vi.fn(),
       recordPaneAgentLauncher: vi.fn(),
       invalidatePaneAgentSession: vi.fn(),
+      setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
@@ -437,6 +433,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       setActiveSession: vi.fn().mockResolvedValue(undefined),
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
+      setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
       killEphemeralPtys: vi.fn(),
       setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     })

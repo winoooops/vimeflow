@@ -10,6 +10,7 @@ const baseSession: Omit<Session, 'agentType'> = {
   status: 'running',
   workingDirectory: '~',
   layout: 'single',
+  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
