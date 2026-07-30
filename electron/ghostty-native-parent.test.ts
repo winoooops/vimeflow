@@ -1,4 +1,4 @@
-// cspell:ignore ghostty Ghostty GHOSTTY
+// cspell:ignore ghostty Ghostty GHOSTTY winsize
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { BrowserWindow } from 'electron'
 import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
@@ -1852,6 +1852,231 @@ describe('ghostty native parent', () => {
 
       // After idle the next change is leading-edge immediate again.
       callbacks.onResize?.(90, 50)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(4)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 90, rows: 50 },
+      })
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  test('bypasses the resize throttle while the addon owns the winsize', async () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const callbacks: {
+        onResize?: (cols: number, rows: number) => void
+      } = {}
+      const surface = {}
+      let nativeOwned = false
+
+      const addon = {
+        create: vi.fn(
+          (
+            _bridge,
+            _handle,
+            _input,
+            resize,
+            _focus,
+            _shortcut,
+            _renamePane
+          ) => {
+            void _bridge
+            void _handle
+            void _input
+            void _focus
+            void _shortcut
+            void _renamePane
+            callbacks.onResize = resize
+
+            return surface
+          }
+        ),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+        isPtyNativeOwned: vi.fn(() => nativeOwned),
+      }
+
+      const sidecar = {
+        invoke: vi.fn(() => Promise.resolve(undefined)),
+        onEvent: vi.fn(() => vi.fn()),
+        shutdown: vi.fn(() => Promise.resolve()),
+      } as unknown as Sidecar
+
+      controller = setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+        addon,
+      })
+
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
+
+      // Native-owned: every distinct size bypasses the throttle, but IPC stays
+      // serialized so older requests cannot overtake a release.
+      nativeOwned = true
+      callbacks.onResize?.(80, 24)
+      callbacks.onResize?.(81, 24)
+      callbacks.onResize?.(82, 24)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(3)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
+      })
+
+      // Identical size still dedupes — a duplicate metadata message says
+      // nothing new.
+      callbacks.onResize?.(82, 24)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(3)
+
+      // Ownership returns to Rust: the throttle applies again (leading
+      // edge forwards, the rest coalesce into the trailing window).
+      nativeOwned = false
+      await vi.advanceTimersByTimeAsync(200)
+      callbacks.onResize?.(90, 50)
+      callbacks.onResize?.(91, 50)
+      await Promise.resolve()
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(4)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 90, rows: 50 },
+      })
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  test('serializes native-owned resize metadata across release', async () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const callbacks: {
+        onResize?: (cols: number, rows: number) => void
+      } = {}
+      const surface = {}
+      let nativeOwned = true
+      const resolveResizeQueue: (() => void)[] = []
+
+      const addon = {
+        create: vi.fn(
+          (
+            _bridge,
+            _handle,
+            _input,
+            resize,
+            _focus,
+            _shortcut,
+            _renamePane
+          ) => {
+            void _bridge
+            void _handle
+            void _input
+            void _focus
+            void _shortcut
+            void _renamePane
+            callbacks.onResize = resize
+
+            return surface
+          }
+        ),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+        isPtyNativeOwned: vi.fn(() => nativeOwned),
+      }
+
+      const sidecar = {
+        invoke: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveResizeQueue.push(resolve)
+            })
+        ),
+        onEvent: vi.fn(() => vi.fn()),
+        shutdown: vi.fn(() => Promise.resolve()),
+      } as unknown as Sidecar
+
+      controller = setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+        addon,
+      })
+
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
+      callbacks.onResize?.(80, 24)
+      callbacks.onResize?.(81, 24)
+      callbacks.onResize?.(82, 24)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 80, rows: 24 },
+      })
+
+      nativeOwned = false
+      callbacks.onResize?.(90, 50)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+
+      resolveResizeQueue.shift()?.()
+      await Promise.resolve()
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 81, rows: 24 },
+      })
+
+      resolveResizeQueue.shift()?.()
+      await Promise.resolve()
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(3)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
+      })
+
+      resolveResizeQueue.shift()?.()
+      await Promise.resolve()
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(4)
       expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {

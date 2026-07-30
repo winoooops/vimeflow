@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-28
-ref_count: 96
+last_updated: 2026-07-30
+ref_count: 97
 ---
 
 # Documentation Accuracy
@@ -983,4 +983,13 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `README.md`
 - **Finding:** The README feature tour said the working agent answered a line-level review comment, fixed the code, and marked the thread resolved. In the product, resolving the review thread is a manual user confirmation action.
 - **Fix:** Reworded the English and Chinese README paragraphs and hunk-review image alt text so the agent only replies/fixes, and the user marks the thread resolved when satisfied.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 104. Winsize instrumentation separated the state-machine comment from its function
+
+- **Source:** github-claude | PR #760 round 1 | 2026-07-30
+- **Severity:** LOW
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The winsize instrumentation block was inserted between the existing state-machine comment and `ApplyPtySlotWinsize`, leaving the comment about Bound, NativeActive, and Releasing behavior separated from the function it documents.
+- **Fix:** Moved the state-machine comment back immediately above `ApplyPtySlotWinsize`, with the instrumentation helpers kept above it. Future readers now see the function contract at the declaration it describes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

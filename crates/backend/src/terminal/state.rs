@@ -273,6 +273,14 @@ impl PtyState {
         self.fd_broker.lock().expect("fd_broker lock").clone()
     }
 
+    /// The kernel-reported master winsize — test observability for the
+    /// single-writer rule (a skipped ioctl leaves this unchanged).
+    #[cfg(test)]
+    pub fn master_size(&self, session_id: &str) -> Option<portable_pty::PtySize> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.get(session_id)?.master.get_size().ok()
+    }
+
     /// The raw master fd and generation for a live session — what the
     /// broker dups to answer a `request-fd`. `None` when the session is
     /// gone or the platform can't expose the fd.
@@ -567,6 +575,20 @@ impl PtyState {
         let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
+
+        // Single-writer rule (VIM-399 Phase 4): while the native addon owns
+        // this session's winsize, the JS->Rust resize message is metadata
+        // only — the addon already ioctled in the same beat as the engine
+        // reflow. The broker clears its flag on the FIRST release receipt
+        // (before re-applying), so a release-then-resize can never be
+        // skipped. Lock order sessions -> broker.inner is nesting-safe: no
+        // broker path takes them in reverse.
+        #[cfg(unix)]
+        if let Some(broker) = self.fd_broker() {
+            if broker.is_native_owned(session_id, session.generation) {
+                return Ok(());
+            }
+        }
 
         let size = portable_pty::PtySize {
             rows,

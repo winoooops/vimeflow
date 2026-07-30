@@ -122,6 +122,10 @@ interface GhosttyNativeParentAddon {
     role: 'primary' | 'secondary',
     sessionId: string
   ) => void
+  isPtyNativeOwned?: (
+    surface: GhosttyNativeSurface,
+    role: 'primary' | 'secondary'
+  ) => boolean
 }
 
 interface GhosttyNativeParentDeps {
@@ -152,6 +156,7 @@ interface GhosttyNativeSurfaceState {
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
+  nativeOwnedResizeQueue: { cols: number; rows: number }[]
   /** Ignore grid callbacks while set — see SURFACE_SETTLE_MS. */
   settleTimer: ReturnType<typeof setTimeout> | null
   /** Last grid swallowed by the settle window, forwarded when it ends. */
@@ -1039,6 +1044,7 @@ export class GhosttyNativeParentController {
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
+      nativeOwnedResizeQueue: [],
       settleTimer: null,
       settleGrid: null,
       resizeInFlight: false,
@@ -1424,6 +1430,31 @@ export class GhosttyNativeParentController {
       return
     }
 
+    // Single-writer rule (VIM-399 Phase 4): once the addon owns the winsize
+    // ioctl, this message is metadata only. Keep every distinct size, but
+    // serialize the IPC calls so a stale request cannot overtake release.
+    if (
+      resizeState.surface !== null &&
+      this.getOptionalAddon()?.isPtyNativeOwned?.(
+        resizeState.surface,
+        'primary'
+      ) === true
+    ) {
+      resizeState.pendingResize = null
+      if (resizeState.resizeInFlight) {
+        const lastQueued = resizeState.nativeOwnedResizeQueue.at(-1)
+        if (lastQueued?.cols !== cols || lastQueued.rows !== rows) {
+          resizeState.nativeOwnedResizeQueue.push({ cols, rows })
+        }
+
+        return
+      }
+
+      this.forwardPtyResize(resizeState, sessionId, cols, rows)
+
+      return
+    }
+
     // One winsize in flight at a time, newest pending wins. The sidecar's
     // reply acknowledges the ioctl, so gating on it keeps the number of widths
     // the agent has been told about — and must redraw for — down to one.
@@ -1496,6 +1527,18 @@ export class GhosttyNativeParentController {
         resizeState.resizeInFlight = false
       }
 
+      const nativeOwnedPending = resizeState.nativeOwnedResizeQueue.shift()
+      if (nativeOwnedPending !== undefined) {
+        this.forwardPtyResize(
+          resizeState,
+          sessionId,
+          nativeOwnedPending.cols,
+          nativeOwnedPending.rows
+        )
+
+        return
+      }
+
       const pending = resizeState.pendingResize
       if (
         pending === null ||
@@ -1517,6 +1560,7 @@ export class GhosttyNativeParentController {
     }
     resizeState.resizeTimer = null
     resizeState.pendingResize = null
+    resizeState.nativeOwnedResizeQueue = []
   }
 
   private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {

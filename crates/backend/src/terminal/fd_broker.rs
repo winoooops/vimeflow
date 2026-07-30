@@ -132,9 +132,8 @@ impl FdBroker {
     }
 
     /// Whether the native side currently owns the winsize ioctl for this
-    /// session. Phase 4 consults this in `PtyState::resize`; until then it
-    /// is exercised by tests only.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// session. `PtyState::resize` consults it to skip the duplicate ioctl
+    /// (Phase 4 single-writer rule).
     pub fn is_native_owned(&self, session_id: &str, generation: u64) -> bool {
         let inner = self.inner.lock().expect("broker lock");
         inner
@@ -266,12 +265,7 @@ impl FdBroker {
     }
 
     fn has_leases(&self) -> bool {
-        !self
-            .inner
-            .lock()
-            .expect("broker lock")
-            .leases
-            .is_empty()
+        !self.inner.lock().expect("broker lock").leases.is_empty()
     }
 
     fn probe_transport(&self) -> std::io::Result<()> {
@@ -451,6 +445,20 @@ mod tests {
         let (a, _b) = fd_transport::socketpair().expect("probe fds");
         std::mem::forget(_b);
         a
+    }
+
+    struct PtySessionCleanup {
+        pty_state: PtyState,
+        session_id: String,
+    }
+
+    impl Drop for PtySessionCleanup {
+        fn drop(&mut self) {
+            if let Some(mut session) = self.pty_state.remove(&self.session_id) {
+                let _ = session.child.kill();
+                let _ = session.child.wait();
+            }
+        }
     }
 
     #[test]
@@ -660,6 +668,102 @@ mod tests {
             other => panic!("expected detach, got {other:?}"),
         }
         assert!(!broker.inner.lock().unwrap().leases.contains_key("s1"));
+    }
+
+    #[test]
+    fn test_resize_is_metadata_only_while_native_owned() {
+        use portable_pty::{native_pty_system, PtySize};
+
+        let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
+        let pty_state = PtyState::default();
+        let broker = FdBroker::start(rust_end.as_raw_fd(), pty_state.clone());
+        pty_state.set_fd_broker(Arc::clone(&broker));
+        std::mem::forget(rust_end);
+        let addon = AddonSim { fd: addon_end };
+
+        // Real PTY session so resize() has a live master to (not) ioctl.
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut cmd = portable_pty::CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "while :; do sleep 0.1; done"]);
+        let child = pair.slave.spawn_command(cmd).expect("spawn");
+        let writer = pair.master.take_writer().expect("writer");
+        let generation = pty_state.next_generation();
+        pty_state.insert(
+            "s1".to_string(),
+            crate::terminal::state::ManagedSession {
+                master: pair.master,
+                writer,
+                child,
+                cwd: "/".into(),
+                bridge_dir: None,
+                shim_dir: None,
+                generation,
+                ring: Arc::new(Mutex::new(crate::terminal::state::RingBuffer::new(1024))),
+                cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                started_at: std::time::SystemTime::now(),
+            },
+        );
+        let _cleanup = PtySessionCleanup {
+            pty_state: pty_state.clone(),
+            session_id: "s1".to_string(),
+        };
+
+        let (fd, generation) = pty_state.master_fd_and_generation("s1").expect("master fd");
+        broker.offer_fd("s1", generation, fd);
+        let lease_id = match addon.recv() {
+            WireMessage::Fd { lease_id, .. } => lease_id,
+            other => panic!("expected fd, got {other:?}"),
+        };
+        addon.send(&WireMessage::NativeReady {
+            session_id: "s1".into(),
+            generation,
+            lease_id,
+            role: "primary".into(),
+        });
+        let _ = addon.recv();
+        assert!(broker.is_native_owned("s1", generation));
+
+        // Native-owned: the resize is metadata only — the PTY keeps 80x24.
+        pty_state.resize(&"s1".to_string(), 31, 97).expect("resize");
+        let size = pty_state
+            .master_size("s1")
+            .expect("size while native-owned");
+        assert_eq!((size.rows, size.cols), (24, 80), "ioctl must be skipped");
+
+        // Release returns ownership; the release size applies, and later
+        // resizes ioctl again.
+        addon.send(&WireMessage::Release {
+            session_id: "s1".into(),
+            generation,
+            lease_id,
+            rows: 31,
+            cols: 97,
+        });
+        let _ = addon.recv();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let size = pty_state.master_size("s1").expect("size after release");
+            if (size.rows, size.cols) == (31, 97) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "release size must be applied once Rust reacquires"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        pty_state
+            .resize(&"s1".to_string(), 40, 120)
+            .expect("resize");
+        let size = pty_state.master_size("s1").expect("size rust-owned");
+        assert_eq!((size.rows, size.cols), (40, 120), "rust writes again");
     }
 
     #[test]

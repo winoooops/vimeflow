@@ -290,6 +290,78 @@ cached dimensions.
   coherence; they do not exercise fd ownership — the Phase 2 tests do).
 - Sweep stray Electron/backend processes after runs.
 
+### Validation protocol
+
+The instrumentation lives in `ApplyPtySlotWinsize` and reports to the
+Electron process's stderr. Three lines matter:
+
+| Line                                                            | Meaning                                                                                                                                                                       |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fd broker: native owns winsize for <session> (gen N, lease N)` | The handshake completed; the addon holds the fd.                                                                                                                              |
+| `vimeflow: winsize ioctls=N mean=… max=… buckets(…)`            | The native path is carrying real resizes, with the latency distribution. Emitted on the first sample, then every 128, then a `winsize final` tally when the transport closes. |
+| `vimeflow: winsize ioctl exceeded the sub-frame bound: …us`     | Never expected. One of these is a regression of the whole design.                                                                                                             |
+
+**Liveness first.** Bootstrap failure degrades to the async path _by
+design_, so a run with no `native owns winsize` line and no `winsize
+ioctls` line proves nothing about the fix — it measured the old code.
+Confirm both lines before judging any A/B.
+
+**Operator A/B** (`npm run dev` on this branch, watching the terminal
+Electron was launched from):
+
+1. Start a codex pane and give it work that streams for a while.
+2. Drag the pane divider continuously and quickly, back and forth.
+3. Read the `winsize` summary: every bucket should sit in `<100us` /
+   `<1ms`; `>=5ms` must be 0.
+4. Watch the composer: it should stay pinned to the bottom the way stock
+   Ghostty's does, instead of floating up and resettling per step.
+5. Repeat for claude (alt-screen, 96ms surface throttle), kimi, a plain
+   shell, and a burner pane — the change is global, so each gets a look.
+6. Control run: `VIMEFLOW_PTY_FD_DIRECT=0 npm run dev` reproduces the old
+   behavior on demand (no handshake line, no ioctl line).
+
+### Results
+
+**The bound holds under a real continuous drag.** Operator run on this
+machine, native path confirmed live (`native owns winsize` present), codex
+streaming while the divider was dragged back and forth:
+
+```
+vimeflow: winsize ioctls=128 mean=36us max=144us buckets(<100us/<1ms/<5ms/>=5ms)=121/7/0/0 failures=0
+vimeflow: winsize ioctls=256 mean=38us max=444us buckets(<100us/<1ms/<5ms/>=5ms)=243/13/0/0 failures=0
+```
+
+256 samples, mean **38µs**, worst **444µs**, **nothing above 1ms**. The
+20–50ms transient this design set out to remove is gone by three orders of
+magnitude, and every sample sits well inside one 16.7ms frame. (Cold-launch
+first resize measured 285µs; warm single samples 16–24µs.)
+
+### Out of scope: the residual blank-flash
+
+A second, unrelated artifact survives: during a fast drag the resized pane's
+terminal content momentarily goes blank for ~2 frames and then repaints.
+Frame-by-frame it is clearly a different failure from the composer float —
+the content does not move, it disappears and returns, and only in the pane
+being dragged (its sibling pane and vimeflow's own DOM chrome keep painting
+in the very same frame). It is **not caused by this work**:
+
+| Ruled out                                                | Evidence                                                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| This design (fd passing, single writer)                  | Reproduces on `343a8e2f`, which predates the entire campaign — and _worse_ there                      |
+| The fork's settle-refresh / throttle / coherence patches | Reproduces on a pure upstream `libghostty-spm` build with none of them                                |
+| Vimeflow's compositor or DOM layer                       | The sibling pane and the DOM status bar paint normally in the same frame                              |
+| Vimeflow at all                                          | Stock Ghostty.app resizing a codex session shows the same jumping (smoother at a constant drag speed) |
+
+What remains points at codex's own clear-and-repaint on SIGWINCH over a
+large primary-screen transcript, together with the engine's reflow damage —
+the same family as the earlier gray-band, whose genesis also reproduced in
+stock Ghostty. Tracked separately; this spec's scope ends at winsize
+atomicity, which is measured and met.
+
+**Default state.** The feature has been on by default since Phase 1;
+`VIMEFLOW_PTY_FD_DIRECT=0` is the opt-out. There is no flag to flip at
+the end of Phase 5 — only the decision to leave it on.
+
 ## Risks
 
 | Risk                                                  | Mitigation                                                                                            |
