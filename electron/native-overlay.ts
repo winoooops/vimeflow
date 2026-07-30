@@ -1104,6 +1104,16 @@ export class NativeOverlayController {
       payload.payload.kind === 'dialog' &&
       payload.payload.dialog === 'layout-creator'
 
+    const dialog =
+      payload.payload.kind === 'dialog' ? payload.payload.dialog : undefined
+    record.activeSurfaceId = payload.surfaceId
+    this.surfaces.set(payload.surfaceId, {
+      owner,
+      parentId: parent.id,
+      kind: payload.kind,
+      ...(dialog === undefined ? {} : { dialog }),
+    })
+
     if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
       record.menu.window.setFocusable(needsKeyboardFocus)
       record.menu.window.setIgnoreMouseEvents(false)
@@ -1120,16 +1130,6 @@ export class NativeOverlayController {
       }
       record.menu.window.moveTop()
     }
-    record.activeSurfaceId = payload.surfaceId
-
-    const dialog =
-      payload.payload.kind === 'dialog' ? payload.payload.dialog : undefined
-    this.surfaces.set(payload.surfaceId, {
-      owner,
-      parentId: parent.id,
-      kind: payload.kind,
-      ...(dialog === undefined ? {} : { dialog }),
-    })
 
     const readyPromise = this.waitForReady(payload.surfaceId)
     record.menu.window.webContents.send(NATIVE_OVERLAY_RENDER, payload)
@@ -1451,6 +1451,23 @@ export class NativeOverlayController {
       closeForOwnerDeactivation()
     }
 
+    const closeForMenuBlur = (): void => {
+      const record = this.overlays.get(parent.id)
+      if (!record) {
+        return
+      }
+
+      const activeSurface =
+        record.activeSurfaceId === null
+          ? undefined
+          : this.surfaces.get(record.activeSurfaceId)
+      if (isFocusOwnedDialogSurface(activeSurface)) {
+        return
+      }
+
+      closeForOwnerDeactivation()
+    }
+
     const ownerBeforeInput = (event: ElectronEvent, input: Input): void => {
       const activeRecord = this.overlays.get(parent.id)
       if (
@@ -1518,7 +1535,7 @@ export class NativeOverlayController {
     parent.on('minimize', closeForOwnerDeactivation)
     parent.on('close', parentClosing)
     parent.on('closed', parentClosed)
-    menu.window.on('blur', closeForOwnerDeactivation)
+    menu.window.on('blur', closeForMenuBlur)
     parent.webContents.on('before-input-event', ownerBeforeInput)
 
     const record: NativeOverlayRecord = {
@@ -1531,7 +1548,7 @@ export class NativeOverlayController {
       parentMinimized: closeForOwnerDeactivation,
       parentClosing,
       parentClosed,
-      menuBlurred: closeForOwnerDeactivation,
+      menuBlurred: closeForMenuBlur,
       ownerBeforeInput,
       activeSurfaceId: null,
       activeTooltipSurfaceId: null,

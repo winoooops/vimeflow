@@ -986,10 +986,31 @@ describe('NativeOverlayController', () => {
 
     overlayWindow.isFocused.mockReturnValue(false)
     overlayWindow.emit('blur')
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.objectContaining({
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+      })
+    )
+  })
+
+  test('dismisses regular native menus when the overlay window blurs', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    electronMock.owner.webContents.send.mockClear()
+    overlayWindow.emit('blur')
+
     expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
       NATIVE_OVERLAY_CLOSED,
       {
-        surfaceId: layoutCreatorDialogRequest.surfaceId,
+        surfaceId: request.surfaceId,
         reason: 'outside',
       }
     )
