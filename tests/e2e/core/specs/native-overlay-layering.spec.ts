@@ -268,56 +268,81 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
 
 const getOverlayDialogRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
-    const overlay = electron.webContents
-      .getAllWebContents()
-      .find((contents) => {
-        const mode = new URL(contents.getURL()).searchParams.get(
-          'nativeOverlay'
-        )
+    for (const overlay of electron.webContents.getAllWebContents()) {
+      const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
 
-        return mode === '1' || mode === 'menu'
-      })
+      if (mode !== '1' && mode !== 'menu') {
+        continue
+      }
 
-    if (!overlay) {
-      return null
+      const rect = (await overlay.executeJavaScript(`
+        (() => {
+          const content = document.querySelector(
+            '[data-workspace-overlay-id="layout-creator"]'
+          )
+          const dialog = content?.closest('[role="dialog"]') ?? content
+          const rect = dialog?.getBoundingClientRect()
+          return rect
+            ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+            : null
+        })()
+      `)) as CssRect | null
+
+      if (rect !== null) {
+        return rect
+      }
     }
 
-    return overlay.executeJavaScript(`
-      (() => {
-        const content = document.querySelector(
-          '[data-workspace-overlay-id="layout-creator"]'
-        )
-        const dialog = content?.closest('[role="dialog"]') ?? content
-        const rect = dialog?.getBoundingClientRect()
-        return rect
-          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-          : null
-      })()
-    `) as Promise<CssRect | null>
+    return null
   })
 
-const getOverlayWindowState = async (): Promise<OverlayWindowState | null> =>
-  browser.electron.execute((electron: ElectronModule) => {
-    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
-      const mode = new URL(window.webContents.getURL()).searchParams.get(
-        'nativeOverlay'
+const getLayoutCreatorOverlayWindowState =
+  async (): Promise<OverlayWindowState | null> =>
+    browser.electron.execute(async (electron: ElectronModule) => {
+      const webContentsId = await (async (): Promise<number | null> => {
+        for (const contents of electron.webContents.getAllWebContents()) {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasLayoutCreator = (await contents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            return contents.id
+          }
+        }
+
+        return null
+      })()
+
+      if (webContentsId === null) {
+        return null
+      }
+
+      const overlay = electron.BrowserWindow.getAllWindows().find(
+        (window) => window.webContents.id === webContentsId
       )
 
-      return mode === '1' || mode === 'menu'
+      return overlay === undefined
+        ? null
+        : {
+            alwaysOnTop: overlay.isAlwaysOnTop(),
+            focusable: overlay.isFocusable(),
+            visible: overlay.isVisible(),
+          }
     })
-
-    return overlay === undefined
-      ? null
-      : {
-          alwaysOnTop: overlay.isAlwaysOnTop(),
-          focusable: overlay.isFocusable(),
-          visible: overlay.isVisible(),
-        }
-  })
 
 const getParentLocalLayoutDialogState =
   async (): Promise<LocalDialogState | null> =>
     browser.electron.execute(async (electron: ElectronModule) => {
+      let fallbackState: LocalDialogState | null = null
+
       for (const window of electron.BrowserWindow.getAllWindows()) {
         const mode = new URL(window.webContents.getURL()).searchParams.get(
           'nativeOverlay'
@@ -344,12 +369,13 @@ const getParentLocalLayoutDialogState =
           })()
         `)) as LocalDialogState | null
 
-        if (state !== null) {
+        if (state?.nativeOverlayActive === true) {
           return state
         }
+        fallbackState ??= state
       }
 
-      return null
+      return fallbackState
     })
 
 const closeOverlayMenuIfPresent = async (): Promise<void> => {
@@ -798,7 +824,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     await browser.waitUntil(
       async () => {
-        const state = await getOverlayWindowState()
+        const state = await getLayoutCreatorOverlayWindowState()
 
         return (
           state?.alwaysOnTop === true &&
@@ -813,7 +839,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
           'Layout Creator overlay window did not become visible and focusable',
       }
     )
-    const overlayWindowState = await getOverlayWindowState()
+    const overlayWindowState = await getLayoutCreatorOverlayWindowState()
     expect(overlayWindowState).toEqual({
       alwaysOnTop: true,
       focusable: true,
@@ -824,15 +850,30 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     const trackCounts = await browser.electron.execute(
       async (electron: ElectronModule) => {
-        const overlay = electron.webContents
-          .getAllWebContents()
-          .find((contents) => {
-            const mode = new URL(contents.getURL()).searchParams.get(
-              'nativeOverlay'
-            )
+        let overlay:
+          | ReturnType<
+              ElectronModule['webContents']['getAllWebContents']
+            >[number]
+          | undefined
+        for (const contents of electron.webContents.getAllWebContents()) {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
 
-            return mode === '1' || mode === 'menu'
-          })
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasLayoutCreator = (await contents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            overlay = contents
+            break
+          }
+        }
+
         if (!overlay) {
           return null
         }
@@ -868,15 +909,28 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     const editorState = await browser.electron.execute(
       async (electron: ElectronModule) => {
-        const overlay = electron.BrowserWindow.getAllWindows().find(
-          (window) => {
-            const mode = new URL(window.webContents.getURL()).searchParams.get(
-              'nativeOverlay'
-            )
+        let overlay:
+          | ReturnType<ElectronModule['BrowserWindow']['getAllWindows']>[number]
+          | undefined
+        for (const window of electron.BrowserWindow.getAllWindows()) {
+          const mode = new URL(window.webContents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
 
-            return mode === '1' || mode === 'menu'
+          if (mode !== '1' && mode !== 'menu') {
+            continue
           }
-        )
+
+          const hasLayoutCreator = (await window.webContents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            overlay = window
+            break
+          }
+        }
+
         const parent = overlay?.getParentWindow()
         if (!overlay || !parent) {
           return null
