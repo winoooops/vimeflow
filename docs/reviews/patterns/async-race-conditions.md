@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-29
-ref_count: 91
+last_updated: 2026-07-30
+ref_count: 92
 ---
 
 # Async Race Conditions
@@ -1112,4 +1112,18 @@ prevent showing previous data.
 - **Fix:** Capture the failed lease ID while holding the slot mutex and require
   `StartPtySlotRelease` to verify both that exact lease ID and the poisoned
   `failed` flag before starting the release handshake.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 100. Native-owned resize metadata bypassed IPC ordering
+
+- **Source:** github-codex-connector | PR #759 round 1 | 2026-07-30
+- **Severity:** P1 / HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native-owned resize path bypassed both throttle and
+  in-flight gating, so concurrent `resize_pty` handlers could execute out of
+  order around release and let an older grid overwrite the PTY after a newer
+  native size was restored.
+- **Fix:** Added a FIFO queue for native-owned resize metadata and drain it
+  ahead of ordinary pending Rust-owned resizes after each acknowledgement.
+  Covered the release transition with a delayed-sidecar regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

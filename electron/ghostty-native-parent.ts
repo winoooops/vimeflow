@@ -156,6 +156,7 @@ interface GhosttyNativeSurfaceState {
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
+  nativeOwnedResizeQueue: { cols: number; rows: number }[]
   /** Ignore grid callbacks while set — see SURFACE_SETTLE_MS. */
   settleTimer: ReturnType<typeof setTimeout> | null
   /** Last grid swallowed by the settle window, forwarded when it ends. */
@@ -1043,6 +1044,7 @@ export class GhosttyNativeParentController {
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
+      nativeOwnedResizeQueue: [],
       settleTimer: null,
       settleGrid: null,
       resizeInFlight: false,
@@ -1429,9 +1431,8 @@ export class GhosttyNativeParentController {
     }
 
     // Single-writer rule (VIM-399 Phase 4): once the addon owns the winsize
-    // ioctl, this message is metadata only — it needs no coalescing, and
-    // throttling it would stale Rust's cached dimensions. Forward every
-    // size change immediately.
+    // ioctl, this message is metadata only. Keep every distinct size, but
+    // serialize the IPC calls so a stale request cannot overtake release.
     if (
       resizeState.surface !== null &&
       this.getOptionalAddon()?.isPtyNativeOwned?.(
@@ -1440,6 +1441,15 @@ export class GhosttyNativeParentController {
       ) === true
     ) {
       resizeState.pendingResize = null
+      if (resizeState.resizeInFlight) {
+        const lastQueued = resizeState.nativeOwnedResizeQueue.at(-1)
+        if (lastQueued?.cols !== cols || lastQueued.rows !== rows) {
+          resizeState.nativeOwnedResizeQueue.push({ cols, rows })
+        }
+
+        return
+      }
+
       this.forwardPtyResize(resizeState, sessionId, cols, rows)
 
       return
@@ -1517,6 +1527,18 @@ export class GhosttyNativeParentController {
         resizeState.resizeInFlight = false
       }
 
+      const nativeOwnedPending = resizeState.nativeOwnedResizeQueue.shift()
+      if (nativeOwnedPending !== undefined) {
+        this.forwardPtyResize(
+          resizeState,
+          sessionId,
+          nativeOwnedPending.cols,
+          nativeOwnedPending.rows
+        )
+
+        return
+      }
+
       const pending = resizeState.pendingResize
       if (
         pending === null ||
@@ -1538,6 +1560,7 @@ export class GhosttyNativeParentController {
     }
     resizeState.resizeTimer = null
     resizeState.pendingResize = null
+    resizeState.nativeOwnedResizeQueue = []
   }
 
   private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
