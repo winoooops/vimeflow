@@ -290,6 +290,45 @@ cached dimensions.
   coherence; they do not exercise fd ownership — the Phase 2 tests do).
 - Sweep stray Electron/backend processes after runs.
 
+### Validation protocol
+
+The instrumentation lives in `ApplyPtySlotWinsize` and reports to the
+Electron process's stderr. Three lines matter:
+
+| Line                                                            | Meaning                                                                                                                                                                       |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fd broker: native owns winsize for <session> (gen N, lease N)` | The handshake completed; the addon holds the fd.                                                                                                                              |
+| `vimeflow: winsize ioctls=N mean=… max=… buckets(…)`            | The native path is carrying real resizes, with the latency distribution. Emitted on the first sample, then every 128, then a `winsize final` tally when the transport closes. |
+| `vimeflow: winsize ioctl exceeded the sub-frame bound: …us`     | Never expected. One of these is a regression of the whole design.                                                                                                             |
+
+**Liveness first.** Bootstrap failure degrades to the async path _by
+design_, so a run with no `native owns winsize` line and no `winsize
+ioctls` line proves nothing about the fix — it measured the old code.
+Confirm both lines before judging any A/B.
+
+**Operator A/B** (`npm run dev` on this branch, watching the terminal
+Electron was launched from):
+
+1. Start a codex pane and give it work that streams for a while.
+2. Drag the pane divider continuously and quickly, back and forth.
+3. Read the `winsize` summary: every bucket should sit in `<100us` /
+   `<1ms`; `>=5ms` must be 0.
+4. Watch the composer: it should stay pinned to the bottom the way stock
+   Ghostty's does, instead of floating up and resettling per step.
+5. Repeat for claude (alt-screen, 96ms surface throttle), kimi, a plain
+   shell, and a burner pane — the change is global, so each gets a look.
+6. Control run: `VIMEFLOW_PTY_FD_DIRECT=0 npm run dev` reproduces the old
+   behavior on demand (no handshake line, no ioctl line).
+
+**Measured so far** (this machine, native path confirmed live): the
+callback→ioctl span is **285µs** on the very first resize of a cold
+launch and **16µs** warm — three orders of magnitude under the 20–50ms
+transient it replaces, and far inside one 16.7ms frame.
+
+**Default state.** The feature has been on by default since Phase 1;
+`VIMEFLOW_PTY_FD_DIRECT=0` is the opt-out. There is no flag to flip at
+the end of Phase 5 — only the decision to leave it on.
+
 ## Risks
 
 | Risk                                                  | Mitigation                                                                                            |

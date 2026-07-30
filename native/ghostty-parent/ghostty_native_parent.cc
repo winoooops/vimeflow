@@ -733,10 +733,95 @@ void StartPtySlotRelease(SurfaceHandle *surface, int role,
 // unreachable). Writes in Bound, NativeActive, and non-failed Releasing
 // (make-before-break); records the size in every non-Empty state so the
 // RELEASING flush and release messages always carry the newest value.
+// Winsize-latency instrumentation (VIM-399 Phase 5). The whole design rests
+// on one claim: the winsize now lands in the same beat as the engine's grid
+// reflow, so the TUI's corrective repaint starts within a frame instead of
+// 20-50ms later. A ~34ms grid sampler cannot see a sub-frame span, so the
+// proof has to come from here — a monotonic clock around the exact work the
+// engine callback pays for (slot mutex + ioctl).
+//
+// Buckets rather than a full histogram: the only question is "is every
+// sample far under one frame?", and four counters answer it at a cost
+// (two clock reads) that is safe to leave on permanently. Doubling as the
+// liveness signal Phase 5 needs: ioctls > 0 proves the native path is
+// actually carrying resizes, so a silent fallback to the async path can
+// never be mistaken for "the fix did nothing".
+constexpr uint64_t kWinsizeSubFrameNs = 5ull * 1000 * 1000; // 5ms
+constexpr uint64_t kWinsizeReportEvery = 128;
+
+std::atomic<uint64_t> g_winsize_ioctls{0};
+std::atomic<uint64_t> g_winsize_total_ns{0};
+std::atomic<uint64_t> g_winsize_max_ns{0};
+std::atomic<uint64_t> g_winsize_under_100us{0};
+std::atomic<uint64_t> g_winsize_under_1ms{0};
+std::atomic<uint64_t> g_winsize_under_5ms{0};
+std::atomic<uint64_t> g_winsize_over_5ms{0};
+std::atomic<uint64_t> g_winsize_failures{0};
+
+void ReportWinsizeTimings(const char *suffix) {
+  const uint64_t seen = g_winsize_ioctls.load(std::memory_order_relaxed);
+  if (seen == 0) {
+    return;
+  }
+  const uint64_t total = g_winsize_total_ns.load(std::memory_order_relaxed);
+  fprintf(stderr,
+          "vimeflow: winsize%s ioctls=%llu mean=%lluus max=%lluus "
+          "buckets(<100us/<1ms/<5ms/>=5ms)=%llu/%llu/%llu/%llu failures=%llu\n",
+          suffix, (unsigned long long)seen,
+          (unsigned long long)(total / seen / 1000),
+          (unsigned long long)(g_winsize_max_ns.load(std::memory_order_relaxed) /
+                               1000),
+          (unsigned long long)g_winsize_under_100us.load(std::memory_order_relaxed),
+          (unsigned long long)g_winsize_under_1ms.load(std::memory_order_relaxed),
+          (unsigned long long)g_winsize_under_5ms.load(std::memory_order_relaxed),
+          (unsigned long long)g_winsize_over_5ms.load(std::memory_order_relaxed),
+          (unsigned long long)g_winsize_failures.load(std::memory_order_relaxed));
+}
+
+void RecordWinsizeTiming(uint64_t elapsed_ns, bool ok) {
+  if (!ok) {
+    g_winsize_failures.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+
+  const uint64_t seen = g_winsize_ioctls.fetch_add(1, std::memory_order_relaxed) + 1;
+  g_winsize_total_ns.fetch_add(elapsed_ns, std::memory_order_relaxed);
+  uint64_t prev_max = g_winsize_max_ns.load(std::memory_order_relaxed);
+  while (elapsed_ns > prev_max &&
+         !g_winsize_max_ns.compare_exchange_weak(prev_max, elapsed_ns,
+                                                 std::memory_order_relaxed)) {
+  }
+
+  if (elapsed_ns < 100'000) {
+    g_winsize_under_100us.fetch_add(1, std::memory_order_relaxed);
+  } else if (elapsed_ns < 1'000'000) {
+    g_winsize_under_1ms.fetch_add(1, std::memory_order_relaxed);
+  } else if (elapsed_ns < kWinsizeSubFrameNs) {
+    g_winsize_under_5ms.fetch_add(1, std::memory_order_relaxed);
+  } else {
+    // Loud on purpose: a sample at or past the sub-frame bound means the
+    // engine callback stalled, which is the failure this design exists to
+    // prevent. These should never appear.
+    g_winsize_over_5ms.fetch_add(1, std::memory_order_relaxed);
+    fprintf(stderr,
+            "vimeflow: winsize ioctl exceeded the sub-frame bound: %llu us\n",
+            (unsigned long long)(elapsed_ns / 1000));
+  }
+
+  // The first sample is reported immediately: it is the liveness proof that
+  // the native path is carrying real resizes (Phase 5 must never judge the
+  // effect of a silently-degraded run). After that, every 128th, plus a
+  // final summary at transport shutdown.
+  if (seen == 1 || seen % kWinsizeReportEvery == 0) {
+    ReportWinsizeTimings("");
+  }
+}
+
 void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
                          int rows) {
   bool need_release = false;
   uint64_t failed_lease_id = 0;
+  const auto callback_entry = std::chrono::steady_clock::now();
   {
     PtyFdSlot &slot = surface->pty_slots[role];
     std::lock_guard<std::mutex> lock(slot.mtx);
@@ -755,7 +840,13 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
     struct winsize size = {};
     size.ws_row = (unsigned short)rows;
     size.ws_col = (unsigned short)columns;
-    if (ioctl(slot.fd, TIOCSWINSZ, &size) != 0) {
+    const bool ok = ioctl(slot.fd, TIOCSWINSZ, &size) == 0;
+    RecordWinsizeTiming(
+        (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - callback_entry)
+            .count(),
+        ok);
+    if (!ok) {
       // Poison the fd: the slot keeps recording but never writes again;
       // ownership returns to Rust via the release handshake (bounded gap).
       slot.failed = true;
@@ -1084,6 +1175,9 @@ void RetryUnackedPtyReleases() {
 // Transport death: close everything unilaterally — Rust reclaims all leases
 // on its side, so no acks are coming and none are needed.
 void ShutdownPtyProtocol() {
+  // Final tally for the run — what an operator or an e2e log reads to
+  // confirm the sub-frame bound held for every resize of the session.
+  ReportWinsizeTimings(" final");
   std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
   const int transport_fd =
       g_pty_fd_transport_parent.exchange(-1, std::memory_order_acq_rel);
