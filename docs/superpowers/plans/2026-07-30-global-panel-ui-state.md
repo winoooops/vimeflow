@@ -29,23 +29,24 @@
 
 ## File structure
 
-| File | Responsibility |
-|---|---|
-| `src/features/workspace/utils/activityPanelCollapsedStore.ts` (new) | Global activity-panel collapse flag + persistence + pub/sub |
-| `src/features/workspace/hooks/useActivityPanelCollapsed.ts` (new) | `useSyncExternalStore` wrapper |
-| `src/features/workspace/utils/dockStore.ts` (new) | Global dock `{ open, tab, position }` + persistence + pub/sub |
-| `src/features/workspace/hooks/useDockState.ts` (new) | `useSyncExternalStore` wrapper |
-| `src/features/workspace/WorkspaceView.tsx` | Consume both stores; drop per-session read and dock `useState`s |
-| `src/features/sessions/**` | Remove `activityPanelCollapsed` from model, manager, hydration, mocks |
-| `crates/backend/src/**` | Remove cache field + dead IPC |
-| `electron/backend-methods.ts` | Remove command from IPC allowlist |
-| `src/features/terminal/services/*Service.ts` | Remove dead `setSessionActivityPanelCollapsed` method |
+| File                                                                | Responsibility                                                        |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `src/features/workspace/utils/activityPanelCollapsedStore.ts` (new) | Global activity-panel collapse flag + persistence + pub/sub           |
+| `src/features/workspace/hooks/useActivityPanelCollapsed.ts` (new)   | `useSyncExternalStore` wrapper                                        |
+| `src/features/workspace/utils/dockStore.ts` (new)                   | Global dock `{ open, tab, position }` + persistence + pub/sub         |
+| `src/features/workspace/hooks/useDockState.ts` (new)                | `useSyncExternalStore` wrapper                                        |
+| `src/features/workspace/WorkspaceView.tsx`                          | Consume both stores; drop per-session read and dock `useState`s       |
+| `src/features/sessions/**`                                          | Remove `activityPanelCollapsed` from model, manager, hydration, mocks |
+| `crates/backend/src/**`                                             | Remove cache field + dead IPC                                         |
+| `electron/backend-methods.ts`                                       | Remove command from IPC allowlist                                     |
+| `src/features/terminal/services/*Service.ts`                        | Remove dead `setSessionActivityPanelCollapsed` method                 |
 
 ---
 
 ### Task 1: Global activity-panel store + hook
 
 **Files:**
+
 - Create: `src/features/workspace/utils/activityPanelCollapsedStore.ts`
 - Create: `src/features/workspace/utils/activityPanelCollapsedStore.test.ts`
 - Create: `src/features/workspace/hooks/useActivityPanelCollapsed.ts`
@@ -260,19 +261,20 @@ export interface UseActivityPanelCollapsedReturn {
 // Subscribes any component to the workspace-global activity-panel collapse
 // flag. Mirrors useSidebarCollapsed: the in-memory snapshot is seeded from
 // localStorage at module load, so first paint and client agree.
-export const useActivityPanelCollapsed = (): UseActivityPanelCollapsedReturn => {
-  const collapsed = useSyncExternalStore(
-    subscribeActivityPanelCollapsed,
-    getActivityPanelCollapsed,
-    getActivityPanelCollapsed
-  )
+export const useActivityPanelCollapsed =
+  (): UseActivityPanelCollapsedReturn => {
+    const collapsed = useSyncExternalStore(
+      subscribeActivityPanelCollapsed,
+      getActivityPanelCollapsed,
+      getActivityPanelCollapsed
+    )
 
-  const toggle = useCallback((): void => {
-    setActivityPanelCollapsed(!getActivityPanelCollapsed())
-  }, [])
+    const toggle = useCallback((): void => {
+      setActivityPanelCollapsed(!getActivityPanelCollapsed())
+    }, [])
 
-  return { collapsed, toggle, setCollapsed: setActivityPanelCollapsed }
-}
+    return { collapsed, toggle, setCollapsed: setActivityPanelCollapsed }
+  }
 ```
 
 - [ ] **Step 7: Run hook test to verify it passes**
@@ -292,6 +294,7 @@ git commit -m "feat(workspace): add global activity-panel collapse store"
 ### Task 2: Dock store + hook
 
 **Files:**
+
 - Create: `src/features/workspace/utils/dockStore.ts`
 - Create: `src/features/workspace/utils/dockStore.test.ts`
 - Create: `src/features/workspace/hooks/useDockState.ts`
@@ -330,7 +333,11 @@ describe('dockStore', () => {
     setDockOpen(true)
     setDockTab('editor')
     setDockPosition('right')
-    expect(getDockState()).toEqual({ open: true, tab: 'editor', position: 'right' })
+    expect(getDockState()).toEqual({
+      open: true,
+      tab: 'editor',
+      position: 'right',
+    })
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '')).toEqual({
       open: true,
       tab: 'editor',
@@ -422,7 +429,11 @@ export interface DockState {
 
 const STORAGE_KEY = 'vimeflow:workspace:dock'
 
-const DEFAULT_STATE: DockState = { open: false, tab: 'diff', position: 'bottom' }
+const DEFAULT_STATE: DockState = {
+  open: false,
+  tab: 'diff',
+  position: 'bottom',
+}
 
 const isDockTab = (value: unknown): value is DockTab =>
   value === 'editor' || value === 'diff'
@@ -627,6 +638,7 @@ git commit -m "feat(workspace): add persisted global dock state store"
 ### Task 3: Wire WorkspaceView to the two stores
 
 **Files:**
+
 - Modify: `src/features/workspace/WorkspaceView.tsx`
 - Modify: `src/features/workspace/hooks/useSidebarShortcut.ts` (comment only)
 
@@ -668,23 +680,23 @@ Delete line 399 from the `useSessionManager(...)` destructuring:
 Replace:
 
 ```ts
-  const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
-  const [isDockOpen, setIsDockOpen] = useState(false)
-  const [dockTab, setDockTab] = useState<DockTab>('diff')
+const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
+const [isDockOpen, setIsDockOpen] = useState(false)
+const [dockTab, setDockTab] = useState<DockTab>('diff')
 ```
 
 with:
 
 ```ts
-  // Dock panel controlled state — workspace-global, persisted (dockStore).
-  const {
-    isDockOpen,
-    dockTab,
-    dockPosition,
-    setDockOpen: setIsDockOpen,
-    setDockTab,
-    setDockPosition,
-  } = useDockState()
+// Dock panel controlled state — workspace-global, persisted (dockStore).
+const {
+  isDockOpen,
+  dockTab,
+  dockPosition,
+  setDockOpen: setIsDockOpen,
+  setDockTab,
+  setDockPosition,
+} = useDockState()
 ```
 
 The `setIsDockOpen` alias keeps every existing call site (`openDock` line 1569, `closeDock` line 1583, lines 1856, 2872, 2929) untouched. `setDockTab` / `setDockPosition` signatures match the old setters, so `openDock` (1562-1574), the `buildWorkspaceCommands` wiring (2029, 2087), and the `DockPanel` props (3085-3088) are unchanged.
@@ -694,42 +706,40 @@ The `setIsDockOpen` alias keeps every existing call site (`openDock` line 1569, 
 Replace:
 
 ```ts
-  const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
+const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
 
-  const activityPanelAgent = useMemo(
-    () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
-    [agentStatus.agentType]
-  )
+const activityPanelAgent = useMemo(
+  () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
+  [agentStatus.agentType]
+)
 
-  const handleActivityPanelCollapsed = useCallback(
-    (collapsed: boolean): void => {
-      if (!activeSessionId) {
-        return
-      }
-      setSessionActivityPanelCollapsed(activeSessionId, collapsed)
-    },
-    [activeSessionId, setSessionActivityPanelCollapsed]
-  )
+const handleActivityPanelCollapsed = useCallback(
+  (collapsed: boolean): void => {
+    if (!activeSessionId) {
+      return
+    }
+    setSessionActivityPanelCollapsed(activeSessionId, collapsed)
+  },
+  [activeSessionId, setSessionActivityPanelCollapsed]
+)
 
-  const handleToggleActivityPanel = useCallback((): void => {
-    handleActivityPanelCollapsed(!activityPanelCollapsed)
-  }, [activityPanelCollapsed, handleActivityPanelCollapsed])
+const handleToggleActivityPanel = useCallback((): void => {
+  handleActivityPanelCollapsed(!activityPanelCollapsed)
+}, [activityPanelCollapsed, handleActivityPanelCollapsed])
 ```
 
 with:
 
 ```ts
-  // Workspace-global activity-panel collapse flag — one flag for the app,
-  // shared across sessions (mirrors the left sidebar's global store).
-  const {
-    collapsed: activityPanelCollapsed,
-    toggle: handleToggleActivityPanel,
-  } = useActivityPanelCollapsed()
+// Workspace-global activity-panel collapse flag — one flag for the app,
+// shared across sessions (mirrors the left sidebar's global store).
+const { collapsed: activityPanelCollapsed, toggle: handleToggleActivityPanel } =
+  useActivityPanelCollapsed()
 
-  const activityPanelAgent = useMemo(
-    () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
-    [agentStatus.agentType]
-  )
+const activityPanelAgent = useMemo(
+  () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
+  [agentStatus.agentType]
+)
 ```
 
 `handleToggleActivityPanel` keeps its name, so the four consumers (lines 2031, 2089, 2207, 3569) and the `SidebarToggle` wiring (3566-3579) are unchanged. `activityPanelCollapsed` keeps its name, so the render block at 3583-3614 is unchanged.
@@ -739,13 +749,13 @@ with:
 In `src/features/workspace/hooks/useSidebarShortcut.ts:13`, replace:
 
 ```ts
-  /** Flip the active session's right activity-panel collapse flag. */
+/** Flip the active session's right activity-panel collapse flag. */
 ```
 
 with:
 
 ```ts
-  /** Flip the workspace-global right activity-panel collapse flag. */
+/** Flip the workspace-global right activity-panel collapse flag. */
 ```
 
 - [ ] **Step 6: Typecheck and run the workspace test suite**
@@ -754,7 +764,7 @@ Run: `npm run type-check:generated`
 Expected: the only acceptable errors at this point are `activityPanelCollapsed`-related ones in test fixtures outside `WorkspaceView.tsx` (they are Tasks 4-5). If `WorkspaceView.tsx` itself errors, fix before continuing.
 
 Run: `npx vitest run src/features/workspace/`
-Expected: activity-panel tests that assert *per-session* restore and dock tests that assumed fresh `useState` per render will fail — note them; they are fixed in Task 5. Everything else should pass.
+Expected: activity-panel tests that assert _per-session_ restore and dock tests that assumed fresh `useState` per render will fail — note them; they are fixed in Task 5. Everything else should pass.
 
 - [ ] **Step 7: Commit**
 
@@ -768,6 +778,7 @@ git commit -m "feat(workspace): consume global dock and activity-panel stores in
 ### Task 4: Remove per-session activityPanelCollapsed from the session model
 
 **Files:**
+
 - Modify: `src/features/sessions/types/index.ts:147-151`
 - Modify: `src/features/sessions/hooks/useSessionManager.ts` (6 sites)
 - Modify: `src/features/sessions/utils/sessionFromInfo.ts`
@@ -783,11 +794,11 @@ git commit -m "feat(workspace): consume global dock and activity-panel stores in
 In `src/features/sessions/types/index.ts`, delete lines 147-151:
 
 ```ts
-  /** Session-scoped collapse state for the right agent activity panel.
-   *  Shared by every pane so switching pane within a session never
-   *  jumps the bar. UI-only: hydrated from localStorage by session id
-   *  and persisted there on toggle. Default `false` (expanded). */
-  activityPanelCollapsed: boolean
+/** Session-scoped collapse state for the right agent activity panel.
+ *  Shared by every pane so switching pane within a session never
+ *  jumps the bar. UI-only: hydrated from localStorage by session id
+ *  and persisted there on toggle. Default `false` (expanded). */
+activityPanelCollapsed: boolean
 ```
 
 - [ ] **Step 2: Clean up useSessionManager**
@@ -821,34 +832,34 @@ c) Delete `activityPanelCollapsed: false,` from the `createSession` session lite
 d) Delete the localStorage cleanup in `removeSession` (lines 1827-1833):
 
 ```ts
-        // Replaces the implicit cleanup the Rust PTY cache used to do on
-        // session exit. Without it, every closed session leaves a stale
-        // `vimeflow:sessions:activityPanelCollapsed:<id>` key in
-        // localStorage forever. Runs only on the happy path (after both
-        // kill phases settle) so a partial-kill bail-out doesn't drop
-        // the preference for a session the user can still see.
-        deleteActivityPanelCollapsed(target.id)
+// Replaces the implicit cleanup the Rust PTY cache used to do on
+// session exit. Without it, every closed session leaves a stale
+// `vimeflow:sessions:activityPanelCollapsed:<id>` key in
+// localStorage forever. Runs only on the happy path (after both
+// kill phases settle) so a partial-kill bail-out doesn't drop
+// the preference for a session the user can still see.
+deleteActivityPanelCollapsed(target.id)
 ```
 
 e) Delete the `setSessionActivityPanelCollapsed` callback (lines 3120-3135):
 
 ```ts
-  const setSessionActivityPanelCollapsed = useCallback(
-    (sessionId: string, collapsed: boolean): void => {
-      const session = sessionsRef.current.find((s) => s.id === sessionId)
-      if (!session || session.activityPanelCollapsed === collapsed) {
-        return
-      }
+const setSessionActivityPanelCollapsed = useCallback(
+  (sessionId: string, collapsed: boolean): void => {
+    const session = sessionsRef.current.find((s) => s.id === sessionId)
+    if (!session || session.activityPanelCollapsed === collapsed) {
+      return
+    }
 
-      writeActivityPanelCollapsed(sessionId, collapsed)
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId ? { ...s, activityPanelCollapsed: collapsed } : s
-        )
+    writeActivityPanelCollapsed(sessionId, collapsed)
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, activityPanelCollapsed: collapsed } : s
       )
-    },
-    []
-  )
+    )
+  },
+  []
+)
 ```
 
 f) Delete `setSessionActivityPanelCollapsed,` from the return object (line 3197).
@@ -856,10 +867,12 @@ f) Delete `setSessionActivityPanelCollapsed,` from the return object (line 3197)
 - [ ] **Step 3: Remove hydration**
 
 In `src/features/sessions/utils/sessionFromInfo.ts`:
+
 - Delete line 5: `import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'`
 - Delete line 51: `    activityPanelCollapsed: readActivityPanelCollapsed(info.id),`
 
 In `src/features/sessions/utils/groupSessionsFromInfos.ts`:
+
 - Delete line 29: `import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'`
 - Delete line 179: `    activityPanelCollapsed: readActivityPanelCollapsed(workspaceId),`
 - Delete line 413: `    activityPanelCollapsed: readActivityPanelCollapsed(shape.id),`
@@ -917,6 +930,7 @@ git commit -m "refactor(sessions): drop per-session activityPanelCollapsed from 
 ### Task 5: Test fixture cleanup and store resets
 
 **Files:**
+
 - Modify: ~35 test files containing `activityPanelCollapsed` fixtures, mocks, or assertions (enumerate with grep below)
 - Modify: every `WorkspaceView.*.test.tsx` file — add global-store resets
 
@@ -931,20 +945,23 @@ The grep is authoritative. Known groups as of 2026-07-30:
 a) **Pure object fixtures** — delete the single `activityPanelCollapsed: ...` line: `SplitView.test.tsx`, `TerminalZone.test.tsx`, `WorkspaceView.top-chrome.test.tsx` (other sites), `WorkspaceView.command-palette.test.tsx` (fixture sites), `Terminal.integration.test.tsx:37`, `Body.test.tsx`, `Body.agent-osc.test.tsx`, `WorkspaceView.subscription.test.tsx`, `Tabs.test.tsx`, `TerminalPane/index.test.tsx`, `Header.test.tsx`, `SessionIslandIndicator.test.tsx`, `SessionIsland.test.tsx`, `WorkspaceView.integration.test.tsx`, `usePaneShortcuts.test.ts`, `usePushWorkspaceGrouping.test.ts`, `acceptance.test.tsx` (keymap), `BrowserPane.test.tsx`, `WorkspaceView.visual.test.tsx`, `WorkspaceView.verification.test.tsx`, `WorkspaceView.test.tsx`, `WorkspaceView.elastic.test.tsx`, `cycleSession.test.ts`, `usePaneRenameChord.test.tsx`, `paneLifecycle.test.ts`, `agentForSession.test.ts`, `List.test.tsx`, `types/index.test.ts` (sessions), `List.motion.test.tsx`, `pickNextVisibleSessionId.test.ts`, `findBackendPane.test.ts`, `activeSessionPane.test.ts`, `useRenameState.test.ts`.
 
 b) **Behavior tests to delete**:
+
 - `src/features/sessions/hooks/useSessionManager.test.ts`: the `setSessionActivityPanelCollapsed` describe blocks (calls at ~3215, 3257, 6333, 6362, 6383) and the `removeSession clears the localStorage key` assertion (~3191) — keep the surrounding `removeSession` happy-path test minus that assertion.
 - `src/features/sessions/utils/sessionFromInfo.test.ts`: the two tests `hydrates session.activityPanelCollapsed from localStorage` and `defaults session.activityPanelCollapsed to false when nothing persisted` (~lines 86-96), plus the now-unused `writeActivityPanelCollapsed` import.
 
 c) **Mock cleanups (typed mocks break with excess-property errors)**:
+
 - `src/features/workspace/WorkspaceView.command-palette.test.tsx:330` (and its import if unused after): delete `setSessionActivityPanelCollapsed: vi.fn(),` from the `SessionManager` mock.
 
 d) **Rewrites (not deletions)**:
-- `src/features/workspace/WorkspaceView.top-chrome.test.tsx:601`: the test seeds a collapsed panel via the session fixture (`{ ...mockSessions[0], activityPanelCollapsed: true }`). Replace the fixture override with a store seed *before* render:
+
+- `src/features/workspace/WorkspaceView.top-chrome.test.tsx:601`: the test seeds a collapsed panel via the session fixture (`{ ...mockSessions[0], activityPanelCollapsed: true }`). Replace the fixture override with a store seed _before_ render:
   ```ts
   setActivityPanelCollapsed(true)
   ```
   importing `setActivityPanelCollapsed` from `src/features/workspace/utils/activityPanelCollapsedStore` (path-relative: `../utils/activityPanelCollapsedStore` is wrong from this file — it lives next to the test under `src/features/workspace/`, so use `./utils/activityPanelCollapsedStore`).
 - `src/features/workspace/types/index.test.ts`: remove `activityPanelCollapsed` from the `WorkspaceState` fixture (~line 69).
-- Any WorkspaceView test asserting *per-session* activity-panel memory (collapse in session A, switch to B, expect B expanded): rewrite to assert the flag is global — collapse, switch session, expect the panel still collapsed.
+- Any WorkspaceView test asserting _per-session_ activity-panel memory (collapse in session A, switch to B, expect B expanded): rewrite to assert the flag is global — collapse, switch session, expect the panel still collapsed.
 
 e) **Store resets in every WorkspaceView test file (CRITICAL — codex finding):** both new stores are module-global, so state now leaks across tests exactly like `sidebarCollapsedStore` already did. In each `src/features/workspace/WorkspaceView*.test.tsx` `beforeEach` (the ones that already do `localStorage.clear()`), add:
 
@@ -984,6 +1001,7 @@ git commit -m "test: update fixtures and specs for global panel UI state"
 ### Task 6: Remove the dead backend IPC, cache field, and Electron allowlist entry
 
 **Files:**
+
 - Modify: `crates/backend/src/terminal/types.rs` (SessionInfo field 236-238, `SetSessionActivityPanelCollapsedRequest` ~285-295)
 - Modify: `crates/backend/src/terminal/cache.rs` (field 25-27, tests 635-688)
 - Modify: `crates/backend/src/terminal/commands.rs` (`set_session_activity_panel_collapsed_inner` 1064+, cache field uses 430/866, tests/fixtures 2399, 3165, 3488, 3553, 3980-4152)
@@ -1034,6 +1052,7 @@ export type { SetSessionActivityPanelCollapsedRequest } from './SetSessionActivi
 - [ ] **Step 5: Remove the frontend service methods and their mocks**
 
 In `src/features/terminal/services/terminalService.ts`:
+
 - Delete `SetSessionActivityPanelCollapsedRequest` from the bindings import (line 11).
 - Delete the interface member (lines 127-129):
 
@@ -1046,6 +1065,7 @@ In `src/features/terminal/services/terminalService.ts`:
 - Delete the no-op/mock implementation (lines 463-465).
 
 In `src/features/terminal/services/desktopTerminalService.ts`:
+
 - Delete `SetSessionActivityPanelCollapsedRequest` from the import (line 21).
 - Delete the method (lines 363-367):
 
