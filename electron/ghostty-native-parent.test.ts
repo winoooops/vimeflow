@@ -1972,7 +1972,7 @@ describe('ghostty native parent', () => {
     }
   })
 
-  test('serializes native-owned resize metadata across release', async () => {
+  test('does not replay native-owned resize metadata after release', async () => {
     vi.useFakeTimers()
     let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
 
@@ -2063,22 +2063,6 @@ describe('ghostty native parent', () => {
       await Promise.resolve()
 
       expect(sidecar.invoke).toHaveBeenCalledTimes(2)
-      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
-        request: { sessionId: 'pty-1', cols: 81, rows: 24 },
-      })
-
-      resolveResizeQueue.shift()?.()
-      await Promise.resolve()
-
-      expect(sidecar.invoke).toHaveBeenCalledTimes(3)
-      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
-        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
-      })
-
-      resolveResizeQueue.shift()?.()
-      await Promise.resolve()
-
-      expect(sidecar.invoke).toHaveBeenCalledTimes(4)
       expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
         request: { sessionId: 'pty-1', cols: 90, rows: 50 },
       })

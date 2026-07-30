@@ -19,7 +19,10 @@ async fn main() {
     // Claim the fd-passing transport (VIM-399) before anything can spawn a
     // subprocess: stdio[3] inheritance clears close-on-exec, and a leaked
     // transport end would wedge EOF/channel-failure detection.
+    #[cfg(unix)]
     let pty_fd_transport = vimeflow_lib::fd_transport::claim_inherited_transport();
+    #[cfg(not(unix))]
+    let pty_fd_transport = None;
     if pty_fd_transport.is_some() {
         log::info!("pty fd transport claimed on fd 3");
     }

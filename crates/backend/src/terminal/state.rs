@@ -281,15 +281,27 @@ impl PtyState {
         sessions.get(session_id)?.master.get_size().ok()
     }
 
-    /// The raw master fd and generation for a live session — what the
-    /// broker dups to answer a `request-fd`. `None` when the session is
-    /// gone or the platform can't expose the fd.
+    /// A duplicated master fd and generation for a live session. The dup is
+    /// created while `sessions` is still locked so the broker never receives a
+    /// borrowed descriptor that can be closed and reused before handoff.
     #[cfg(unix)]
-    pub fn master_fd_and_generation(&self, session_id: &str) -> Option<(std::os::fd::RawFd, u64)> {
+    pub fn master_fd_duplicate_and_generation(
+        &self,
+        session_id: &str,
+    ) -> Option<(std::os::fd::OwnedFd, u64)> {
+        use std::os::fd::FromRawFd;
+
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         let session = sessions.get(session_id)?;
         let fd = session.master.as_raw_fd()?;
-        Some((fd, session.generation))
+        // SAFETY: F_DUPFD_CLOEXEC duplicates a live fd owned by the locked
+        // ManagedSession; from_raw_fd takes ownership of the successful dup.
+        let dup = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+        if dup < 0 {
+            return None;
+        }
+
+        Some((unsafe { std::os::fd::OwnedFd::from_raw_fd(dup) }, session.generation))
     }
 
     /// Allocate the next generation number

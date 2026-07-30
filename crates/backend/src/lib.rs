@@ -9,4 +9,5 @@ mod settings;
 mod terminal;
 
 // Integration tests exercise the fd-passing transport directly (VIM-399).
+#[cfg(unix)]
 pub use terminal::fd_transport;

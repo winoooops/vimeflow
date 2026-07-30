@@ -2,7 +2,7 @@
 id: cross-platform-paths
 category: cross-platform
 created: 2026-04-09
-last_updated: 2026-07-27
+last_updated: 2026-07-30
 ref_count: 13
 ---
 
@@ -155,3 +155,17 @@ consider using path libraries for cross-platform code.
 - **Fix:** Added POSIX single-quote escaping for the fixture path before
   constructing the fallback `node ...` command.
 - **Commit:** same commit as this entry
+
+### 16. Unix-only fd transport was exported on non-Unix builds
+
+- **Source:** github-claude | PR #761 round 1 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/lib.rs`
+- **Finding:** The backend crate re-exported `terminal::fd_transport` and the
+  sidecar binary referenced `vimeflow_lib::fd_transport` without matching the
+  module's Unix-only implementation guard. Non-Unix targets could therefore
+  compile a public path to a cfg-elided module.
+- **Fix:** Gate the `terminal::fd_transport` module declaration, the crate-level
+  re-export, and the binary's inherited-transport claim behind `#[cfg(unix)]`,
+  leaving non-Unix builds on the existing async resize path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -24,7 +24,7 @@
 #![cfg(unix)]
 
 use std::collections::{HashMap, HashSet};
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -145,14 +145,7 @@ impl FdBroker {
     /// Offers a duplicated PTY master to the addon under a fresh lease.
     /// Called on session spawn and on deferred `request-fd` fulfillment.
     /// A failure leaves the session `RUST_OWNED` — never worse than today.
-    pub fn offer_fd(&self, session_id: &str, generation: u64, master_fd: RawFd) {
-        // SAFETY: F_DUPFD_CLOEXEC on a live fd owned by ManagedSession.
-        let dup = unsafe { libc::fcntl(master_fd, libc::F_DUPFD_CLOEXEC, 0) };
-        if dup < 0 {
-            log::warn!("fd broker: dup failed for {session_id}; staying on async path");
-            return;
-        }
-
+    pub fn offer_fd(&self, session_id: &str, generation: u64, master_fd: OwnedFd) {
         let lease_id = {
             let mut inner = self.inner.lock().expect("broker lock");
             inner.next_lease_id += 1;
@@ -174,11 +167,9 @@ impl FdBroker {
             lease_id,
         };
         let payload = serde_json::to_vec(&msg).expect("serialize fd message");
-        let result = fd_transport::send_fd(self.transport_fd, &payload, dup);
-        // The kernel holds its own in-flight reference; our dup closes now
-        // either way (RAII by hand — send_fd does not take ownership).
-        // SAFETY: dup is the fd we just created above.
-        unsafe { libc::close(dup) };
+        let result = fd_transport::send_fd(self.transport_fd, &payload, master_fd.as_raw_fd());
+        // The kernel holds its own in-flight reference; our owned dup closes
+        // at scope exit either way because send_fd does not take ownership.
         if let Err(err) = result {
             log::warn!("fd broker: send failed for {session_id} ({err}); reclaiming");
             let mut inner = self.inner.lock().expect("broker lock");
@@ -387,7 +378,7 @@ impl FdBroker {
     }
 
     fn answer_request(&self, session_id: &str, pty: &PtyState) {
-        match pty.master_fd_and_generation(session_id) {
+        match pty.master_fd_duplicate_and_generation(session_id) {
             Some((master_fd, generation)) => self.offer_fd(session_id, generation, master_fd),
             None => log::warn!("fd broker: request-fd for unknown session {session_id}"),
         }
@@ -397,7 +388,7 @@ impl FdBroker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::fd::{AsRawFd, OwnedFd};
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
     use std::time::{Duration, Instant};
 
     struct AddonSim {
@@ -447,6 +438,14 @@ mod tests {
         a
     }
 
+    fn duplicate_fd(fd: RawFd) -> OwnedFd {
+        // SAFETY: F_DUPFD_CLOEXEC returns a new fd owned by this test helper.
+        let dup = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+        assert!(dup >= 0, "failed to duplicate fd");
+
+        unsafe { OwnedFd::from_raw_fd(dup) }
+    }
+
     struct PtySessionCleanup {
         pty_state: PtyState,
         session_id: String,
@@ -466,7 +465,7 @@ mod tests {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
 
-        broker.offer_fd("s1", 7, probe.as_raw_fd());
+        broker.offer_fd("s1", 7, duplicate_fd(probe.as_raw_fd()));
         let msg = addon.recv();
         match msg {
             WireMessage::Fd {
@@ -481,7 +480,7 @@ mod tests {
             other => panic!("expected fd message, got {other:?}"),
         }
 
-        broker.offer_fd("s1", 7, probe.as_raw_fd());
+        broker.offer_fd("s1", 7, duplicate_fd(probe.as_raw_fd()));
         match addon.recv() {
             WireMessage::Fd { lease_id, .. } => assert_eq!(lease_id, 2, "lease must be fresh"),
             other => panic!("expected fd message, got {other:?}"),
@@ -492,7 +491,7 @@ mod tests {
     fn test_native_ready_sets_ownership_and_acks() {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
 
         assert!(!broker.is_native_owned("s1", 3));
@@ -513,10 +512,10 @@ mod tests {
     fn test_stale_native_ready_is_dropped_without_ownership() {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
         // Remount: a second transfer supersedes lease 1.
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
 
         addon.send(&WireMessage::NativeReady {
@@ -537,7 +536,7 @@ mod tests {
     fn test_release_retires_lease_acks_and_survives_duplicates() {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
         addon.send(&WireMessage::NativeReady {
             session_id: "s1".into(),
@@ -578,10 +577,10 @@ mod tests {
     fn test_stale_release_from_old_lease_cannot_affect_replacement() {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
         // Same-generation remount: fresh lease 2 replaces lease 1.
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
         addon.send(&WireMessage::NativeReady {
             session_id: "s1".into(),
@@ -615,7 +614,7 @@ mod tests {
     fn test_request_fd_deferred_until_previous_lease_retires() {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
 
         // Previous lease still active: request must NOT be answered yet.
@@ -648,7 +647,7 @@ mod tests {
     fn test_detach_sent_for_matching_generation_only() {
         let (broker, addon, _pty) = start_broker();
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
         let _ = addon.recv();
 
         // Delayed exit from an older generation: no detach for lease 1.
@@ -715,7 +714,9 @@ mod tests {
             session_id: "s1".to_string(),
         };
 
-        let (fd, generation) = pty_state.master_fd_and_generation("s1").expect("master fd");
+        let (fd, generation) = pty_state
+            .master_fd_duplicate_and_generation("s1")
+            .expect("master fd");
         broker.offer_fd("s1", generation, fd);
         let lease_id = match addon.recv() {
             WireMessage::Fd { lease_id, .. } => lease_id,
@@ -773,7 +774,7 @@ mod tests {
         let broker = FdBroker::start(rust_end.as_raw_fd(), pty);
         std::mem::forget(rust_end);
         let probe = probe_fd();
-        broker.offer_fd("s1", 3, probe.as_raw_fd());
+        broker.offer_fd("s1", 3, duplicate_fd(probe.as_raw_fd()));
 
         {
             let addon = AddonSim { fd: addon_end };

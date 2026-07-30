@@ -470,7 +470,9 @@ pub(crate) async fn spawn_pty_inner(
     // fd means silent degradation to the async resize path.
     #[cfg(unix)]
     if let Some(broker) = state.fd_broker() {
-        if let Some((master_fd, generation)) = state.master_fd_and_generation(&request.session_id) {
+        if let Some((master_fd, generation)) =
+            state.master_fd_duplicate_and_generation(&request.session_id)
+        {
             broker.offer_fd(&request.session_id, generation, master_fd);
         }
     }

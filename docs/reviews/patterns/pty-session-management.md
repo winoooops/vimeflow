@@ -2,7 +2,7 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-07-29
+last_updated: 2026-07-30
 ref_count: 6
 ---
 
@@ -159,4 +159,33 @@ below preserve their original Tauri-era file paths for auditability.
 - **Fix:** Collapsed the active-lease check and deferred-request insertion into
   one broker lock and returned an answer-now decision before calling
   `answer_request` outside the lock.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Native-era resize metadata replayed after lease release
+
+- **Source:** github-codex-connector | PR #761 round 1 | 2026-07-30
+- **Severity:** P1 / HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native-owned resize metadata queued while a `resize_pty` call was
+  in flight could drain after the addon released the PTY lease. Because release
+  ordering travels through the fd broker while resize metadata travels through
+  sidecar IPC, stale native-era sizes could overwrite the release-applied size.
+- **Fix:** Before draining the native-owned resize queue, re-check whether the
+  surface still exists and the addon still owns the primary PTY. If ownership
+  has ended, drop the native-era queue and forward only the current Rust-owned
+  pending resize.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. PTY master descriptor duplicated after the session lock was released
+
+- **Source:** github-codex-connector | PR #761 round 1 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/state.rs`
+- **Finding:** `PtyState` returned a borrowed raw master fd plus generation, and
+  `FdBroker::offer_fd` duplicated it later. If the PTY reader removed the
+  session between those two steps, the raw fd number could be closed and reused
+  before duplication, handing the native addon an unrelated descriptor.
+- **Fix:** Duplicate the PTY master while the sessions mutex still holds the
+  `ManagedSession`, return an `OwnedFd`, and make the broker accept that owned
+  duplicate directly for `SCM_RIGHTS` transfer.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

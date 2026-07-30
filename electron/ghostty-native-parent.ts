@@ -1528,6 +1528,29 @@ export class GhosttyNativeParentController {
       }
 
       const nativeOwnedPending = resizeState.nativeOwnedResizeQueue.shift()
+      if (
+        nativeOwnedPending !== undefined &&
+        !this.isPrimaryPtyNativeOwned(resizeState)
+      ) {
+        resizeState.nativeOwnedResizeQueue = []
+        const pending = resizeState.pendingResize
+        if (
+          pending !== null &&
+          resizeState.resizeTimer === null &&
+          (resizeState.lastResize?.cols !== pending.cols ||
+            resizeState.lastResize.rows !== pending.rows)
+        ) {
+          resizeState.pendingResize = null
+          this.forwardPtyResize(
+            resizeState,
+            sessionId,
+            pending.cols,
+            pending.rows
+          )
+        }
+
+        return
+      }
       if (nativeOwnedPending !== undefined) {
         this.forwardPtyResize(
           resizeState,
@@ -1561,6 +1584,18 @@ export class GhosttyNativeParentController {
     resizeState.resizeTimer = null
     resizeState.pendingResize = null
     resizeState.nativeOwnedResizeQueue = []
+  }
+
+  private isPrimaryPtyNativeOwned(
+    resizeState: GhosttyNativeSurfaceState
+  ): boolean {
+    return (
+      resizeState.surface !== null &&
+      this.getOptionalAddon()?.isPtyNativeOwned?.(
+        resizeState.surface,
+        'primary'
+      ) === true
+    )
   }
 
   private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
