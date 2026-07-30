@@ -10,6 +10,12 @@ export interface SidecarOptions {
   binary: string
   appDataDir: string
   stderr?: NodeJS.WritableStream
+  /**
+   * Child end of the PTY fd-passing socketpair (VIM-399). When set, the
+   * sidecar inherits it as stdio[3] and `VIMEFLOW_PTY_FD_TRANSPORT` is set
+   * so Rust claims it at bootstrap. Absent → async resize path only.
+   */
+  transportFd?: number
 }
 
 export interface SpawnedChild {
@@ -28,7 +34,11 @@ export interface SpawnedChild {
 }
 
 export interface SidecarDeps {
-  spawnFn: (binary: string, args: string[]) => SpawnedChild
+  spawnFn: (
+    binary: string,
+    args: string[],
+    extra?: { transportFd?: number }
+  ) => SpawnedChild
 }
 
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
@@ -62,10 +72,13 @@ export const createSidecar = (
 ): Sidecar => {
   const errStream = options.stderr ?? process.stderr
 
-  const child = options.spawnFn(options.binary, [
-    '--app-data-dir',
-    options.appDataDir,
-  ])
+  const child = options.spawnFn(
+    options.binary,
+    ['--app-data-dir', options.appDataDir],
+    options.transportFd !== undefined
+      ? { transportFd: options.transportFd }
+      : undefined
+  )
 
   const pending = new Map<string, Pending>()
   const listeners = new Set<(event: string, payload: unknown) => void>()
@@ -485,5 +498,20 @@ export const createSidecar = (
   }
 }
 
+const spawnWithOptionalTransport: SidecarDeps['spawnFn'] = (
+  binary,
+  args,
+  extra
+) => {
+  if (extra?.transportFd === undefined) {
+    return childSpawn(binary, args) as unknown as SpawnedChild
+  }
+
+  return childSpawn(binary, args, {
+    stdio: ['pipe', 'pipe', 'pipe', extra.transportFd],
+    env: { ...process.env, VIMEFLOW_PTY_FD_TRANSPORT: '1' },
+  }) as unknown as SpawnedChild
+}
+
 export const spawnSidecar = (options: SidecarOptions): Sidecar =>
-  createSidecar({ ...options, spawnFn: childSpawn as SidecarDeps['spawnFn'] })
+  createSidecar({ ...options, spawnFn: spawnWithOptionalTransport })

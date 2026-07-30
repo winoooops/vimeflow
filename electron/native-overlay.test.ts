@@ -1006,8 +1006,9 @@ describe('NativeOverlayController', () => {
     )
     await expect(openPromise).resolves.toEqual({ accepted: true })
 
-    expect(overlayWindow.setFocusable).toHaveBeenCalledWith(true)
-    expect(overlayWindow.show).toHaveBeenCalledOnce()
+    expect(overlayWindow.setFocusable).toHaveBeenCalledTimes(2)
+    expect(overlayWindow.setFocusable).toHaveBeenLastCalledWith(true)
+    expect(overlayWindow.show).toHaveBeenCalledTimes(2)
     expect(overlayWindow.focus).toHaveBeenCalledTimes(2)
     expect(overlayWindow.webContents.focus).toHaveBeenCalledTimes(2)
     expect(overlayWindow.showInactive).not.toHaveBeenCalled()
@@ -1040,6 +1041,48 @@ describe('NativeOverlayController', () => {
         surfaceId: layoutCreatorDialogRequest.surfaceId,
       })
     )
+  })
+
+  test('resumes layout creator dialogs as focusable overlay windows', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await openPromise
+
+    handler(NATIVE_OVERLAY_ACTION)(
+      { sender: overlayWindow.webContents },
+      {
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+        actionId: layoutCreatorDialogRequest.payload.actions.save,
+        closeOnSelect: false,
+        suspendOnSelect: true,
+      }
+    )
+
+    overlayWindow.setFocusable.mockClear()
+    overlayWindow.show.mockClear()
+    overlayWindow.showInactive.mockClear()
+    overlayWindow.focus.mockClear()
+    overlayWindow.webContents.focus.mockClear()
+
+    handler(NATIVE_OVERLAY_RESUME)(
+      { sender: electronMock.owner.webContents },
+      { surfaceId: layoutCreatorDialogRequest.surfaceId }
+    )
+
+    expect(overlayWindow.setFocusable).toHaveBeenCalledOnce()
+    expect(overlayWindow.setFocusable).toHaveBeenLastCalledWith(true)
+    expect(overlayWindow.show).toHaveBeenCalledOnce()
+    expect(overlayWindow.showInactive).not.toHaveBeenCalled()
+    expect(overlayWindow.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
   })
 
   test('dismisses a layout creator dialog on owner blur when the app deactivates', async () => {

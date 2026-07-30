@@ -2320,8 +2320,18 @@ mod tests {
     #[tokio::test]
     async fn dispatch_review_state_round_trips_and_deletes() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let cwd = std::env::current_dir()
-            .expect("current dir")
+        let temp_dir = tempfile::tempdir_in(dirs::home_dir().expect("home dir"))
+            .expect("home-scoped temp dir");
+        let git_status = std::process::Command::new("git")
+            .arg("-c")
+            .arg("init.defaultBranch=main")
+            .arg("init")
+            .arg(temp_dir.path())
+            .status()
+            .expect("git init");
+        assert!(git_status.success(), "git init should succeed");
+        let cwd = temp_dir
+            .path()
             .to_string_lossy()
             .into_owned();
 
