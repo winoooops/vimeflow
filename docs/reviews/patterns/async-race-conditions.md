@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-27
-ref_count: 90
+last_updated: 2026-07-29
+ref_count: 91
 ---
 
 # Async Race Conditions
@@ -1098,3 +1098,18 @@ prevent showing previous data.
 - **Fix:** Inserted a polling interval before each stability comparison so a
   settled anchor means the composer remained stable across time.
 - **Commit:** same commit as this entry
+
+### 99. Failed native PTY release could target a replacement lease
+
+- **Source:** github-codex-connector | PR #755 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native Ghostty `TIOCSWINSZ` failure path carried only a
+  boolean out of the slot mutex, then re-identified the slot by surface and
+  role after the lock was dropped. A secondary-session replacement in that
+  interval could bind a fresh healthy lease and have the delayed release
+  transition the replacement slot into `Releasing`.
+- **Fix:** Capture the failed lease ID while holding the slot mutex and require
+  `StartPtySlotRelease` to verify both that exact lease ID and the poisoned
+  `failed` flag before starting the release handshake.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

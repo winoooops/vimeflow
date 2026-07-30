@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <node_api.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -90,11 +91,14 @@ struct PtyFdSlot {
   std::string session_id;
   uint64_t generation = 0;
   uint64_t lease_id = 0;
-  // Latest size the engine reported — the RELEASING flush source and, from
-  // Phase 3 on, what a release carries as its last-applied size.
+  // Latest size the engine reported — the RELEASING flush source and what
+  // a release carries as its last-applied size.
   int last_columns = 0;
   int last_rows = 0;
   bool has_last_size = false;
+  // A failed TIOCSWINSZ poisons the fd: the slot keeps recording but stops
+  // writing (the spec's bounded one-hop gap) while its release is in flight.
+  bool failed = false;
 };
 
 constexpr int kPtyRolePrimary = 0;
@@ -159,8 +163,8 @@ bool SetCloexec(int fd) {
 // Winsize-ownership protocol (VIM-399 Phase 2) — implementation lives after
 // the surface callbacks; these run early in the file.
 void StartPtyFdTransportThread();
-void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,
-                       int rows);
+void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
+                         int rows);
 
 // createPtyFdTransport() -> child fd number. Idempotent: repeat calls return
 // the existing child end so a retried spawn cannot orphan a pair.
@@ -443,7 +447,7 @@ void OnResize(void *context, int columns, int rows) {
   }
 
   auto *surface = static_cast<SurfaceHandle *>(context);
-  RecordPtySlotSize(surface, kPtyRolePrimary, columns, rows);
+  ApplyPtySlotWinsize(surface, kPtyRolePrimary, columns, rows);
   napi_threadsafe_function tsfn =
       AcquireSurfaceCallback(surface, &SurfaceHandle::resize_tsfn);
   if (tsfn == nullptr) {
@@ -488,7 +492,7 @@ void OnSecondaryResize(void *context, int columns, int rows) {
   }
 
   auto *surface = static_cast<SurfaceHandle *>(context);
-  RecordPtySlotSize(surface, kPtyRoleSecondary, columns, rows);
+  ApplyPtySlotWinsize(surface, kPtyRoleSecondary, columns, rows);
   napi_threadsafe_function tsfn =
       AcquireSecondaryCallback(surface, &SurfaceHandle::secondary_resize_tsfn);
   if (tsfn == nullptr) {
@@ -688,19 +692,80 @@ void SendPtyTransportDatagram(const std::string &json) {
   }
 }
 
-void RecordPtySlotSize(SurfaceHandle *surface, int role, int columns,
-                       int rows) {
-  PtyFdSlot &slot = surface->pty_slots[role];
-  std::lock_guard<std::mutex> lock(slot.mtx);
-  if (slot.state == PtyFdSlot::State::Empty) {
-    return;
+// Starts the release handshake for the exact live slot lease whose fd failed a
+// TIOCSWINSZ. Lock order: protocol -> slot.
+void StartPtySlotRelease(SurfaceHandle *surface, int role,
+                         uint64_t failed_lease_id) {
+  std::string json;
+  {
+    std::lock_guard<std::mutex> lock(g_pty_protocol_mutex);
+    PtyFdSlot &slot = surface->pty_slots[role];
+    std::lock_guard<std::mutex> slot_lock(slot.mtx);
+    if (slot.lease_id != failed_lease_id || !slot.failed) {
+      return;
+    }
+    if (slot.state != PtyFdSlot::State::Bound &&
+        slot.state != PtyFdSlot::State::NativeActive) {
+      return;
+    }
+    slot.state = PtyFdSlot::State::Releasing;
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "{\"t\":\"release\",\"sessionId\":\"%s\",\"generation\":%" PRIu64 ""
+             ",\"leaseId\":%" PRIu64 ",\"rows\":%d,\"cols\":%d}",
+             slot.session_id.c_str(), slot.generation, slot.lease_id,
+             slot.has_last_size ? slot.last_rows : 0,
+             slot.has_last_size ? slot.last_columns : 0);
+    json = buf;
+    UnackedRelease record;
+    record.surface = surface;
+    record.role = role;
+    record.json = json;
+    record.last_sent = std::chrono::steady_clock::now();
+    g_unacked_releases[slot.lease_id] = record;
   }
-  if (columns <= 0 || rows <= 0) {
-    return;
+  SendPtyTransportDatagram(json);
+}
+
+// The Phase 3 payoff: winsize lands at the SOURCE of the chain. Called from
+// the engine resize callbacks BEFORE their nonblocking JS enqueue, under the
+// slot mutex (which also serializes against close — a reused fd number is
+// unreachable). Writes in Bound, NativeActive, and non-failed Releasing
+// (make-before-break); records the size in every non-Empty state so the
+// RELEASING flush and release messages always carry the newest value.
+void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
+                         int rows) {
+  bool need_release = false;
+  uint64_t failed_lease_id = 0;
+  {
+    PtyFdSlot &slot = surface->pty_slots[role];
+    std::lock_guard<std::mutex> lock(slot.mtx);
+    if (slot.state == PtyFdSlot::State::Empty) {
+      return;
+    }
+    if (columns <= 0 || rows <= 0) {
+      return;
+    }
+    slot.last_columns = columns;
+    slot.last_rows = rows;
+    slot.has_last_size = true;
+    if (slot.failed || slot.fd < 0) {
+      return;
+    }
+    struct winsize size = {};
+    size.ws_row = (unsigned short)rows;
+    size.ws_col = (unsigned short)columns;
+    if (ioctl(slot.fd, TIOCSWINSZ, &size) != 0) {
+      // Poison the fd: the slot keeps recording but never writes again;
+      // ownership returns to Rust via the release handshake (bounded gap).
+      slot.failed = true;
+      need_release = slot.state != PtyFdSlot::State::Releasing;
+      failed_lease_id = slot.lease_id;
+    }
   }
-  slot.last_columns = columns;
-  slot.last_rows = rows;
-  slot.has_last_size = true;
+  if (need_release) {
+    StartPtySlotRelease(surface, role, failed_lease_id);
+  }
 }
 
 std::string PtyMessageJson(const char *type, const std::string &session_id,
@@ -753,6 +818,7 @@ void CompletePtyBindLocked(SurfaceHandle *surface, int role,
     slot.last_columns = 0;
     slot.last_rows = 0;
     slot.has_last_size = false;
+    slot.failed = false;
   }
   g_pty_lease_slots[pending.lease_id] = {surface, role};
   SendPtyTransportDatagram(PtyMessageJson(
