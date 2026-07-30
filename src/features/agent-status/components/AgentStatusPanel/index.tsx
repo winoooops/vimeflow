@@ -4,7 +4,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
   type ReactElement,
   type UIEvent,
 } from 'react'
@@ -16,9 +15,7 @@ import { ToolCallsSection } from '../ToolCalls/ToolCallsSection'
 import { FilesChanged } from '../FilesChanged'
 import { TestResults } from '../TestResults'
 import { ActivityFeed } from '../ActivityFeed'
-import { LiveActionCard } from '../LiveActionCard'
 import { useActivityEvents } from '../../hooks/useActivityEvents'
-import { matchChangedFile } from '../../utils/matchChangedFile'
 import type { SwellVariant } from '../../hooks/useReservoirFlow'
 import {
   useGitStatus,
@@ -363,57 +360,6 @@ export const AgentStatusPanel = ({
   const effectiveLoading =
     !idle && (loading || (!filesAreFresh && error === null))
 
-  const runningEvent = useMemo(
-    () => events.find((event) => event.status === 'running') ?? null,
-    [events]
-  )
-
-  // The running action is promoted to the NOW card, so drop it from the feed
-  // (history-only) instead of rendering it twice.
-  const feedEvents = useMemo(
-    () =>
-      runningEvent === null
-        ? events
-        : events.filter((event) => event.id !== runningEvent.id),
-    [events, runningEvent]
-  )
-
-  // Own the live "running Ns" clock: tick only while an action runs, resetting
-  // immediately when a new one starts so the counter never reads stale.
-  const [now, setNow] = useState<Date>(() => new Date())
-  const runningId = runningEvent?.id ?? null
-  useEffect(() => {
-    if (runningId === null) {
-      return
-    }
-    setNow(new Date())
-    const tick = setInterval(() => setNow(new Date()), 1000)
-
-    return (): void => clearInterval(tick)
-  }, [runningId])
-
-  const liveFile =
-    runningEvent !== null &&
-    (runningEvent.kind === 'edit' || runningEvent.kind === 'write')
-      ? matchChangedFile(effectiveFiles, runningEvent.body, bodyCwd)
-      : null
-
-  const liveDiff =
-    liveFile?.insertions != null && liveFile.deletions != null
-      ? { added: liveFile.insertions, removed: liveFile.deletions }
-      : null
-
-  // Edit/write open a diff, but only once git tracks the change: its
-  // repo-relative path is the coordinate the diff viewer requires, so we never
-  // hand the viewer a guessed or absolute path.
-  const handleLiveActivate = useCallback((): void => {
-    if (liveFile !== null) {
-      onOpenDiff(liveFile)
-    }
-  }, [liveFile, onOpenDiff])
-
-  const canActivate = liveFile !== null
-
   const restoreScrollAnchor = useCallback((): void => {
     if (bodySnapshotKey === null) {
       return
@@ -431,7 +377,7 @@ export const AgentStatusPanel = ({
     scrollContainer.scrollTop = scrollTop
     programmaticScrollTopRef.current = scrollContainer.scrollTop
     scrollMetricsRef.current = {
-      firstEventId: feedEvents[0]?.id ?? null,
+      firstEventId: events[0]?.id ?? null,
       snapshotKey: bodySnapshotKey,
       scrollHeight: scrollContainer.scrollHeight,
       scrollTop: scrollContainer.scrollTop,
@@ -457,11 +403,11 @@ export const AgentStatusPanel = ({
 
     if (previousMetrics?.snapshotKey === bodySnapshotKey) {
       const activityPrepended =
-        (feedEvents[0]?.id ?? null) !== previousMetrics.firstEventId
+        (events[0]?.id ?? null) !== previousMetrics.firstEventId
 
       if (activityPrepended && previousMetrics.scrollTop > 0) {
         const firstRow = scrollContainer.querySelector<HTMLElement>(
-          `[data-event-id="${CSS.escape(feedEvents[0]?.id ?? '')}"]`
+          `[data-event-id="${CSS.escape(events[0]?.id ?? '')}"]`
         )
 
         const firstRowHeight = firstRow?.offsetHeight ?? 0
@@ -487,15 +433,14 @@ export const AgentStatusPanel = ({
     }
 
     scrollMetricsRef.current = {
-      firstEventId: feedEvents[0]?.id ?? null,
+      firstEventId: events[0]?.id ?? null,
       snapshotKey: bodySnapshotKey,
       scrollHeight: scrollContainer.scrollHeight,
       scrollTop: scrollContainer.scrollTop,
     }
   }, [
     bodySnapshotKey,
-    feedEvents,
-    runningId,
+    events,
     status.toolCalls.total,
     effectiveFiles.length,
     effectiveLoading,
@@ -603,20 +548,8 @@ export const AgentStatusPanel = ({
               className={isRetainedBody ? 'select-none' : undefined}
               inert={isRetainedBody || undefined}
             >
-              {runningEvent !== null && (
-                <LiveActionCard
-                  event={runningEvent}
-                  now={now}
-                  diff={liveDiff}
-                  pathLabel={liveFile?.path}
-                  onActivate={canActivate ? handleLiveActivate : undefined}
-                  showDiffShortcut={showDiffShortcut}
-                  showDiffAriaShortcut={showDiffAriaShortcut}
-                  matchesShowDiffShortcut={matchesShowDiffShortcut}
-                />
-              )}
               <ActivityFeed
-                events={feedEvents}
+                events={events}
                 changedFiles={effectiveFiles}
                 cwd={bodyCwd}
                 onOpenDiff={onOpenDiff}

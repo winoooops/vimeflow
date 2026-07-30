@@ -334,9 +334,56 @@
   animation: vfActivityGlyphBreathe 1.8s ease-in-out infinite;
 }
 
+/* Presence dot: the running trace's live indicator, seated inside the
+   kind icon's bottom-right corner. Radial gradient gives lit-from-above
+   depth, the surface ring punches it out of the icon chip, and the
+   blurred ::before aura reads as luminosity rather than a painted glow.
+   The calm 2.6s breathe never affects layout. */
+@keyframes vfActivityPresenceBreathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+
+.vf-activity-presence-dot {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle at 32% 28%,
+    color-mix(in srgb, var(--color-success) 75%, white) 0%,
+    var(--color-success) 55%,
+    color-mix(in srgb, var(--color-success) 70%, black) 100%
+  );
+  box-shadow: 0 0 0 2px var(--color-surface);
+  animation: vfActivityPresenceBreathe 2.6s cubic-bezier(0.37, 0, 0.63, 1)
+    infinite;
+}
+
+.vf-activity-presence-dot::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 9999px;
+  background: var(--color-success);
+  opacity: 0.4;
+  filter: blur(4px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vf-activity-refresh-comet,
-  .vf-activity-glyph-refresh {
+  .vf-activity-glyph-refresh,
+  .vf-activity-presence-dot {
     animation: none;
   }
 }

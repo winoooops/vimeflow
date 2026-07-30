@@ -8,7 +8,7 @@ import {
   test,
   vi,
 } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AGENTS } from '../../../../agents/registry'
 import type { AgentStatus } from '../../types'
@@ -1297,7 +1297,7 @@ describe('AgentStatusPanel', () => {
   })
 })
 
-describe('AgentStatusPanel — live action card', () => {
+describe('AgentStatusPanel — running trace inline', () => {
   const runningEditStatus: AgentStatus = {
     ...activeAgentStatus,
     cwd: '/tmp/repo',
@@ -1314,7 +1314,7 @@ describe('AgentStatusPanel — live action card', () => {
     recentToolCalls: [],
   }
 
-  test('renders the NOW live-action card while a tool call is active', () => {
+  test('renders the running tool call inline in the feed with a presence dot', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -1323,11 +1323,16 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    expect(screen.getByText('NOW')).toBeInTheDocument()
-    expect(screen.getByText('LIVE')).toBeInTheDocument()
+    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+    expect(screen.getByTestId('activity-presence-dot')).toBeInTheDocument()
+    expect(screen.getByText(/^running /)).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: 'EDIT' })).toHaveTextContent(
+      'a.ts'
+    )
   })
 
-  test('does not duplicate a running exec_command in Tool Calls and NOW', () => {
+  test('lists a running exec_command exactly once, inside the feed', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -1349,27 +1354,13 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    expect(screen.getByTestId('live-action-card')).toBeInTheDocument()
-    expect(screen.queryByTestId('active-tool-indicator')).toBeNull()
+    expect(screen.getByTestId('activity-presence-dot')).toBeInTheDocument()
     expect(
       screen.getAllByText(/gh pr view 420 --repo winoooops\/vimeflow/)
     ).toHaveLength(1)
   })
 
-  test('omits the live card when no tool call is active', () => {
-    render(
-      <AgentStatusPanel
-        {...defaultProps}
-        cwd="/tmp/repo"
-        agentStatus={activeAgentStatus}
-      />
-    )
-
-    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
-  })
-
-  test('moves a completed exec_command into activity history', () => {
+  test('keeps a completed exec_command in the feed without a presence dot', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -1397,7 +1388,7 @@ describe('AgentStatusPanel — live action card', () => {
     )
 
     expect(screen.queryByText('NOW')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('live-action-card')).toBeNull()
+    expect(screen.queryByTestId('activity-presence-dot')).toBeNull()
     expect(
       screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
@@ -1407,7 +1398,7 @@ describe('AgentStatusPanel — live action card', () => {
     )
   })
 
-  test('removes the NOW card when a running exec_command completes', () => {
+  test('morphs the running trace in place when the command completes', () => {
     const { rerender } = render(
       <AgentStatusPanel
         {...defaultProps}
@@ -1429,7 +1420,10 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    expect(screen.getByTestId('live-action-card')).toBeInTheDocument()
+    expect(screen.getByTestId('activity-presence-dot')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /traces\s*1/i })
+    ).toBeInTheDocument()
 
     rerender(
       <AgentStatusPanel
@@ -1457,14 +1451,18 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    expect(screen.queryByText('NOW')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('live-action-card')).not.toBeInTheDocument()
+    // Same feed slot, same count — only the row's indicator changes.
+    expect(screen.queryByTestId('activity-presence-dot')).toBeNull()
     expect(
       screen.getByRole('button', { name: /traces\s*1/i })
     ).toBeInTheDocument()
+
+    expect(screen.getByRole('article')).toHaveTextContent(
+      'gh pr view 420 --repo winoooops/vimeflow'
+    )
   })
 
-  test('does not also list the running action in the activity feed', () => {
+  test('counts the running action in the feed total', () => {
     render(
       <AgentStatusPanel
         {...defaultProps}
@@ -1486,29 +1484,15 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    // 1 active + 1 recent: the active row is promoted to the NOW card, so the
-    // feed lists only the single recent event (count 1, not 2).
+    // 1 active + 1 recent: the running row stays in the feed, so the count
+    // covers both events (2, not 1).
     expect(
-      screen.getByRole('button', { name: /traces\s*1/i })
+      screen.getByRole('button', { name: /traces\s*2/i })
     ).toBeInTheDocument()
-    expect(screen.getByText('LIVE')).toBeInTheDocument()
+    expect(screen.getByTestId('activity-presence-dot')).toBeInTheDocument()
   })
 
-  test('shows the real git diff counts on the live card', () => {
-    render(
-      <AgentStatusPanel
-        {...defaultProps}
-        cwd="/tmp/repo"
-        agentStatus={runningEditStatus}
-      />
-    )
-
-    const card = screen.getByTestId('live-action-card')
-    expect(within(card).getByText('+5')).toBeInTheDocument()
-    expect(within(card).getByText('−2')).toBeInTheDocument()
-  })
-
-  test('clicking the live card opens the running file diff in the dock', async () => {
+  test('opens the running file diff from its tooltip footer', async () => {
     const onOpenDiff = vi.fn()
     const user = userEvent.setup()
     render(
@@ -1520,14 +1504,15 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    await user.click(screen.getByTestId('live-action-card'))
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+    await user.click(await screen.findByRole('button', { name: 'Show diff' }))
 
     expect(onOpenDiff).toHaveBeenCalledWith(
       expect.objectContaining({ path: 'a.ts' })
     )
   })
 
-  test('matches by absolute tool path and opens the repo-relative diff', async () => {
+  test('matches the running edit by absolute tool path and opens the repo-relative diff', async () => {
     const onOpenDiff = vi.fn()
     const user = userEvent.setup()
     render(
@@ -1551,11 +1536,9 @@ describe('AgentStatusPanel — live action card', () => {
       />
     )
 
-    const card = screen.getByTestId('live-action-card')
-    // diff counts resolve from git status despite the absolute tool path
-    expect(within(card).getByText('+5')).toBeInTheDocument()
+    fireEvent.focus(screen.getByRole('article', { name: 'EDIT' }))
+    await user.click(await screen.findByRole('button', { name: 'Show diff' }))
 
-    await user.click(card)
     // opened with the repo-relative path the diff viewer requires, not absolute
     expect(onOpenDiff).toHaveBeenCalledWith(
       expect.objectContaining({ path: 'a.ts' })
