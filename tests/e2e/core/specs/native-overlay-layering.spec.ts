@@ -51,6 +51,11 @@ interface LocalDialogState {
   opacity: string
 }
 
+interface TrackCounts {
+  before: { cols: number; rows: number }
+  after: { cols: number; rows: number }
+}
+
 type ElectronModule = typeof import('electron')
 
 const pngSignature = Buffer.from([
@@ -848,58 +853,68 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 
-    const trackCounts = await browser.electron.execute(
-      async (electron: ElectronModule) => {
-        let overlay:
-          | ReturnType<
-              ElectronModule['webContents']['getAllWebContents']
-            >[number]
-          | undefined
-        for (const contents of electron.webContents.getAllWebContents()) {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
-
-          if (mode !== '1' && mode !== 'menu') {
-            continue
-          }
-
-          const hasLayoutCreator = (await contents.executeJavaScript(`
-            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-          `)) as boolean
-
-          if (hasLayoutCreator) {
-            overlay = contents
-            break
-          }
-        }
-
-        if (!overlay) {
-          return null
-        }
-
-        return overlay.executeJavaScript(`
-          (async () => {
-            const read = (axis) => {
-              const value = document.querySelector(
-                \`[data-layout-creator-track-count="\${axis.toLowerCase()}"]\`
+    let trackCounts: TrackCounts | null = null
+    await browser.waitUntil(
+      async () => {
+        trackCounts = await browser.electron.execute(
+          async (electron: ElectronModule) => {
+            let overlay:
+              | ReturnType<
+                  ElectronModule['webContents']['getAllWebContents']
+                >[number]
+              | undefined
+            for (const contents of electron.webContents.getAllWebContents()) {
+              const mode = new URL(contents.getURL()).searchParams.get(
+                'nativeOverlay'
               )
-              return Number(value?.textContent)
+
+              if (mode !== '1' && mode !== 'menu') {
+                continue
+              }
+
+              const hasLayoutCreator = (await contents.executeJavaScript(`
+                Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+              `)) as boolean
+
+              if (hasLayoutCreator) {
+                overlay = contents
+                break
+              }
             }
-            const before = { cols: read('Cols'), rows: read('Rows') }
-            document.querySelector('button[aria-label="Add Cols"]')?.click()
-            await new Promise((resolve) => setTimeout(resolve, 100))
-            document.querySelector('button[aria-label="Add Rows"]')?.click()
-            await new Promise((resolve) => setTimeout(resolve, 1_000))
-            return {
-              before,
-              after: { cols: read('Cols'), rows: read('Rows') },
+
+            if (!overlay) {
+              return null
             }
-          })()
-        `) as Promise<{
-          before: { cols: number; rows: number }
-          after: { cols: number; rows: number }
-        }>
+
+            return overlay.executeJavaScript(`
+              (async () => {
+                const read = (axis) => {
+                  const value = document.querySelector(
+                    \`[data-layout-creator-track-count="\${axis.toLowerCase()}"]\`
+                  )
+                  return Number(value?.textContent)
+                }
+                const before = { cols: read('Cols'), rows: read('Rows') }
+                document.querySelector('button[aria-label="Add Cols"]')?.click()
+                await new Promise((resolve) => setTimeout(resolve, 100))
+                document.querySelector('button[aria-label="Add Rows"]')?.click()
+                await new Promise((resolve) => setTimeout(resolve, 1_000))
+                return {
+                  before,
+                  after: { cols: read('Cols'), rows: read('Rows') },
+                }
+              })()
+            `) as Promise<TrackCounts>
+          }
+        )
+
+        return trackCounts !== null
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg:
+          'Layout Creator overlay WebContents was unavailable for track editing',
       }
     )
     expect(trackCounts?.after).toEqual({
