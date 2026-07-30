@@ -625,4 +625,35 @@ mod tests {
         assert_eq!(snap.sessions.len(), 0);
         assert!(snap.active_session_id.is_none());
     }
+
+    /// Backward compatibility: caches written before the
+    /// `activity_panel_collapsed` field was removed must still load —
+    /// serde ignores the unknown field instead of failing the whole cache.
+    #[test]
+    fn legacy_activity_panel_collapsed_field_is_ignored_on_load() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sessions.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "version": 1,
+                "active_session_id": null,
+                "session_order": ["pty-legacy"],
+                "sessions": {
+                    "pty-legacy": {
+                        "cwd": "/legacy",
+                        "created_at": "2026-05-20T00:00:00Z",
+                        "exited": false,
+                        "last_exit_code": null,
+                        "activity_panel_collapsed": true
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let cache = SessionCache::load(path).unwrap().snapshot();
+        let session = cache.sessions.get("pty-legacy").unwrap();
+        assert_eq!(session.cwd, "/legacy");
+    }
 }
