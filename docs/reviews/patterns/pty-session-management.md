@@ -3,7 +3,7 @@ id: pty-session-management
 category: backend
 created: 2026-04-09
 last_updated: 2026-07-30
-ref_count: 6
+ref_count: 7
 ---
 
 # PTY Session Management
@@ -188,4 +188,17 @@ below preserve their original Tauri-era file paths for auditability.
 - **Fix:** Duplicate the PTY master while the sessions mutex still holds the
   `ManagedSession`, return an `OwnedFd`, and make the broker accept that owned
   duplicate directly for `SCM_RIGHTS` transfer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Failed `offer_fd` cleanup can remove a newer live lease
+
+- **Source:** github-codex-connector | PR #761 round 1 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** `FdBroker::offer_fd` inserted a fresh lease, released the broker
+  lock while sending the descriptor, then removed the lease by session id alone
+  if the send failed. A failed older offer could delete a newer valid lease for
+  the same session.
+- **Fix:** Fence the send-failure cleanup by the failed offer's `lease_id`, so
+  only the lease created by that call is removed and replacement leases survive.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

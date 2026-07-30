@@ -173,7 +173,7 @@ impl FdBroker {
         if let Err(err) = result {
             log::warn!("fd broker: send failed for {session_id} ({err}); reclaiming");
             let mut inner = self.inner.lock().expect("broker lock");
-            inner.leases.remove(session_id);
+            inner.remove_lease_if_matches(session_id, lease_id);
         }
     }
 
@@ -385,6 +385,18 @@ impl FdBroker {
     }
 }
 
+impl BrokerInner {
+    fn remove_lease_if_matches(&mut self, session_id: &str, lease_id: u64) {
+        if self
+            .leases
+            .get(session_id)
+            .is_some_and(|lease| lease.lease_id == lease_id)
+        {
+            self.leases.remove(session_id);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,6 +497,33 @@ mod tests {
             WireMessage::Fd { lease_id, .. } => assert_eq!(lease_id, 2, "lease must be fresh"),
             other => panic!("expected fd message, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_failed_offer_cleanup_preserves_newer_lease() {
+        let mut inner = BrokerInner::default();
+        inner.leases.insert(
+            "s1".to_string(),
+            Lease {
+                lease_id: 2,
+                generation: 7,
+                native_owned: true,
+            },
+        );
+
+        inner.remove_lease_if_matches("s1", 1);
+
+        assert!(
+            inner.leases.contains_key("s1"),
+            "failed cleanup for stale lease must preserve replacement"
+        );
+
+        inner.remove_lease_if_matches("s1", 2);
+
+        assert!(
+            !inner.leases.contains_key("s1"),
+            "failed cleanup for current lease should reclaim the entry"
+        );
     }
 
     #[test]
