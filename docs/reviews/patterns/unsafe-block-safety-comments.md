@@ -2,8 +2,8 @@
 id: unsafe-block-safety-comments
 category: security
 created: 2026-06-14
-last_updated: 2026-06-14
-ref_count: 1
+last_updated: 2026-07-30
+ref_count: 2
 ---
 
 # Unsafe Block Safety Comments
@@ -30,4 +30,13 @@ must state what assumptions hold and how the return value is validated.
 - **File:** `crates/backend/src/agent/adapter/kimi/locator.rs` L469-L478
 - **Finding:** `clock_ticks_per_sec` called `libc::sysconf(libc::_SC_CLK_TCK)` inside an `unsafe` block with no `// SAFETY:` comment. The repository's Rust security rule requires every `unsafe` block to document why it is sound; omitting the comment creates audit debt and invites future regressions.
 - **Fix:** Added a `// SAFETY:` comment immediately above the call explaining that `_SC_CLK_TCK` takes no pointers and that the return value is checked before use.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 2. fd transport unsafe blocks lacked local SAFETY comments
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** LOW
+- **File:** `crates/backend/src/terminal/fd_transport.rs`
+- **Finding:** Several `unsafe` operations in the PTY fd transport had no adjacent `// SAFETY:` explanation even though the file otherwise documented every FFI call site. The missing comments made future audit of the SCM_RIGHTS buffer and `msghdr` invariants harder.
+- **Fix:** Added targeted `// SAFETY:` comments for `CMSG_SPACE`, `msghdr` zero-initialization, plain datagram test writes, and the new multi-fd regression test's custom `sendmsg` construction.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

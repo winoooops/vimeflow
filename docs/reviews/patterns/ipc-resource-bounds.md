@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-07-30
-ref_count: 8
+ref_count: 9
 ---
 
 # IPC Resource Bounds
@@ -232,4 +232,13 @@ not become repeated unhandled main-process failures.
   send after the critical section. The transport send now uses `MSG_DONTWAIT`,
   so peer backpressure degrades to a logged failed datagram instead of an
   unbounded block.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Native addon fd validation accepted NaN as a spawn descriptor
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The PTY fd transport bootstrap rejected `undefined` and negative fd values but did not require the addon result to be an integer, so `NaN` could pass the `< 0` check and fail later inside child-process spawn with less clear fallback behavior.
+- **Fix:** Require `Number.isInteger(transportFd)` before accepting the descriptor and extend bootstrap fallback coverage with a `NaN` addon result.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

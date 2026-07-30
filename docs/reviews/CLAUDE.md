@@ -56,13 +56,13 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 13       | 6    | 2026-07-26   |
-| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 92       | 44   | 2026-07-30   |
+| [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 93       | 45   | 2026-07-30   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 7    | 2026-07-08   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 104      | 97   | 2026-07-30   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 101      | 90   | 2026-07-22   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 104      | 94   | 2026-07-30   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 106      | 95   | 2026-07-30   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
@@ -71,7 +71,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 16       | 8    | 2026-07-30   |
+| [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 17       | 9    | 2026-07-30   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
@@ -99,7 +100,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
 | [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 14       | 10   | 2026-07-27   |
-| [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 1        | 1    | 2026-06-14   |
+| [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 2        | 2    | 2026-07-30   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 19       | 12   | 2026-07-22   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 3        | 2    | 2026-07-26   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 11   | 2026-07-05   |

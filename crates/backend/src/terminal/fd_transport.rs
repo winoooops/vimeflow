@@ -114,9 +114,12 @@ pub fn send_fd(channel: RawFd, payload: &[u8], fd: RawFd) -> io::Result<()> {
     };
 
     let mut cmsg_buf = ControlMessageBuffer::zeroed();
+    // SAFETY: CMSG_SPACE is a pure size computation for one RawFd payload.
     let cmsg_space = unsafe { libc::CMSG_SPACE(std::mem::size_of::<RawFd>() as u32) } as usize;
     assert!(cmsg_space <= CMSG_CAPACITY);
 
+    // SAFETY: msghdr is a C POD out-struct; every field used below is assigned
+    // before sendmsg observes it.
     let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
@@ -226,6 +229,8 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
 
     let mut cmsg_buf = ControlMessageBuffer::zeroed();
 
+    // SAFETY: msghdr is a C POD out-struct; every field used below is assigned
+    // before recvmsg observes it, and recvmsg fills the remaining output fields.
     let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
@@ -244,6 +249,7 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
         }
     };
 
+    let control_truncated = msg.msg_flags & libc::MSG_CTRUNC != 0;
     let mut fd: Option<OwnedFd> = None;
     // SAFETY: the kernel wrote msg_controllen bytes of cmsg data into
     // cmsg_buf; CMSG_FIRSTHDR/CMSG_NXTHDR walk only that region.
@@ -251,6 +257,15 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
         let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
         while !cmsg.is_null() {
             if (*cmsg).cmsg_level == libc::SOL_SOCKET && (*cmsg).cmsg_type == libc::SCM_RIGHTS {
+                let expected_len = libc::CMSG_LEN(std::mem::size_of::<RawFd>() as u32) as usize;
+                if (*cmsg).cmsg_len != expected_len {
+                    close_rights_cmsg_fds(cmsg);
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "fd transport expected exactly one descriptor",
+                    ));
+                }
+
                 let mut raw: RawFd = -1;
                 std::ptr::copy_nonoverlapping(
                     libc::CMSG_DATA(cmsg),
@@ -258,6 +273,13 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
                     std::mem::size_of::<RawFd>(),
                 );
                 if raw >= 0 {
+                    if fd.is_some() {
+                        libc::close(raw);
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "fd transport received duplicate descriptor headers",
+                        ));
+                    }
                     let owned = OwnedFd::from_raw_fd(raw);
                     set_cloexec(raw)?;
                     fd = Some(owned);
@@ -267,7 +289,35 @@ pub fn recv_fd(channel: RawFd, buf: &mut [u8]) -> io::Result<(usize, Option<Owne
         }
     }
 
+    if control_truncated {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "fd transport control data was truncated",
+        ));
+    }
+
     Ok((received, fd))
+}
+
+unsafe fn close_rights_cmsg_fds(cmsg: *mut libc::cmsghdr) {
+    let header_len = libc::CMSG_LEN(0) as usize;
+    let cmsg_len = (*cmsg).cmsg_len;
+    if cmsg_len <= header_len {
+        return;
+    }
+
+    let fd_count = (cmsg_len - header_len) / std::mem::size_of::<RawFd>();
+    for index in 0..fd_count {
+        let mut raw: RawFd = -1;
+        std::ptr::copy_nonoverlapping(
+            libc::CMSG_DATA(cmsg).add(index * std::mem::size_of::<RawFd>()),
+            &mut raw as *mut RawFd as *mut u8,
+            std::mem::size_of::<RawFd>(),
+        );
+        if raw >= 0 {
+            libc::close(raw);
+        }
+    }
 }
 
 /// Creates a connected `AF_UNIX`/`SOCK_DGRAM` pair, both ends close-on-exec.
@@ -340,6 +390,8 @@ mod tests {
     fn test_recv_fd_without_descriptor_returns_none() {
         let (tx, rx) = socketpair().expect("socketpair");
         // Plain datagram, no cmsg.
+        // SAFETY: tx is an open socket and the byte pointer is valid for the
+        // duration of this write call.
         let sent = unsafe { libc::write(tx.as_raw_fd(), b"nd".as_ptr() as *const _, 2) };
         assert_eq!(sent, 2);
 
@@ -347,6 +399,50 @@ mod tests {
         let (n, fd) = recv_fd(rx.as_raw_fd(), &mut buf).expect("recv");
         assert_eq!(&buf[..n], b"nd");
         assert!(fd.is_none());
+    }
+
+    #[test]
+    fn test_recv_fd_rejects_multi_descriptor_cmsg() {
+        let (tx, rx) = socketpair().expect("socketpair");
+        let (fd_a, fd_b) = socketpair().expect("payload fds");
+        let mut payload = [b'x'];
+        let mut iov = libc::iovec {
+            iov_base: payload.as_mut_ptr().cast(),
+            iov_len: payload.len(),
+        };
+        let mut cmsg_buf = ControlMessageBuffer::zeroed();
+        // SAFETY: CMSG_SPACE is a pure size computation for two RawFd payloads.
+        let cmsg_space =
+            unsafe { libc::CMSG_SPACE((std::mem::size_of::<RawFd>() * 2) as u32) } as usize;
+        assert!(cmsg_space <= CMSG_CAPACITY);
+        // SAFETY: msghdr is a C POD out-struct; every field used below is
+        // assigned before sendmsg observes it.
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_iov = &mut iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = cmsg_buf.as_mut_ptr();
+        msg.msg_controllen = cmsg_space as _;
+
+        // SAFETY: cmsg_buf outlives msg; the control buffer has enough capacity
+        // for two RawFd values and both source descriptors are open.
+        unsafe {
+            let cmsg = libc::CMSG_FIRSTHDR(&msg);
+            (*cmsg).cmsg_level = libc::SOL_SOCKET;
+            (*cmsg).cmsg_type = libc::SCM_RIGHTS;
+            (*cmsg).cmsg_len =
+                libc::CMSG_LEN((std::mem::size_of::<RawFd>() * 2) as u32) as _;
+            let fds = [fd_a.as_raw_fd(), fd_b.as_raw_fd()];
+            std::ptr::copy_nonoverlapping(
+                fds.as_ptr().cast::<u8>(),
+                libc::CMSG_DATA(cmsg),
+                std::mem::size_of_val(&fds),
+            );
+            assert_eq!(libc::sendmsg(tx.as_raw_fd(), &msg, 0), 1);
+        }
+
+        let mut buf = [0u8; 8];
+        let err = recv_fd(rx.as_raw_fd(), &mut buf).expect_err("multi fd cmsg");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]

@@ -96,6 +96,7 @@ struct PtyFdSlot {
   int last_columns = 0;
   int last_rows = 0;
   bool has_last_size = false;
+  uint64_t resize_epoch = 0;
   // A failed TIOCSWINSZ poisons the fd: the slot keeps recording but stops
   // writing (the spec's bounded one-hop gap) while its release is in flight.
   bool failed = false;
@@ -621,6 +622,7 @@ struct UnackedRelease {
   SurfaceHandle *surface = nullptr; // nullptr → orphan
   int role = kPtyRolePrimary;
   int orphan_fd = -1;
+  uint64_t release_epoch = 0;
   std::string json;
   std::chrono::steady_clock::time_point last_sent;
 };
@@ -730,6 +732,7 @@ void StartPtySlotRelease(SurfaceHandle *surface, int role,
     UnackedRelease record;
     record.surface = surface;
     record.role = role;
+    record.release_epoch = slot.resize_epoch;
     record.json = json;
     record.last_sent = std::chrono::steady_clock::now();
     g_unacked_releases[slot.lease_id] = record;
@@ -856,6 +859,7 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
     slot.last_columns = columns;
     slot.last_rows = rows;
     slot.has_last_size = true;
+    slot.resize_epoch++;
     if (slot.failed || slot.fd < 0) {
       return;
     }
@@ -951,6 +955,7 @@ void CompletePtyBindLocked(SurfaceHandle *surface, int role,
     slot.last_columns = 0;
     slot.last_rows = 0;
     slot.has_last_size = false;
+    slot.resize_epoch = 0;
     slot.failed = false;
   }
   g_pty_lease_slots[pending.lease_id] = {surface, role};
@@ -996,6 +1001,7 @@ void OrphanReleasePtySlotLocked(SurfaceHandle *surface, int role,
     record.surface = nullptr;
     record.role = role;
     record.orphan_fd = slot.fd;
+    record.release_epoch = slot.resize_epoch;
     record.json = buf;
     record.last_sent = std::chrono::steady_clock::now();
     g_unacked_releases[lease_id] = record;
@@ -1005,6 +1011,7 @@ void OrphanReleasePtySlotLocked(SurfaceHandle *surface, int role,
   slot.state = PtyFdSlot::State::Empty;
   slot.session_id.clear();
   slot.has_last_size = false;
+  slot.resize_epoch = 0;
 }
 
 // Full surface teardown: intents, both role slots, lease routes. MUST run
@@ -1068,6 +1075,7 @@ void HandlePtyReleaseAck(uint64_t lease_id) {
   PtyFdSlot &slot = record.surface->pty_slots[record.role];
   int flush_columns = 0;
   int flush_rows = 0;
+  bool should_flush = false;
   {
     std::lock_guard<std::mutex> slot_lock(slot.mtx);
     if (slot.state != PtyFdSlot::State::Releasing ||
@@ -1081,16 +1089,20 @@ void HandlePtyReleaseAck(uint64_t lease_id) {
     slot.state = PtyFdSlot::State::Empty;
     flush_columns = slot.last_columns;
     flush_rows = slot.last_rows;
+    should_flush = slot.has_last_size && slot.resize_epoch == record.release_epoch;
     slot.session_id.clear();
     slot.has_last_size = false;
+    slot.resize_epoch = 0;
   }
   // Rust owns the winsize again: flush the newest size recorded during
   // RELEASING through the ordinary JS path so it is applied, not skipped.
   // Runs under the protocol mutex on purpose: teardown detaches under this
   // same mutex before the handle is freed, so the pointer cannot dangle
   // here. Ordering stays protocol → slot / protocol → callback_mutex.
-  EnqueuePtyResizeFlush(record.surface, record.role, flush_columns,
-                        flush_rows);
+  if (should_flush) {
+    EnqueuePtyResizeFlush(record.surface, record.role, flush_columns,
+                          flush_rows);
+  }
 }
 
 void HandlePtyInboundMessage(const std::string &json, int received_fd) {
@@ -1258,8 +1270,25 @@ void ShutdownPtyProtocol() {
     slot.state = PtyFdSlot::State::Empty;
     slot.session_id.clear();
     slot.has_last_size = false;
+    slot.resize_epoch = 0;
   }
   g_pty_lease_slots.clear();
+}
+
+void CloseRightsCmsgFds(struct cmsghdr *cmsg) {
+  const size_t header_len = CMSG_LEN(0);
+  if (cmsg->cmsg_len <= header_len) {
+    return;
+  }
+
+  const size_t fd_count = (cmsg->cmsg_len - header_len) / sizeof(int);
+  for (size_t index = 0; index < fd_count; index++) {
+    int fd = -1;
+    memcpy(&fd, CMSG_DATA(cmsg) + index * sizeof(int), sizeof(fd));
+    if (fd >= 0) {
+      close(fd);
+    }
+  }
 }
 
 void PtyFdTransportThreadMain() {
@@ -1307,11 +1336,27 @@ void PtyFdTransportThreadMain() {
     }
 
     int received_fd = -1;
+    bool invalid_cmsg = (msg.msg_flags & MSG_CTRUNC) != 0;
     for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr;
          cmsg = CMSG_NXTHDR(&msg, cmsg)) {
       if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-        memcpy(&received_fd, CMSG_DATA(cmsg), sizeof(received_fd));
-        if (received_fd >= 0) {
+        if (cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+          CloseRightsCmsgFds(cmsg);
+          invalid_cmsg = true;
+          continue;
+        }
+
+        int next_fd = -1;
+        memcpy(&next_fd, CMSG_DATA(cmsg), sizeof(next_fd));
+        if (next_fd >= 0) {
+          if (received_fd >= 0) {
+            close(received_fd);
+            close(next_fd);
+            received_fd = -1;
+            invalid_cmsg = true;
+            continue;
+          }
+          received_fd = next_fd;
           // Sender-side close-on-exec does not transfer.
           const int flags = fcntl(received_fd, F_GETFD);
           if (flags >= 0) {
@@ -1319,6 +1364,14 @@ void PtyFdTransportThreadMain() {
           }
         }
       }
+    }
+    if (invalid_cmsg) {
+      if (received_fd >= 0) {
+        close(received_fd);
+      }
+      fprintf(stderr,
+              "vimeflow: pty fd transport expected exactly one descriptor\n");
+      continue;
     }
 
     HandlePtyInboundMessage(std::string(buf.data(), (size_t)len),

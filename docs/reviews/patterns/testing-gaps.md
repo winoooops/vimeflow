@@ -3,7 +3,7 @@ id: testing-gaps
 category: testing
 created: 2026-04-09
 last_updated: 2026-07-30
-ref_count: 44
+ref_count: 45
 ---
 
 # Testing Gaps
@@ -918,4 +918,13 @@ filesystem scope restrictions).
   places the fd at stdio slot 3 and sets `VIMEFLOW_PTY_FD_TRANSPORT=1`.
 - **Fix:** Mocked `node:child_process.spawn` and called `spawnSidecar` directly
   to pin both the transport-enabled stdio/env shape and the no-fd spawn shape.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 93. Main-process PTY fd bootstrap sequencing lacked a focused seam
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/main.ts`
+- **Finding:** The main app startup path created the PTY fd transport before spawning the sidecar and notified the addon after spawn, but there was no direct test for that ordering because `main.ts` is difficult to import without running Electron lifecycle side effects.
+- **Fix:** Extracted the sidecar bootstrap sequence into `electron/main-sidecar-bootstrap.ts` and added sibling tests proving create-before-spawn, notify-after-spawn, transport fd propagation, and disabled-native skip behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

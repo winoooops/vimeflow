@@ -1147,7 +1147,10 @@ export class NativeOverlayController {
       return { accepted: false, reason: 'render-timeout' }
     }
 
-    if (!this.suspendedSurfaceIds.has(payload.surfaceId) && needsKeyboardFocus) {
+    if (
+      !this.suspendedSurfaceIds.has(payload.surfaceId) &&
+      needsKeyboardFocus
+    ) {
       this.promoteInteractiveLayer(record, needsKeyboardFocus)
     } else if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
       record.menu.window.moveTop()

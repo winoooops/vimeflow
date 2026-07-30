@@ -366,7 +366,11 @@ export const createPtyFdTransportBeforeSpawn = (
   try {
     const addon = loadNativeAddon(nativeParentDir(packaged, resourcesPath))
     const transportFd = addon.createPtyFdTransport?.()
-    if (transportFd === undefined || transportFd < 0) {
+    if (
+      typeof transportFd !== 'number' ||
+      !Number.isInteger(transportFd) ||
+      transportFd < 0
+    ) {
       return null
     }
 
@@ -1543,10 +1547,12 @@ export class GhosttyNativeParentController {
         nativeOwnedPending !== undefined &&
         !this.isPrimaryPtyNativeOwned(resizeState)
       ) {
+        const pending =
+          resizeState.pendingResize ??
+          resizeState.nativeOwnedResizeQueue.at(-1) ??
+          nativeOwnedPending
         resizeState.nativeOwnedResizeQueue = []
-        const pending = resizeState.pendingResize
         if (
-          pending !== null &&
           resizeState.resizeTimer === null &&
           (resizeState.lastResize?.cols !== pending.cols ||
             resizeState.lastResize.rows !== pending.rows)

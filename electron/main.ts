@@ -41,15 +41,15 @@ import {
   type NativeOverlayController,
   type NativeOverlayKind,
 } from './native-overlay'
-import { spawnSidecar, type Sidecar } from './sidecar'
+import { type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import { SettingsWindowController } from './settings-window'
 import {
-  createPtyFdTransportBeforeSpawn,
   isGhosttyNativeParentEnabled,
   setupGhosttyNativeParent,
   type GhosttyNativeParentController,
 } from './ghostty-native-parent'
+import { spawnSidecarWithPtyTransport } from './main-sidecar-bootstrap'
 import { setupDialogIpc } from './dialog-ipc'
 import {
   setupWorkspaceLayoutController,
@@ -548,18 +548,13 @@ const setupApp = async (): Promise<void> => {
     app.isPackaged
   )
 
-  // The fd-passing socketpair must exist before the sidecar spawns so the
-  // child end can ride in as stdio[3] (VIM-399).
-  const ptyFdTransport = ghosttyNativeParentEnabled
-    ? createPtyFdTransportBeforeSpawn(app.isPackaged, process.resourcesPath)
-    : null
-
-  const spawnedSidecar = spawnSidecar({
+  const spawnedSidecar = spawnSidecarWithPtyTransport({
     binary: resolveSidecarBin(),
     appDataDir: app.getPath('userData'),
-    transportFd: ptyFdTransport?.transportFd,
+    ghosttyNativeParentEnabled,
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
   })
-  ptyFdTransport?.onSpawned()
 
   sidecar = spawnedSidecar
   browserPaneController?.dispose()

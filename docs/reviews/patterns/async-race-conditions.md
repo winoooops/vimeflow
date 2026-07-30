@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-30
-ref_count: 94
+ref_count: 95
 ---
 
 # Async Race Conditions
@@ -1183,4 +1183,22 @@ prevent showing previous data.
 - **Fix:** Remove the unacked release record during detach and close its
   orphan fd, mirroring the existing transport-shutdown cleanup for release
   records that outlive their surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 105. Native-owned queued resize was dropped on ownership flip
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** When a native-owned resize queue had entries and ownership flipped back to Rust before the queue drained, the completion path cleared the native-owned queue and forwarded only ordinary `pendingResize`, which native-owned mode intentionally kept null. The newest native-owned size could be lost from Rust metadata until another resize.
+- **Fix:** Feed the latest queued native-owned size into the normal Rust-owned forwarding path when ownership has flipped, preserving any explicit Rust-owned pending resize first. Added delayed-sidecar regression coverage for the no-follow-up-resize case.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 106. Release-ack resize flush could overtake a fresher engine callback
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The PTY release-ack path enqueued a resize flush from the transport thread while the engine resize callback could independently enqueue a newer resize for the same slot. Cross-thread `napi_threadsafe_function` ordering could deliver the stale release flush after the fresher callback.
+- **Fix:** Added a per-slot resize epoch, captured it when release starts, and skipped the release-ack flush when a newer engine callback has advanced the epoch. The fresher callback's own async resize event remains the authoritative Rust metadata update.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

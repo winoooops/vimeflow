@@ -2,8 +2,8 @@
 id: ipc-trust-boundary
 category: security
 created: 2026-06-12
-last_updated: 2026-06-18
-ref_count: 2
+last_updated: 2026-07-30
+ref_count: 3
 ---
 
 # IPC Trust Boundary
@@ -30,4 +30,13 @@ The Electron main process must treat every renderer IPC payload as untrusted inp
 - **File:** `electron/main.ts` L491-513
 - **Finding:** The `COMMAND_PALETTE_BINDING` handler accepted either a string binding or an object with `palette`/`leader` string fields and forwarded them to the shortcut setters without a length cap. Renderer-controlled IPC payloads should be bounded even after primitive type checks, because a compromised or buggy renderer could force the main process to parse and allocate very large strings.
 - **Fix:** Added a `COMMAND_PALETTE_BINDING_MAX_LENGTH = 64` constant and guarded both the singular string binding and the two split binding fields before calling `setCommandPaletteShortcutBinding` / `setCommandPaletteShortcutBindings`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. SCM_RIGHTS receivers trusted malformed descriptor control messages
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`, `crates/backend/src/terminal/fd_transport.rs`
+- **Finding:** Both PTY fd-transport receivers copied the first descriptor from any `SCM_RIGHTS` header without checking `cmsg_len`, duplicate headers, or `MSG_CTRUNC`. If a sender bug packed multiple descriptors, the kernel would install them in the receiver while the parser retained only one, silently leaking the rest.
+- **Fix:** Validate that each descriptor control message carries exactly one fd, reject truncated or duplicate descriptor control data, and close every visible descriptor from malformed headers before discarding the datagram. Added a Rust regression test for multi-fd ancillary data.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
