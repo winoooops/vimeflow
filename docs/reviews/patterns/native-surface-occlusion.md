@@ -174,3 +174,17 @@ React overlays that drive Electron native WebContentsView visibility must regist
   preserved but true app deactivation closes the surface. Added regression
   coverage for owner blur and overlay-window blur with `app.isActive()` false.
 - **Commit:** same commit as this entry
+
+### 15. Tooltip sidecars destabilized native dialog controls
+
+- **Source:** local-codex | PR #761 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The Layout Creator's compact track stepper icon buttons kept
+  their shared tooltip wrappers inside the focus-owned native overlay dialog.
+  The macOS Ghostty smoke clicked those controls in the overlay window and then
+  observed the track-count hooks disappear, reading `cols` and `rows` as null.
+- **Fix:** Disabled tooltips on the modal's add/remove track stepper buttons.
+  The controls keep their accessible labels, but no longer spawn transient
+  tooltip overlay sidecars while the native dialog is being exercised.
+- **Commit:** same commit as this entry

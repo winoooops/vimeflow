@@ -183,6 +183,8 @@ const outsideColumnGutterButtonClass = `${outsideGutterButtonBaseClass} h-5 w-8`
 
 const outsideRowGutterButtonClass = `${outsideGutterButtonBaseClass} h-8 w-5`
 
+const showTrackStepperTooltips = false
+
 const paneStyleFor = (
   slot: DraftLayoutSlot,
   slotIndex: number
@@ -751,6 +753,7 @@ const TrackStepper = ({
       icon="remove"
       label={`Remove ${label}`}
       size="sm"
+      showTooltip={showTrackStepperTooltips}
       disabled={value <= 1}
       className="h-5 w-5"
       onClick={(): void => onChange(value - 1)}
@@ -766,6 +769,7 @@ const TrackStepper = ({
       icon="add"
       label={`Add ${label}`}
       size="sm"
+      showTooltip={showTrackStepperTooltips}
       disabled={value >= MAX_LAYOUT_TRACKS}
       className="h-5 w-5"
       onClick={(): void => onChange(value + 1)}
