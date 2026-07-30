@@ -58,11 +58,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 13       | 6    | 2026-07-26   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 90       | 44   | 2026-07-29   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 11       | 7    | 2026-07-08   |
-| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 103      | 96   | 2026-07-28   |
+| [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 104      | 97   | 2026-07-30   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 101      | 90   | 2026-07-22   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 100      | 92   | 2026-07-30   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 100      | 93   | 2026-07-30   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
@@ -85,7 +85,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
 | [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 40       | 19   | 2026-07-13   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 21       | 8    | 2026-07-20   |
-| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 14       | 3    | 2026-07-26   |
+| [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 16       | 4    | 2026-07-30   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 49       | 19   | 2026-07-26   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 4        | 2    | 2026-07-22   |
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 33       | 22   | 2026-07-25   |

@@ -727,12 +727,6 @@ void StartPtySlotRelease(SurfaceHandle *surface, int role,
   SendPtyTransportDatagram(json);
 }
 
-// The Phase 3 payoff: winsize lands at the SOURCE of the chain. Called from
-// the engine resize callbacks BEFORE their nonblocking JS enqueue, under the
-// slot mutex (which also serializes against close — a reused fd number is
-// unreachable). Writes in Bound, NativeActive, and non-failed Releasing
-// (make-before-break); records the size in every non-Empty state so the
-// RELEASING flush and release messages always carry the newest value.
 // Winsize-latency instrumentation (VIM-399 Phase 5). The whole design rests
 // on one claim: the winsize now lands in the same beat as the engine's grid
 // reflow, so the TUI's corrective repaint starts within a frame instead of
@@ -758,6 +752,12 @@ std::atomic<uint64_t> g_winsize_under_5ms{0};
 std::atomic<uint64_t> g_winsize_over_5ms{0};
 std::atomic<uint64_t> g_winsize_failures{0};
 
+struct WinsizeTimingReport {
+  bool exceeded_sub_frame = false;
+  bool summary_due = false;
+  uint64_t elapsed_ns = 0;
+};
+
 void ReportWinsizeTimings(const char *suffix) {
   const uint64_t seen = g_winsize_ioctls.load(std::memory_order_relaxed);
   if (seen == 0) {
@@ -778,11 +778,13 @@ void ReportWinsizeTimings(const char *suffix) {
           (unsigned long long)g_winsize_failures.load(std::memory_order_relaxed));
 }
 
-void RecordWinsizeTiming(uint64_t elapsed_ns, bool ok) {
+WinsizeTimingReport RecordWinsizeTiming(uint64_t elapsed_ns, bool ok) {
+  WinsizeTimingReport report;
   if (!ok) {
     g_winsize_failures.fetch_add(1, std::memory_order_relaxed);
-    return;
+    return report;
   }
+  report.elapsed_ns = elapsed_ns;
 
   const uint64_t seen = g_winsize_ioctls.fetch_add(1, std::memory_order_relaxed) + 1;
   g_winsize_total_ns.fetch_add(elapsed_ns, std::memory_order_relaxed);
@@ -803,24 +805,31 @@ void RecordWinsizeTiming(uint64_t elapsed_ns, bool ok) {
     // engine callback stalled, which is the failure this design exists to
     // prevent. These should never appear.
     g_winsize_over_5ms.fetch_add(1, std::memory_order_relaxed);
-    fprintf(stderr,
-            "vimeflow: winsize ioctl exceeded the sub-frame bound: %llu us\n",
-            (unsigned long long)(elapsed_ns / 1000));
+    report.exceeded_sub_frame = true;
   }
 
   // The first sample is reported immediately: it is the liveness proof that
   // the native path is carrying real resizes (Phase 5 must never judge the
   // effect of a silently-degraded run). After that, every 128th, plus a
-  // final summary at transport shutdown.
+  // final summary at transport shutdown. The caller emits the report after
+  // releasing slot.mtx so stderr backpressure cannot stall the resize path.
   if (seen == 1 || seen % kWinsizeReportEvery == 0) {
-    ReportWinsizeTimings("");
+    report.summary_due = true;
   }
+  return report;
 }
 
+// The Phase 3 payoff: winsize lands at the SOURCE of the chain. Called from
+// the engine resize callbacks BEFORE their nonblocking JS enqueue, under the
+// slot mutex (which also serializes against close — a reused fd number is
+// unreachable). Writes in Bound, NativeActive, and non-failed Releasing
+// (make-before-break); records the size in every non-Empty state so the
+// RELEASING flush and release messages always carry the newest value.
 void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
                          int rows) {
   bool need_release = false;
   uint64_t failed_lease_id = 0;
+  WinsizeTimingReport timing_report;
   const auto callback_entry = std::chrono::steady_clock::now();
   {
     PtyFdSlot &slot = surface->pty_slots[role];
@@ -841,7 +850,7 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
     size.ws_row = (unsigned short)rows;
     size.ws_col = (unsigned short)columns;
     const bool ok = ioctl(slot.fd, TIOCSWINSZ, &size) == 0;
-    RecordWinsizeTiming(
+    timing_report = RecordWinsizeTiming(
         (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - callback_entry)
             .count(),
@@ -853,6 +862,14 @@ void ApplyPtySlotWinsize(SurfaceHandle *surface, int role, int columns,
       need_release = slot.state != PtyFdSlot::State::Releasing;
       failed_lease_id = slot.lease_id;
     }
+  }
+  if (timing_report.exceeded_sub_frame) {
+    fprintf(stderr,
+            "vimeflow: winsize ioctl exceeded the sub-frame bound: %llu us\n",
+            (unsigned long long)(timing_report.elapsed_ns / 1000));
+  }
+  if (timing_report.summary_due) {
+    ReportWinsizeTimings("");
   }
   if (need_release) {
     StartPtySlotRelease(surface, role, failed_lease_id);
