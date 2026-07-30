@@ -552,7 +552,6 @@ describe('TerminalZone', () => {
       workingDirectory: '/tmp/a',
       agentType: 'generic',
       layout: 'vsplit',
-      activityPanelCollapsed: false,
       panes: [
         {
           id: 'p0',

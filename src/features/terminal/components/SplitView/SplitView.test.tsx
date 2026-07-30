@@ -168,7 +168,6 @@ const makeSession = (
   workingDirectory: '/tmp/fixture',
   agentType: 'generic',
   layout,
-  activityPanelCollapsed: false,
   panes: Array.from(
     { length: paneCount },
     (_, i): Pane => ({

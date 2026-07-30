@@ -31,6 +31,7 @@ describe('dockStore', () => {
       tab: 'editor',
       position: 'right',
     })
+
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '')).toEqual({
       open: true,
       tab: 'editor',

@@ -14,9 +14,21 @@ import { SettingsProvider } from '../settings/SettingsProvider'
 import * as useCodeMirrorModule from '../editor/hooks/useCodeMirror'
 import * as useVimModeModule from '../editor/hooks/useVimMode'
 import { createTerminalService } from '../terminal/services/terminalService'
+import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
+import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
+
+// Both panel-state stores are module-global and persist to localStorage, so
+// reset them before every test to keep dock/activity state from leaking.
+beforeEach(() => {
+  window.localStorage.clear()
+  setActivityPanelCollapsed(false)
+  setDockOpen(false)
+  setDockTab('diff')
+  setDockPosition('bottom')
+})
 
 // Mock TerminalPane to avoid xterm.js issues in tests
 vi.mock('../terminal/components/TerminalPane', () => ({

@@ -19,6 +19,8 @@ import { useAgentStatus } from '../agent-status/hooks/useAgentStatus'
 import type { SwellVariant } from '../agent-status/hooks/useReservoirFlow'
 import { usePaneShortcuts } from '../terminal/hooks/usePaneShortcuts'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
+import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
+import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 import type { SelectedDiffFile } from '../diff/types'
 import type { SessionList } from '../../bindings'
 import {
@@ -338,6 +340,10 @@ describe('WorkspaceView', () => {
     vi.clearAllMocks()
     window.localStorage.clear()
     setSidebarCollapsed(false)
+    setActivityPanelCollapsed(false)
+    setDockOpen(false)
+    setDockTab('diff')
+    setDockPosition('bottom')
     Object.defineProperty(navigator, 'platform', {
       value: 'Linux x86_64',
       configurable: true,

@@ -11,7 +11,6 @@ const makeSession = (panes: Pane[]): Session =>
     workingDirectory: '/',
     agentType: 'generic',
     layout: 'single',
-    activityPanelCollapsed: false,
     panes,
     createdAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),
