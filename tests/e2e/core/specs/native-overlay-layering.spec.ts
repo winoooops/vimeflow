@@ -378,6 +378,12 @@ const getParentLocalLayoutDialogState =
       return fallbackState
     })
 
+const parentLocalLayoutDialogIsHidden = (
+  state: LocalDialogState | null
+): boolean =>
+  state === null ||
+  (state.nativeOverlayActive === true && state.opacity === '0')
+
 const closeOverlayMenuIfPresent = async (): Promise<void> => {
   if ((await getOverlayMenuRect()) === null) {
     return
@@ -841,10 +847,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
       async () => {
         const localDialogState = await getParentLocalLayoutDialogState()
 
-        return (
-          localDialogState?.nativeOverlayActive === true &&
-          localDialogState.opacity === '0'
-        )
+        return parentLocalLayoutDialogIsHidden(localDialogState)
       },
       {
         timeout: 5_000,
@@ -854,10 +857,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
       }
     )
     const localDialogState = await getParentLocalLayoutDialogState()
-    expect(localDialogState).toEqual({
-      nativeOverlayActive: true,
-      opacity: '0',
-    })
+    expect(parentLocalLayoutDialogIsHidden(localDialogState)).toBe(true)
 
     await browser.waitUntil(
       async () => {

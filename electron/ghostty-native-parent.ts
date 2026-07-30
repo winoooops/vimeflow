@@ -356,14 +356,15 @@ export interface PtyFdTransportBootstrap {
 export const createPtyFdTransportBeforeSpawn = (
   packaged: boolean,
   resourcesPath = '',
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  loadNativeAddon: (dir: string) => GhosttyNativeParentAddon = loadAddon
 ): PtyFdTransportBootstrap | null => {
   if (env.VIMEFLOW_PTY_FD_DIRECT === '0') {
     return null
   }
 
   try {
-    const addon = loadAddon(nativeParentDir(packaged, resourcesPath))
+    const addon = loadNativeAddon(nativeParentDir(packaged, resourcesPath))
     const transportFd = addon.createPtyFdTransport?.()
     if (transportFd === undefined || transportFd < 0) {
       return null

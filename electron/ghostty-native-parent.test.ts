@@ -17,6 +17,7 @@ import {
 import { BACKEND_EVENT, COMMAND_PALETTE_TOGGLE } from './ipc-channels'
 import type { Sidecar } from './sidecar'
 import {
+  createPtyFdTransportBeforeSpawn,
   isGhosttyNativeParentEnabled,
   setupGhosttyNativeParent,
   SURFACE_SETTLE_MS,
@@ -160,6 +161,94 @@ describe('ghostty native parent', () => {
     expect(isGhosttyNativeParentEnabled('darwin', {}, true)).toBe(true)
     expect(isGhosttyNativeParentEnabled('linux', {}, true)).toBe(false)
     expect(isGhosttyNativeParentEnabled('darwin', {})).toBe(false)
+  })
+
+  test('creates pty fd transport before spawn and notifies after spawn', () => {
+    const notifyPtyFdTransportSpawned = vi.fn()
+    const createPtyFdTransport = vi.fn(() => 7)
+
+    const loadNativeAddon = vi.fn(() => ({
+      create: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+      createPtyFdTransport,
+      notifyPtyFdTransportSpawned,
+    }))
+
+    const bootstrap = createPtyFdTransportBeforeSpawn(
+      false,
+      '/fake/resources',
+      {},
+      loadNativeAddon
+    )
+
+    expect(bootstrap?.transportFd).toBe(7)
+    expect(createPtyFdTransport).toHaveBeenCalledOnce()
+    expect(loadNativeAddon).toHaveBeenCalledWith(
+      expect.stringContaining('ghostty-parent')
+    )
+
+    bootstrap?.onSpawned()
+
+    expect(notifyPtyFdTransportSpawned).toHaveBeenCalledOnce()
+  })
+
+  test('skips pty fd transport when direct fd path is disabled', () => {
+    const loadNativeAddon = vi.fn()
+
+    expect(
+      createPtyFdTransportBeforeSpawn(
+        false,
+        '',
+        { VIMEFLOW_PTY_FD_DIRECT: '0' },
+        loadNativeAddon
+      )
+    ).toBeNull()
+    expect(loadNativeAddon).not.toHaveBeenCalled()
+  })
+
+  test('falls back when pty fd transport is missing or invalid', () => {
+    const baseAddon = {
+      create: vi.fn(),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    expect(
+      createPtyFdTransportBeforeSpawn(false, '', {}, () => ({
+        ...baseAddon,
+      }))
+    ).toBeNull()
+
+    expect(
+      createPtyFdTransportBeforeSpawn(false, '', {}, () => ({
+        ...baseAddon,
+        createPtyFdTransport: vi.fn(() => -1),
+      }))
+    ).toBeNull()
+  })
+
+  test('falls back when pty fd transport addon loading fails', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      expect(
+        createPtyFdTransportBeforeSpawn(false, '', {}, () => {
+          throw new Error('missing addon')
+        })
+      ).toBeNull()
+
+      expect(warn).toHaveBeenCalledWith(
+        'pty fd transport unavailable; async resize path only',
+        expect.any(Error)
+      )
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test('rejects invalid native data payload', () => {

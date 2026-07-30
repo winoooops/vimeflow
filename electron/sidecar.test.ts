@@ -1,7 +1,21 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { describe, expect, test, vi } from 'vitest'
-import { createSidecar, type Sidecar, type SpawnedChild } from './sidecar'
+import {
+  createSidecar,
+  spawnSidecar,
+  type Sidecar,
+  type SpawnedChild,
+} from './sidecar'
+
+const { childSpawn } = vi.hoisted(() => ({
+  childSpawn: vi.fn(),
+}))
+
+vi.mock('node:child_process', () => ({
+  default: { spawn: childSpawn },
+  spawn: childSpawn,
+}))
 
 class MockChildProcess extends EventEmitter implements SpawnedChild {
   readonly stdin = new PassThrough()
@@ -80,6 +94,43 @@ describe('Sidecar pty fd transport spawn options', () => {
       '/fake/vimeflow-backend',
       ['--app-data-dir', '/fake/data'],
       undefined
+    )
+  })
+
+  test('spawnSidecar inherits transport fd as stdio 3 with transport env', () => {
+    const mock = new MockChildProcess()
+    childSpawn.mockReturnValue(mock)
+
+    spawnSidecar({
+      binary: '/fake/vimeflow-backend',
+      appDataDir: '/fake/data',
+      transportFd: 7,
+    })
+
+    expect(childSpawn).toHaveBeenCalledWith(
+      '/fake/vimeflow-backend',
+      ['--app-data-dir', '/fake/data'],
+      {
+        stdio: ['pipe', 'pipe', 'pipe', 7],
+        env: expect.objectContaining({
+          VIMEFLOW_PTY_FD_TRANSPORT: '1',
+        }),
+      }
+    )
+  })
+
+  test('spawnSidecar spawns without transport env when fd is absent', () => {
+    const mock = new MockChildProcess()
+    childSpawn.mockReturnValue(mock)
+
+    spawnSidecar({
+      binary: '/fake/vimeflow-backend',
+      appDataDir: '/fake/data',
+    })
+
+    expect(childSpawn).toHaveBeenCalledWith(
+      '/fake/vimeflow-backend',
+      ['--app-data-dir', '/fake/data']
     )
   })
 })
