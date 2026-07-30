@@ -10,7 +10,6 @@ const buildSession = (id: string): Session => ({
   workingDirectory: '~',
   agentType: 'claude-code',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: `${id}-pane`,

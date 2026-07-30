@@ -26,7 +26,6 @@ const makeSession = (
   workingDirectory: '/tmp',
   agentType: 'generic',
   layout,
-  activityPanelCollapsed: false,
   panes: paneIds.map((paneId, index) => ({
     id: paneId,
     ptyId: `pty-${paneId}`,

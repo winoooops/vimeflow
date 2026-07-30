@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { SessionInfo } from '../../../bindings'
 import { sessionFromInfo } from './sessionFromInfo'
-import { writeActivityPanelCollapsed } from './activityPanelCollapsedStore'
 
 const aliveInfo = (id: string, cwd: string): SessionInfo => ({
   id,
@@ -81,17 +80,6 @@ describe('sessionFromInfo (pre-pane shape)', () => {
     expect(session.panes).toHaveLength(1)
     expect(session.panes[0].status).toBe('completed')
     expect(session.panes[0].restoreData).toBeUndefined()
-  })
-
-  test('hydrates session.activityPanelCollapsed from localStorage', () => {
-    writeActivityPanelCollapsed('pty-1', true)
-    const session = sessionFromInfo(aliveInfo('pty-1', '/home/x'), 0)
-    expect(session.activityPanelCollapsed).toBe(true)
-  })
-
-  test('defaults session.activityPanelCollapsed to false when nothing persisted', () => {
-    const session = sessionFromInfo(aliveInfo('pty-2', '/home/y'), 0)
-    expect(session.activityPanelCollapsed).toBe(false)
   })
 
   test('hydrates cacheHistory from the store for an Alive pane', () => {

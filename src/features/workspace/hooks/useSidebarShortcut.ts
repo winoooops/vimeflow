@@ -10,7 +10,7 @@ import {
 export interface UseSidebarShortcutParams {
   /** Flip the workspace-global left-sidebar collapse flag. */
   onToggle: () => void
-  /** Flip the active session's right activity-panel collapse flag. */
+  /** Flip the workspace-global right activity-panel collapse flag. */
   onToggleActivityPanel: () => void
   /** Registry matcher — true iff the event is the resolved command chord. */
   matches: (event: KeyboardEvent, id: CommandId) => boolean

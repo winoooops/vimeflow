@@ -14,7 +14,6 @@ const mockSessions: Session[] = [
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     layout: 'single',
-    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -54,7 +53,6 @@ const mockSessions: Session[] = [
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     layout: 'single',
-    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',
@@ -89,7 +87,6 @@ const mockSessions: Session[] = [
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     layout: 'single',
-    activityPanelCollapsed: false,
     panes: [
       {
         id: 'p0',

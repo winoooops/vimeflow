@@ -79,7 +79,6 @@ describe('Session Types', () => {
         workingDirectory: '/home/user/my-project',
         agentType: 'claude-code',
         layout: 'single',
-        activityPanelCollapsed: false,
         panes: [
           {
             id: 'p0',
