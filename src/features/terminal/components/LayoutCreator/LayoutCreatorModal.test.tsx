@@ -64,6 +64,27 @@ describe('LayoutCreatorModal', () => {
     })
   })
 
+  test('exposes the initial grid size for e2e overlay assertions', () => {
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={vi.fn<SaveSpy>()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('layout-creator-grid')).toHaveAttribute(
+      'data-layout-creator-cols',
+      '1'
+    )
+
+    expect(screen.getByTestId('layout-creator-grid')).toHaveAttribute(
+      'data-layout-creator-rows',
+      '1'
+    )
+  })
+
   test('imports code panel edits before saving', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn<SaveSpy>()

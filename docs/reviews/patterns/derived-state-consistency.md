@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-20
-ref_count: 26
+last_updated: 2026-07-30
+ref_count: 27
 ---
 
 # Derived State Consistency
@@ -459,4 +459,19 @@ base data is technically "correct."
 - **Fix:** Clamp the retained batch start and then floor it to the current
   batch-size boundary in the Recent-session path. Added a rerender regression
   test that expands from five visible indicators to ten while Recent is active.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Inline running tool events bypassed timestamp ordering
+
+- **Source:** github-codex-connector | PR #762 round 1 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/utils/toolCallsToEvents.ts`
+- **Finding:** The inline tool-call feed prepended the active running tool
+  event before sorting recent completed events. When a newer completed tool call
+  existed, the agent-status panel still rendered the older active row first,
+  violating the timestamp-descending feed contract.
+- **Fix:** Build one merged event list from active and recent tool calls, then
+  sort the whole feed by timestamp with malformed timestamps sunk to the end.
+  Added regression coverage proving an older running event appears after a
+  newer completed event.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

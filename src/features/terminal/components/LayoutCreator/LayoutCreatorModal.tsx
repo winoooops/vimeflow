@@ -482,6 +482,9 @@ const GridCanvas = ({
       >
         <div
           ref={gridRef}
+          data-testid="layout-creator-grid"
+          data-layout-creator-cols={colCount}
+          data-layout-creator-rows={rowCount}
           className="absolute inset-2 grid gap-1.5"
           style={gridTemplateStyleFor(draft)}
         >

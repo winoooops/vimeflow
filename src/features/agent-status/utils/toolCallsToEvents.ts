@@ -30,33 +30,7 @@ export const toolCallsToEvents = (
     })
   }
 
-  // Sort recent by timestamp descending. The Rust parser appends to the
-  // list in arrival order, which is approximately — but not strictly —
-  // chronological (batch catch-up, transcript edits, clock skew can all
-  // reorder). The feed's only meaningful order is by event time, so we
-  // sort explicitly here rather than trust arrival order.
-  //
-  // Malformed timestamps (unparseable ISO strings slipping through the
-  // Rust boundary) make Date.getTime() return NaN. An NaN comparator
-  // result is implementation-defined — V8 produces platform-dependent
-  // ordering for every pair involving the bad entry. Sink malformed
-  // entries to the bottom with explicit NaN sentinels so the rest of
-  // the feed stays ordered. Matches the defensive posture in
-  // relativeTime.ts.
-  const sortedRecent = [...recent].sort((a, b) => {
-    const ta = new Date(a.timestamp).getTime()
-    const tb = new Date(b.timestamp).getTime()
-    if (Number.isNaN(ta)) {
-      return 1
-    }
-    if (Number.isNaN(tb)) {
-      return -1
-    }
-
-    return tb - ta
-  })
-
-  for (const r of sortedRecent) {
+  for (const r of recent) {
     const presentation = classifyToolCall(agentType, r.tool)
 
     events.push({
@@ -72,5 +46,24 @@ export const toolCallsToEvents = (
     })
   }
 
-  return events
+  // Sort the merged feed by timestamp descending. The Rust parser appends recent
+  // calls in arrival order, and the active call is synthesized from `startedAt`;
+  // neither source alone is a reliable display order when tools run in parallel.
+  //
+  // Malformed timestamps (unparseable ISO strings slipping through the Rust
+  // boundary) make Date.getTime() return NaN. An NaN comparator result is
+  // implementation-defined, so sink malformed entries to the bottom with
+  // explicit sentinels. Matches the defensive posture in relativeTime.ts.
+  return events.sort((a, b) => {
+    const ta = new Date(a.timestamp).getTime()
+    const tb = new Date(b.timestamp).getTime()
+    if (Number.isNaN(ta)) {
+      return 1
+    }
+    if (Number.isNaN(tb)) {
+      return -1
+    }
+
+    return tb - ta
+  })
 }
