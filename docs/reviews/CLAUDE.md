@@ -44,12 +44,12 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 10       | 4    | 2026-07-05   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 14       | 5    | 2026-07-30   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 64   | 2026-06-27   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 33       | 26   | 2026-07-27   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 33       | 27   | 2026-07-27   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 15       | 13   | 2026-07-27   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 35       | 27   | 2026-07-29   |
@@ -79,11 +79,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 30       | 13   | 2026-07-14   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 49       | 49   | 2026-07-12   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 52       | 51   | 2026-07-29   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 40       | 19   | 2026-07-13   |
-| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 21       | 8    | 2026-07-20   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 46       | 25   | 2026-07-29   |
+| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 22       | 9    | 2026-07-29   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 14       | 3    | 2026-07-26   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 49       | 19   | 2026-07-26   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 4        | 2    | 2026-07-22   |

@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-27
-ref_count: 26
+ref_count: 27
 ---
 
 # Resource Cleanup

@@ -41,6 +41,16 @@ describe('FileExplorer', () => {
     await waitForFileTree()
   })
 
+  test('exposes current path for e2e fixture setup', async () => {
+    render(<FileExplorer cwd="/workspace" />)
+    await waitForFileTree()
+
+    expect(screen.getByTestId('file-explorer')).toHaveAttribute(
+      'data-current-path',
+      '/workspace'
+    )
+  })
+
   test('fills parent height (sized by sidebar resize)', async () => {
     render(<FileExplorer />)
     const explorer = screen.getByTestId('file-explorer')

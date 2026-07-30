@@ -72,7 +72,6 @@ const customLayoutMenuActions = ({
 
   const duplicateLayout = (): void => {
     onDuplicateCustomLayout?.(layout.id)
-    closeMenu()
   }
 
   const deleteLayout = (): void => {
@@ -127,6 +126,7 @@ const customLayoutNativeOverlayActions = ({
   {
     label: duplicateCustomLayoutLabel(layout),
     icon: 'content_copy',
+    closeOnSelect: false,
     onSelect: actions.duplicateLayout,
   },
   {

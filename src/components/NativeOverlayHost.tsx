@@ -79,6 +79,38 @@ type NativeOverlaySessionSwitcherRequest = NativeOverlayDialogRequest & {
   payload: NativeOverlaySessionSwitcherDialogPayload
 }
 
+export interface NativeOverlayHostDialogActionRequest {
+  actionId: string
+  closeOnSelect?: boolean
+  query?: string
+}
+
+export interface NativeOverlayHostActionResult {
+  surfaceId: string
+  actionId: string
+  feedback?: 'copy'
+  ok: boolean
+  error?: string
+}
+
+export interface NativeOverlayHostDialogRendererContext {
+  request: NativeOverlayDialogRequest
+  close: () => void
+  dispatchAction: (request: NativeOverlayHostDialogActionRequest) => void
+  actionResult: NativeOverlayHostActionResult | null
+}
+
+export type NativeOverlayHostDialogRenderer = (
+  context: NativeOverlayHostDialogRendererContext
+) => ReactElement | null
+
+export type NativeOverlayHostDialogRenderers = Partial<
+  Record<
+    NativeOverlayDialogRequest['payload']['dialog'],
+    NativeOverlayHostDialogRenderer
+  >
+>
+
 const COPY_FEEDBACK_MS = 1300
 
 const nativeOverlayHostBridge = (): NativeOverlayHostBridge | undefined =>
@@ -114,23 +146,23 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
       'new-session' ||
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+      'layout-creator' ||
+    (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
       'session-switcher')
 
-const isCopyActionResult = (
+const isActionResult = (
   value: unknown
-): value is {
-  surfaceId: string
-  actionId: string
-  feedback: 'copy'
-  ok: boolean
-} =>
+): value is NativeOverlayHostActionResult =>
   typeof value === 'object' &&
   value !== null &&
   !Array.isArray(value) &&
   typeof (value as { surfaceId?: unknown }).surfaceId === 'string' &&
   typeof (value as { actionId?: unknown }).actionId === 'string' &&
-  (value as { feedback?: unknown }).feedback === 'copy' &&
-  typeof (value as { ok?: unknown }).ok === 'boolean'
+  ((value as { feedback?: unknown }).feedback === undefined ||
+    (value as { feedback?: unknown }).feedback === 'copy') &&
+  typeof (value as { ok?: unknown }).ok === 'boolean' &&
+  ((value as { error?: unknown }).error === undefined ||
+    typeof (value as { error?: unknown }).error === 'string')
 
 const isNativeOverlayKeyboardEvent = (
   value: unknown
@@ -1320,11 +1352,17 @@ const NativeOverlayActivityPopover = ({
 
 export const NativeOverlayHost = ({
   mode = 'menu',
+  dialogRenderers = {},
 }: {
   mode?: 'menu' | 'tooltip'
+  dialogRenderers?: NativeOverlayHostDialogRenderers
 }): ReactElement | null => {
   const [request, setRequest] = useState<NativeOverlayRequest | null>(null)
   const [copiedActionId, setCopiedActionId] = useState<string | null>(null)
+
+  const [actionResult, setActionResult] =
+    useState<NativeOverlayHostActionResult | null>(null)
+
   const requestRef = useRef<NativeOverlayRequest | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
   requestRef.current = request
@@ -1383,6 +1421,7 @@ export const NativeOverlayHost = ({
       if (isMenuLayerRequest) {
         applyThemeSnapshot(payload.theme)
         clearCopyFeedback()
+        setActionResult(null)
         setRequest(payload)
 
         return
@@ -1391,17 +1430,19 @@ export const NativeOverlayHost = ({
       if (mode === 'tooltip' && isTooltipRequest(payload)) {
         applyThemeSnapshot(payload.theme)
         clearCopyFeedback()
+        setActionResult(null)
         setRequest(payload)
       }
     })
 
     const cleanupClear = bridge.onClear(() => {
       clearCopyFeedback()
+      setActionResult(null)
       setRequest(null)
     })
 
     const cleanupActionResult = bridge.onActionResult((payload) => {
-      if (!isCopyActionResult(payload) || !payload.ok) {
+      if (!isActionResult(payload)) {
         return
       }
 
@@ -1410,7 +1451,11 @@ export const NativeOverlayHost = ({
         return
       }
 
-      showCopyFeedback(payload.actionId)
+      setActionResult(payload)
+
+      if (payload.feedback === 'copy' && payload.ok) {
+        showCopyFeedback(payload.actionId)
+      }
     })
 
     const cleanupKeyDown = bridge.onKeyDown((payload) => {
@@ -1449,12 +1494,40 @@ export const NativeOverlayHost = ({
     }
 
     clearCopyFeedback()
+    setActionResult(null)
     setRequest(null)
     void nativeOverlayHostBridge()?.close({
       surfaceId: current.surfaceId,
       reason: 'outside',
     })
   }, [clearCopyFeedback])
+
+  const dispatchDialogAction = useCallback(
+    ({
+      actionId,
+      closeOnSelect = false,
+      query = undefined,
+    }: NativeOverlayHostDialogActionRequest): void => {
+      const current = requestRef.current
+      if (current === null) {
+        return
+      }
+
+      if (closeOnSelect) {
+        clearCopyFeedback()
+        setActionResult(null)
+        setRequest(null)
+      }
+
+      void nativeOverlayHostBridge()?.action({
+        surfaceId: current.surfaceId,
+        actionId,
+        closeOnSelect,
+        ...(query === undefined ? {} : { query }),
+      })
+    },
+    [clearCopyFeedback]
+  )
 
   if (request === null) {
     return null
@@ -1518,12 +1591,26 @@ export const NativeOverlayHost = ({
         )
       }
 
-      return (
-        <NativeOverlayCommandPalette
-          request={request as NativeOverlayCommandPaletteRequest}
-          close={close}
-        />
-      )
+      const renderDialog = dialogRenderers[request.payload.dialog]
+      if (renderDialog !== undefined) {
+        return renderDialog({
+          request,
+          close,
+          dispatchAction: dispatchDialogAction,
+          actionResult,
+        })
+      }
+
+      if (request.payload.dialog === 'command-palette') {
+        return (
+          <NativeOverlayCommandPalette
+            request={request as NativeOverlayCommandPaletteRequest}
+            close={close}
+          />
+        )
+      }
+
+      return null
     }
 
     return null
@@ -1659,7 +1746,9 @@ export const NativeOverlayHost = ({
                         onClick={(event): void => {
                           event.stopPropagation()
                           if (action.disabled !== true) {
-                            dispatchAction(action.id)
+                            dispatchAction(action.id, {
+                              closeOnSelect: action.closeOnSelect,
+                            })
                           }
                         }}
                       />

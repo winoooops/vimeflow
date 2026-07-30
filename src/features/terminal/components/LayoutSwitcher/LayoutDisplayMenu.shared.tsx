@@ -13,6 +13,7 @@ export interface LayoutDisplayNativeOverlayAction {
   icon: string
   pressed?: boolean
   disabled?: boolean
+  closeOnSelect?: boolean
   onSelect: () => void
 }
 

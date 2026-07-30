@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-12
-ref_count: 49
+last_updated: 2026-07-29
+ref_count: 51
 ---
 
 # Error Surfacing
@@ -502,4 +502,44 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Store the `register()` result in a local before asserting it. The
   side effect now runs in every build mode, while debug builds still check the
   expected invariant.
+- **Commit:** same commit as this entry
+
+### 50. Native layout save reported failure after applying the layout
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The retained native `layout-creator:save` action applied the
+  parsed layout but returned `void`, so the native action result contract saw
+  the save as failed and could show an invalid-layout banner after success.
+- **Fix:** Return `true` after `onSave` succeeds, report retained native action
+  successes even without copy feedback, and cover the native save path with an
+  `ok: true` regression assertion.
+- **Commit:** same commit as this entry
+
+### 51. Native layout JSON validation collapsed parser messages
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The native layout JSON helper caught parse and validation
+  failures and returned `null`, forcing callers to show only `Invalid layout`
+  even when the parser had an actionable message such as overlapping panes.
+- **Fix:** Return a parsed-definition-or-error result from the native helper and
+  throw the original useful error message for the overlay action result. Added a
+  regression test for the overlapping-pane message.
+- **Commit:** same commit as this entry
+
+### 52. Native dialog action results stopped at a menu-only guard
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The owner renderer could report a native Layout Creator save
+  failure, but `handleActionResult` returned early for every surface whose kind
+  was not `menu`. Dialog overlays therefore never received `ok: false` or error
+  payloads, leaving native save failures invisible inside the overlay.
+- **Fix:** Allow dialog surfaces through the action-result relay and add a
+  Layout Creator dialog regression test that forwards an `ok: false` save result
+  to the overlay renderer.
 - **Commit:** same commit as this entry

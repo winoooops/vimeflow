@@ -49,7 +49,9 @@ interface FakeWindow {
   getContentBounds: ReturnType<typeof vi.fn>
   setBounds: ReturnType<typeof vi.fn>
   setAlwaysOnTop: ReturnType<typeof vi.fn>
+  setFocusable: ReturnType<typeof vi.fn>
   setIgnoreMouseEvents: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
   show: ReturnType<typeof vi.fn>
   showInactive: ReturnType<typeof vi.fn>
   hide: ReturnType<typeof vi.fn>
@@ -123,7 +125,9 @@ const electronMock = vi.hoisted(() => {
       ),
       setBounds: vi.fn(),
       setAlwaysOnTop: vi.fn(),
+      setFocusable: vi.fn(),
       setIgnoreMouseEvents: vi.fn(),
+      focus: vi.fn(),
       show: vi.fn(),
       showInactive: vi.fn(),
       hide: vi.fn(),
@@ -166,7 +170,9 @@ const electronMock = vi.hoisted(() => {
         this.getContentBounds.mockClear()
         this.setBounds.mockClear()
         this.setAlwaysOnTop.mockClear()
+        this.setFocusable.mockClear()
         this.setIgnoreMouseEvents.mockClear()
+        this.focus.mockClear()
         this.show.mockClear()
         this.showInactive.mockClear()
         this.hide.mockClear()
@@ -213,7 +219,12 @@ const electronMock = vi.hoisted(() => {
     }),
   }
 
+  const app = {
+    isActive: vi.fn((): boolean => true),
+  }
+
   return {
+    app,
     BrowserWindow,
     handlers,
     ipcMain,
@@ -224,6 +235,8 @@ const electronMock = vi.hoisted(() => {
       handlers.clear()
       nextWebContentsId = 20
       owner.reset()
+      app.isActive.mockClear()
+      app.isActive.mockReturnValue(true)
       BrowserWindow.mockClear()
       BrowserWindow.fromWebContents.mockClear()
       ipcMain.handle.mockClear()
@@ -233,6 +246,7 @@ const electronMock = vi.hoisted(() => {
 })
 
 vi.mock('electron', () => ({
+  app: electronMock.app,
   BrowserWindow: electronMock.BrowserWindow,
   ipcMain: electronMock.ipcMain,
 }))
@@ -377,6 +391,41 @@ const sessionSwitcherDialogRequest = {
   },
 } as const
 
+const layoutCreatorDialogRequest = {
+  surfaceId: 'dialog-layout-creator',
+  kind: 'dialog',
+  anchorRect: { x: 0, y: 0, width: 900, height: 600 },
+  placement: 'top',
+  payload: {
+    kind: 'dialog',
+    dialog: 'layout-creator',
+    ariaLabel: 'Layout Creator',
+    existingLayouts: [
+      {
+        schemaVersion: 1,
+        id: 'single',
+        title: 'Single',
+        source: 'builtin',
+        tracks: {
+          columns: [{ id: 'col-0', units: 24 }],
+          rows: [{ id: 'row-0', units: 24 }],
+        },
+        slots: [
+          {
+            id: 'slot:p0',
+            rect: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
+          },
+        ],
+        addOrder: ['slot:p0'],
+      },
+    ],
+    actions: {
+      cancel: 'layout-creator:cancel',
+      save: 'layout-creator:save',
+    },
+  },
+} as const
+
 const menuOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=menu'
 const tooltipOverlayUrl = 'vimeflow://app/index.html?nativeOverlay=tooltip'
 
@@ -472,7 +521,7 @@ describe('NativeOverlayController', () => {
       true,
       'screen-saver'
     )
-    expect(overlayWindow.moveTop).toHaveBeenCalledOnce()
+    expect(overlayWindow.moveTop).toHaveBeenCalledTimes(2)
 
     expect(
       overlayWindow.webContents.setWindowOpenHandler
@@ -944,6 +993,170 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test('focuses layout creator dialogs for native text editing', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    expect(overlayWindow.setFocusable).toHaveBeenCalledWith(true)
+    expect(overlayWindow.show).toHaveBeenCalledOnce()
+    expect(overlayWindow.focus).toHaveBeenCalledTimes(2)
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledTimes(2)
+    expect(overlayWindow.showInactive).not.toHaveBeenCalled()
+
+    overlayWindow.isFocused.mockReturnValue(false)
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.emit('blur')
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.objectContaining({
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+      })
+    )
+
+    overlayWindow.isFocused.mockReturnValue(true)
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.emit('blur')
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.objectContaining({
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+      })
+    )
+
+    overlayWindow.isFocused.mockReturnValue(false)
+    overlayWindow.emit('blur')
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.objectContaining({
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+      })
+    )
+  })
+
+  test('dismisses a layout creator dialog on owner blur when the app deactivates', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    electronMock.app.isActive.mockReturnValue(false)
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.emit('blur')
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      {
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+        reason: 'outside',
+      }
+    )
+  })
+
+  test('dismisses a layout creator dialog on overlay blur when the app deactivates', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    electronMock.app.isActive.mockReturnValue(false)
+    electronMock.owner.webContents.send.mockClear()
+    overlayWindow.emit('blur')
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      {
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+        reason: 'outside',
+      }
+    )
+  })
+
+  test('dismisses regular native menus when the overlay window blurs', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      request
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(overlayWindow)
+    await openPromise
+
+    electronMock.owner.webContents.send.mockClear()
+    overlayWindow.emit('blur')
+
+    expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      {
+        surfaceId: request.surfaceId,
+        reason: 'outside',
+      }
+    )
+  })
+
+  test.each(['hide', 'minimize'])(
+    'parent window %s dismisses a focused layout creator dialog',
+    async (eventName) => {
+      const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        layoutCreatorDialogRequest
+      )
+      const overlayWindow = finishOverlayLoad()
+
+      await acknowledgeOverlayReady(
+        overlayWindow,
+        layoutCreatorDialogRequest.surfaceId
+      )
+      await openPromise
+
+      overlayWindow.isFocused.mockReturnValue(true)
+      overlayWindow.hide.mockClear()
+      overlayWindow.setAlwaysOnTop.mockClear()
+      overlayWindow.setIgnoreMouseEvents.mockClear()
+      electronMock.owner.webContents.focus.mockClear()
+      electronMock.owner.webContents.send.mockClear()
+
+      electronMock.owner.emit(eventName)
+
+      expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+        NATIVE_OVERLAY_CLEAR
+      )
+      expect(overlayWindow.hide).toHaveBeenCalledOnce()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
+      expect(overlayWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true)
+      expect(electronMock.owner.webContents.focus).not.toHaveBeenCalled()
+      expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
+        NATIVE_OVERLAY_CLOSED,
+        {
+          surfaceId: layoutCreatorDialogRequest.surfaceId,
+          reason: 'outside',
+        }
+      )
+    }
+  )
+
   test('leaves dialog Tab key events for owner renderer completion', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
@@ -1117,6 +1330,7 @@ describe('NativeOverlayController', () => {
                     id: 'duplicate-main-bottom',
                     label: 'Duplicate Main + bottom',
                     icon: 'content_copy',
+                    closeOnSelect: false,
                   },
                 ],
               },
@@ -1740,6 +1954,39 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test('relays owner action results to dialog overlays', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await openPromise
+
+    overlayWindow.webContents.send.mockClear()
+
+    const result = {
+      surfaceId: layoutCreatorDialogRequest.surfaceId,
+      actionId: layoutCreatorDialogRequest.payload.actions.save,
+      ok: false,
+      error: 'Invalid layout',
+    } as const
+
+    handler(NATIVE_OVERLAY_ACTION_RESULT)(
+      { sender: electronMock.owner.webContents },
+      result
+    )
+
+    expect(overlayWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_ACTION_RESULT,
+      result
+    )
+  })
+
   test('action can suspend and resume an interactive overlay for native modal work', async () => {
     const openPromise = handler(NATIVE_OVERLAY_OPEN)(
       { sender: electronMock.owner.webContents },
@@ -1859,6 +2106,53 @@ describe('NativeOverlayController', () => {
       sessionSwitcherDialogRequest.surfaceId
     )
     await expect(openPromise).resolves.toEqual({ accepted: true })
+  })
+
+  test('accepts a layout creator dialog payload', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    finishOverlayLoad(1)
+
+    await acknowledgeOverlayReady(
+      menuWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      layoutCreatorDialogRequest
+    )
+  })
+
+  test('rejects malformed layout creator definitions', async () => {
+    const invalidRequest = {
+      ...layoutCreatorDialogRequest,
+      payload: {
+        ...layoutCreatorDialogRequest.payload,
+        existingLayouts: [
+          {
+            ...layoutCreatorDialogRequest.payload.existingLayouts[0],
+            slots: [
+              {
+                id: 'slot:p0',
+                rect: { col: 0, row: 0, colSpan: 0, rowSpan: 1 },
+              },
+            ],
+          },
+        ],
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        invalidRequest
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   test('rejects a session switcher payload with unbounded items', async () => {
