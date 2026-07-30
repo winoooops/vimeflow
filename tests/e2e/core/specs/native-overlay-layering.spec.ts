@@ -318,34 +318,38 @@ const getOverlayWindowState = async (): Promise<OverlayWindowState | null> =>
 const getParentLocalLayoutDialogState =
   async (): Promise<LocalDialogState | null> =>
     browser.electron.execute(async (electron: ElectronModule) => {
-      const parent = electron.BrowserWindow.getAllWindows().find((window) => {
+      for (const window of electron.BrowserWindow.getAllWindows()) {
         const mode = new URL(window.webContents.getURL()).searchParams.get(
           'nativeOverlay'
         )
 
-        return mode !== '1' && mode !== 'menu' && mode !== 'tooltip'
-      })
+        if (mode === '1' || mode === 'menu' || mode === 'tooltip') {
+          continue
+        }
 
-      if (parent === undefined) {
-        return null
+        const state = (await window.webContents.executeJavaScript(`
+          (() => {
+            const content = document.querySelector(
+              '[data-workspace-overlay-id="layout-creator"]'
+            )
+            const dialog = content?.closest('[role="dialog"]')
+
+            return dialog instanceof HTMLElement
+              ? {
+                  nativeOverlayActive:
+                    dialog.dataset.nativeOverlayActive === 'true',
+                  opacity: getComputedStyle(dialog).opacity,
+                }
+              : null
+          })()
+        `)) as LocalDialogState | null
+
+        if (state !== null) {
+          return state
+        }
       }
 
-      return parent.webContents.executeJavaScript(`
-        (() => {
-          const content = document.querySelector(
-            '[data-workspace-overlay-id="layout-creator"]'
-          )
-          const dialog = content?.closest('[role="dialog"]')
-
-          return dialog instanceof HTMLElement
-            ? {
-                nativeOverlayActive:
-                  dialog.dataset.nativeOverlayActive === 'true',
-                opacity: getComputedStyle(dialog).opacity,
-              }
-            : null
-        })()
-      `) as Promise<LocalDialogState | null>
+      return null
     })
 
 const closeOverlayMenuIfPresent = async (): Promise<void> => {
