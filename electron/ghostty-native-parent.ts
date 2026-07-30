@@ -122,6 +122,10 @@ interface GhosttyNativeParentAddon {
     role: 'primary' | 'secondary',
     sessionId: string
   ) => void
+  isPtyNativeOwned?: (
+    surface: GhosttyNativeSurface,
+    role: 'primary' | 'secondary'
+  ) => boolean
 }
 
 interface GhosttyNativeParentDeps {
@@ -1420,6 +1424,23 @@ export class GhosttyNativeParentController {
       resizeState.lastResize.rows === rows
     ) {
       resizeState.pendingResize = null
+
+      return
+    }
+
+    // Single-writer rule (VIM-399 Phase 4): once the addon owns the winsize
+    // ioctl, this message is metadata only — it needs no coalescing, and
+    // throttling it would stale Rust's cached dimensions. Forward every
+    // size change immediately.
+    if (
+      resizeState.surface !== null &&
+      this.getOptionalAddon()?.isPtyNativeOwned?.(
+        resizeState.surface,
+        'primary'
+      ) === true
+    ) {
+      resizeState.pendingResize = null
+      this.forwardPtyResize(resizeState, sessionId, cols, rows)
 
       return
     }

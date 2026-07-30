@@ -1933,6 +1933,39 @@ napi_value BindPty(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
+// isPtyNativeOwned(surface, role) -> bool. True once the slot reached
+// NATIVE_ACTIVE — the point where Rust has stopped ioctling and the JS
+// resize message is metadata only, so Electron can bypass its PTY-side
+// throttle (a metadata message needs no coalescing, and delaying it stales
+// the cached dimensions).
+napi_value IsPtyNativeOwned(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value args[2];
+  napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (argc < 2) {
+    return Throw(env, "isPtyNativeOwned(surface, role) expected");
+  }
+
+  bool owned = false;
+  SurfaceHandle *surface = GetSurface(env, args[0]);
+  if (surface != nullptr) {
+    char role_buf[16] = {0};
+    size_t role_len = 0;
+    if (napi_get_value_string_utf8(env, args[1], role_buf, sizeof(role_buf),
+                                   &role_len) == napi_ok) {
+      const int role = strcmp(role_buf, "secondary") == 0 ? kPtyRoleSecondary
+                                                          : kPtyRolePrimary;
+      PtyFdSlot &slot = surface->pty_slots[role];
+      std::lock_guard<std::mutex> lock(slot.mtx);
+      owned = slot.state == PtyFdSlot::State::NativeActive && !slot.failed;
+    }
+  }
+
+  napi_value result = nullptr;
+  napi_get_boolean(env, owned, &result);
+  return result;
+}
+
 napi_value Init(napi_env env, napi_value exports) {
   const napi_property_descriptor descriptors[] = {
       {"create", nullptr, Create, nullptr, nullptr, nullptr, napi_default,
@@ -1975,6 +2008,8 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr, nullptr, nullptr, napi_default, nullptr},
       {"bindPty", nullptr, BindPty, nullptr, nullptr, nullptr, napi_default,
        nullptr},
+      {"isPtyNativeOwned", nullptr, IsPtyNativeOwned, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports,
                          sizeof(descriptors) / sizeof(descriptors[0]),
