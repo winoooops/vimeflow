@@ -49,7 +49,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 33       | 27   | 2026-07-27   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 34       | 28   | 2026-07-30   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 15       | 13   | 2026-07-27   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 34       | 26   | 2026-07-20   |

@@ -447,6 +447,20 @@ mod tests {
         a
     }
 
+    struct PtySessionCleanup {
+        pty_state: PtyState,
+        session_id: String,
+    }
+
+    impl Drop for PtySessionCleanup {
+        fn drop(&mut self) {
+            if let Some(mut session) = self.pty_state.remove(&self.session_id) {
+                let _ = session.child.kill();
+                let _ = session.child.wait();
+            }
+        }
+    }
+
     #[test]
     fn test_offer_fd_allocates_fresh_lease_and_sends_descriptor() {
         let (broker, addon, _pty) = start_broker();
@@ -696,6 +710,10 @@ mod tests {
                 started_at: std::time::SystemTime::now(),
             },
         );
+        let _cleanup = PtySessionCleanup {
+            pty_state: pty_state.clone(),
+            session_id: "s1".to_string(),
+        };
 
         let (fd, generation) = pty_state.master_fd_and_generation("s1").expect("master fd");
         broker.offer_fd("s1", generation, fd);
