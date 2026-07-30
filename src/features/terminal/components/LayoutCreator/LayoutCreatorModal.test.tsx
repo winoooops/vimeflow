@@ -577,4 +577,54 @@ describe('LayoutCreatorModal', () => {
       rect: { col: 1, row: 0, colSpan: 1, rowSpan: 1 },
     })
   })
+
+  test('exposes stable track count hooks for native overlay smoke', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LayoutCreatorModal
+        isOpen
+        existingLayouts={[]}
+        onSave={vi.fn<SaveSpy>()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('layout-creator-track-cols')).toHaveAttribute(
+      'data-layout-creator-track-axis',
+      'cols'
+    )
+
+    expect(
+      screen.getByTestId('layout-creator-track-count-cols')
+    ).toHaveTextContent('1')
+
+    expect(
+      screen.getByTestId('layout-creator-track-count-cols')
+    ).toHaveAttribute('data-layout-creator-track-count', 'cols')
+
+    expect(screen.getByTestId('layout-creator-track-rows')).toHaveAttribute(
+      'data-layout-creator-track-axis',
+      'rows'
+    )
+
+    expect(
+      screen.getByTestId('layout-creator-track-count-rows')
+    ).toHaveTextContent('1')
+
+    expect(
+      screen.getByTestId('layout-creator-track-count-rows')
+    ).toHaveAttribute('data-layout-creator-track-count', 'rows')
+
+    await user.click(screen.getByRole('button', { name: 'Add Cols' }))
+    await user.click(screen.getByRole('button', { name: 'Add Rows' }))
+
+    expect(
+      screen.getByTestId('layout-creator-track-count-cols')
+    ).toHaveTextContent('2')
+
+    expect(
+      screen.getByTestId('layout-creator-track-count-rows')
+    ).toHaveTextContent('2')
+  })
 })

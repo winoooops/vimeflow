@@ -840,11 +840,9 @@ describe('NativeOverlay BrowserWindow layering', () => {
         return overlay.executeJavaScript(`
           (async () => {
             const read = (axis) => {
-              const button = document.querySelector(
-                \`button[aria-label="Add \${axis}"]\`
+              const value = document.querySelector(
+                \`[data-layout-creator-track-count="\${axis.toLowerCase()}"]\`
               )
-              const value = Array.from(button?.parentElement?.children ?? [])
-                .find((child) => /^\\d+$/.test(child.textContent?.trim() ?? ''))
               return Number(value?.textContent)
             }
             const before = { cols: read('Cols'), rows: read('Rows') }

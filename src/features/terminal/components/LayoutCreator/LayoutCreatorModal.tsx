@@ -741,7 +741,11 @@ const TrackStepper = ({
   value,
   onChange,
 }: TrackStepperProps): ReactElement => (
-  <div className="inline-flex items-center gap-2 rounded-full bg-surface-container/50 px-2 py-1 font-mono text-[11px] text-on-surface-variant">
+  <div
+    className="inline-flex items-center gap-2 rounded-full bg-surface-container/50 px-2 py-1 font-mono text-[11px] text-on-surface-variant"
+    data-layout-creator-track-axis={label.toLowerCase()}
+    data-testid={`layout-creator-track-${label.toLowerCase()}`}
+  >
     <span className="uppercase tracking-[0.12em]">{label}</span>
     <IconButton
       icon="remove"
@@ -751,7 +755,13 @@ const TrackStepper = ({
       className="h-5 w-5"
       onClick={(): void => onChange(value - 1)}
     />
-    <span className="min-w-5 text-center text-on-surface">{value}</span>
+    <span
+      className="min-w-5 text-center text-on-surface"
+      data-layout-creator-track-count={label.toLowerCase()}
+      data-testid={`layout-creator-track-count-${label.toLowerCase()}`}
+    >
+      {value}
+    </span>
     <IconButton
       icon="add"
       label={`Add ${label}`}
