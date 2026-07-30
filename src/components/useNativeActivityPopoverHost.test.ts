@@ -42,11 +42,51 @@ describe('useNativeActivityPopoverHost', () => {
   test('closes after the pointer leaves both the anchor and card', async () => {
     vi.useFakeTimers()
     const close = vi.fn()
-    renderHook(() => useNativeActivityPopoverHost({ request, close }))
+    const setMousePassthrough = vi.fn()
+    renderHook(() =>
+      useNativeActivityPopoverHost({ request, close, setMousePassthrough })
+    )
+
+    fireEvent.mouseMove(document, { clientX: 0, clientY: 0 })
+    expect(setMousePassthrough).toHaveBeenCalledWith(true)
+
+    fireEvent.mouseMove(document, { clientX: 650, clientY: 130 })
+    expect(setMousePassthrough).toHaveBeenLastCalledWith(false)
 
     fireEvent.mouseMove(document, { clientX: 0, clientY: 0 })
     await act(() => vi.advanceTimersByTime(150))
 
     expect(close).toHaveBeenCalledOnce()
+  })
+
+  test('reapplies active passthrough when the request refreshes', () => {
+    const close = vi.fn()
+    const setMousePassthrough = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ currentRequest }) =>
+        useNativeActivityPopoverHost({
+          request: currentRequest,
+          close,
+          setMousePassthrough,
+        }),
+      {
+        initialProps: { currentRequest: request },
+      }
+    )
+
+    fireEvent.mouseMove(document, { clientX: 0, clientY: 0 })
+    expect(setMousePassthrough).toHaveBeenCalledTimes(1)
+    expect(setMousePassthrough).toHaveBeenLastCalledWith(true)
+
+    rerender({
+      currentRequest: {
+        ...request,
+        anchorRect: { ...request.anchorRect, x: request.anchorRect.x + 1 },
+      },
+    })
+
+    expect(setMousePassthrough).toHaveBeenCalledTimes(2)
+    expect(setMousePassthrough).toHaveBeenLastCalledWith(true)
   })
 })

@@ -1,4 +1,5 @@
 import {
+  app,
   BrowserWindow,
   ipcMain,
   shell,
@@ -17,6 +18,7 @@ import {
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
   NATIVE_OVERLAY_KEYDOWN,
+  NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -80,6 +82,7 @@ interface NativeOverlayMenuSubAction {
   icon?: string
   pressed?: boolean
   disabled?: boolean
+  closeOnSelect?: boolean
 }
 
 interface NativeOverlayMenuCompositeItem {
@@ -195,6 +198,51 @@ interface NativeOverlayNewSessionDialogPayload {
   actions: NativeOverlayNewSessionActions
 }
 
+interface NativeOverlayLayoutCreatorTrack {
+  id: string
+  units: number
+  minPx?: number
+}
+
+interface NativeOverlayLayoutCreatorSlot {
+  id: string
+  rect: {
+    col: number
+    row: number
+    colSpan: number
+    rowSpan: number
+  }
+  accepts?: readonly string[]
+}
+
+interface NativeOverlayLayoutCreatorDefinition {
+  schemaVersion: number
+  id: string
+  title: string
+  source: 'builtin' | 'workspace'
+  tracks: {
+    columns: readonly NativeOverlayLayoutCreatorTrack[]
+    rows: readonly NativeOverlayLayoutCreatorTrack[]
+  }
+  slots: readonly NativeOverlayLayoutCreatorSlot[]
+  addOrder: readonly string[]
+}
+
+interface NativeOverlayLayoutCreatorActions {
+  cancel: string
+  save: string
+}
+
+interface NativeOverlayLayoutCreatorDialogPayload {
+  kind: 'dialog'
+  dialog: 'layout-creator'
+  ariaLabel: string
+  existingLayouts: readonly NativeOverlayLayoutCreatorDefinition[]
+  seedLayout?: NativeOverlayLayoutCreatorDefinition
+  editLayout?: NativeOverlayLayoutCreatorDefinition
+  actions: NativeOverlayLayoutCreatorActions
+}
+
 interface NativeOverlaySessionSwitcherItem {
   id: string
   title: string
@@ -220,6 +268,7 @@ interface NativeOverlaySessionSwitcherDialogPayload {
 type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
+  | NativeOverlayLayoutCreatorDialogPayload
   | NativeOverlaySessionSwitcherDialogPayload
 
 type SerializableOverlayPayload =
@@ -248,6 +297,11 @@ interface NativeOverlayCloseRequest {
   reason?: NativeOverlayCloseReason
 }
 
+interface NativeOverlayMousePassthroughRequest {
+  surfaceId: string
+  passthrough: boolean
+}
+
 interface NativeOverlayActionEvent {
   surfaceId: string
   actionId: string
@@ -261,8 +315,9 @@ interface NativeOverlayActionEvent {
 interface NativeOverlayActionResultEvent {
   surfaceId: string
   actionId: string
-  feedback: 'copy'
+  feedback?: 'copy'
   ok: boolean
+  error?: string
 }
 
 interface NativeOverlayReadyEvent {
@@ -300,6 +355,7 @@ interface NativeOverlayRecord {
   parentMinimized: () => void
   parentClosing: () => void
   parentClosed: () => void
+  menuBlurred: () => void
   ownerBeforeInput: (event: ElectronEvent, input: Input) => void
   activeSurfaceId: string | null
   activeTooltipSurfaceId: string | null
@@ -335,6 +391,10 @@ const MAX_NEW_SESSION_PANES = 16
 const MAX_NEW_SESSION_COMMANDS = 64
 const MAX_NEW_SESSION_AREA_ROWS = 16
 const MAX_NEW_SESSION_AREA_COLUMNS = 16
+const MAX_LAYOUT_CREATOR_LAYOUTS = 200
+const MAX_LAYOUT_CREATOR_TRACKS = 24
+const MAX_LAYOUT_CREATOR_SLOTS = 16
+const MAX_LAYOUT_CREATOR_ACCEPTS = 8
 const MAX_THEME_VARIABLES = 512
 const MAX_SESSION_SWITCHER_ITEMS = 500
 
@@ -401,8 +461,20 @@ const resetOverlayCursor = (overlayWindow: BrowserWindow): void => {
 const isString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0
 
+const isFocusOwnedDialogSurface = (
+  surface: NativeOverlaySurface | undefined
+): boolean => surface?.kind === 'dialog' && surface.dialog === 'layout-creator'
+
+const isInternalFocusHandoff = (): boolean => app.isActive()
+
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
+
+const isNonNegativeInteger = (value: unknown): value is number =>
+  isFiniteNumber(value) && Number.isInteger(value) && value >= 0
+
+const isPositiveInteger = (value: unknown): value is number =>
+  isFiniteNumber(value) && Number.isInteger(value) && value > 0
 
 const isBoundedArray = <T>(
   value: unknown,
@@ -431,7 +503,9 @@ const isMenuSubAction = (value: unknown): value is NativeOverlayMenuSubAction =>
   isString(value.label) &&
   (value.icon === undefined || typeof value.icon === 'string') &&
   (value.pressed === undefined || typeof value.pressed === 'boolean') &&
-  (value.disabled === undefined || typeof value.disabled === 'boolean')
+  (value.disabled === undefined || typeof value.disabled === 'boolean') &&
+  (value.closeOnSelect === undefined ||
+    typeof value.closeOnSelect === 'boolean')
 
 const isMenuItem = (value: unknown): value is NativeOverlayMenuItem => {
   if (!isRecord(value)) {
@@ -660,6 +734,85 @@ const isNewSessionDialogPayload = (
   ) &&
   isNewSessionActions(value.actions)
 
+const isLayoutCreatorTrack = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorTrack =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isFiniteNumber(value.units) &&
+  value.units > 0 &&
+  (value.minPx === undefined ||
+    (isFiniteNumber(value.minPx) && value.minPx >= 0))
+
+const isLayoutCreatorSlot = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorSlot =>
+  isRecord(value) &&
+  isString(value.id) &&
+  isRecord(value.rect) &&
+  isNonNegativeInteger(value.rect.col) &&
+  isNonNegativeInteger(value.rect.row) &&
+  isPositiveInteger(value.rect.colSpan) &&
+  isPositiveInteger(value.rect.rowSpan) &&
+  (value.accepts === undefined ||
+    isBoundedArray(
+      value.accepts,
+      MAX_LAYOUT_CREATOR_ACCEPTS,
+      (entry): entry is string => isString(entry)
+    ))
+
+const isLayoutCreatorDefinition = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorDefinition =>
+  isRecord(value) &&
+  Number.isInteger(value.schemaVersion) &&
+  isString(value.id) &&
+  isString(value.title) &&
+  (value.source === 'builtin' || value.source === 'workspace') &&
+  isRecord(value.tracks) &&
+  isNonEmptyBoundedArray(
+    value.tracks.columns,
+    MAX_LAYOUT_CREATOR_TRACKS,
+    isLayoutCreatorTrack
+  ) &&
+  isNonEmptyBoundedArray(
+    value.tracks.rows,
+    MAX_LAYOUT_CREATOR_TRACKS,
+    isLayoutCreatorTrack
+  ) &&
+  isNonEmptyBoundedArray(
+    value.slots,
+    MAX_LAYOUT_CREATOR_SLOTS,
+    isLayoutCreatorSlot
+  ) &&
+  isNonEmptyBoundedArray(
+    value.addOrder,
+    MAX_LAYOUT_CREATOR_SLOTS,
+    (entry): entry is string => isString(entry)
+  )
+
+const isLayoutCreatorActions = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorActions =>
+  isRecord(value) && isString(value.cancel) && isString(value.save)
+
+const isLayoutCreatorDialogPayload = (
+  value: unknown
+): value is NativeOverlayLayoutCreatorDialogPayload =>
+  isRecord(value) &&
+  value.dialog === 'layout-creator' &&
+  isString(value.ariaLabel) &&
+  isBoundedArray(
+    value.existingLayouts,
+    MAX_LAYOUT_CREATOR_LAYOUTS,
+    isLayoutCreatorDefinition
+  ) &&
+  (value.seedLayout === undefined ||
+    isLayoutCreatorDefinition(value.seedLayout)) &&
+  (value.editLayout === undefined ||
+    isLayoutCreatorDefinition(value.editLayout)) &&
+  isLayoutCreatorActions(value.actions)
+
 const isSessionSwitcherItem = (
   value: unknown
 ): value is NativeOverlaySessionSwitcherItem =>
@@ -695,6 +848,7 @@ const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
   value.kind === 'dialog' &&
   (isCommandPaletteDialogPayload(value) ||
     isNewSessionDialogPayload(value) ||
+    isLayoutCreatorDialogPayload(value) ||
     isSessionSwitcherDialogPayload(value))
 
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
@@ -738,6 +892,13 @@ const isCloseRequest = (value: unknown): value is NativeOverlayCloseRequest =>
   isString(value.surfaceId) &&
   (value.reason === undefined || isCloseReason(value.reason))
 
+const isMousePassthroughRequest = (
+  value: unknown
+): value is NativeOverlayMousePassthroughRequest =>
+  isRecord(value) &&
+  isString(value.surfaceId) &&
+  typeof value.passthrough === 'boolean'
+
 const isActionEvent = (value: unknown): value is NativeOverlayActionEvent =>
   isRecord(value) &&
   isString(value.surfaceId) &&
@@ -756,8 +917,9 @@ const isActionResultEvent = (
   isRecord(value) &&
   isString(value.surfaceId) &&
   isString(value.actionId) &&
-  value.feedback === 'copy' &&
-  typeof value.ok === 'boolean'
+  (value.feedback === undefined || value.feedback === 'copy') &&
+  typeof value.ok === 'boolean' &&
+  (value.error === undefined || isString(value.error))
 
 const isReadyEvent = (value: unknown): value is NativeOverlayReadyEvent =>
   isRecord(value) && isString(value.surfaceId)
@@ -852,6 +1014,7 @@ export class NativeOverlayController {
     ipc.handle(NATIVE_OVERLAY_OPEN, this.handleOpen)
     ipc.handle(NATIVE_OVERLAY_CLOSE, this.handleClose)
     ipc.handle(NATIVE_OVERLAY_READY, this.handleReady)
+    ipc.handle(NATIVE_OVERLAY_MOUSE_PASSTHROUGH, this.handleMousePassthrough)
     ipc.handle(NATIVE_OVERLAY_ACTION, this.handleAction)
     ipc.handle(NATIVE_OVERLAY_ACTION_RESULT, this.handleActionResult)
     ipc.handle(NATIVE_OVERLAY_RESUME, this.handleResume)
@@ -863,6 +1026,7 @@ export class NativeOverlayController {
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_OPEN)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_CLOSE)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_READY)
+      this.registeredIpc.removeHandler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION_RESULT)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_RESUME)
@@ -953,25 +1117,37 @@ export class NativeOverlayController {
     }
 
     record.syncBounds()
-    if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
-      record.menu.window.setIgnoreMouseEvents(false)
-      record.menu.window.showInactive()
-      // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
-      // still land behind it. The screen-saver level reliably places this
-      // transparent overlay window above that native surface while it is open.
-      record.menu.window.setAlwaysOnTop(true, 'screen-saver')
-      record.menu.window.moveTop()
-    }
-    record.activeSurfaceId = payload.surfaceId
+
+    const needsKeyboardFocus =
+      payload.payload.kind === 'dialog' &&
+      payload.payload.dialog === 'layout-creator'
 
     const dialog =
       payload.payload.kind === 'dialog' ? payload.payload.dialog : undefined
+    record.activeSurfaceId = payload.surfaceId
     this.surfaces.set(payload.surfaceId, {
       owner,
       parentId: parent.id,
       kind: payload.kind,
       ...(dialog === undefined ? {} : { dialog }),
     })
+
+    if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
+      record.menu.window.setFocusable(needsKeyboardFocus)
+      record.menu.window.setIgnoreMouseEvents(false)
+      // Ghostty is an AppKit NSView, so ordinary Electron window ordering can
+      // still land behind it. The screen-saver level reliably places this
+      // transparent overlay window above that native surface while it is open.
+      record.menu.window.setAlwaysOnTop(true, 'screen-saver')
+      if (needsKeyboardFocus) {
+        record.menu.window.show()
+        record.menu.window.focus()
+        record.menu.window.webContents.focus()
+      } else {
+        record.menu.window.showInactive()
+      }
+      record.menu.window.moveTop()
+    }
 
     const readyPromise = this.waitForReady(payload.surfaceId)
     record.menu.window.webContents.send(NATIVE_OVERLAY_RENDER, payload)
@@ -980,6 +1156,14 @@ export class NativeOverlayController {
       this.closeSurface(payload.surfaceId, 'renderer', false)
 
       return { accepted: false, reason: 'render-timeout' }
+    }
+
+    if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
+      record.menu.window.moveTop()
+    }
+    if (needsKeyboardFocus && !record.menu.window.isDestroyed()) {
+      record.menu.window.focus()
+      record.menu.window.webContents.focus()
     }
 
     return { accepted: true }
@@ -1074,6 +1258,36 @@ export class NativeOverlayController {
     this.resolvePendingReady(payload.surfaceId, true)
   }
 
+  private readonly handleMousePassthrough = (
+    event: IpcMainInvokeEvent,
+    payload: unknown
+  ): void => {
+    if (!isMousePassthroughRequest(payload)) {
+      return
+    }
+
+    const surface = this.surfaceFromOverlaySender(
+      payload.surfaceId,
+      event.sender
+    )
+    if (surface?.kind !== 'popover') {
+      return
+    }
+
+    const overlayWindow = this.overlays.get(surface.parentId)?.menu.window
+    if (overlayWindow === undefined || overlayWindow.isDestroyed()) {
+      return
+    }
+
+    if (payload.passthrough) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+
+      return
+    }
+
+    overlayWindow.setIgnoreMouseEvents(false)
+  }
+
   private readonly handleAction = (
     event: IpcMainInvokeEvent,
     payload: unknown
@@ -1138,7 +1352,7 @@ export class NativeOverlayController {
       return
     }
 
-    if (surface.kind !== 'menu') {
+    if (surface.kind !== 'menu' && surface.kind !== 'dialog') {
       return
     }
 
@@ -1268,6 +1482,46 @@ export class NativeOverlayController {
       }
     }
 
+    const closeForOwnerBlur = (): void => {
+      const record = this.overlays.get(parent.id)
+      if (!record || record.menu.window.isFocused()) {
+        return
+      }
+
+      const activeSurface =
+        record.activeSurfaceId === null
+          ? undefined
+          : this.surfaces.get(record.activeSurfaceId)
+      if (
+        isFocusOwnedDialogSurface(activeSurface) &&
+        isInternalFocusHandoff()
+      ) {
+        return
+      }
+
+      closeForOwnerDeactivation()
+    }
+
+    const closeForMenuBlur = (): void => {
+      const record = this.overlays.get(parent.id)
+      if (!record) {
+        return
+      }
+
+      const activeSurface =
+        record.activeSurfaceId === null
+          ? undefined
+          : this.surfaces.get(record.activeSurfaceId)
+      if (
+        isFocusOwnedDialogSurface(activeSurface) &&
+        isInternalFocusHandoff()
+      ) {
+        return
+      }
+
+      closeForOwnerDeactivation()
+    }
+
     const ownerBeforeInput = (event: ElectronEvent, input: Input): void => {
       const activeRecord = this.overlays.get(parent.id)
       if (
@@ -1330,11 +1584,12 @@ export class NativeOverlayController {
 
     parent.on('resize', syncBounds)
     parent.on('move', syncBounds)
-    parent.on('blur', closeForOwnerDeactivation)
+    parent.on('blur', closeForOwnerBlur)
     parent.on('hide', closeForOwnerDeactivation)
     parent.on('minimize', closeForOwnerDeactivation)
     parent.on('close', parentClosing)
     parent.on('closed', parentClosed)
+    menu.window.on('blur', closeForMenuBlur)
     parent.webContents.on('before-input-event', ownerBeforeInput)
 
     const record: NativeOverlayRecord = {
@@ -1342,11 +1597,12 @@ export class NativeOverlayController {
       menu,
       tooltip,
       syncBounds,
-      parentBlurred: closeForOwnerDeactivation,
+      parentBlurred: closeForOwnerBlur,
       parentHidden: closeForOwnerDeactivation,
       parentMinimized: closeForOwnerDeactivation,
       parentClosing,
       parentClosed,
+      menuBlurred: closeForMenuBlur,
       ownerBeforeInput,
       activeSurfaceId: null,
       activeTooltipSurfaceId: null,
@@ -1386,6 +1642,7 @@ export class NativeOverlayController {
     record.parent.removeListener('minimize', record.parentMinimized)
     record.parent.removeListener('close', record.parentClosing)
     record.parent.removeListener('closed', record.parentClosed)
+    record.menu.window.removeListener('blur', record.menuBlurred)
     record.parent.webContents.removeListener(
       'before-input-event',
       record.ownerBeforeInput
@@ -1458,6 +1715,7 @@ export class NativeOverlayController {
       if (!overlayWindow.isDestroyed()) {
         overlayWindow.webContents.send(NATIVE_OVERLAY_CLEAR)
         overlayWindow.hide()
+        overlayWindow.setFocusable(false)
         overlayWindow.setAlwaysOnTop(false)
         overlayWindow.setIgnoreMouseEvents(true)
       }

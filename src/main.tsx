@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { NativeOverlayHost } from './components/NativeOverlayHost'
 import { themeService } from './theme'
 import { initTerminalThemeBridge } from './features/terminal/theme/themeBridge'
+import { renderNativeLayoutCreatorOverlay } from './features/terminal/components/LayoutCreator'
 import {
   isNativeOverlayHostMode,
   nativeOverlayHostModeFrom,
@@ -33,7 +34,12 @@ const nativeOverlayHostMode = nativeOverlayHostModeFrom(nativeOverlayMode)
 createRoot(rootElement).render(
   <StrictMode>
     {isNativeOverlayWindow ? (
-      <NativeOverlayHost mode={nativeOverlayHostMode} />
+      <NativeOverlayHost
+        mode={nativeOverlayHostMode}
+        dialogRenderers={{
+          'layout-creator': renderNativeLayoutCreatorOverlay,
+        }}
+      />
     ) : (
       <App />
     )}

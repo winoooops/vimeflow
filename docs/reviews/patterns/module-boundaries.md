@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-07-20
-ref_count: 8
+last_updated: 2026-07-29
+ref_count: 9
 ---
 
 # Module Boundaries
@@ -239,4 +239,21 @@ Don't widen the coupling by adding a second importer.
   `@` alias for imports touched in the changelist.
 - **Fix:** Updated the touched session island and extracted indicator/test
   imports to use `@/features/...` paths for app-local modules.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 22. Shared native overlay host imported terminal layout creator implementation
+
+- **Source:** github-codex-connector | PR #756 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/NativeOverlayHost.tsx`
+- **Finding:** `NativeOverlayHost` lived under shared `src/components/**` but
+  imported the terminal feature's `LayoutCreatorModal`; the native overlay
+  payload substrate also imported the terminal-owned `PaneLayoutDefinition`
+  type. That reversed the intended dependency direction and made generic
+  overlay infrastructure depend on terminal layout implementation details.
+- **Fix:** Moved the layout creator dialog renderer into the terminal feature
+  and registered it from `src/main.tsx` through an injected host renderer map.
+  Replaced the shared payload's terminal type import with a plain serialized
+  layout contract so `src/components/base/floating/nativeOverlay.ts` no longer
+  depends on terminal modules.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

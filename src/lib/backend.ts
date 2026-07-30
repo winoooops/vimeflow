@@ -93,6 +93,7 @@ export interface BackendApi {
 
   nativeOverlayHost?: {
     ready: (request: unknown) => Promise<unknown>
+    setMousePassthrough: (request: unknown) => Promise<unknown>
     action: (request: unknown) => Promise<unknown>
     close: (request: unknown) => Promise<unknown>
     onRender: (callback: (event: unknown) => void) => UnlistenFn

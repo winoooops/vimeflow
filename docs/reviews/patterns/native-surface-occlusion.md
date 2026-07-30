@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-05
-ref_count: 4
+last_updated: 2026-07-30
+ref_count: 5
 ---
 
 # Native Surface Occlusion
@@ -126,4 +126,51 @@ React overlays that drive Electron native WebContentsView visibility must regist
   WebContentsViews visible above the open burner surface.
 - **Fix:** Restored `hasVisibleBurner` to mean any visible burner, regardless of
   whether it renders via local xterm or native Ghostty secondary.
+- **Commit:** same commit as this entry
+
+### 12. Focus guard suppresses native overlay cleanup on owner hide/minimize
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The native overlay owner-deactivation handler used the overlay
+  window's `isFocused()` state to ignore parent blur events, but the same
+  guarded handler was also registered for parent hide and minimize events. A
+  focused layout-creator overlay could therefore remain always-on-top after the
+  owner window was hidden or minimized.
+- **Fix:** Split the parent blur handler from the force-close path. Parent blur
+  still ignores focus transitions into the overlay, while parent hide/minimize
+  and overlay-window blur always run cleanup. Added regression coverage for
+  hiding and minimizing a focused layout-creator dialog.
+- **Commit:** same commit as this entry
+
+### 13. Raise native overlay menus after renderer acknowledgement
+
+- **Source:** local-codex | PR #756 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The native overlay menu layer was moved to the top before the
+  renderer received and painted the menu payload. On macOS CI, the non-focusable
+  menu smoke could render in the overlay webContents but still fail the screen
+  paint check above Ghostty's AppKit NSView, while focus-owned dialogs passed
+  because their path refocused the overlay after render readiness.
+- **Fix:** Move the interactive overlay window to the top again after the
+  renderer acknowledges the surface, while preserving the suspended-surface
+  guard used during native modal hand-offs. Updated the controller unit test to
+  assert the visible menu path raises before and after renderer readiness.
+- **Commit:** same commit as this entry
+
+### 14. Focus-owned native dialogs must close on app deactivation
+
+- **Source:** github-codex-connector | PR #756 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The layout-creator dialog blur guard suppressed cleanup for both
+  owner blur and overlay-window blur based only on the surface type. Switching
+  to another application could therefore leave the focusable always-on-top
+  native overlay visible above unrelated apps.
+- **Fix:** Kept the layout-creator blur exemption only while Electron reports
+  the Vimeflow app is still active, so internal parent/overlay focus handoff is
+  preserved but true app deactivation closes the surface. Added regression
+  coverage for owner blur and overlay-window blur with `app.isActive()` false.
 - **Commit:** same commit as this entry

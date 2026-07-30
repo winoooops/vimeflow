@@ -1,3 +1,4 @@
+// cspell:ignore ghostty
 import { isMacPlatform } from '@/lib/formatShortcut'
 import { createLogger } from '@/lib/log'
 import type { NativeOverlayActivityPopoverPayload } from '../../nativeOverlayActivity'
@@ -66,6 +67,7 @@ export interface NativeOverlayMenuSubAction {
   icon?: string
   pressed?: boolean
   disabled?: boolean
+  closeOnSelect?: boolean
 }
 
 export interface NativeOverlayMenuCompositeItem {
@@ -181,6 +183,51 @@ export interface NativeOverlayNewSessionDialogPayload {
   actions: NativeOverlayNewSessionActions
 }
 
+export interface NativeOverlayLayoutCreatorActions {
+  cancel: string
+  save: string
+}
+
+export interface NativeOverlayLayoutCreatorTrack {
+  readonly id: string
+  readonly units: number
+  readonly minPx?: number
+}
+
+export interface NativeOverlayLayoutCreatorSlot {
+  readonly id: string
+  readonly rect: {
+    readonly col: number
+    readonly row: number
+    readonly colSpan: number
+    readonly rowSpan: number
+  }
+  readonly accepts?: readonly string[]
+}
+
+export interface NativeOverlayLayoutCreatorDefinition {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly title: string
+  readonly source: string
+  readonly tracks: {
+    readonly columns: readonly NativeOverlayLayoutCreatorTrack[]
+    readonly rows: readonly NativeOverlayLayoutCreatorTrack[]
+  }
+  readonly slots: readonly NativeOverlayLayoutCreatorSlot[]
+  readonly addOrder: readonly string[]
+}
+
+export interface NativeOverlayLayoutCreatorDialogPayload {
+  kind: 'dialog'
+  dialog: 'layout-creator'
+  ariaLabel: string
+  existingLayouts: readonly NativeOverlayLayoutCreatorDefinition[]
+  seedLayout?: NativeOverlayLayoutCreatorDefinition
+  editLayout?: NativeOverlayLayoutCreatorDefinition
+  actions: NativeOverlayLayoutCreatorActions
+}
+
 export interface NativeOverlaySessionSwitcherItem {
   id: string
   title: string
@@ -206,6 +253,7 @@ export interface NativeOverlaySessionSwitcherDialogPayload {
 export type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
+  | NativeOverlayLayoutCreatorDialogPayload
   | NativeOverlaySessionSwitcherDialogPayload
 
 // Native overlay payloads are plain data only. Each rich surface gets a narrow
@@ -253,8 +301,9 @@ export interface NativeOverlayActionEvent {
 export interface NativeOverlayActionResultEvent {
   surfaceId: string
   actionId: string
-  feedback: 'copy'
+  feedback?: 'copy'
   ok: boolean
+  error?: string
 }
 
 export interface NativeOverlayCloseEvent {
@@ -318,11 +367,14 @@ export type NativeOverlayActionHandler =
   | ((event?: NativeOverlayActionEvent) => NativeOverlayActionResult)
   | {
       retainSession: true
+      reportSuccess?: boolean
       run: (event?: NativeOverlayActionEvent) => NativeOverlayActionResult
     }
 
 interface NativeOverlaySession {
-  actions: ReadonlyMap<string, NativeOverlayActionHandler>
+  actions:
+    | ReadonlyMap<string, NativeOverlayActionHandler>
+    | ((actionId: string) => NativeOverlayActionHandler | undefined)
   onClose: () => void
 }
 
@@ -356,37 +408,47 @@ const bridge = (): NativeOverlayBridge | undefined =>
 
 const reportActionResult = (
   event: NativeOverlayActionEvent,
-  ok: boolean
+  ok: boolean,
+  error?: string,
+  reportSuccess = false
 ): void => {
-  if (event.feedback === undefined) {
+  if (ok && event.feedback === undefined && !reportSuccess) {
     return
   }
 
   void bridge()?.actionResult({
     surfaceId: event.surfaceId,
     actionId: event.actionId,
-    feedback: event.feedback,
     ok,
+    ...(event.feedback === undefined ? {} : { feedback: event.feedback }),
+    ...(error === undefined ? {} : { error }),
   })
 }
 
 const runActionAndReport = (
   event: NativeOverlayActionEvent,
-  run: (event: NativeOverlayActionEvent) => NativeOverlayActionResult
+  run: (event: NativeOverlayActionEvent) => NativeOverlayActionResult,
+  reportSuccess = false
 ): void => {
   void (async (): Promise<void> => {
     try {
       const result = await run(event)
-      reportActionResult(event, result === true)
+      reportActionResult(event, result === true, undefined, reportSuccess)
     } catch (error) {
-      reportActionResult(event, false)
+      reportActionResult(
+        event,
+        false,
+        error instanceof Error ? error.message : 'Action failed'
+      )
       log.warn('action failed', error)
     }
   })()
 }
 
 export const isNativeOverlayFeatureEnabled = (): boolean =>
-  import.meta.env.VITE_NATIVE_OVERLAY === '1'
+  import.meta.env.VITE_NATIVE_OVERLAY === '1' ||
+  (typeof window !== 'undefined' &&
+    window.vimeflow?.ghosttyNative !== undefined)
 
 export const selectFloatingTransport = (
   nativeOverlay: boolean
@@ -408,7 +470,10 @@ const handleAction = (event: unknown): void => {
     return
   }
 
-  const action = session.actions.get(event.actionId)
+  const action =
+    typeof session.actions === 'function'
+      ? session.actions(event.actionId)
+      : session.actions.get(event.actionId)
   if (action === undefined) {
     return
   }
@@ -424,7 +489,7 @@ const handleAction = (event: unknown): void => {
     return
   }
 
-  runActionAndReport(event, action.run)
+  runActionAndReport(event, action.run, action.reportSuccess === true)
 }
 
 const handleClose = (event: unknown): void => {
