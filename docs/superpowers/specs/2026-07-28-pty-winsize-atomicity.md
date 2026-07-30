@@ -320,10 +320,43 @@ Electron was launched from):
 6. Control run: `VIMEFLOW_PTY_FD_DIRECT=0 npm run dev` reproduces the old
    behavior on demand (no handshake line, no ioctl line).
 
-**Measured so far** (this machine, native path confirmed live): the
-callback→ioctl span is **285µs** on the very first resize of a cold
-launch and **16µs** warm — three orders of magnitude under the 20–50ms
-transient it replaces, and far inside one 16.7ms frame.
+### Results
+
+**The bound holds under a real continuous drag.** Operator run on this
+machine, native path confirmed live (`native owns winsize` present), codex
+streaming while the divider was dragged back and forth:
+
+```
+vimeflow: winsize ioctls=128 mean=36us max=144us buckets(<100us/<1ms/<5ms/>=5ms)=121/7/0/0 failures=0
+vimeflow: winsize ioctls=256 mean=38us max=444us buckets(<100us/<1ms/<5ms/>=5ms)=243/13/0/0 failures=0
+```
+
+256 samples, mean **38µs**, worst **444µs**, **nothing above 1ms**. The
+20–50ms transient this design set out to remove is gone by three orders of
+magnitude, and every sample sits well inside one 16.7ms frame. (Cold-launch
+first resize measured 285µs; warm single samples 16–24µs.)
+
+### Out of scope: the residual blank-flash
+
+A second, unrelated artifact survives: during a fast drag the resized pane's
+terminal content momentarily goes blank for ~2 frames and then repaints.
+Frame-by-frame it is clearly a different failure from the composer float —
+the content does not move, it disappears and returns, and only in the pane
+being dragged (its sibling pane and vimeflow's own DOM chrome keep painting
+in the very same frame). It is **not caused by this work**:
+
+| Ruled out                                                | Evidence                                                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| This design (fd passing, single writer)                  | Reproduces on `343a8e2f`, which predates the entire campaign — and _worse_ there                      |
+| The fork's settle-refresh / throttle / coherence patches | Reproduces on a pure upstream `libghostty-spm` build with none of them                                |
+| Vimeflow's compositor or DOM layer                       | The sibling pane and the DOM status bar paint normally in the same frame                              |
+| Vimeflow at all                                          | Stock Ghostty.app resizing a codex session shows the same jumping (smoother at a constant drag speed) |
+
+What remains points at codex's own clear-and-repaint on SIGWINCH over a
+large primary-screen transcript, together with the engine's reflow damage —
+the same family as the earlier gray-band, whose genesis also reproduced in
+stock Ghostty. Tracked separately; this spec's scope ends at winsize
+atomicity, which is measured and met.
 
 **Default state.** The feature has been on by default since Phase 1;
 `VIMEFLOW_PTY_FD_DIRECT=0` is the opt-out. There is no flag to flip at
