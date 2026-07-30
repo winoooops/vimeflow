@@ -512,7 +512,7 @@ describe('NativeOverlayController', () => {
       true,
       'screen-saver'
     )
-    expect(overlayWindow.moveTop).toHaveBeenCalledOnce()
+    expect(overlayWindow.moveTop).toHaveBeenCalledTimes(2)
 
     expect(
       overlayWindow.webContents.setWindowOpenHandler

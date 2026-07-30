@@ -1140,6 +1140,9 @@ export class NativeOverlayController {
       return { accepted: false, reason: 'render-timeout' }
     }
 
+    if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
+      record.menu.window.moveTop()
+    }
     if (needsKeyboardFocus && !record.menu.window.isDestroyed()) {
       record.menu.window.focus()
       record.menu.window.webContents.focus()

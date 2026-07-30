@@ -2,7 +2,7 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-29
+last_updated: 2026-07-30
 ref_count: 5
 ---
 
@@ -142,4 +142,20 @@ React overlays that drive Electron native WebContentsView visibility must regist
   still ignores focus transitions into the overlay, while parent hide/minimize
   and overlay-window blur always run cleanup. Added regression coverage for
   hiding and minimizing a focused layout-creator dialog.
+- **Commit:** same commit as this entry
+
+### 13. Raise native overlay menus after renderer acknowledgement
+
+- **Source:** local-codex | PR #756 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The native overlay menu layer was moved to the top before the
+  renderer received and painted the menu payload. On macOS CI, the non-focusable
+  menu smoke could render in the overlay webContents but still fail the screen
+  paint check above Ghostty's AppKit NSView, while focus-owned dialogs passed
+  because their path refocused the overlay after render readiness.
+- **Fix:** Move the interactive overlay window to the top again after the
+  renderer acknowledges the surface, while preserving the suspended-surface
+  guard used during native modal hand-offs. Updated the controller unit test to
+  assert the visible menu path raises before and after renderer readiness.
 - **Commit:** same commit as this entry
