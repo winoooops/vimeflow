@@ -454,6 +454,10 @@ const resetOverlayCursor = (overlayWindow: BrowserWindow): void => {
 const isString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0
 
+const isFocusOwnedDialogSurface = (
+  surface: NativeOverlaySurface | undefined
+): boolean => surface?.kind === 'dialog' && surface.dialog === 'layout-creator'
+
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
@@ -1430,6 +1434,14 @@ export class NativeOverlayController {
     const closeForOwnerBlur = (): void => {
       const record = this.overlays.get(parent.id)
       if (!record || record.menu.window.isFocused()) {
+        return
+      }
+
+      const activeSurface =
+        record.activeSurfaceId === null
+          ? undefined
+          : this.surfaces.get(record.activeSurfaceId)
+      if (isFocusOwnedDialogSurface(activeSurface)) {
         return
       }
 

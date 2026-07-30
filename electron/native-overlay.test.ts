@@ -964,6 +964,16 @@ describe('NativeOverlayController', () => {
     expect(overlayWindow.webContents.focus).toHaveBeenCalledTimes(2)
     expect(overlayWindow.showInactive).not.toHaveBeenCalled()
 
+    overlayWindow.isFocused.mockReturnValue(false)
+    electronMock.owner.webContents.send.mockClear()
+    electronMock.owner.emit('blur')
+    expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      NATIVE_OVERLAY_CLOSED,
+      expect.objectContaining({
+        surfaceId: layoutCreatorDialogRequest.surfaceId,
+      })
+    )
+
     overlayWindow.isFocused.mockReturnValue(true)
     electronMock.owner.webContents.send.mockClear()
     electronMock.owner.emit('blur')
