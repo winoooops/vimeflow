@@ -181,7 +181,6 @@ export const LayoutDisplayMenu = ({
             nativeOverlayCloseOnSelect={RETAIN_NATIVE_OVERLAY_ON_SELECT}
             onSelect={(): void => {
               onCreateCustomLayout()
-              closeMenu()
             }}
           >
             Create custom layout

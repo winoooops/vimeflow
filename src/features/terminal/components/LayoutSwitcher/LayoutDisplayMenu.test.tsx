@@ -139,4 +139,29 @@ describe('LayoutDisplayMenu', () => {
       'custom:template-main-bottom-row',
     ])
   })
+
+  test('opens the layout creator and lets the menu item own local close', async () => {
+    const user = userEvent.setup()
+    const onCreateCustomLayout = vi.fn()
+
+    render(
+      <LayoutDisplayMenu
+        activeLayoutId="vsplit"
+        visibleLayoutIds={['single', 'vsplit']}
+        onVisibleLayoutIdsChange={vi.fn()}
+        onCreateCustomLayout={onCreateCustomLayout}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create custom layout' })
+    )
+
+    expect(onCreateCustomLayout).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
 })
