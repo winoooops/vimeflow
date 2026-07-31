@@ -215,7 +215,23 @@ React overlays that drive Electron native WebContentsView visibility must regist
   webContents rendered but the BrowserWindow hidden or non-focusable above the
   Ghostty NSView.
 - **Fix:** Kept the Create Custom Layout action in the retained native-overlay
-  path with `nativeOverlayCloseOnSelect={false}` and `suspendOnSelect`, so the
-  menu callback remains registered while Electron hides the menu surface and
-  lets the focus-owned Layout Creator dialog replace it above Ghostty.
+  path with `nativeOverlayCloseOnSelect={false}`, so the menu callback remains
+  registered until the focus-owned Layout Creator dialog replaces the menu
+  surface above Ghostty.
+- **Commit:** same commit as this entry
+
+### 18. Retained native menu handoffs must stay visible until replacement
+
+- **Source:** local-codex | PR #765 CI fix | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** The layout creator handoff retained the native menu callback path
+  but also marked the selected menu item as `suspendOnSelect`. Electron hid and
+  deactivated the overlay window before the owner renderer opened the Layout
+  Creator, so the macOS Ghostty smoke could not observe the replacement dialog
+  in the overlay window.
+- **Fix:** Removed `nativeOverlaySuspendOnSelect` from the Create Custom Layout
+  item while keeping `nativeOverlayCloseOnSelect={false}`. The retained menu
+  session now stays available for the owner callback and is replaced naturally
+  by the focus-owned Layout Creator dialog.
 - **Commit:** same commit as this entry
