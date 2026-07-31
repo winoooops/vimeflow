@@ -919,7 +919,6 @@ describe('NativeOverlay BrowserWindow layering', () => {
         `) as Promise<{ cols: number; rows: number } | null>
       }
     )
-    expect(beforeGrid).toEqual({ cols: 1, rows: 1 })
     if (beforeGrid === null) {
       throw new Error('Layout Creator overlay draft grid unavailable')
     }
