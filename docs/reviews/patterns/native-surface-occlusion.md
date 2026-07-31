@@ -3,7 +3,7 @@ id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
 last_updated: 2026-07-31
-ref_count: 6
+ref_count: 7
 ---
 
 # Native Surface Occlusion
@@ -214,8 +214,8 @@ React overlays that drive Electron native WebContentsView visibility must regist
   while the focus-owned Layout Creator dialog was opening, leaving the overlay
   webContents rendered but the BrowserWindow hidden or non-focusable above the
   Ghostty NSView.
-- **Fix:** Restored the explicit menu-close handoff: the layout-display menu now
-  sends its internal close signal after Create Custom Layout, and WorkspaceView
-  clears the controlled layout-display-open flag when creating or editing a
-  custom layout.
+- **Fix:** Kept the Create Custom Layout action in the retained native-overlay
+  path with `nativeOverlayCloseOnSelect={false}` and `suspendOnSelect`, so the
+  menu callback remains registered while Electron hides the menu surface and
+  lets the focus-owned Layout Creator dialog replace it above Ghostty.
 - **Commit:** same commit as this entry

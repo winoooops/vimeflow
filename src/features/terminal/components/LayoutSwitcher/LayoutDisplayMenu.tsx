@@ -179,6 +179,7 @@ export const LayoutDisplayMenu = ({
           <Menu.Item
             icon="dashboard_customize"
             nativeOverlayCloseOnSelect={RETAIN_NATIVE_OVERLAY_ON_SELECT}
+            nativeOverlaySuspendOnSelect
             onSelect={(): void => {
               onCreateCustomLayout()
             }}

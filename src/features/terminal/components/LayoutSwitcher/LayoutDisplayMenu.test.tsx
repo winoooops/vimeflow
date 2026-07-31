@@ -277,6 +277,7 @@ describe('LayoutDisplayMenu', () => {
       id: expect.any(String),
       label: 'Create custom layout',
       closeOnSelect: false,
+      suspendOnSelect: true,
     })
 
     act(() => {
