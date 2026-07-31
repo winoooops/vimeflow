@@ -859,6 +859,50 @@ describe('ghostty native parent', () => {
     controller.dispose()
   })
 
+  test('rejects cursor effects when the native addon has no shader support', () => {
+    const surface = {}
+
+    const addon = {
+      create: vi.fn(() => surface),
+      setFrame: vi.fn(),
+      write: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    }
+
+    const sidecar = {
+      invoke: <T>(): Promise<T> => Promise.resolve(undefined as T),
+      onEvent: vi.fn(() => vi.fn()),
+      shutdown: vi.fn(() => Promise.resolve()),
+    } satisfies Sidecar
+
+    const controller = setupGhosttyNativeParent({
+      sidecar,
+      platform: 'darwin',
+      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+      addon,
+    })
+
+    expect(() =>
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          cursorEffect: 'warp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+        }
+      )
+    ).toThrow('Ghostty rejected cursor effect: warp')
+
+    expect(addon.setFrame).not.toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
   test('binds the primary PTY slot with the pane session id', () => {
     const surface = {}
 

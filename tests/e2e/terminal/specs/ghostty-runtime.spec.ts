@@ -1,4 +1,8 @@
 // cspell:ignore Ghostty ghostty
+const renderedFrameFingerprint = (
+  fingerprint: string | null | undefined
+): string | null => /^id=[^,]+,seed=[^,]+/.exec(fingerprint ?? '')?.[0] ?? null
+
 describe('Ghostty native terminal runtime', () => {
   before(async function () {
     if (
@@ -75,19 +79,22 @@ describe('Ghostty native terminal runtime', () => {
     const offFingerprint = await browser.execute(
       async () => await window.__VIMEFLOW_E2E__?.readGhosttyPresentation()
     )
+    const offFrameFingerprint = renderedFrameFingerprint(offFingerprint)
     await cursorEffect.selectByAttribute('value', 'warp')
 
     await browser.waitUntil(
       async () =>
-        await browser.execute(async (previousFingerprint) => {
+        await browser.execute(async (previousFrameFingerprint) => {
           const fingerprint =
             await window.__VIMEFLOW_E2E__?.readGhosttyPresentation()
+          const frameFingerprint =
+            /^id=[^,]+,seed=[^,]+/.exec(fingerprint ?? '')?.[0] ?? null
 
           return (
-            fingerprint !== previousFingerprint &&
+            frameFingerprint !== previousFrameFingerprint &&
             (fingerprint?.endsWith('/cursor_warp.glsl') ?? false)
           )
-        }, offFingerprint),
+        }, offFrameFingerprint),
       {
         timeout: 8_000,
         interval: 250,

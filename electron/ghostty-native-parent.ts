@@ -691,10 +691,14 @@ export class GhosttyNativeParentController {
       state.lastCursorEffect = cursorEffect
       const filename = cursorEffectFilename(cursorEffect)
 
-      const applied = addon.setCursorShader?.(
-        surface,
-        filename ? path.join(this.nativeParentDir, 'shaders', filename) : ''
-      )
+      const shaderPath = filename
+        ? path.join(this.nativeParentDir, 'shaders', filename)
+        : ''
+
+      const applied =
+        typeof addon.setCursorShader === 'function'
+          ? addon.setCursorShader(surface, shaderPath)
+          : filename === undefined
       if (applied === false) {
         state.lastCursorEffect = null
         throw new Error(`Ghostty rejected cursor effect: ${cursorEffect}`)
