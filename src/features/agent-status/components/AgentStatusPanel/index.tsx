@@ -336,6 +336,7 @@ export const AgentStatusPanel = ({
   const programmaticScrollTopRef = useRef<number | null>(null)
 
   const scrollMetricsRef = useRef<{
+    eventIds: string[]
     firstEventId: string | null
     snapshotKey: string | null
     scrollHeight: number
@@ -377,6 +378,7 @@ export const AgentStatusPanel = ({
     scrollContainer.scrollTop = scrollTop
     programmaticScrollTopRef.current = scrollContainer.scrollTop
     scrollMetricsRef.current = {
+      eventIds: events.map((event) => event.id),
       firstEventId: events[0]?.id ?? null,
       snapshotKey: bodySnapshotKey,
       scrollHeight: scrollContainer.scrollHeight,
@@ -402,12 +404,16 @@ export const AgentStatusPanel = ({
     const previousMetrics = scrollMetricsRef.current
 
     if (previousMetrics?.snapshotKey === bodySnapshotKey) {
-      const activityPrepended =
-        (events[0]?.id ?? null) !== previousMetrics.firstEventId
+      const firstEventId = events.length > 0 ? events[0].id : null
 
-      if (activityPrepended && previousMetrics.scrollTop > 0) {
+      if (
+        firstEventId !== null &&
+        firstEventId !== previousMetrics.firstEventId &&
+        !previousMetrics.eventIds.includes(firstEventId) &&
+        previousMetrics.scrollTop > 0
+      ) {
         const firstRow = scrollContainer.querySelector<HTMLElement>(
-          `[data-event-id="${CSS.escape(events[0]?.id ?? '')}"]`
+          `[data-event-id="${CSS.escape(firstEventId)}"]`
         )
 
         const firstRowHeight = firstRow?.offsetHeight ?? 0
@@ -433,6 +439,7 @@ export const AgentStatusPanel = ({
     }
 
     scrollMetricsRef.current = {
+      eventIds: events.map((event) => event.id),
       firstEventId: events[0]?.id ?? null,
       snapshotKey: bodySnapshotKey,
       scrollHeight: scrollContainer.scrollHeight,

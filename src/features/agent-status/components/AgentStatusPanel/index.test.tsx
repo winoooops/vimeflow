@@ -864,6 +864,106 @@ describe('AgentStatusPanel', () => {
     }
   })
 
+  test('does not compensate when an existing running row reorders to the top', () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'offsetHeight'
+    )
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      value: 60,
+    })
+
+    const runningStatus: AgentStatus = {
+      ...activeAgentStatus,
+      toolCalls: {
+        total: 1,
+        byType: { exec_command: 1 },
+        active: {
+          tool: 'exec_command',
+          args: '{"cmd":"npm test"}',
+          startedAt: '2026-04-22T11:58:00Z',
+          toolUseId: 'cmd-1',
+        },
+      },
+      recentToolCalls: [
+        {
+          id: 'read-1',
+          tool: 'Read',
+          args: 'src/read.ts',
+          status: 'done',
+          durationMs: 100,
+          timestamp: '2026-04-22T11:59:00Z',
+          isTestFile: false,
+        },
+      ],
+    }
+
+    const { rerender } = render(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={runningStatus}
+        snapshotKey="pty-pane-1"
+      />
+    )
+
+    const panel = screen.getByTestId('agent-status-panel')
+
+    /* eslint-disable testing-library/no-node-access */
+    const scrollContainer = panel.querySelector('.overflow-y-auto')
+    expect(scrollContainer).toBeInstanceOf(HTMLDivElement)
+
+    const scrollHeight = 500
+    Object.defineProperty(scrollContainer, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+
+    const scrollElement = scrollContainer as HTMLDivElement
+    scrollElement.scrollTop = 120
+    fireEvent.scroll(scrollElement)
+
+    rerender(
+      <AgentStatusPanel
+        {...defaultProps}
+        agentStatus={{
+          ...runningStatus,
+          toolCalls: {
+            total: 1,
+            byType: { exec_command: 1 },
+            active: null,
+          },
+          recentToolCalls: [
+            {
+              id: 'cmd-1',
+              tool: 'exec_command',
+              args: '{"cmd":"npm test"}',
+              status: 'done',
+              durationMs: 500,
+              timestamp: '2026-04-22T12:00:00Z',
+              isTestFile: false,
+            },
+            ...runningStatus.recentToolCalls,
+          ],
+        }}
+        snapshotKey="pty-pane-1"
+      />
+    )
+    /* eslint-enable testing-library/no-node-access */
+
+    expect(screen.getAllByRole('article')[0]).toHaveTextContent('npm test')
+    expect(scrollElement.scrollTop).toBe(120)
+    expect(readStatusScrollAnchor('pty-pane-1')).toBe(120)
+
+    if (originalOffsetHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'offsetHeight',
+        originalOffsetHeight
+      )
+    }
+  })
+
   test('does not adjust scroll when a lower sidebar section grows', () => {
     const emptyGitStatus = {
       files: [],
