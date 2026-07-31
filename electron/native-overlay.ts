@@ -1000,6 +1000,10 @@ export class NativeOverlayController {
   private readonly surfaces = new Map<string, NativeOverlaySurface>()
   private readonly suspendedSurfaceIds = new Set<string>()
   private readonly internalFocusHandoffSurfaceIds = new Set<string>()
+  private readonly internalFocusHandoffTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >()
   private readonly pendingReady = new Map<string, (ready: boolean) => void>()
   private registeredIpc: IpcMainLike | null = null
 
@@ -1040,6 +1044,10 @@ export class NativeOverlayController {
       resolve(false)
     }
     this.pendingReady.clear()
+    for (const timer of this.internalFocusHandoffTimers.values()) {
+      clearTimeout(timer)
+    }
+    this.internalFocusHandoffTimers.clear()
     this.suspendedSurfaceIds.clear()
     this.internalFocusHandoffSurfaceIds.clear()
 
@@ -1681,6 +1689,32 @@ export class NativeOverlayController {
     return app.isActive() || this.internalFocusHandoffSurfaceIds.has(surfaceId)
   }
 
+  private clearInternalFocusHandoff(surfaceId: string): void {
+    const timer = this.internalFocusHandoffTimers.get(surfaceId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.internalFocusHandoffTimers.delete(surfaceId)
+    }
+    this.internalFocusHandoffSurfaceIds.delete(surfaceId)
+  }
+
+  private finishInternalFocusHandoffSoon(surfaceId: string): void {
+    const existingTimer = this.internalFocusHandoffTimers.get(surfaceId)
+    if (existingTimer !== undefined) {
+      clearTimeout(existingTimer)
+    }
+
+    const timer = setTimeout(() => {
+      if (this.internalFocusHandoffTimers.get(surfaceId) !== timer) {
+        return
+      }
+
+      this.internalFocusHandoffTimers.delete(surfaceId)
+      this.internalFocusHandoffSurfaceIds.delete(surfaceId)
+    }, 0)
+    this.internalFocusHandoffTimers.set(surfaceId, timer)
+  }
+
   private promoteInteractiveLayer(
     record: NativeOverlayRecord,
     surfaceId: string,
@@ -1704,7 +1738,7 @@ export class NativeOverlayController {
         overlayWindow.focus()
         overlayWindow.webContents.focus()
       } finally {
-        this.internalFocusHandoffSurfaceIds.delete(surfaceId)
+        this.finishInternalFocusHandoffSoon(surfaceId)
       }
     } else {
       overlayWindow.showInactive()
@@ -1732,7 +1766,7 @@ export class NativeOverlayController {
 
     this.surfaces.delete(surfaceId)
     this.suspendedSurfaceIds.delete(surfaceId)
-    this.internalFocusHandoffSurfaceIds.delete(surfaceId)
+    this.clearInternalFocusHandoff(surfaceId)
     this.resolvePendingReady(surfaceId, false)
 
     if (record && isActiveSurface) {
