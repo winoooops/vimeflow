@@ -19,6 +19,7 @@ import {
 } from '@/components/Dialog'
 import { IconButton } from '@/components/IconButton'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import type { CustomPaneLayoutId } from '../../../sessions/types'
 import {
   MAX_LAYOUT_TRACKS,
@@ -517,6 +518,9 @@ const GridCanvas = ({
       >
         <div
           ref={gridRef}
+          data-testid="layout-creator-grid"
+          data-layout-creator-cols={colCount}
+          data-layout-creator-rows={rowCount}
           className="absolute inset-2 grid gap-1.5"
           style={gridTemplateStyleFor(draft)}
         >
@@ -751,6 +755,7 @@ const TrackStepper = ({
       icon="remove"
       label={`Remove ${label}`}
       size="sm"
+      showTooltip={TOOLTIP_SUPPRESSED}
       disabled={value <= 1}
       className="h-5 w-5"
       onClick={(): void => onChange(value - 1)}
@@ -766,6 +771,7 @@ const TrackStepper = ({
       icon="add"
       label={`Add ${label}`}
       size="sm"
+      showTooltip={TOOLTIP_SUPPRESSED}
       disabled={value >= MAX_LAYOUT_TRACKS}
       className="h-5 w-5"
       onClick={(): void => onChange(value + 1)}

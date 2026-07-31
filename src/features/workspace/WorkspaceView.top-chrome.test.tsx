@@ -19,6 +19,8 @@ import {
 } from '../terminal/layout-registry'
 import { SHOWN_LAYOUTS_STORAGE_KEY } from '../terminal/components/LayoutSwitcher/layoutDisplayPreferences'
 import { setSidebarCollapsed } from './utils/sidebarCollapsedStore'
+import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
+import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 import { SettingsProvider } from '../settings/SettingsProvider'
 import {
   MockResizeObserver,
@@ -114,7 +116,6 @@ const createMockSession = (
   workingDirectory: '/home/user',
   agentType,
   layout,
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',
@@ -201,7 +202,6 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       updatePaneAgentType: vi.fn(),
       recordPaneAgentLauncher: vi.fn(),
       invalidatePaneAgentSession: vi.fn(),
-      setSessionActivityPanelCollapsed: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),
@@ -226,6 +226,10 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
     act(() => {
       setSidebarCollapsed(false)
     })
+    setActivityPanelCollapsed(false)
+    setDockOpen(false)
+    setDockTab('diff')
+    setDockPosition('bottom')
 
     mockSessions = [
       createMockSession('session-1', 'auth middleware refactor'),
@@ -318,7 +322,6 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       setActiveSession: vi.fn().mockResolvedValue(undefined),
       reorderSessions: vi.fn().mockResolvedValue(undefined),
       updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-      setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     })
   })
 
@@ -594,15 +597,11 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       configurable: true,
     })
 
-    await setupSessionManager(
-      [
-        {
-          ...mockSessions[0],
-          activityPanelCollapsed: true,
-        },
-      ],
-      'session-1'
-    )
+    await setupSessionManager([mockSessions[0]], 'session-1')
+
+    act(() => {
+      setActivityPanelCollapsed(true)
+    })
 
     render(<WorkspaceView />)
 

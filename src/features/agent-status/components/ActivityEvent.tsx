@@ -58,8 +58,6 @@ export const getLabel = (event: ActivityEventType): string => {
   return event.kind.toUpperCase()
 }
 
-export const computeAgo = computeActivityAgo
-
 interface ActivityDetailsTooltipProps {
   event: ActivityEventType
   isShowDiffShortcutOwner?: boolean
@@ -212,7 +210,21 @@ const StatusChips = ({ event }: StatusChipsProps): ReactElement | null => {
 
   if (event.kind === 'bash') {
     if (event.status === 'running') {
-      return null
+      // Reserve the exact OK/FAILED chip row (invisible) so the row height
+      // never changes when the task completes — the feed below must not
+      // shift when a running task registers its result.
+      return (
+        <div className="mt-0.5" aria-hidden="true">
+          <Chip
+            tone="custom"
+            size="custom"
+            radius="md"
+            className="invisible rounded-md px-2 py-0.5 text-[9px] font-bold uppercase"
+          >
+            OK
+          </Chip>
+        </div>
+      )
     }
     const verb = event.status === 'done' ? 'OK' : 'FAILED'
 
@@ -296,6 +308,13 @@ export const ActivityEvent = ({
           >
             {symbol}
           </span>
+          {event.status === 'running' && (
+            <span
+              data-testid="activity-presence-dot"
+              className="vf-activity-presence-dot"
+              aria-hidden="true"
+            />
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -305,7 +324,13 @@ export const ActivityEvent = ({
             >
               {label}
             </span>
-            <span className="text-[9px] font-mono text-outline">
+            <span
+              className={`text-[9px] font-mono ${
+                event.status === 'running'
+                  ? 'text-success-muted'
+                  : 'text-outline'
+              }`}
+            >
               {timestampText}
             </span>
           </div>

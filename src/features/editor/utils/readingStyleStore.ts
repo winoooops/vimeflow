@@ -1,7 +1,7 @@
 // UI-only persistence + subscription for the markdown reading-style preference.
 // Lives at the frontend layer (localStorage) — it's a pure presentation choice,
 // shared across every reading view and persisted across restarts. Mirrors the
-// guards in features/sessions/utils/activityPanelCollapsedStore (SSR / sandboxed
+// guards in features/workspace/utils/sidebarCollapsedStore (SSR / sandboxed
 // contexts / quota errors all fall back to the default, never throw).
 //
 // A tiny pub/sub backs `useSyncExternalStore` so the ⚙ menu and the reading

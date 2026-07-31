@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-07-21
-ref_count: 43
+last_updated: 2026-07-30
+ref_count: 45
 ---
 
 # Testing Gaps
@@ -880,4 +880,51 @@ filesystem scope restrictions).
   verify that the pinned registry contained 55 unique entries.
 - **Fix:** Changed the uniqueness assertion to compare
   `new Set(CODEX_BUILT_IN_TOOLS).size` to the expected registry count.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 90. Native PTY binding role arguments had no regression coverage
+
+- **Source:** github-claude | PR #754 round 1 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.test.ts`
+- **Finding:** The new native parent `bindPty` call sites wired primary and
+  secondary PTY fd ownership roles but tests did not assert the role strings or
+  session ids passed to the addon.
+- **Fix:** Added focused assertions for primary surface creation and secondary
+  attach, covering `bindPty(surface, 'primary', hostSessionId)` and
+  `bindPty(surface, 'secondary', secondarySessionId)`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 91. PTY fd transport bootstrap safety valve had no direct coverage
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** `createPtyFdTransportBeforeSpawn` owns the fd transport feature
+  detection and kill-switch contract, but no test covered success,
+  `VIMEFLOW_PTY_FD_DIRECT=0`, missing or invalid addon methods, or addon-load
+  exceptions.
+- **Fix:** Added focused bootstrap tests with an injected addon loader covering
+  each branch, including the safe async-resize fallback on thrown addon load.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 92. Sidecar PTY fd stdio and env wiring was only tested through a mock
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `electron/sidecar.ts`
+- **Finding:** Existing sidecar tests verified that `transportFd` reached an
+  injected `spawnFn`, but never exercised the real `spawnSidecar` path that
+  places the fd at stdio slot 3 and sets `VIMEFLOW_PTY_FD_TRANSPORT=1`.
+- **Fix:** Mocked `node:child_process.spawn` and called `spawnSidecar` directly
+  to pin both the transport-enabled stdio/env shape and the no-fd spawn shape.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 93. Main-process PTY fd bootstrap sequencing lacked a focused seam
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/main.ts`
+- **Finding:** The main app startup path created the PTY fd transport before spawning the sidecar and notified the addon after spawn, but there was no direct test for that ordering because `main.ts` is difficult to import without running Electron lifecycle side effects.
+- **Fix:** Extracted the sidecar bootstrap sequence into `electron/main-sidecar-bootstrap.ts` and added sibling tests proving create-before-spawn, notify-after-spawn, transport fd propagation, and disabled-native skip behavior.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

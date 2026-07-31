@@ -2,8 +2,8 @@
 id: pty-session-management
 category: backend
 created: 2026-04-09
-last_updated: 2026-06-28
-ref_count: 4
+last_updated: 2026-07-30
+ref_count: 7
 ---
 
 # PTY Session Management
@@ -106,3 +106,128 @@ below preserve their original Tauri-era file paths for auditability.
 - **Finding:** The xterm body registered the lookup that lets agent status resolve an active pane id to the backend PTY id, but the native Ghostty body had no equivalent lifecycle side effect. Ghostty-backed panes could render terminal output while `useAgentStatus` returned early because `getPtySessionId(...)` had no mapping.
 - **Fix:** Added a GhosttyBody mount/cwd lifecycle effect that registers the active PTY id with `registerPtySession` and unregisters it on cleanup, with a component regression test covering registration, cwd updates, and unmount cleanup.
 - **Commit:** same commit as this entry
+
+### 11. PTY fd leases retired only on EOF reader exits
+
+- **Source:** github-codex-connector | PR #754 round 1 | 2026-07-29
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** The PTY reader notified the fd broker only in the EOF arm, so
+  cancellation through `kill_pty` and terminal read errors could exit the loop
+  without sending the generation-stamped detach that retires native fd leases.
+- **Fix:** Moved the broker `on_session_exit` call to common post-loop reader
+  teardown so EOF, cancellation, and read-error exits all retire the matching
+  generation before session state is removed.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 12. Native release before first resize could apply a 0x0 winsize
+
+- **Source:** github-codex-connector | PR #754 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** A bound native surface destroyed before its first resize callback
+  released the PTY lease with the slot's initialized `rows:0, cols:0` values,
+  and the Rust broker applied that size to the live PTY.
+- **Fix:** Track whether the native slot has recorded a positive grid size,
+  send zero dimensions only as the no-recorded-size marker, and make Rust skip
+  release resize application when either dimension is non-positive.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Native PTY transport shutdown left the parent fd marked live
+
+- **Source:** github-codex-connector | PR #754 round 2 | 2026-07-29
+- **Severity:** P1 / HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native shutdown path cleared descriptor maps and close-owned
+  PTY fds, but left the transport parent fd as the liveness sentinel. Future
+  `bindPty` calls could still register intents and send `request-fd` datagrams
+  after the reader thread had exited.
+- **Fix:** Made the transport parent fd an atomic liveness sentinel, reset and
+  close it during protocol shutdown, and rechecked liveness under the protocol
+  mutex before `bindPty` records a bind intent.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. `request-fd` deferral split active-lease check from insertion
+
+- **Source:** github-codex-connector | PR #754 round 2 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** The Rust broker checked whether a session still had an active
+  lease under one lock, released it, then reacquired the lock to insert a
+  deferred request. Session exit in that gap could clear state before the stale
+  deferred request was inserted.
+- **Fix:** Collapsed the active-lease check and deferred-request insertion into
+  one broker lock and returned an answer-now decision before calling
+  `answer_request` outside the lock.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Native-era resize metadata replayed after lease release
+
+- **Source:** github-codex-connector | PR #761 round 1 | 2026-07-30
+- **Severity:** P1 / HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Native-owned resize metadata queued while a `resize_pty` call was
+  in flight could drain after the addon released the PTY lease. Because release
+  ordering travels through the fd broker while resize metadata travels through
+  sidecar IPC, stale native-era sizes could overwrite the release-applied size.
+- **Fix:** Before draining the native-owned resize queue, re-check whether the
+  surface still exists and the addon still owns the primary PTY. If ownership
+  has ended, drop the native-era queue and forward only the current Rust-owned
+  pending resize.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. PTY master descriptor duplicated after the session lock was released
+
+- **Source:** github-codex-connector | PR #761 round 1 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/state.rs`
+- **Finding:** `PtyState` returned a borrowed raw master fd plus generation, and
+  `FdBroker::offer_fd` duplicated it later. If the PTY reader removed the
+  session between those two steps, the raw fd number could be closed and reused
+  before duplication, handing the native addon an unrelated descriptor.
+- **Fix:** Duplicate the PTY master while the sessions mutex still holds the
+  `ManagedSession`, return an `OwnedFd`, and make the broker accept that owned
+  duplicate directly for `SCM_RIGHTS` transfer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Failed `offer_fd` cleanup can remove a newer live lease
+
+- **Source:** github-codex-connector | PR #761 round 1 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** `FdBroker::offer_fd` inserted a fresh lease, released the broker
+  lock while sending the descriptor, then removed the lease by session id alone
+  if the send failed. A failed older offer could delete a newer valid lease for
+  the same session.
+- **Fix:** Fence the send-failure cleanup by the failed offer's `lease_id`, so
+  only the lease created by that call is removed and replacement leases survive.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Stale session exit can clear current-generation deferred fd requests
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** `FdBroker::on_session_exit` generation-guarded active lease
+  removal but cleared `deferred_requests` by session id before that guard. A
+  delayed exit from an older same-id session could delete a `request-fd`
+  deferred by the current generation and leave native reacquisition unanswered.
+- **Fix:** Store the generation with each deferred request and clear it only
+  when the retiring lease generation matches, with a regression test covering a
+  stale exit racing a current-generation deferred request.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 19. Ephemeral PTY reap skipped fd-broker lease retirement
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`
+- **Finding:** `kill_ephemeral_ptys_inner` killed, cancelled, and removed burner
+  PTYs without the broker `on_session_exit` call used by explicit kill and
+  reader-exit teardown. Renderer reload or shutdown could leave native-owned
+  burner leases and bindings alive until delayed reader cleanup or transport
+  loss.
+- **Fix:** Capture each ephemeral session generation before removal and retire
+  the broker lease through `on_session_exit`, with a command-layer test proving
+  burner reap clears native ownership.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

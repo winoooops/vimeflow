@@ -8,7 +8,6 @@ import type {
 } from '../types'
 import type {
   SessionList,
-  SetSessionActivityPanelCollapsedRequest,
   SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
@@ -120,13 +119,6 @@ export interface ITerminalService {
    * Update the current working directory for a session
    */
   updateSessionCwd(id: string, cwd: string): Promise<void>
-
-  /**
-   * Persist the right activity panel collapse preference for a PTY session.
-   */
-  setSessionActivityPanelCollapsed(
-    request: SetSessionActivityPanelCollapsedRequest
-  ): Promise<void>
 
   /**
    * Reap all ephemeral (burner) PTYs; returns the ids killed. Called on
@@ -456,14 +448,6 @@ export class MockTerminalService implements ITerminalService {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   updateSessionCwd(_id: string, _cwd: string): Promise<void> {
-    // Mock no-op
-    return Promise.resolve()
-  }
-
-  setSessionActivityPanelCollapsed(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _request: SetSessionActivityPanelCollapsedRequest
-  ): Promise<void> {
     // Mock no-op
     return Promise.resolve()
   }

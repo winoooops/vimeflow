@@ -187,6 +187,12 @@ pub struct PtyState {
     sessions: Arc<Mutex<HashMap<SessionId, ManagedSession>>>,
     /// Ids of ephemeral (burner) PTYs — reaped by kill_ephemeral_ptys.
     ephemeral_ptys: Arc<Mutex<HashSet<SessionId>>>,
+    /// The winsize-ownership broker (VIM-399), installed at bootstrap when
+    /// the fd transport is available. `None` → async resize path only.
+    /// PtyState → broker → (reader thread holds a PtyState clone) is a
+    /// deliberate process-lifetime cycle; nothing here is ever dropped.
+    #[cfg(unix)]
+    fd_broker: Arc<Mutex<Option<Arc<super::fd_broker::FdBroker>>>>,
 }
 
 /// Reason why `PtyState::try_insert` rejected a new session — returned to
@@ -251,10 +257,51 @@ fn read_foreground_leader(_master: &(dyn MasterPty + Send)) -> Option<i32> {
 impl PtyState {
     /// Create a new empty PTY state
     pub fn new() -> Self {
-        Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-            ephemeral_ptys: Arc::new(Mutex::new(HashSet::new())),
+        Self::default()
+    }
+
+    /// Installs the winsize-ownership broker (VIM-399). Called once at
+    /// bootstrap when the fd transport was claimed.
+    #[cfg(unix)]
+    pub fn set_fd_broker(&self, broker: Arc<super::fd_broker::FdBroker>) {
+        *self.fd_broker.lock().expect("fd_broker lock") = Some(broker);
+    }
+
+    /// The installed broker, if the fd transport is active.
+    #[cfg(unix)]
+    pub fn fd_broker(&self) -> Option<Arc<super::fd_broker::FdBroker>> {
+        self.fd_broker.lock().expect("fd_broker lock").clone()
+    }
+
+    /// The kernel-reported master winsize — test observability for the
+    /// single-writer rule (a skipped ioctl leaves this unchanged).
+    #[cfg(test)]
+    pub fn master_size(&self, session_id: &str) -> Option<portable_pty::PtySize> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.get(session_id)?.master.get_size().ok()
+    }
+
+    /// A duplicated master fd and generation for a live session. The dup is
+    /// created while `sessions` is still locked so the broker never receives a
+    /// borrowed descriptor that can be closed and reused before handoff.
+    #[cfg(unix)]
+    pub fn master_fd_duplicate_and_generation(
+        &self,
+        session_id: &str,
+    ) -> Option<(std::os::fd::OwnedFd, u64)> {
+        use std::os::fd::FromRawFd;
+
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        let session = sessions.get(session_id)?;
+        let fd = session.master.as_raw_fd()?;
+        // SAFETY: F_DUPFD_CLOEXEC duplicates a live fd owned by the locked
+        // ManagedSession; from_raw_fd takes ownership of the successful dup.
+        let dup = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+        if dup < 0 {
+            return None;
         }
+
+        Some((unsafe { std::os::fd::OwnedFd::from_raw_fd(dup) }, session.generation))
     }
 
     /// Allocate the next generation number
@@ -348,6 +395,13 @@ impl PtyState {
             .bridge_dir
             .as_ref()
             .map(|bridge_dir| (bridge_dir.clone(), session.shim_dir.clone()))
+    }
+
+    /// Current generation for a live PTY session.
+    #[cfg(unix)]
+    pub fn generation(&self, session_id: &SessionId) -> Option<u64> {
+        let sessions = self.sessions.lock().expect("failed to lock sessions");
+        sessions.get(session_id).map(|session| session.generation)
     }
 
     /// Remove a PTY session only if its generation matches the expected value.
@@ -540,6 +594,20 @@ impl PtyState {
         let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| anyhow::anyhow!("session not found: {}", session_id))?;
+
+        // Single-writer rule (VIM-399 Phase 4): while the native addon owns
+        // this session's winsize, the JS->Rust resize message is metadata
+        // only — the addon already ioctled in the same beat as the engine
+        // reflow. The broker clears its flag on the FIRST release receipt
+        // (before re-applying), so a release-then-resize can never be
+        // skipped. Lock order sessions -> broker.inner is nesting-safe: no
+        // broker path takes them in reverse.
+        #[cfg(unix)]
+        if let Some(broker) = self.fd_broker() {
+            if broker.is_native_owned(session_id, session.generation) {
+                return Ok(());
+            }
+        }
 
         let size = portable_pty::PtySize {
             rows,

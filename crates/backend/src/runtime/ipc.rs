@@ -547,17 +547,6 @@ mod router {
                 state.update_session_cwd(p.request)?;
                 Ok(Value::Null)
             }
-            "set_session_activity_panel_collapsed" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct P {
-                    request: crate::terminal::types::SetSessionActivityPanelCollapsedRequest,
-                }
-
-                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.set_session_activity_panel_collapsed(p.request)?;
-                Ok(Value::Null)
-            }
             "set_workspace_sessions" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -2320,8 +2309,18 @@ mod tests {
     #[tokio::test]
     async fn dispatch_review_state_round_trips_and_deletes() {
         let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let cwd = std::env::current_dir()
-            .expect("current dir")
+        let temp_dir = tempfile::tempdir_in(dirs::home_dir().expect("home dir"))
+            .expect("home-scoped temp dir");
+        let git_status = std::process::Command::new("git")
+            .arg("-c")
+            .arg("init.defaultBranch=main")
+            .arg("init")
+            .arg(temp_dir.path())
+            .status()
+            .expect("git init");
+        assert!(git_status.success(), "git init should succeed");
+        let cwd = temp_dir
+            .path()
             .to_string_lossy()
             .into_owned();
 
@@ -2369,50 +2368,6 @@ mod tests {
         let outcome = super::router::dispatch(state, "list_sessions", serde_json::json!({})).await;
         let v = outcome.expect("list_sessions should succeed on fresh state");
         assert!(v.is_object(), "expected object, got {v:?}");
-    }
-
-    #[tokio::test]
-    async fn dispatch_set_session_activity_panel_collapsed_envelope_decodes() {
-        let (state, _sink) = crate::runtime::BackendState::with_fake_sink();
-        let session_id = "collapse-pty";
-        let cwd = std::env::current_dir()
-            .expect("current dir")
-            .to_string_lossy()
-            .to_string();
-
-        super::router::dispatch(
-            state.clone(),
-            "spawn_pty",
-            serde_json::json!({
-                "request": {
-                    "sessionId": session_id,
-                    "cwd": cwd,
-                    "shell": null,
-                    "env": null,
-                    "enableAgentBridge": false
-                }
-            }),
-        )
-        .await
-        .expect("spawn should succeed");
-
-        let outcome = super::router::dispatch(
-            state.clone(),
-            "set_session_activity_panel_collapsed",
-            serde_json::json!({
-                "request": { "id": session_id, "collapsed": true }
-            }),
-        )
-        .await;
-        let v = outcome.expect("dispatch should succeed");
-        assert_eq!(v, serde_json::Value::Null);
-
-        let _ = super::router::dispatch(
-            state,
-            "kill_pty",
-            serde_json::json!({ "request": { "sessionId": session_id } }),
-        )
-        .await;
     }
 
     #[cfg(feature = "e2e-test")]

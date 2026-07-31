@@ -163,6 +163,28 @@ const getVisiblePtyId = (): string | null => {
   return bodyContainer?.dataset.ptyId ?? null
 }
 
+interface LayoutCreatorGridForE2e {
+  cols: number
+  rows: number
+}
+
+const readLayoutCreatorGrid = (): LayoutCreatorGridForE2e | undefined => {
+  const grid = document.querySelector<HTMLElement>(
+    '[data-testid="layout-creator-grid"]'
+  )
+  if (grid === null) {
+    return undefined
+  }
+
+  const cols = Number(grid.dataset.layoutCreatorCols)
+  const rows = Number(grid.dataset.layoutCreatorRows)
+  if (!Number.isFinite(cols) || !Number.isFinite(rows)) {
+    return undefined
+  }
+
+  return { cols, rows }
+}
+
 /// Visible grid of a native Ghostty pane, rows joined by '\n'.
 ///
 /// `readPaneBuffer` above only sees xterm.js. On the macOS native path the
@@ -251,6 +273,8 @@ if (import.meta.env.VITE_E2E) {
     getTerminalBufferForSession: readTerminalBufferForSession,
     getVisibleSessionId,
     getVisiblePtyId,
+    getLayoutCreatorGrid: readLayoutCreatorGrid,
+    getLayoutCreatorDraftGrid: readLayoutCreatorGrid,
     getActiveSessionIds: getAllPtySessionIds,
     invokeBackend: async <T>(
       method: string,

@@ -27,6 +27,15 @@ fn cleanup_generated_bridge_dir(dir: Option<&std::path::Path>) {
 const DEFAULT_UTF8_CTYPE: &str = "en_US.UTF-8";
 #[cfg(not(target_os = "macos"))]
 const DEFAULT_UTF8_CTYPE: &str = "C.UTF-8";
+const MAX_SESSION_ID_LEN: usize = 128;
+
+fn is_valid_session_id(session_id: &str) -> bool {
+    !session_id.is_empty()
+        && session_id.len() <= MAX_SESSION_ID_LEN
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
 
 fn is_utf8_locale(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
@@ -126,6 +135,14 @@ pub(crate) async fn spawn_pty_inner(
 
     log::info!("Using shell: {}", shell);
 
+    // Allow-list session_id to safe characters only (UUID format) and cap its
+    // length before allocating PTY resources. Block-lists miss edge cases like
+    // newlines which enable bash injection in generated bridge scripts; long
+    // IDs can also exceed the fixed fd-transport datagram budget.
+    if !is_valid_session_id(&request.session_id) {
+        return Err(format!("invalid session_id: {}", request.session_id));
+    }
+
     // Create PTY system
     let pty_system = native_pty_system();
 
@@ -159,17 +176,6 @@ pub(crate) async fn spawn_pty_inner(
         .map_err(|e| format!("invalid cwd '{}': {}", raw_cwd.display(), e))?;
     if !cwd.is_dir() {
         return Err(format!("cwd is not a directory: {}", cwd.display()));
-    }
-
-    // Allow-list session_id to safe characters only (UUID format).
-    // Block-lists miss edge cases like newlines which enable bash injection
-    // in generated bridge scripts.
-    if !request
-        .session_id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(format!("invalid session_id: {}", request.session_id));
     }
 
     // Generate statusline bridge files — skipped for ephemeral (burner) PTYs.
@@ -427,7 +433,6 @@ pub(crate) async fn spawn_pty_inner(
                     created_at,
                     exited: false,
                     last_exit_code: None,
-                    activity_panel_collapsed: None,
                     last_shell: Some(shell.clone()),
                 },
             );
@@ -463,6 +468,19 @@ pub(crate) async fn spawn_pty_inner(
             pid
         ),
     );
+
+    // Offer the master fd to the winsize-ownership broker (VIM-399). The
+    // addon binds it only for native-ghostty panes; anything never bound is
+    // reclaimed by the pending-map hygiene on detach. A missing broker or
+    // fd means silent degradation to the async resize path.
+    #[cfg(unix)]
+    if let Some(broker) = state.fd_broker() {
+        if let Some((master_fd, generation)) =
+            state.master_fd_duplicate_and_generation(&request.session_id)
+        {
+            broker.offer_fd(&request.session_id, generation, master_fd);
+        }
+    }
 
     // Spawn blocking thread for PTY read loop (avoids starving async runtime)
     let session_id = request.session_id.clone();
@@ -574,6 +592,18 @@ pub(crate) fn kill_pty_inner(
     // leaving the session directory behind. Best-effort: if the child ignores
     // SIGTERM we still proceed with cleanup so the caller is not blocked.
     let _ = state.wait_for_exit(&request.session_id, std::time::Duration::from_secs(5));
+
+    // Retire the fd broker lease while the old session id is still present
+    // in PtyState. If we wait until after remove(), a rapid same-id respawn
+    // can install a newer generation before the old reader's cleanup runs,
+    // and the generation guard would correctly preserve the new lease while
+    // accidentally leaving the old native binding attached.
+    #[cfg(unix)]
+    if let Some(generation) = state.generation(&request.session_id) {
+        if let Some(broker) = state.fd_broker() {
+            broker.on_session_exit(&request.session_id, generation);
+        }
+    }
 
     // Remove from state (no-op if NotPresent, the safe path above).
     let removed = state.remove(&request.session_id);
@@ -728,6 +758,12 @@ pub(crate) fn kill_ephemeral_ptys_inner(state: &PtyState) -> Vec<String> {
         match state.kill(&id) {
             Ok(()) | Err(super::state::KillError::NotPresent) => {
                 state.set_cancelled(&id);
+                #[cfg(unix)]
+                if let Some(generation) = state.generation(&id) {
+                    if let Some(broker) = state.fd_broker() {
+                        broker.on_session_exit(&id, generation);
+                    }
+                }
                 state.remove(&id);
                 killed.push(id);
             }
@@ -863,7 +899,6 @@ pub(crate) fn list_sessions_inner(
             cwd: cached.cwd,
             shell: cached.last_shell.clone().or_else(|| Some(system_shell())),
             status,
-            activity_panel_collapsed: cached.activity_panel_collapsed,
             grouping: snapshot.groupings.get(id).cloned(),
         });
     }
@@ -1035,11 +1070,7 @@ pub(crate) fn update_session_cwd_inner(
     request: UpdateSessionCwdRequest,
 ) -> Result<(), String> {
     // UUID-shape allow-list (same as spawn_pty)
-    if !request
-        .id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+    if !is_valid_session_id(&request.id) {
         return Err("invalid session id".into());
     }
     // Canonicalize before storing. `canonicalize` resolves symlinks, strips
@@ -1058,20 +1089,6 @@ pub(crate) fn update_session_cwd_inner(
             Ok(())
         }
         None => Err("unknown session".into()),
-    })
-}
-
-pub(crate) fn set_session_activity_panel_collapsed_inner(
-    cache: &Arc<crate::terminal::cache::SessionCache>,
-    request: SetSessionActivityPanelCollapsedRequest,
-) -> Result<(), String> {
-    cache.mutate(|d| {
-        let session = d
-            .sessions
-            .get_mut(&request.id)
-            .ok_or_else(|| format!("session not found: {}", request.id))?;
-        session.activity_panel_collapsed = Some(request.collapsed);
-        Ok(())
     })
 }
 
@@ -1374,6 +1391,15 @@ async fn read_pty_output(
         }
     }
 
+    // Winsize-ownership cleanup rides the transport as a generation-stamped
+    // detach on every reader exit, including EOF, read errors, and kill_pty
+    // cancellation. The generation guard keeps delayed exits from closing a
+    // newer binding.
+    #[cfg(unix)]
+    if let Some(broker) = state.fd_broker() {
+        broker.on_session_exit(&session_id, generation);
+    }
+
     // Clean up session only if this reader's generation still owns it.
     // If the session was replaced (ID reuse), a newer generation owns the slot.
     let removed = state.remove_if_generation(&session_id, generation);
@@ -1560,6 +1586,64 @@ mod tests {
 
         // Cleanup
         let _ = state.remove(&"test-session".to_string());
+    }
+
+    #[tokio::test]
+    async fn spawn_pty_rejects_oversized_session_id_before_opening_pty() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let session_id = "s".repeat(MAX_SESSION_ID_LEN + 1);
+
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache,
+            events,
+            SpawnPtyRequest {
+                session_id: session_id.clone(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+            &[],
+            true,
+        )
+        .await;
+
+        assert!(result.is_err(), "oversized session_id must be rejected");
+        assert!(!state.contains(&session_id));
+    }
+
+    #[tokio::test]
+    async fn spawn_pty_allows_max_length_session_id() {
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let session_id = "s".repeat(MAX_SESSION_ID_LEN);
+
+        let result = spawn_pty_inner(
+            state.clone(),
+            cache,
+            events,
+            SpawnPtyRequest {
+                session_id: session_id.clone(),
+                cwd: std::env::current_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: false,
+            },
+            &[],
+            true,
+        )
+        .await;
+
+        assert!(result.is_ok(), "max-length session_id should be accepted");
+        let _ = state.remove(&session_id);
     }
 
     #[tokio::test]
@@ -1758,6 +1842,88 @@ mod tests {
         assert!(keep_write.is_ok(), "non-ephemeral PTY must be untouched");
 
         let _ = state.remove(&keep.id);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kill_ephemeral_ptys_retires_fd_broker_lease() {
+        use crate::fd_transport;
+        use crate::terminal::fd_broker::FdBroker;
+        use std::os::fd::AsRawFd;
+        use std::time::Duration;
+
+        let (state, cache, events, _temp_dir) = create_test_state_with_cache();
+        let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
+        let broker = FdBroker::start(rust_end.as_raw_fd(), state.clone())
+            .expect("broker should start");
+        state.set_fd_broker(Arc::clone(&broker));
+        std::mem::forget(rust_end);
+
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let burner = spawn_pty_inner(
+            state.clone(),
+            cache,
+            events,
+            SpawnPtyRequest {
+                session_id: "burner-broker".to_string(),
+                cwd,
+                shell: None,
+                env: None,
+                enable_agent_bridge: false,
+                ephemeral: true,
+            },
+            &[],
+            true,
+        )
+        .await
+        .expect("burner spawn");
+
+        let mut buf = [0u8; fd_transport::MAX_MESSAGE_BYTES];
+        let (len, _fd) = fd_transport::recv_fd_timeout(
+            addon_end.as_raw_fd(),
+            &mut buf,
+            Duration::from_secs(5),
+        )
+        .expect("receive fd")
+        .expect("fd message");
+        let offered: serde_json::Value = serde_json::from_slice(&buf[..len]).expect("parse fd");
+        let generation = offered["generation"].as_u64().expect("generation");
+        let lease_id = offered["leaseId"].as_u64().expect("lease id");
+
+        let ready = serde_json::json!({
+            "t": "native-ready",
+            "sessionId": burner.id,
+            "generation": generation,
+            "leaseId": lease_id,
+            "role": "primary",
+        });
+        fd_transport::send_datagram(
+            addon_end.as_raw_fd(),
+            &serde_json::to_vec(&ready).expect("serialize ready"),
+        )
+        .expect("send native-ready");
+
+        let (len, _fd) = fd_transport::recv_fd_timeout(
+            addon_end.as_raw_fd(),
+            &mut buf,
+            Duration::from_secs(5),
+        )
+        .expect("receive activate ack")
+        .expect("activate ack");
+        let ack: serde_json::Value = serde_json::from_slice(&buf[..len]).expect("parse ack");
+        assert_eq!(ack["t"], "activate-ack");
+        assert!(broker.is_native_owned("burner-broker", generation));
+
+        let killed = kill_ephemeral_ptys_inner(&state);
+
+        assert_eq!(killed, vec!["burner-broker".to_string()]);
+        assert!(
+            !broker.is_native_owned("burner-broker", generation),
+            "ephemeral reap must retire the broker lease before removing the session"
+        );
     }
 
     #[tokio::test]
@@ -2396,7 +2562,6 @@ mod tests {
                         created_at: "2026-04-25T00:00:00Z".to_string(),
                         exited: false,
                         last_exit_code: None,
-                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -3162,7 +3327,6 @@ mod tests {
                         created_at: "2026-07-22T00:00:00Z".to_string(),
                         exited: false,
                         last_exit_code: None,
-                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -3485,7 +3649,6 @@ mod tests {
                         created_at: "2026-04-25T00:00:00Z".into(),
                         exited: false,
                         last_exit_code: None,
-                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -3550,7 +3713,6 @@ mod tests {
                         created_at: "2026-04-25T00:00:00Z".into(),
                         exited: false,
                         last_exit_code: None,
-                        activity_panel_collapsed: None,
                         last_shell: None,
                     },
                 );
@@ -3976,90 +4138,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn set_session_activity_panel_collapsed_inner_updates_cache() {
-        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
-        cache
-            .mutate(|d| {
-                d.sessions.insert(
-                    "pty-1".into(),
-                    super::super::cache::CachedSession {
-                        cwd: "/home/x".into(),
-                        created_at: "2026-05-21T00:00:00Z".into(),
-                        exited: false,
-                        last_exit_code: None,
-                        activity_panel_collapsed: None,
-                        last_shell: None,
-                    },
-                );
-                Ok(())
-            })
-            .unwrap();
-
-        set_session_activity_panel_collapsed_inner(
-            &cache,
-            SetSessionActivityPanelCollapsedRequest {
-                id: "pty-1".into(),
-                collapsed: true,
-            },
-        )
-        .unwrap();
-
-        let snap = cache.snapshot();
-        assert_eq!(
-            snap.sessions.get("pty-1").unwrap().activity_panel_collapsed,
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn set_session_activity_panel_collapsed_inner_errors_when_session_missing() {
-        let (_state, cache, _events, _temp_dir) = create_test_state_with_cache();
-
-        let err = set_session_activity_panel_collapsed_inner(
-            &cache,
-            SetSessionActivityPanelCollapsedRequest {
-                id: "ghost-pty".into(),
-                collapsed: true,
-            },
-        )
-        .unwrap_err();
-        assert!(
-            err.contains("session not found"),
-            "expected `session not found` error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn list_sessions_surfaces_activity_panel_collapsed() {
-        let (state, cache, _events, _temp_dir) = create_test_state_with_cache();
-        cache
-            .mutate(|d| {
-                d.sessions.insert(
-                    "pty-1".into(),
-                    super::super::cache::CachedSession {
-                        cwd: "/home/x".into(),
-                        created_at: "2026-05-21T00:00:00Z".into(),
-                        exited: false,
-                        last_exit_code: None,
-                        activity_panel_collapsed: Some(true),
-                        last_shell: None,
-                    },
-                );
-                d.session_order.push("pty-1".into());
-                Ok(())
-            })
-            .unwrap();
-
-        let list = list_sessions_inner(&state, &cache).unwrap();
-        let info = list
-            .sessions
-            .iter()
-            .find(|s| s.id == "pty-1")
-            .expect("session must surface");
-        assert_eq!(info.activity_panel_collapsed, Some(true));
-    }
-
     /// Round 4, Finding 3 (codex P2) regression test.
     ///
     /// The pre-fix `reorder_sessions` flow was:
@@ -4102,7 +4180,6 @@ mod tests {
                             created_at: "2026-04-25T00:00:00Z".into(),
                             exited: false,
                             last_exit_code: None,
-                            activity_panel_collapsed: None,
                             last_shell: None,
                         },
                     );
@@ -4149,7 +4226,6 @@ mod tests {
                             created_at: "2026-04-25T00:00:00Z".into(),
                             exited: false,
                             last_exit_code: None,
-                            activity_panel_collapsed: None,
                             last_shell: None,
                         },
                     );

@@ -2,8 +2,8 @@
 id: diagnostic-instrumentation
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-07-26
-ref_count: 3
+last_updated: 2026-07-30
+ref_count: 5
 ---
 
 # Diagnostic Instrumentation
@@ -160,4 +160,36 @@ The discipline:
 - **File:** `native/ghostty-helper/Sources/GhosttyElectronBridge/GhosttyElectronBridge.swift`
 - **Finding:** `vimeflowGhosttyCreate` gated `TerminalDebugLog.enable(...)` by directly reading `VIMEFLOW_GHOSTTY_DEBUG`, while the same bridge file already had a shared `vimeflowGhosttyDebugEnabled` switch for resize diagnostics. If the accepted debug value ever changed in one place, print traces and GhosttyTerminal metrics/render/lifecycle logs could diverge.
 - **Fix:** Reused `vimeflowGhosttyDebugEnabled` at the `TerminalDebugLog.enable(...)` call site so all Ghostty bridge diagnostics share one gate.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Winsize timing report wrote to stderr while holding the resize slot mutex
+
+- **Source:** github-claude | PR #760 round 1 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The winsize timing recorder emitted first-sample, periodic, and over-threshold `fprintf(stderr, ...)` diagnostics while `ApplyPtySlotWinsize` still held the per-slot mutex. A slow or backpressured stderr sink could therefore stall the same mutex that protects native resize, close, release, and bind paths.
+- **Fix:** Changed `RecordWinsizeTiming` to update counters and return a small report description. `ApplyPtySlotWinsize` now emits the over-threshold and summary logs only after leaving the slot mutex scope, preserving the timing signal without letting diagnostic I/O block the hot path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Connector resize-latency report blocked the engine callback path
+
+- **Source:** github-codex-connector | PR #760 round 1 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The connector review identified the same Ghostty resize instrumentation path: first and every 128th successful resize synchronously called `ReportWinsizeTimings` from inside the locked engine callback, and over-5ms samples also wrote directly to stderr there.
+- **Fix:** Routed both diagnostics through the returned `WinsizeTimingReport` and printed after `slot.mtx` was released. The elapsed duration is still captured before the release, so the metric continues to measure the slot mutex plus ioctl work while excluding the diagnostic write.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. TIOCSWINSZ failures lacked errno diagnostics
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** Failed native winsize ioctls only incremented an aggregate
+  failure counter; the immediate stderr diagnostics were gated on success-path
+  timing fields. Operators could see that failures happened but not whether the
+  cause was `EBADF`, `EINVAL`, or another OS error.
+- **Fix:** Captured `errno`, session id, and role immediately after a failed
+  ioctl while the slot still identifies the lease, then emitted a single
+  detailed stderr line after releasing `slot.mtx`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

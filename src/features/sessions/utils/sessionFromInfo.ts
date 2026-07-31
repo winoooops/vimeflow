@@ -2,7 +2,6 @@ import type { SessionInfo } from '../../../bindings'
 import type { Pane, Session } from '../types'
 import { emptyActivity } from '../constants'
 import { tabName } from './tabName'
-import { readActivityPanelCollapsed } from './activityPanelCollapsedStore'
 import { readCacheHistory } from './cacheHistoryStore'
 
 /** Build a `Session` from a Rust `SessionInfo`. */
@@ -48,7 +47,6 @@ export const sessionFromInfo = (info: SessionInfo, index: number): Session => {
     name: tabName(info.cwd, index),
     status,
     layout: 'single',
-    activityPanelCollapsed: readActivityPanelCollapsed(info.id),
     panes: [pane],
     workingDirectory: info.cwd,
     agentType: 'generic',

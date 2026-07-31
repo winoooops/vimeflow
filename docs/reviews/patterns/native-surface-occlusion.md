@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-30
-ref_count: 5
+last_updated: 2026-07-31
+ref_count: 8
 ---
 
 # Native Surface Occlusion
@@ -173,4 +173,98 @@ React overlays that drive Electron native WebContentsView visibility must regist
   the Vimeflow app is still active, so internal parent/overlay focus handoff is
   preserved but true app deactivation closes the surface. Added regression
   coverage for owner blur and overlay-window blur with `app.isActive()` false.
+- **Commit:** same commit as this entry
+
+### 15. Tooltip sidecars destabilized native dialog controls
+
+- **Source:** local-codex | PR #761 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The Layout Creator's compact track stepper icon buttons kept
+  their shared tooltip wrappers inside the focus-owned native overlay dialog.
+  The macOS Ghostty smoke clicked those controls in the overlay window and then
+  observed the track-count hooks disappear, reading `cols` and `rows` as null.
+- **Fix:** Disabled tooltips on the modal's add/remove track stepper buttons.
+  The controls keep their accessible labels, but no longer spawn transient
+  tooltip overlay sidecars while the native dialog is being exercised.
+- **Commit:** same commit as this entry
+
+### 16. Native dialog smoke treated an absent parent-local dialog as occlusion
+
+- **Source:** local-codex | PR #761 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty smoke waited for the real Layout Creator
+  overlay to render, then required a parent-renderer local dialog node to exist
+  with native-overlay hiding attributes. When the dialog lived only in the
+  overlay webContents, the absent local node failed the occlusion assertion even
+  though no parent-local dialog could cover the native surface.
+- **Fix:** Kept the smoke strict for visible parent-local dialogs but treated a
+  missing parent-local dialog as hidden once the overlay dialog is visible.
+- **Commit:** same commit as this entry
+
+### 17. Layout creator handoff left stale native menu state active
+
+- **Source:** github-claude | PR #765 round 1 | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** A merge kept the layout-menu cleanup that removed explicit close
+  calls, but dropped the compensating native-overlay retain flag. The packaged
+  macOS path could therefore close or refresh the non-focusable menu surface
+  while the focus-owned Layout Creator dialog was opening, leaving the overlay
+  webContents rendered but the BrowserWindow hidden or non-focusable above the
+  Ghostty NSView.
+- **Fix:** Kept the Create Custom Layout action in the retained native-overlay
+  path with `nativeOverlayCloseOnSelect={false}`, so the menu callback remains
+  registered until the focus-owned Layout Creator dialog replaces the menu
+  surface above Ghostty.
+- **Commit:** same commit as this entry
+
+### 18. Retained native menu handoffs must stay visible until replacement
+
+- **Source:** local-codex | PR #765 CI fix | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** The layout creator handoff retained the native menu callback path
+  but also marked the selected menu item as `suspendOnSelect`. Electron hid and
+  deactivated the overlay window before the owner renderer opened the Layout
+  Creator, so the macOS Ghostty smoke could not observe the replacement dialog
+  in the overlay window.
+- **Fix:** Removed `nativeOverlaySuspendOnSelect` from the Create Custom Layout
+  item while keeping `nativeOverlayCloseOnSelect={false}`. The retained menu
+  session now stays available for the owner callback and is replaced naturally
+  by the focus-owned Layout Creator dialog.
+- **Commit:** same commit as this entry
+
+### 19. Retained native menu handoffs may need explicit suspension
+
+- **Source:** local-codex | PR #765 CI fix | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** The deterministic macOS Ghostty E2E smoke selected Create Custom
+  Layout from the retained native layout menu, then timed out waiting for the
+  Layout Creator dialog to render in the overlay webContents. Keeping the menu
+  retained but fully active left the old menu surface competing with the
+  focus-owned dialog handoff on the packaged native-overlay path.
+- **Fix:** Kept `nativeOverlayCloseOnSelect={false}` so the owner callback
+  remains registered, and added `nativeOverlaySuspendOnSelect` so Electron
+  temporarily hides/deactivates the menu surface while the Layout Creator dialog
+  opens and promotes the replacement overlay.
+- **Commit:** same commit as this entry
+
+### 20. Retained native menu handoffs must close stale menu state
+
+- **Source:** local-codex | PR #765 CI fix | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** Retaining the Create Custom Layout native menu action while
+  suspending the menu surface still left the owner-side menu state open during
+  the Layout Creator handoff. The stale menu surface could occupy the shared
+  overlay window long enough for the packaged macOS Ghostty smoke to time out
+  waiting for the dialog payload to render.
+- **Fix:** Kept `nativeOverlayCloseOnSelect={false}` so the native action
+  callback remains registered, but explicitly closed the layout menu state from
+  the Create Custom Layout handler and removed the suspend flag. The old menu
+  surface now clears before the focus-owned Layout Creator dialog opens as the
+  replacement overlay.
 - **Commit:** same commit as this entry

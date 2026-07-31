@@ -65,7 +65,7 @@ describe('toolCallsToEvents', () => {
     expect(events.map((e) => e.id)).toEqual(['newest', 'middle', 'old'])
   })
 
-  test('active is always first, even when a recent event has a newer timestamp', () => {
+  test('active is sorted by startedAt alongside recent events', () => {
     const events = toolCallsToEvents(
       'claude-code',
       {
@@ -83,8 +83,8 @@ describe('toolCallsToEvents', () => {
       ]
     )
 
-    expect(events[0].status).toBe('running')
-    expect(events[1].id).toBe('a')
+    expect(events.map((e) => e.id)).toEqual(['a', 'toolu_ACTIVE'])
+    expect(events[1].status).toBe('running')
   })
 
   test.each([

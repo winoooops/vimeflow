@@ -408,7 +408,7 @@ describe('ActivityEvent — running state', () => {
     expect(screen.getByText('running 8s')).toBeInTheDocument()
   })
 
-  test('running events render no status pill', () => {
+  test('running bash reserves the status chip row invisibly', () => {
     render(
       <ActivityEvent
         event={{
@@ -425,15 +425,57 @@ describe('ActivityEvent — running state', () => {
       />
     )
 
-    expect(screen.queryByText('OK')).not.toBeInTheDocument()
+    // The invisible placeholder holds the exact OK-pill geometry so the row
+    // height is identical when the task completes and the real chip lands.
+    expect(screen.getByText('OK')).toHaveClass('invisible')
     expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
   })
 
-  test('non-running events do not render the animated dot', () => {
+  test('running events render the presence dot on the kind icon', () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'active-Bash',
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T11:59:52Z',
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+
+    expect(screen.getByTestId('activity-presence-dot')).toBeInTheDocument()
+  })
+
+  test('running timestamp uses the success-muted tint', () => {
+    render(
+      <ActivityEvent
+        event={{
+          id: 'active-Bash',
+          kind: 'bash',
+          tool: 'Bash',
+          label: 'BASH',
+          body: 'pnpm test',
+          timestamp: '2026-04-22T11:59:52Z', // 8s before now
+          status: 'running',
+          durationMs: null,
+        }}
+        now={now}
+      />
+    )
+
+    expect(screen.getByText('running 8s')).toHaveClass('text-success-muted')
+  })
+
+  test('non-running events do not render the presence dot', () => {
     render(<ActivityEvent event={toolEvent({ status: 'done' })} now={now} />)
 
     expect(
-      screen.queryByRole('status', { name: 'running' })
+      screen.queryByTestId('activity-presence-dot')
     ).not.toBeInTheDocument()
   })
 

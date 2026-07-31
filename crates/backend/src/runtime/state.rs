@@ -111,6 +111,18 @@ impl BackendState {
         }
     }
 
+    /// Starts the winsize-ownership broker (VIM-399) on the claimed fd
+    /// transport. Called once from the sidecar binary after construction;
+    /// a no-op world (never called) is the async-resize-path world.
+    #[cfg(unix)]
+    pub fn start_fd_broker(&self, transport_fd: std::os::fd::RawFd) {
+        if let Some(broker) =
+            crate::terminal::fd_broker::FdBroker::start(transport_fd, self.pty.clone())
+        {
+            self.pty.set_fd_broker(broker);
+        }
+    }
+
     /// Returns test backend state and its event sink.
     #[cfg(any(test, feature = "e2e-test"))]
     pub fn with_fake_sink() -> (Arc<Self>, Arc<super::event_sink::FakeEventSink>) {
@@ -355,10 +367,7 @@ impl BackendState {
         crate::terminal::commands::list_sessions_inner(&self.pty, &self.sessions)
     }
 
-    pub fn get_pty_replay(
-        &self,
-        session_id: &str,
-    ) -> Option<crate::terminal::types::PtyReplay> {
+    pub fn get_pty_replay(&self, session_id: &str) -> Option<crate::terminal::types::PtyReplay> {
         crate::terminal::commands::get_pty_replay(&self.pty, &session_id.to_string())
     }
 
@@ -381,16 +390,6 @@ impl BackendState {
         request: crate::terminal::types::UpdateSessionCwdRequest,
     ) -> Result<(), String> {
         crate::terminal::commands::update_session_cwd_inner(&self.sessions, request)
-    }
-
-    pub fn set_session_activity_panel_collapsed(
-        &self,
-        request: crate::terminal::types::SetSessionActivityPanelCollapsedRequest,
-    ) -> Result<(), String> {
-        crate::terminal::commands::set_session_activity_panel_collapsed_inner(
-            &self.sessions,
-            request,
-        )
     }
 
     pub fn set_workspace_sessions(
