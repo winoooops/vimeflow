@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 34       | 28   | 2026-07-30   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 17       | 14   | 2026-07-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 35       | 27   | 2026-07-29   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 37       | 27   | 2026-07-31   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 13       | 6    | 2026-07-26   |

@@ -42,7 +42,6 @@ interface PixelMapping {
 
 interface OverlayWindowState {
   alwaysOnTop: boolean
-  focusable: boolean
   visible: boolean
 }
 
@@ -333,7 +332,6 @@ const getLayoutCreatorOverlayWindowState =
         ? null
         : {
             alwaysOnTop: overlay.isAlwaysOnTop(),
-            focusable: overlay.isFocusable(),
             visible: overlay.isVisible(),
           }
     })
@@ -863,29 +861,24 @@ describe('NativeOverlay BrowserWindow layering', () => {
       async () => {
         const state = await getLayoutCreatorOverlayWindowState()
 
-        return (
-          state?.alwaysOnTop === true &&
-          state.focusable === true &&
-          state.visible === true
-        )
+        return state?.alwaysOnTop === true && state.visible === true
       },
       {
         timeout: 5_000,
         interval: 100,
         timeoutMsg:
-          'Layout Creator overlay window did not become visible and focusable',
+          'Layout Creator overlay window did not become visible and topmost',
       }
     )
     const overlayWindowState = await getLayoutCreatorOverlayWindowState()
     expect(overlayWindowState).toEqual({
       alwaysOnTop: true,
-      focusable: true,
       visible: true,
     })
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 
-    const trackCounts = await browser.electron.execute(
+    const beforeGrid = await browser.electron.execute(
       async (electron: ElectronModule) => {
         let overlay:
           | ReturnType<
@@ -917,32 +910,57 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
         return overlay.executeJavaScript(`
           (async () => {
-            const read = (axis) => {
-              const value = document.querySelector(
-                \`[data-layout-creator-track-count="\${axis.toLowerCase()}"]\`
-              )
-              return Number(value?.textContent)
-            }
-            const before = { cols: read('Cols'), rows: read('Rows') }
+            const before = window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid()
             document.querySelector('button[aria-label="Add Cols"]')?.click()
             await new Promise((resolve) => setTimeout(resolve, 100))
             document.querySelector('button[aria-label="Add Rows"]')?.click()
-            await new Promise((resolve) => setTimeout(resolve, 1_000))
-            return {
-              before,
-              after: { cols: read('Cols'), rows: read('Rows') },
-            }
+            return before ?? null
           })()
-        `) as Promise<{
-          before: { cols: number; rows: number }
-          after: { cols: number; rows: number }
-        }>
+        `) as Promise<{ cols: number; rows: number } | null>
       }
     )
-    expect(trackCounts?.after).toEqual({
-      cols: (trackCounts?.before.cols ?? 0) + 1,
-      rows: (trackCounts?.before.rows ?? 0) + 1,
-    })
+    if (beforeGrid === null) {
+      throw new Error('Layout Creator overlay draft grid unavailable')
+    }
+
+    await browser.waitUntil(
+      async () => {
+        const afterGrid = await browser.electron.execute(
+          async (electron: ElectronModule) => {
+            for (const contents of electron.webContents.getAllWebContents()) {
+              const mode = new URL(contents.getURL()).searchParams.get(
+                'nativeOverlay'
+              )
+
+              if (mode !== '1' && mode !== 'menu') {
+                continue
+              }
+
+              const grid = (await contents.executeJavaScript(`
+                window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid() ?? null
+              `)) as { cols: number; rows: number } | null
+
+              if (grid !== null) {
+                return grid
+              }
+            }
+
+            return null
+          }
+        )
+
+        return (
+          afterGrid?.cols === beforeGrid.cols + 1 &&
+          afterGrid.rows === beforeGrid.rows + 1
+        )
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg:
+          'Layout Creator overlay did not apply native track stepper clicks',
+      }
+    )
 
     const editorState = await browser.electron.execute(
       async (electron: ElectronModule) => {

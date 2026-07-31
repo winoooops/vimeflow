@@ -2,7 +2,7 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-29
+last_updated: 2026-07-31
 ref_count: 27
 ---
 
@@ -461,7 +461,21 @@ base data is technically "correct."
   test that expands from five visible indicators to ten while Recent is active.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
-### 35. Activity popover passthrough cache survived same-surface refreshes
+### 35. Inline running tool events bypassed timestamp ordering
+
+- **Source:** github-codex-connector | PR #762 round 1 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/utils/toolCallsToEvents.ts`
+- **Finding:** The inline tool-call feed prepended the active running tool
+  event before sorting recent completed events. When a newer completed tool call
+  existed, the agent-status panel still rendered the older active row first,
+  violating the timestamp-descending feed contract.
+- **Fix:** Build one merged event list from active and recent tool calls, then
+  sort the whole feed by timestamp with malformed timestamps sunk to the end.
+  Added regression coverage proving an older running event appears after a
+  newer completed event.
+
+### 36. Activity popover passthrough cache survived same-surface refreshes
 
 - **Source:** github-codex-connector | PR #758 round 1 | 2026-07-29
 - **Severity:** P2 / MEDIUM
@@ -474,4 +488,20 @@ base data is technically "correct."
 - **Fix:** Reapply the active passthrough state when the native popover request
   refreshes, and added a hook regression test that rerenders a same-surface
   request after entering passthrough mode.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Scroll anchor prepend detection treated existing row reorders as inserts
+
+- **Source:** github-codex-connector | PR #762 round 2 | 2026-07-31
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/agent-status/components/AgentStatusPanel/index.tsx`
+- **Finding:** Agent-status scroll anchoring only compared the previous first
+  event ID with the new first event ID. When a long-running tool call completed
+  and kept the same ID while moving to the top by timestamp, the panel treated
+  the reorder as a prepend and added fallback row height to the saved scroll
+  position.
+- **Fix:** Store the previous visible event IDs with the scroll metrics and
+  compensate only when the new first ID was absent from the prior feed. Added a
+  regression test for a running row completing and reordering to the top without
+  any inserted row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
