@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-27
-ref_count: 5
+last_updated: 2026-07-30
+ref_count: 9
 ---
 
 # IPC Resource Bounds
@@ -200,4 +200,45 @@ not become repeated unhandled main-process failures.
 - **Fix:** Required `epoch` to be absent or a non-empty string in the shared pane
   payload validator and added regression coverage for object and empty-string
   epochs at the update/destroy IPC boundary.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Renderer-controlled PTY session IDs need length bounds before fd transport
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `crates/backend/src/terminal/commands.rs`, `crates/backend/src/terminal/fd_transport.rs`
+- **Finding:** `spawn_pty` accepted any length of otherwise valid `session_id`,
+  but the fd-transport wire protocol serializes that id into a fixed 4096-byte
+  datagram and asserted the payload length. A renderer-supplied oversized id
+  could panic the broker send path after PTY resources had already been created.
+- **Fix:** Added a 128-byte session-id cap at the spawn/update IPC validation
+  boundary before PTY allocation, and changed fd-transport sends to return
+  `InvalidInput` instead of asserting on oversized payloads. Added regression
+  coverage for both the spawn boundary and transport send helpers.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 16. Native PTY transport sends must not block synchronous IPC paths
+
+- **Source:** github-claude | PR #761 round 4 | 2026-07-30
+- **Severity:** HIGH
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `bindPty` could complete a pending fd bind by sending the
+  `native-ready` datagram through a blocking socket syscall while still inside
+  the global PTY protocol mutex on the Electron main thread. A stalled sidecar
+  or full socket buffer could freeze the UI and hold up all other PTY protocol
+  operations behind the same mutex.
+- **Fix:** Split the bind state transition from outbound delivery so
+  `CompletePtyBindLocked` queues the ready datagram while locked and callers
+  send after the critical section. The transport send now uses `MSG_DONTWAIT`,
+  so peer backpressure degrades to a logged failed datagram instead of an
+  unbounded block.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 17. Native addon fd validation accepted NaN as a spawn descriptor
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The PTY fd transport bootstrap rejected `undefined` and negative fd values but did not require the addon result to be an integer, so `NaN` could pass the `< 0` check and fail later inside child-process spawn with less clear fallback behavior.
+- **Fix:** Require `Number.isInteger(transportFd)` before accepting the descriptor and extend bootstrap fallback coverage with a `NaN` addon result.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

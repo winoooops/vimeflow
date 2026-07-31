@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-27
-ref_count: 90
+last_updated: 2026-07-30
+ref_count: 95
 ---
 
 # Async Race Conditions
@@ -1098,3 +1098,107 @@ prevent showing previous data.
 - **Fix:** Inserted a polling interval before each stability comparison so a
   settled anchor means the composer remained stable across time.
 - **Commit:** same commit as this entry
+
+### 99. Failed native PTY release could target a replacement lease
+
+- **Source:** github-codex-connector | PR #755 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The native Ghostty `TIOCSWINSZ` failure path carried only a
+  boolean out of the slot mutex, then re-identified the slot by surface and
+  role after the lock was dropped. A secondary-session replacement in that
+  interval could bind a fresh healthy lease and have the delayed release
+  transition the replacement slot into `Releasing`.
+- **Fix:** Capture the failed lease ID while holding the slot mutex and require
+  `StartPtySlotRelease` to verify both that exact lease ID and the poisoned
+  `failed` flag before starting the release handshake.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 100. Native-owned resize metadata bypassed IPC ordering
+
+- **Source:** github-codex-connector | PR #759 round 1 | 2026-07-30
+- **Severity:** P1 / HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native-owned resize path bypassed both throttle and
+  in-flight gating, so concurrent `resize_pty` handlers could execute out of
+  order around release and let an older grid overwrite the PTY after a newer
+  native size was restored.
+- **Fix:** Added a FIFO queue for native-owned resize metadata and drain it
+  ahead of ordinary pending Rust-owned resizes after each acknowledgement.
+  Covered the release transition with a delayed-sidecar regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 101. Native transport send raced with concurrent fd close
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `SendPtyTransportDatagram` loaded the parent transport fd
+  without holding the protocol mutex, then called `send()` while shutdown could
+  exchange and close the same fd under that mutex. A close/reuse race could
+  write a protocol datagram to an unrelated descriptor instead of failing.
+- **Fix:** Split the sender into a mutex-protected public helper and a locked
+  helper for call sites that already hold `g_pty_protocol_mutex`, so fd load and
+  send are serialized with shutdown without deadlocking the bind path.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 102. Session-id reuse could strand retired fd leases
+
+- **Source:** github-codex-connector | PR #761 round 4 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** The fd broker keyed active leases by session id and overwrote
+  the old lease before the old reader's generation-stamped cleanup necessarily
+  ran. A rapid kill plus same-id respawn could install the replacement lease,
+  causing the delayed old cleanup to skip detach and leave native holding the
+  retired PTY fd binding.
+- **Fix:** Retire any existing lease with a detach before `offer_fd` installs
+  a replacement, clear stale deferred requests for the same session id, and
+  retire the broker lease synchronously from `kill_pty_inner` before removing
+  the old session from `PtyState`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 103. Best-effort broker bootstrap could still panic
+
+- **Source:** github-codex-connector | PR #761 round 4 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** `FdBroker::start` used `expect` on the broker reader thread
+  spawn. Under thread or resource exhaustion, the sidecar would panic even
+  though the fd transport is supposed to degrade to the older async resize path.
+- **Fix:** Made broker startup return `Option<Arc<FdBroker>>`, log thread
+  spawn failures, and only install the broker into `PtyState` when the reader
+  thread starts successfully.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 104. Native detach left release retries alive
+
+- **Source:** github-codex-connector | PR #761 round 4 | 2026-07-30
+- **Severity:** P2 / MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The wire `detach` path closed pending and bound fd state but
+  did not erase an in-flight `g_unacked_releases` entry for the same lease. If
+  a local release had already started, the retry loop could keep resending
+  release datagrams for a dead lease indefinitely.
+- **Fix:** Remove the unacked release record during detach and close its
+  orphan fd, mirroring the existing transport-shutdown cleanup for release
+  records that outlive their surface.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 105. Native-owned queued resize was dropped on ownership flip
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** When a native-owned resize queue had entries and ownership flipped back to Rust before the queue drained, the completion path cleared the native-owned queue and forwarded only ordinary `pendingResize`, which native-owned mode intentionally kept null. The newest native-owned size could be lost from Rust metadata until another resize.
+- **Fix:** Feed the latest queued native-owned size into the normal Rust-owned forwarding path when ownership has flipped, preserving any explicit Rust-owned pending resize first. Added delayed-sidecar regression coverage for the no-follow-up-resize case.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 106. Release-ack resize flush could overtake a fresher engine callback
+
+- **Source:** github-claude | PR #761 round 6 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** The PTY release-ack path enqueued a resize flush from the transport thread while the engine resize callback could independently enqueue a newer resize for the same slot. Cross-thread `napi_threadsafe_function` ordering could deliver the stale release flush after the fresher callback.
+- **Fix:** Added a per-slot resize epoch, captured it when release starts, and skipped the release-ack flush when a newer engine callback has advanced the epoch. The fresher callback's own async resize event remains the authoritative Rust metadata update.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -2,8 +2,8 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-27
-ref_count: 27
+last_updated: 2026-07-30
+ref_count: 28
 ---
 
 # Resource Cleanup
@@ -340,4 +340,18 @@ causes listener accumulation and duplicate event handling.
 - **Fix:** Added unconditional `ipcMain.removeHandler` calls for the diagnostic
   grid and presentation-probe channels in `dispose()`. Expanded the E2E IPC
   registration test to assert those handlers disappear after disposal.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Live PTY regression test must reap its child process
+
+- **Source:** github-codex-connector | PR #759 round 1 | 2026-07-30
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/terminal/fd_broker.rs`
+- **Finding:** The resize ownership regression test spawned an infinite shell
+  loop and inserted the child into `PtyState` without any teardown. Because
+  `ManagedSession` has no drop-time cleanup, repeated test runs could leave
+  long-lived shells behind on developer machines or persistent CI hosts.
+- **Fix:** Added a test-local cleanup guard that removes the inserted PTY
+  session, kills the child, and waits to reap it when the test exits, including
+  assertion-failure paths.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

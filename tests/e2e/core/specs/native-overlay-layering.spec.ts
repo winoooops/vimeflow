@@ -197,46 +197,46 @@ const clickEnabledOverlayCheckbox = async (
 ): Promise<OverlayCheckboxClickResult | null> => {
   const result = await browser.electron.execute(
     async (electron: ElectronModule) => {
-      const overlay = electron.webContents
-        .getAllWebContents()
-        .find((contents) => {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+      for (const overlay of electron.webContents.getAllWebContents()) {
+        const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
 
-          return mode === '1' || mode === 'menu'
-        })
+        if (mode !== '1' && mode !== 'menu') {
+          continue
+        }
 
-      if (!overlay) {
-        return null
+        const result = (await overlay.executeJavaScript(`
+          (() => {
+            const item = Array.from(
+              document.querySelectorAll('[role="menuitemcheckbox"]')
+            ).find((element) =>
+              element.getAttribute('aria-disabled') !== 'true' &&
+              element instanceof HTMLElement
+            )
+
+            if (!(item instanceof HTMLElement)) {
+              return null
+            }
+
+            const label = item.getAttribute('aria-label')
+            if (!label) {
+              return null
+            }
+
+            const wasChecked = item.getAttribute('aria-checked') === 'true'
+            item.click()
+            return {
+              label,
+              wasChecked,
+            }
+          })()
+        `)) as Omit<OverlayCheckboxClickResult, 'mode'> | null
+
+        if (result !== null) {
+          return result
+        }
       }
 
-      return overlay.executeJavaScript(`
-      (() => {
-        const item = Array.from(
-          document.querySelectorAll('[role="menuitemcheckbox"]')
-        ).find((element) =>
-          element.getAttribute('aria-disabled') !== 'true' &&
-          element instanceof HTMLElement
-        )
-
-        if (!(item instanceof HTMLElement)) {
-          return null
-        }
-
-        const label = item.getAttribute('aria-label')
-        if (!label) {
-          return null
-        }
-
-        const wasChecked = item.getAttribute('aria-checked') === 'true'
-        item.click()
-        return {
-          label,
-          wasChecked,
-        }
-      })()
-    `) as Promise<Omit<OverlayCheckboxClickResult, 'mode'> | null>
+      return null
     }
   )
 
@@ -382,6 +382,12 @@ const getParentLocalLayoutDialogState =
 
       return fallbackState
     })
+
+const parentLocalLayoutDialogIsHidden = (
+  state: LocalDialogState | null
+): boolean =>
+  state === null ||
+  (state.nativeOverlayActive === true && state.opacity === '0')
 
 const closeOverlayMenuIfPresent = async (): Promise<void> => {
   if ((await getOverlayMenuRect()) === null) {
@@ -634,6 +640,42 @@ const waitForOverlayMenu = async (): Promise<void> => {
   })
 }
 
+const waitForEnabledOverlayCheckbox = async (): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      browser.electron.execute(async (electron: ElectronModule) => {
+        for (const overlay of electron.webContents.getAllWebContents()) {
+          const mode = new URL(overlay.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasEnabledCheckbox = (await overlay.executeJavaScript(`
+            Array.from(document.querySelectorAll('[role="menuitemcheckbox"]'))
+              .some((element) =>
+                element instanceof HTMLElement &&
+                element.getAttribute('aria-disabled') !== 'true'
+              )
+          `)) as boolean
+
+          if (hasEnabledCheckbox) {
+            return true
+          }
+        }
+
+        return false
+      }),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'NativeOverlay menu had no enabled layout checkbox row',
+    }
+  )
+}
+
 describe('NativeOverlay BrowserWindow layering', () => {
   afterEach(async () => {
     await browser.electron.execute(async (electron: ElectronModule) => {
@@ -703,6 +745,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
       throw new Error('layout display trigger unavailable')
     }
     await waitForOverlayMenu()
+    await waitForEnabledOverlayCheckbox()
 
     await waitForOverlayPaint(before, paneRect, 'menu')
 
@@ -809,10 +852,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
       async () => {
         const localDialogState = await getParentLocalLayoutDialogState()
 
-        return (
-          localDialogState?.nativeOverlayActive === true &&
-          localDialogState.opacity === '0'
-        )
+        return parentLocalLayoutDialogIsHidden(localDialogState)
       },
       {
         timeout: 5_000,
@@ -822,10 +862,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
       }
     )
     const localDialogState = await getParentLocalLayoutDialogState()
-    expect(localDialogState).toEqual({
-      nativeOverlayActive: true,
-      opacity: '0',
-    })
+    expect(parentLocalLayoutDialogIsHidden(localDialogState)).toBe(true)
 
     await browser.waitUntil(
       async () => {

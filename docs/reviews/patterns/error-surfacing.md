@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-29
-ref_count: 51
+last_updated: 2026-07-30
+ref_count: 54
 ---
 
 # Error Surfacing
@@ -542,4 +542,30 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Allow dialog surfaces through the action-result relay and add a
   Layout Creator dialog regression test that forwards an `ok: false` save result
   to the overlay renderer.
+
+### 53. Native PTY protocol datagram send failures were dropped
+
+- **Source:** github-claude | PR #754 round 2 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `SendPtyTransportDatagram` discarded `send()` failures, so a failed
+  native-ready, request-fd, or release retry could leave Rust and native
+  ownership state stale with no diagnostic trail.
+- **Fix:** Retry interrupted sends and log non-recoverable send failures with the
+  datagram type plus errno details so transport failures are observable.
 - **Commit:** same commit as this entry
+
+### 54. Native addon spawn notification threw through app bootstrap
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The fd-transport bootstrap guarded addon loading and socketpair
+  creation, but its returned `onSpawned` callback called
+  `notifyPtyFdTransportSpawned` without a local try/catch. A future native
+  throw there could reject the async app bootstrap instead of degrading to the
+  existing async resize path.
+- **Fix:** Wrapped the notification body in try/catch, logged a warning, and
+  added a regression test proving `onSpawned` does not throw when the addon
+  notification fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Menu } from '@/components/Menu'
 import type { PaneLayoutId } from '../../../sessions/types'
 import {
@@ -24,10 +24,108 @@ interface CustomLayoutBuilderOptions {
   hiddenCustomLayoutIds: readonly PaneLayoutId[]
 }
 
+interface NativeMenuTestRow {
+  type?: string
+  id: string
+  label?: string
+}
+
+interface NativeMenuTestRequest {
+  surfaceId: string
+  payload: {
+    kind: 'menu'
+    items?: readonly NativeMenuTestRow[]
+    sections?: readonly { items: readonly NativeMenuTestRow[] }[]
+  }
+}
+
 const builderMocks = vi.hoisted(() => ({
   builtInLayoutMenuItems: vi.fn(),
   customLayoutMenuItems: vi.fn(),
 }))
+
+let restorePlatform: (() => void) | null = null
+
+const setNavigatorPlatform = (platform: string): void => {
+  restorePlatform?.()
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
+const installNativeOverlayBridge = (): {
+  open: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  action: (event: unknown) => void
+} => {
+  let actionListener: ((event: unknown) => void) | null = null
+  const open = vi.fn().mockResolvedValue({ accepted: true })
+  const close = vi.fn().mockResolvedValue(undefined)
+
+  window.vimeflow = {
+    invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    nativeOverlay: {
+      open,
+      close,
+      actionResult: vi.fn(() => Promise.resolve()),
+      resume: vi.fn(() => Promise.resolve()),
+      onAction: vi.fn((callback: (event: unknown) => void) => {
+        actionListener = callback
+
+        return vi.fn()
+      }),
+      onClose: vi.fn(() => vi.fn()),
+    },
+  }
+
+  return {
+    open,
+    close,
+    action: (event): void => {
+      actionListener?.(event)
+    },
+  }
+}
+
+const nativeMenuRequestAt = (
+  open: ReturnType<typeof vi.fn>,
+  index = 0
+): NativeMenuTestRequest => {
+  const request = open.mock.calls[index]?.[0] as unknown
+  if (
+    !(
+      typeof request === 'object' &&
+      request !== null &&
+      'payload' in request &&
+      (request as NativeMenuTestRequest).payload?.kind === 'menu'
+    )
+  ) {
+    throw new Error('expected native overlay menu request')
+  }
+
+  return request as NativeMenuTestRequest
+}
+
+const nativeMenuRows = (
+  request: NativeMenuTestRequest
+): readonly NativeMenuTestRow[] => [
+  ...(request.payload.items ?? []),
+  ...(request.payload.sections ?? []).flatMap((section) => section.items),
+]
 
 vi.mock('./LayoutDisplayBuiltInLayouts', () => ({
   builtInLayoutMenuItems: builderMocks.builtInLayoutMenuItems,
@@ -38,6 +136,13 @@ vi.mock('./LayoutDisplayCustomLayouts', () => ({
 }))
 
 describe('LayoutDisplayMenu', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    restorePlatform?.()
+    restorePlatform = null
+    delete window.vimeflow
+  })
+
   beforeEach(() => {
     builderMocks.builtInLayoutMenuItems.mockReset()
     builderMocks.customLayoutMenuItems.mockReset()
@@ -138,6 +243,51 @@ describe('LayoutDisplayMenu', () => {
     expect(customOptions.customLayouts.map((layout) => layout.id)).toEqual([
       'custom:template-main-bottom-row',
     ])
+  })
+
+  test('closes the native menu before launching the layout creator dialog', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const user = userEvent.setup()
+    const nativeBridge = installNativeOverlayBridge()
+    const onCreateCustomLayout = vi.fn()
+
+    render(
+      <LayoutDisplayMenu
+        activeLayoutId="vsplit"
+        visibleLayoutIds={['single', 'vsplit']}
+        onVisibleLayoutIdsChange={vi.fn()}
+        onCreateCustomLayout={onCreateCustomLayout}
+        nativeOverlay
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+    await waitFor(() => expect(nativeBridge.open).toHaveBeenCalledOnce())
+
+    const request = nativeMenuRequestAt(nativeBridge.open)
+
+    const createItem = nativeMenuRows(request).find(
+      (item) =>
+        item.type !== 'separator' && item.label === 'Create custom layout'
+    )
+    expect(createItem).toMatchObject({
+      id: expect.any(String),
+      label: 'Create custom layout',
+    })
+    expect(createItem).not.toHaveProperty('closeOnSelect')
+
+    act(() => {
+      nativeBridge.action({
+        surfaceId: request.surfaceId,
+        actionId: createItem?.type === 'separator' ? '' : createItem?.id,
+      })
+    })
+
+    expect(onCreateCustomLayout).toHaveBeenCalledOnce()
+    await waitFor(() => expect(nativeBridge.close).toHaveBeenCalledOnce())
   })
 
   test('opens the layout creator and lets the menu item own local close', async () => {

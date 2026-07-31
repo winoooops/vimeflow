@@ -41,7 +41,7 @@ import {
   type NativeOverlayController,
   type NativeOverlayKind,
 } from './native-overlay'
-import { spawnSidecar, type Sidecar } from './sidecar'
+import { type Sidecar } from './sidecar'
 import { setupBrowserPaneIpc, type BrowserPaneController } from './browser-pane'
 import { SettingsWindowController } from './settings-window'
 import {
@@ -49,6 +49,7 @@ import {
   setupGhosttyNativeParent,
   type GhosttyNativeParentController,
 } from './ghostty-native-parent'
+import { spawnSidecarWithPtyTransport } from './main-sidecar-bootstrap'
 import { setupDialogIpc } from './dialog-ipc'
 import {
   setupWorkspaceLayoutController,
@@ -541,9 +542,18 @@ const setupApp = async (): Promise<void> => {
     registerAppProtocol()
   }
 
-  const spawnedSidecar = spawnSidecar({
+  const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
+    process.platform,
+    process.env,
+    app.isPackaged
+  )
+
+  const spawnedSidecar = spawnSidecarWithPtyTransport({
     binary: resolveSidecarBin(),
     appDataDir: app.getPath('userData'),
+    ghosttyNativeParentEnabled,
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
   })
 
   sidecar = spawnedSidecar
@@ -553,12 +563,6 @@ const setupApp = async (): Promise<void> => {
   ghosttyNativeController?.dispose()
 
   const allowE2eBackendMethods = !app.isPackaged && isE2eRuntime()
-
-  const ghosttyNativeParentEnabled = isGhosttyNativeParentEnabled(
-    process.platform,
-    process.env,
-    app.isPackaged
-  )
 
   if (ghosttyNativeParentEnabled) {
     // Preload checks process.env before exposing window.vimeflow.ghosttyNative.

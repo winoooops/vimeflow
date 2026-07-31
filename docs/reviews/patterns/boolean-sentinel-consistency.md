@@ -2,8 +2,8 @@
 id: boolean-sentinel-consistency
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-06-30
-ref_count: 2
+last_updated: 2026-07-30
+ref_count: 3
 ---
 
 # Boolean Sentinel Consistency
@@ -62,3 +62,15 @@ encourages future contributors to invent yet another name for the same intent.
 - **Finding:** `NativeOverlayCloseRequest.reason` was optional, but `handleClose` defaulted the close reason to `renderer` while deriving the owner-notification flag from the raw optional value. An omitted reason therefore closed as renderer-initiated while still notifying the owner.
 - **Fix:** Resolve one `effectiveReason` local and use it for both the close reason and owner-notification check, with a regression test for omitted-reason closes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Local tooltip suppression flag duplicated the shared sentinel
+
+- **Source:** github-claude | PR #761 round 2 | 2026-07-30
+- **Severity:** LOW
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** `LayoutCreatorModal` introduced a local
+  `showTrackStepperTooltips = false` flag for `IconButton.showTooltip`, even
+  though `TOOLTIP_SUPPRESSED` already expresses the same project-wide sentinel.
+- **Fix:** Removed the local flag and passed `showTooltip={TOOLTIP_SUPPRESSED}`
+  from the shared constant.
+- **Commit:** same commit as this entry

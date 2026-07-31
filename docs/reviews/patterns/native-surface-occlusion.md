@@ -174,3 +174,31 @@ React overlays that drive Electron native WebContentsView visibility must regist
   preserved but true app deactivation closes the surface. Added regression
   coverage for owner blur and overlay-window blur with `app.isActive()` false.
 - **Commit:** same commit as this entry
+
+### 15. Tooltip sidecars destabilized native dialog controls
+
+- **Source:** local-codex | PR #761 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The Layout Creator's compact track stepper icon buttons kept
+  their shared tooltip wrappers inside the focus-owned native overlay dialog.
+  The macOS Ghostty smoke clicked those controls in the overlay window and then
+  observed the track-count hooks disappear, reading `cols` and `rows` as null.
+- **Fix:** Disabled tooltips on the modal's add/remove track stepper buttons.
+  The controls keep their accessible labels, but no longer spawn transient
+  tooltip overlay sidecars while the native dialog is being exercised.
+- **Commit:** same commit as this entry
+
+### 16. Native dialog smoke treated an absent parent-local dialog as occlusion
+
+- **Source:** local-codex | PR #761 CI fix | 2026-07-30
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty smoke waited for the real Layout Creator
+  overlay to render, then required a parent-renderer local dialog node to exist
+  with native-overlay hiding attributes. When the dialog lived only in the
+  overlay webContents, the absent local node failed the occlusion assertion even
+  though no parent-local dialog could cover the native surface.
+- **Fix:** Kept the smoke strict for visible parent-local dialogs but treated a
+  missing parent-local dialog as hidden once the overlay dialog is visible.
+- **Commit:** same commit as this entry
