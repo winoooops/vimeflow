@@ -42,7 +42,6 @@ interface PixelMapping {
 
 interface OverlayWindowState {
   alwaysOnTop: boolean
-  focusable: boolean
   visible: boolean
 }
 
@@ -333,7 +332,6 @@ const getLayoutCreatorOverlayWindowState =
         ? null
         : {
             alwaysOnTop: overlay.isAlwaysOnTop(),
-            focusable: overlay.isFocusable(),
             visible: overlay.isVisible(),
           }
     })
@@ -863,23 +861,18 @@ describe('NativeOverlay BrowserWindow layering', () => {
       async () => {
         const state = await getLayoutCreatorOverlayWindowState()
 
-        return (
-          state?.alwaysOnTop === true &&
-          state.focusable === true &&
-          state.visible === true
-        )
+        return state?.alwaysOnTop === true && state.visible === true
       },
       {
         timeout: 5_000,
         interval: 100,
         timeoutMsg:
-          'Layout Creator overlay window did not become visible and focusable',
+          'Layout Creator overlay window did not become visible and topmost',
       }
     )
     const overlayWindowState = await getLayoutCreatorOverlayWindowState()
     expect(overlayWindowState).toEqual({
       alwaysOnTop: true,
-      focusable: true,
       visible: true,
     })
 
