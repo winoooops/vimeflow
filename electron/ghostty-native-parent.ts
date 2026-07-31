@@ -89,10 +89,6 @@ interface GhosttyNativeParentAddon {
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
-  setResizeThrottleMs?: (
-    surface: GhosttyNativeSurface,
-    milliseconds: number
-  ) => void
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
   // Test-only grid reader; absent on addons built before it was added.
@@ -152,7 +148,6 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastFontFamily: string | null
-  lastResizeThrottleMs: number | null
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
@@ -214,11 +209,6 @@ export const SURFACE_SETTLE_MS = 120
 
 const MAX_PENDING_CHUNKS = 64
 const MAX_SURFACES = 128
-// Upper bound for the per-pane surface resize throttle accepted over IPC. The
-// fork arms a dispatch timer with this value; an unbounded number (e.g.
-// Number.MAX_VALUE) would leave that timer armed forever and freeze the
-// surface's metric sync. 1s is far beyond any sane coalescing window.
-const MAX_RESIZE_THROTTLE_MS = 1000
 // Leading+trailing throttle for PTY resize during live drags. Stock Ghostty
 // forwards every grid change with no timer (Surface.zig sizeCallback, dedupe
 // only); 16ms (~one frame) approximates that cadence while bounding bursts.
@@ -425,11 +415,6 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
         (value.foregroundColor === undefined ||
           isHexColor(value.foregroundColor)) &&
         isOptionalFiniteNumber(value.bottomCornerRadius) &&
-        (value.resizeThrottleMs === undefined ||
-          (typeof value.resizeThrottleMs === 'number' &&
-            Number.isFinite(value.resizeThrottleMs) &&
-            value.resizeThrottleMs >= 0 &&
-            value.resizeThrottleMs <= MAX_RESIZE_THROTTLE_MS)) &&
         typeof value.parentHeight === 'number' &&
         Number.isFinite(value.parentHeight) &&
         typeof value.visible === 'boolean' &&
@@ -674,13 +659,6 @@ export class GhosttyNativeParentController {
     ) {
       state.lastFontFamily = payload.fontFamily
       addon.setFontFamily?.(surface, payload.fontFamily)
-    }
-    if (
-      payload.resizeThrottleMs !== undefined &&
-      state.lastResizeThrottleMs !== payload.resizeThrottleMs
-    ) {
-      state.lastResizeThrottleMs = payload.resizeThrottleMs
-      addon.setResizeThrottleMs?.(surface, payload.resizeThrottleMs)
     }
     addon.setFrame(
       surface,
@@ -1055,7 +1033,6 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
-      lastResizeThrottleMs: null,
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
@@ -1623,7 +1600,6 @@ export class GhosttyNativeParentController {
     // A recreated surface starts from the fork's defaults (throttle 0), so a
     // kept cache would dedupe the unchanged payload and silently strip the
     // agent's throttle from the new surface.
-    state.lastResizeThrottleMs = null
   }
 
   private invokeSidecar(

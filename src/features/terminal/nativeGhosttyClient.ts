@@ -27,7 +27,6 @@ export interface NativeGhosttyUpdateRequest extends NativeGhosttyPaneRef {
   fontFamily?: string
   /** Engine-side resize coalescing for this pane's surface, content-tuned
    *  by the renderer (alt-screen full-repaint agents ~96, transcripts 0). */
-  resizeThrottleMs?: number
   bottomCornerRadius?: number
   parentHeight: number
   visible: boolean

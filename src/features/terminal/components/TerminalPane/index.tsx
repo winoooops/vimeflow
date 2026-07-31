@@ -12,7 +12,6 @@ import {
   type MouseEvent,
   type ReactElement,
 } from 'react'
-import { AGENTS, agentTypeToRegistryKey } from '@/agents/registry'
 import { useGitBranch } from '@/features/diff/hooks/useGitBranch'
 import { useGitStatus } from '@/features/diff/hooks/useGitStatus'
 import { useGitWorktree } from '@/features/diff/hooks/useGitWorktree'
@@ -317,12 +316,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
-    // Per-agent surface tuning lives with the rest of the agent's profile —
-    // see resizeThrottleMs in src/agents/registry.ts for the rationale and
-    // the rule for classifying new agents.
-    const resizeThrottleMs =
-      AGENTS[agentTypeToRegistryKey(pane.agentType)].resizeThrottleMs
-
     const terminalBodyBottomCornerRadius = isCollapsed
       ? TERMINAL_PANE_CORNER_RADIUS
       : 0
@@ -426,7 +419,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               mode={bodyMode}
               deferFit={deferFit}
               terminalFontFamily={terminalFontFamily}
-              resizeThrottleMs={resizeThrottleMs}
             />
           </div>
         )}

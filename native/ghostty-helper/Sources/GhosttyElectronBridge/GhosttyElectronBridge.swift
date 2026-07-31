@@ -719,10 +719,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         secondaryChild?.setFontFamily(trimmed)
     }
 
-    func setResizeThrottle(milliseconds: Double) {
-        terminalView.setResizeThrottle(milliseconds: milliseconds)
-    }
-
     private func terminalConfiguration() -> TerminalConfiguration {
         let configuration = TerminalConfiguration()
             .background(backgroundHexColor)
@@ -1342,22 +1338,6 @@ public func vimeflowGhosttySetFontFamily(
     mainActorSync {
         guard let surface = liveSurface(from: pointer) else { return }
         surface.setFontFamily(fontFamily)
-    }
-}
-
-@_cdecl("vimeflow_ghostty_set_resize_throttle_ms")
-public func vimeflowGhosttySetResizeThrottleMs(
-    _ surfacePointer: UnsafeMutableRawPointer?,
-    _ milliseconds: Double
-) {
-    guard let surfacePointer else {
-        return
-    }
-
-    let pointer = SendablePointer(value: surfacePointer)
-    mainActorSync {
-        guard let surface = liveSurface(from: pointer) else { return }
-        surface.setResizeThrottle(milliseconds: milliseconds)
     }
 }
 

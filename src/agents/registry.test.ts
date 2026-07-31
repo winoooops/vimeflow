@@ -24,8 +24,6 @@ test('every agent has the required fields with correct shapes', () => {
   for (const id of ALL_AGENTS) {
     const a = AGENTS[id]
     expect(a.id).toBe(id)
-    expect(Number.isFinite(a.resizeThrottleMs)).toBe(true)
-    expect(a.resizeThrottleMs).toBeGreaterThanOrEqual(0)
     expect(typeof a.name).toBe('string')
     expect(a.name[0]).toBe(a.name[0]?.toUpperCase())
     expect(a.short).toMatch(/^[A-Z]+$/)
@@ -122,15 +120,4 @@ test('every supported agent carries a brand Icon', () => {
   expect(AGENTS.kimi.Icon).toBeDefined()
   expect(AGENTS.opencode.Icon).toBeDefined()
   expect(AGENTS.shell.Icon).toBeDefined()
-})
-
-test('only the full-frame-repaint agent gets a resize throttle', () => {
-  // Rule: full-frame repaint per winsize → ~96ms; partial/in-place → 0.
-  // kimi stays 0 while pi-tui's destructive renders are fixed upstream
-  // (MoonshotAI/kimi-code#2324).
-  expect(AGENTS.claude.resizeThrottleMs).toBe(96)
-  expect(AGENTS.codex.resizeThrottleMs).toBe(0)
-  expect(AGENTS.kimi.resizeThrottleMs).toBe(0)
-  expect(AGENTS.shell.resizeThrottleMs).toBe(0)
-  expect(AGENTS.opencode.resizeThrottleMs).toBe(0)
 })
