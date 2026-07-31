@@ -13,7 +13,6 @@ const session: Session = {
   workingDirectory: '/home/user/repo',
   agentType: 'claude-code',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

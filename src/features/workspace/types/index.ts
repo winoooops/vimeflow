@@ -64,6 +64,5 @@ export interface WorkspaceState {
   activeSessionId: string | null
   activeTerminalId: string | null
   sidebarCollapsed: boolean
-  activityPanelCollapsed: boolean
   contextPanel: ContextPanelState
 }

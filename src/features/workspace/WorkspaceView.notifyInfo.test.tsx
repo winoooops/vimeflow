@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 import { SettingsProvider } from '../settings/SettingsProvider'
+import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
+import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
@@ -57,6 +59,11 @@ describe('WorkspaceView × notifyInfo banner', () => {
       value: 'Linux x86_64',
       configurable: true,
     })
+    window.localStorage.clear()
+    setActivityPanelCollapsed(false)
+    setDockOpen(false)
+    setDockTab('diff')
+    setDockPosition('bottom')
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
 

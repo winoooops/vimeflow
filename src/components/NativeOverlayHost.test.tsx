@@ -1073,6 +1073,39 @@ describe('NativeOverlayHost', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  test('dispatches retained menu actions with native overlay suspension', async () => {
+    const user = userEvent.setup()
+    const bridge = installNativeOverlayHostBridge()
+    render(<NativeOverlayHost />)
+
+    bridge.emitRender({
+      ...request,
+      payload: {
+        ...request.payload,
+        items: [
+          {
+            id: 'create-layout',
+            label: 'Create custom layout',
+            closeOnSelect: false,
+            suspendOnSelect: true,
+          },
+        ],
+      },
+    })
+
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create custom layout' })
+    )
+
+    expect(bridge.action).toHaveBeenCalledWith({
+      surfaceId: 'surface-1',
+      actionId: 'create-layout',
+      closeOnSelect: false,
+      suspendOnSelect: true,
+    })
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+
   test('renders v1 sections and dispatches checkbox actions', async () => {
     const user = userEvent.setup()
     const bridge = installNativeOverlayHostBridge()
