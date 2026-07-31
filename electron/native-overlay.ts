@@ -469,8 +469,6 @@ const requestNeedsKeyboardFocus = (payload: NativeOverlayRequest): boolean =>
   payload.payload.kind === 'dialog' &&
   payload.payload.dialog === 'layout-creator'
 
-const isInternalFocusHandoff = (): boolean => app.isActive()
-
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value)
 
@@ -1001,6 +999,7 @@ export class NativeOverlayController {
   private readonly overlays = new Map<number, NativeOverlayRecord>()
   private readonly surfaces = new Map<string, NativeOverlaySurface>()
   private readonly suspendedSurfaceIds = new Set<string>()
+  private readonly internalFocusHandoffSurfaceIds = new Set<string>()
   private readonly pendingReady = new Map<string, (ready: boolean) => void>()
   private registeredIpc: IpcMainLike | null = null
 
@@ -1042,6 +1041,7 @@ export class NativeOverlayController {
     }
     this.pendingReady.clear()
     this.suspendedSurfaceIds.clear()
+    this.internalFocusHandoffSurfaceIds.clear()
 
     for (const record of [...this.overlays.values()]) {
       this.destroyOverlayRecord(record, 'owner-closed', false)
@@ -1135,7 +1135,11 @@ export class NativeOverlayController {
     })
 
     if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
-      this.promoteInteractiveLayer(record, needsKeyboardFocus)
+      this.promoteInteractiveLayer(
+        record,
+        payload.surfaceId,
+        needsKeyboardFocus
+      )
     }
 
     const readyPromise = this.waitForReady(payload.surfaceId)
@@ -1151,7 +1155,11 @@ export class NativeOverlayController {
       !this.suspendedSurfaceIds.has(payload.surfaceId) &&
       needsKeyboardFocus
     ) {
-      this.promoteInteractiveLayer(record, needsKeyboardFocus)
+      this.promoteInteractiveLayer(
+        record,
+        payload.surfaceId,
+        needsKeyboardFocus
+      )
     } else if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
       record.menu.window.moveTop()
     }
@@ -1478,13 +1486,12 @@ export class NativeOverlayController {
         return
       }
 
-      const activeSurface =
-        record.activeSurfaceId === null
-          ? undefined
-          : this.surfaces.get(record.activeSurfaceId)
+      const activeSurfaceId = record.activeSurfaceId
+
       if (
-        isFocusOwnedDialogSurface(activeSurface) &&
-        isInternalFocusHandoff()
+        activeSurfaceId !== null &&
+        isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId)) &&
+        this.isInternalFocusHandoff(activeSurfaceId)
       ) {
         return
       }
@@ -1498,13 +1505,12 @@ export class NativeOverlayController {
         return
       }
 
-      const activeSurface =
-        record.activeSurfaceId === null
-          ? undefined
-          : this.surfaces.get(record.activeSurfaceId)
+      const activeSurfaceId = record.activeSurfaceId
+
       if (
-        isFocusOwnedDialogSurface(activeSurface) &&
-        isInternalFocusHandoff()
+        activeSurfaceId !== null &&
+        isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId)) &&
+        this.isInternalFocusHandoff(activeSurfaceId)
       ) {
         return
       }
@@ -1671,8 +1677,13 @@ export class NativeOverlayController {
     resolve(ready)
   }
 
+  private isInternalFocusHandoff(surfaceId: string): boolean {
+    return app.isActive() || this.internalFocusHandoffSurfaceIds.has(surfaceId)
+  }
+
   private promoteInteractiveLayer(
     record: NativeOverlayRecord,
+    surfaceId: string,
     needsKeyboardFocus: boolean
   ): void {
     const overlayWindow = record.menu.window
@@ -1687,9 +1698,14 @@ export class NativeOverlayController {
     // transparent overlay window above that native surface while it is open.
     overlayWindow.setAlwaysOnTop(true, 'screen-saver')
     if (needsKeyboardFocus) {
-      overlayWindow.show()
-      overlayWindow.focus()
-      overlayWindow.webContents.focus()
+      this.internalFocusHandoffSurfaceIds.add(surfaceId)
+      try {
+        overlayWindow.show()
+        overlayWindow.focus()
+        overlayWindow.webContents.focus()
+      } finally {
+        this.internalFocusHandoffSurfaceIds.delete(surfaceId)
+      }
     } else {
       overlayWindow.showInactive()
     }
@@ -1716,6 +1732,7 @@ export class NativeOverlayController {
 
     this.surfaces.delete(surfaceId)
     this.suspendedSurfaceIds.delete(surfaceId)
+    this.internalFocusHandoffSurfaceIds.delete(surfaceId)
     this.resolvePendingReady(surfaceId, false)
 
     if (record && isActiveSurface) {
@@ -1792,7 +1809,7 @@ export class NativeOverlayController {
     const overlayWindow = record.menu.window
     const needsKeyboardFocus = isFocusOwnedDialogSurface(surface)
     this.suspendedSurfaceIds.delete(surfaceId)
-    this.promoteInteractiveLayer(record, needsKeyboardFocus)
+    this.promoteInteractiveLayer(record, surfaceId, needsKeyboardFocus)
     resetOverlayCursor(overlayWindow)
   }
 

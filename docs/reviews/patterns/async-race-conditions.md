@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-07-31
-ref_count: 96
+ref_count: 97
 ---
 
 # Async Race Conditions
@@ -1215,4 +1215,21 @@ prevent showing previous data.
   applied it inside the Electron main-process async resize queue. Native-owned
   PTY resize metadata continues to bypass the throttle, and regression tests
   pin both the 96 ms async fallback interval and IPC validation bounds.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 108. Focused native overlay dialog closed during its own focus handoff
+
+- **Source:** deterministic CI failure | PR #766 round 2 | 2026-07-31
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The layout-creator native overlay calls `show()` and `focus()`
+  so text editing lives in the overlay window. On macOS CI the owner window can
+  emit `blur` while Electron is still synchronously promoting that overlay, and
+  `app.isActive()` may report false in the runner, so the blur handler closed
+  the dialog before it became visible/topmost.
+- **Fix:** Track a synchronous internal focus-handoff surface while promoting a
+  focus-owned dialog and ignore blur only during that call stack. The guard is
+  cleared in `finally`, so real later deactivation blur events still dismiss
+  the dialog. Added controller coverage that emits owner blur from inside the
+  fake `show()` call.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

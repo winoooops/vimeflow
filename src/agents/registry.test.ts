@@ -33,7 +33,17 @@ test('every agent has the required fields with correct shapes', () => {
     expect(a.accentSoft).toMatch(/^var\(--color-agent-/)
     expect(a.onAccent).toMatch(/^var\(--color-agent-/)
     expect(a.model === null || typeof a.model === 'string').toBe(true)
+    expect(Number.isFinite(a.resizeThrottleMs)).toBe(true)
+    expect(a.resizeThrottleMs).toBeGreaterThanOrEqual(0)
   }
+})
+
+test('only the full-frame-repaint agent gets a resize throttle', () => {
+  expect(AGENTS.claude.resizeThrottleMs).toBe(96)
+  expect(AGENTS.codex.resizeThrottleMs).toBe(0)
+  expect(AGENTS.kimi.resizeThrottleMs).toBe(0)
+  expect(AGENTS.shell.resizeThrottleMs).toBe(0)
+  expect(AGENTS.opencode.resizeThrottleMs).toBe(0)
 })
 
 test('claude is lavender', () => {
