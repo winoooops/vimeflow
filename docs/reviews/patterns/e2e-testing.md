@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-13
-ref_count: 19
+last_updated: 2026-07-29
+ref_count: 25
 ---
 
 # E2E Testing
@@ -483,3 +483,90 @@ already exists` before the spec could assert agent status rendering.
   the layout switcher instead of spawning throwaway tabs before each shortcut
   assertion.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 41. CI smoke specs measured transient shell state instead of the specific rendered surface
+
+- **Source:** local-codex | PR #756 CI fix | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`, `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** The macOS native-overlay smoke measured the full dialog backdrop when deciding whether the layout creator visibly painted above Ghostty, so a real panel could fail the pixel-ratio threshold. The Linux keymap smoke also assumed terminal registration and dialog teardown had completed under the same short timing budget, which broke under the parallel CI worker load.
+- **Fix:** The overlay smoke now measures the layout-creator surface itself. The keymap smoke retries session creation, records terminal registration diagnostics, explicitly waits out non-switcher dialogs before Ctrl+Tab assertions, and resets the keymap preset before testing the default session-switcher chord.
+- **Commit:** same commit as this entry
+
+### 42. Retained native overlay menus must be closed before dependent smoke assertions
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The native-overlay layering spec toggled a displayed-layout
+  checkbox, whose native menu action intentionally retains the overlay session,
+  then the next test clicked the layout trigger again while that menu could
+  still be open. The trigger is a toggle, so the second test could close or
+  reuse stale menu state and time out waiting for the layout-creator dialog.
+- **Fix:** Close any retained native overlay menu after the checkbox assertion
+  and defensively before the dialog smoke opens a fresh menu.
+- **Commit:** same commit as this entry
+
+### 43. Native overlay paint checks must map each window's viewport independently
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke proved the layout
+  creator BrowserWindow was visible, focused, and always on top, then failed
+  the final pixel-diff assertion because it intersected owner-window CSS rects
+  with overlay-window CSS rects before converting to screen pixels. Any async
+  bounds drift or dialog panel/content mismatch made the sample region fragile
+  even when the native overlay actually painted above the Ghostty NSView.
+- **Fix:** Map the owner pane rect and overlay surface rect through their own
+  BrowserWindow content bounds before intersecting screen-pixel bounds, and
+  sample the opaque dialog panel instead of the inner layout-creator content.
+- **Commit:** same commit as this entry
+
+### 44. Native overlay z-order probes must sample the guaranteed overlay layer
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke confirmed the layout
+  creator BrowserWindow was visible, focused, and always on top, but the final
+  pixel assertion still sampled only the dialog panel. On CI window geometry
+  where the panel does not overlap the native terminal pane, the z-order proof
+  fails even though the dialog/backdrop layer is the surface that must cover the
+  Ghostty NSView.
+- **Fix:** Resolve the layout creator content to its closest `[role="dialog"]`
+  before mapping overlay pixels, so the smoke samples the full dialog/backdrop
+  layer for z-order while the content selector still proves the renderer and
+  later controls are present.
+- **Commit:** same commit as this entry
+
+### 45. E2E fixture setup must follow the live app root
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/files-to-editor.spec.ts`
+- **Finding:** The file-to-editor smoke created its fixture under `$HOME` before
+  reading the file explorer's actual root. The explorer root can come from the
+  active PTY cwd, so a fresh Electron E2E session may list a different
+  directory than the one where the fixture was written.
+- **Fix:** Expose the file explorer's current path for E2E setup, create the
+  fixture under that live root, refresh the tree, and clean up the exact file
+  that was created.
+- **Commit:** same commit as this entry
+
+### 46. Native BrowserWindow smoke tests should not depend on transient OS focus
+
+- **Source:** deterministic CI failure | PR #756 follow-up | 2026-07-29
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke asserted
+  `BrowserWindow.isFocused()` after the layout-creator overlay rendered. The
+  product contract is that the dialog BrowserWindow is visible, always on top,
+  and focusable for user input above Ghostty's parented NSView; macOS CI can
+  delay or deny the reported focused state even after Electron has shown and
+  focused the window, making the z-order smoke fail before it reaches the
+  actual paint and editability checks.
+- **Fix:** Assert the stable window contract with `isAlwaysOnTop()`,
+  `isFocusable()`, and `isVisible()`, then keep the existing overlay paint and
+  direct control-editing assertions as the functional proof.
+- **Commit:** same commit as this entry

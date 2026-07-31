@@ -616,6 +616,9 @@ export const GhosttyBody = ({
     }
   }, [scheduleNativeFrameUpdate, updateNativeFrame])
 
+  // ResizeObserver misses position-only moves such as swapping dock edges.
+  useLayoutEffect(updateNativeFrame)
+
   // Focus follows the active pane, but focus no longer owns surface lifetime.
   useEffect(() => {
     if (active) {

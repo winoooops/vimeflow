@@ -474,4 +474,18 @@ base data is technically "correct."
   sort the whole feed by timestamp with malformed timestamps sunk to the end.
   Added regression coverage proving an older running event appears after a
   newer completed event.
+  
+### 36. Activity popover passthrough cache survived same-surface refreshes
+
+- **Source:** github-codex-connector | PR #758 round 1 | 2026-07-29
+- **Severity:** P2 / MEDIUM
+- **File:** `src/components/useNativeActivityPopoverHost.ts`
+- **Finding:** The activity popover hook cached the last requested mouse
+  passthrough state, but the native overlay refresh path resets the
+  BrowserWindow to capture mouse events again when the same surface is reopened.
+  If the hook still believed passthrough was active, the next outside movement
+  skipped the IPC resend and the overlay could block adjacent trace-row hovers.
+- **Fix:** Reapply the active passthrough state when the native popover request
+  refreshes, and added a hook regression test that rerenders a same-surface
+  request after entering passthrough mode.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -114,6 +114,18 @@ interface GhosttyNativeParentAddon {
   writeSecondary?: (surface: GhosttyNativeSurface, data: string) => void
   focusSecondary?: (surface: GhosttyNativeSurface) => void
   removeSecondary?: (surface: GhosttyNativeSurface) => void
+  // PTY fd-passing transport (VIM-399); absent on older addon builds.
+  createPtyFdTransport?: () => number
+  notifyPtyFdTransportSpawned?: () => void
+  bindPty?: (
+    surface: GhosttyNativeSurface,
+    role: 'primary' | 'secondary',
+    sessionId: string
+  ) => void
+  isPtyNativeOwned?: (
+    surface: GhosttyNativeSurface,
+    role: 'primary' | 'secondary'
+  ) => boolean
 }
 
 interface GhosttyNativeParentDeps {
@@ -144,6 +156,7 @@ interface GhosttyNativeSurfaceState {
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
+  nativeOwnedResizeQueue: { cols: number; rows: number }[]
   /** Ignore grid callbacks while set — see SURFACE_SETTLE_MS. */
   settleTimer: ReturnType<typeof setTimeout> | null
   /** Last grid swallowed by the settle window, forwarded when it ends. */
@@ -324,6 +337,63 @@ const loadAddon = (dir: string): GhosttyNativeParentAddon => {
   }
 
   return require(addon) as GhosttyNativeParentAddon
+}
+
+/** Handle for the pre-spawn PTY fd transport bootstrap (VIM-399). */
+export interface PtyFdTransportBootstrap {
+  /** Child end of the socketpair, inherited as the sidecar's stdio[3]. */
+  transportFd: number
+  /** Call once the sidecar spawned so the parent-process copy closes. */
+  onSpawned: () => void
+}
+
+/**
+ * Creates the fd-passing socketpair BEFORE the sidecar spawns; the addon owns
+ * the parent end for its lifetime. Feature-detects: any failure (addon
+ * missing, older addon build, `VIMEFLOW_PTY_FD_DIRECT=0` kill switch)
+ * returns null and the app stays on the async resize path.
+ */
+export const createPtyFdTransportBeforeSpawn = (
+  packaged: boolean,
+  resourcesPath = '',
+  env: NodeJS.ProcessEnv = process.env,
+  loadNativeAddon: (dir: string) => GhosttyNativeParentAddon = loadAddon
+): PtyFdTransportBootstrap | null => {
+  if (env.VIMEFLOW_PTY_FD_DIRECT === '0') {
+    return null
+  }
+
+  try {
+    const addon = loadNativeAddon(nativeParentDir(packaged, resourcesPath))
+    const transportFd = addon.createPtyFdTransport?.()
+    if (
+      typeof transportFd !== 'number' ||
+      !Number.isInteger(transportFd) ||
+      transportFd < 0
+    ) {
+      return null
+    }
+
+    return {
+      transportFd,
+      onSpawned: (): void => {
+        try {
+          addon.notifyPtyFdTransportSpawned?.()
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'pty fd transport spawn notification failed; async resize path remains available',
+            error
+          )
+        }
+      },
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('pty fd transport unavailable; async resize path only', error)
+
+    return null
+  }
 }
 
 function requireNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
@@ -989,6 +1059,7 @@ export class GhosttyNativeParentController {
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
+      nativeOwnedResizeQueue: [],
       settleTimer: null,
       settleGrid: null,
       resizeInFlight: false,
@@ -1195,6 +1266,10 @@ export class GhosttyNativeParentController {
     state.ownerWindow = win
     state.ownerWindowId = win.id
     this.surfaceKeysByWindowId.get(win.id)?.add(key)
+    // Join this session's PTY fd (offered by Rust over the transport) to the
+    // surface's primary slot (VIM-399). No-op on addons without the export
+    // or when the transport is down — the async resize path covers those.
+    addon.bindPty?.(state.surface, 'primary', state.pane.sessionId)
     if (state.secondary) {
       this.attachSecondaryToSurface(addon, state, state.secondary)
     }
@@ -1370,6 +1445,31 @@ export class GhosttyNativeParentController {
       return
     }
 
+    // Single-writer rule (VIM-399 Phase 4): once the addon owns the winsize
+    // ioctl, this message is metadata only. Keep every distinct size, but
+    // serialize the IPC calls so a stale request cannot overtake release.
+    if (
+      resizeState.surface !== null &&
+      this.getOptionalAddon()?.isPtyNativeOwned?.(
+        resizeState.surface,
+        'primary'
+      ) === true
+    ) {
+      resizeState.pendingResize = null
+      if (resizeState.resizeInFlight) {
+        const lastQueued = resizeState.nativeOwnedResizeQueue.at(-1)
+        if (lastQueued?.cols !== cols || lastQueued.rows !== rows) {
+          resizeState.nativeOwnedResizeQueue.push({ cols, rows })
+        }
+
+        return
+      }
+
+      this.forwardPtyResize(resizeState, sessionId, cols, rows)
+
+      return
+    }
+
     // One winsize in flight at a time, newest pending wins. The sidecar's
     // reply acknowledges the ioctl, so gating on it keeps the number of widths
     // the agent has been told about — and must redraw for — down to one.
@@ -1442,6 +1542,43 @@ export class GhosttyNativeParentController {
         resizeState.resizeInFlight = false
       }
 
+      const nativeOwnedPending = resizeState.nativeOwnedResizeQueue.shift()
+      if (
+        nativeOwnedPending !== undefined &&
+        !this.isPrimaryPtyNativeOwned(resizeState)
+      ) {
+        const pending =
+          resizeState.pendingResize ??
+          resizeState.nativeOwnedResizeQueue.at(-1) ??
+          nativeOwnedPending
+        resizeState.nativeOwnedResizeQueue = []
+        if (
+          resizeState.resizeTimer === null &&
+          (resizeState.lastResize?.cols !== pending.cols ||
+            resizeState.lastResize.rows !== pending.rows)
+        ) {
+          resizeState.pendingResize = null
+          this.forwardPtyResize(
+            resizeState,
+            sessionId,
+            pending.cols,
+            pending.rows
+          )
+        }
+
+        return
+      }
+      if (nativeOwnedPending !== undefined) {
+        this.forwardPtyResize(
+          resizeState,
+          sessionId,
+          nativeOwnedPending.cols,
+          nativeOwnedPending.rows
+        )
+
+        return
+      }
+
       const pending = resizeState.pendingResize
       if (
         pending === null ||
@@ -1463,6 +1600,19 @@ export class GhosttyNativeParentController {
     }
     resizeState.resizeTimer = null
     resizeState.pendingResize = null
+    resizeState.nativeOwnedResizeQueue = []
+  }
+
+  private isPrimaryPtyNativeOwned(
+    resizeState: GhosttyNativeSurfaceState
+  ): boolean {
+    return (
+      resizeState.surface !== null &&
+      this.getOptionalAddon()?.isPtyNativeOwned?.(
+        resizeState.surface,
+        'primary'
+      ) === true
+    )
   }
 
   private resetSurfaceScopedCaches(state: GhosttyNativeSurfaceState): void {
@@ -1616,6 +1766,8 @@ export class GhosttyNativeParentController {
       secondary.placement
     )
     secondary.attached = true
+    // Secondary/burner sessions get their own role-keyed fd slot (VIM-399).
+    addon.bindPty?.(state.surface, 'secondary', secondary.sessionId)
     addon.setSecondaryVisible?.(
       state.surface,
       secondary.visible,

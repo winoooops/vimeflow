@@ -563,6 +563,44 @@ describe('GhosttyBody', () => {
     requestAnimationFrameSpy.mockRestore()
   })
 
+  test('updates the native frame when layout moves the pane without resizing it', async () => {
+    const service = createService()
+
+    const { rerender } = render(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={service}
+      />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledTimes(1)
+    })
+    vi.mocked(updateNativeGhostty).mockClear()
+
+    const node = screen.getByTestId('native-ghostty-pane')
+    node.getBoundingClientRect = vi.fn(() => rect(0, 300, 800, 400))
+
+    rerender(
+      <GhosttyBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={service}
+      />
+    )
+
+    expect(updateNativeGhostty).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bounds: { x: 0, y: 300, width: 800, height: 400 },
+      })
+    )
+  })
+
   test('dedupes resize observer updates by rounded native frame', async () => {
     let resizeCallback: ResizeObserverCallback | null = null
 

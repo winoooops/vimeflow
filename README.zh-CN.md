@@ -20,6 +20,7 @@ Vimeflow 是一个基于 Electron 的桌面应用，由 Rust 编写的 `vimeflow
 
 - [macOS 原生 Ghostty 终端](#macos-原生-ghostty-终端)
 - [多代理，同一个工作区](#多代理同一个工作区)
+- [从上次离开的地方继续](#从上次离开的地方继续)
 - [逐 hunk 审查变更](#逐-hunk-审查变更)
 - [Worktree 集成](#worktree-集成)
 - [命令面板与设置](#命令面板与设置)
@@ -97,6 +98,16 @@ Kimi Code 同样显示这些用量条，并提供一键关闭用量追踪的开�
 <sub><i>Kimi Code 的套餐用量需要显式开启 —— 获取用量时会把你配置的 Kimi 凭据发送到 Kimi API；除此之外的检测、transcript 跟踪与活动流完全在本地进行（`~/.kimi-code/`）。</i></sub>
 
 <sub><i>OpenCode 没有提供用量配额 API，因此无法绘制用量条 —— 状态卡片改为链接到上游的相应请求（[sst/opencode#16017](https://github.com/sst/opencode/issues/16017)）。OpenCode 通过一个自动安装的小型桥接插件来识别，可读取模型、上下文窗口（基于 OpenCode 的 models.dev 缓存推算）与工具活动，全程不访问任何凭据。</i></sub>
+
+## 从上次离开的地方继续
+
+关掉 Vimeflow 并不会终结代理们的一天。工作区会记住每一个会话 —— 布局、窗格、以及每个窗格里正在进行的对话 —— 下次启动时全部原样回来：每个代理窗格自动重发各自的恢复命令（`claude --resume`、`codex resume` 等），精确接回原来那场对话。满工作区的半成品任务，重开后依然是满工作区的半成品任务，而不是一排空白提示符。
+
+<div align="center">
+  <img src="docs/media/session-resume.gif" alt="重新打开 Vimeflow：三个代理窗格各自重发恢复命令，回到之前所在的对话" width="900" />
+</div>
+
+<sub><i>会话连同布局一起恢复。每个已识别的代理按会话 id 接续；没有可恢复内容的窗格则以全新 shell 回来。</i></sub>
 
 ## 逐 hunk 审查变更
 

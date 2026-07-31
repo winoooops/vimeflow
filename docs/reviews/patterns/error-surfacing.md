@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-12
-ref_count: 49
+last_updated: 2026-07-30
+ref_count: 54
 ---
 
 # Error Surfacing
@@ -503,3 +503,69 @@ failed" must mean the editor shows the original file, not the requested one.
   side effect now runs in every build mode, while debug builds still check the
   expected invariant.
 - **Commit:** same commit as this entry
+
+### 50. Native layout save reported failure after applying the layout
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The retained native `layout-creator:save` action applied the
+  parsed layout but returned `void`, so the native action result contract saw
+  the save as failed and could show an invalid-layout banner after success.
+- **Fix:** Return `true` after `onSave` succeeds, report retained native action
+  successes even without copy feedback, and cover the native save path with an
+  `ok: true` regression assertion.
+- **Commit:** same commit as this entry
+
+### 51. Native layout JSON validation collapsed parser messages
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/components/LayoutCreator/LayoutCreatorModal.tsx`
+- **Finding:** The native layout JSON helper caught parse and validation
+  failures and returned `null`, forcing callers to show only `Invalid layout`
+  even when the parser had an actionable message such as overlapping panes.
+- **Fix:** Return a parsed-definition-or-error result from the native helper and
+  throw the original useful error message for the overlay action result. Added a
+  regression test for the overlapping-pane message.
+- **Commit:** same commit as this entry
+
+### 52. Native dialog action results stopped at a menu-only guard
+
+- **Source:** github-claude | PR #756 round 1 | 2026-07-29
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The owner renderer could report a native Layout Creator save
+  failure, but `handleActionResult` returned early for every surface whose kind
+  was not `menu`. Dialog overlays therefore never received `ok: false` or error
+  payloads, leaving native save failures invisible inside the overlay.
+- **Fix:** Allow dialog surfaces through the action-result relay and add a
+  Layout Creator dialog regression test that forwards an `ok: false` save result
+  to the overlay renderer.
+
+### 53. Native PTY protocol datagram send failures were dropped
+
+- **Source:** github-claude | PR #754 round 2 | 2026-07-29
+- **Severity:** MEDIUM
+- **File:** `native/ghostty-parent/ghostty_native_parent.cc`
+- **Finding:** `SendPtyTransportDatagram` discarded `send()` failures, so a failed
+  native-ready, request-fd, or release retry could leave Rust and native
+  ownership state stale with no diagnostic trail.
+- **Fix:** Retry interrupted sends and log non-recoverable send failures with the
+  datagram type plus errno details so transport failures are observable.
+- **Commit:** same commit as this entry
+
+### 54. Native addon spawn notification threw through app bootstrap
+
+- **Source:** github-claude | PR #761 round 3 | 2026-07-30
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The fd-transport bootstrap guarded addon loading and socketpair
+  creation, but its returned `onSpawned` callback called
+  `notifyPtyFdTransportSpawned` without a local try/catch. A future native
+  throw there could reject the async app bootstrap instead of degrading to the
+  existing async resize path.
+- **Fix:** Wrapped the notification body in try/catch, logged a warning, and
+  added a regression test proving `onSpawned` does not throw when the addon
+  notification fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

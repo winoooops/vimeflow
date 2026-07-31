@@ -3,6 +3,8 @@ export {
   type LayoutCreatorModalProps,
 } from './LayoutCreatorModal'
 
+export { renderNativeLayoutCreatorOverlay } from './NativeLayoutCreatorOverlay'
+
 export {
   createCustomPaneLayoutId,
   createSingleDraftLayout,

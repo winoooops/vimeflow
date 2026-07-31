@@ -40,6 +40,17 @@ interface PixelMapping {
   offsetY?: number
 }
 
+interface OverlayWindowState {
+  alwaysOnTop: boolean
+  focusable: boolean
+  visible: boolean
+}
+
+interface LocalDialogState {
+  nativeOverlayActive: boolean
+  opacity: string
+}
+
 type ElectronModule = typeof import('electron')
 
 const pngSignature = Buffer.from([
@@ -181,46 +192,46 @@ const clickEnabledOverlayCheckbox = async (
 ): Promise<OverlayCheckboxClickResult | null> => {
   const result = await browser.electron.execute(
     async (electron: ElectronModule) => {
-      const overlay = electron.webContents
-        .getAllWebContents()
-        .find((contents) => {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+      for (const overlay of electron.webContents.getAllWebContents()) {
+        const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
 
-          return mode === '1' || mode === 'menu'
-        })
+        if (mode !== '1' && mode !== 'menu') {
+          continue
+        }
 
-      if (!overlay) {
-        return null
+        const result = (await overlay.executeJavaScript(`
+          (() => {
+            const item = Array.from(
+              document.querySelectorAll('[role="menuitemcheckbox"]')
+            ).find((element) =>
+              element.getAttribute('aria-disabled') !== 'true' &&
+              element instanceof HTMLElement
+            )
+
+            if (!(item instanceof HTMLElement)) {
+              return null
+            }
+
+            const label = item.getAttribute('aria-label')
+            if (!label) {
+              return null
+            }
+
+            const wasChecked = item.getAttribute('aria-checked') === 'true'
+            item.click()
+            return {
+              label,
+              wasChecked,
+            }
+          })()
+        `)) as Omit<OverlayCheckboxClickResult, 'mode'> | null
+
+        if (result !== null) {
+          return result
+        }
       }
 
-      return overlay.executeJavaScript(`
-      (() => {
-        const item = Array.from(
-          document.querySelectorAll('[role="menuitemcheckbox"]')
-        ).find((element) =>
-          element.getAttribute('aria-disabled') !== 'true' &&
-          element instanceof HTMLElement
-        )
-
-        if (!(item instanceof HTMLElement)) {
-          return null
-        }
-
-        const label = item.getAttribute('aria-label')
-        if (!label) {
-          return null
-        }
-
-        const wasChecked = item.getAttribute('aria-checked') === 'true'
-        item.click()
-        return {
-          label,
-          wasChecked,
-        }
-      })()
-    `) as Promise<Omit<OverlayCheckboxClickResult, 'mode'> | null>
+      return null
     }
   )
 
@@ -255,6 +266,152 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
     `) as Promise<CssRect | null>
   })
 
+const getOverlayDialogRect = async (): Promise<CssRect | null> =>
+  browser.electron.execute(async (electron: ElectronModule) => {
+    for (const overlay of electron.webContents.getAllWebContents()) {
+      const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
+
+      if (mode !== '1' && mode !== 'menu') {
+        continue
+      }
+
+      const rect = (await overlay.executeJavaScript(`
+        (() => {
+          const content = document.querySelector(
+            '[data-workspace-overlay-id="layout-creator"]'
+          )
+          const dialog = content?.closest('[role="dialog"]') ?? content
+          const rect = dialog?.getBoundingClientRect()
+          return rect
+            ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+            : null
+        })()
+      `)) as CssRect | null
+
+      if (rect !== null) {
+        return rect
+      }
+    }
+
+    return null
+  })
+
+const getLayoutCreatorOverlayWindowState =
+  async (): Promise<OverlayWindowState | null> =>
+    browser.electron.execute(async (electron: ElectronModule) => {
+      const webContentsId = await (async (): Promise<number | null> => {
+        for (const contents of electron.webContents.getAllWebContents()) {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasLayoutCreator = (await contents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            return contents.id
+          }
+        }
+
+        return null
+      })()
+
+      if (webContentsId === null) {
+        return null
+      }
+
+      const overlay = electron.BrowserWindow.getAllWindows().find(
+        (window) => window.webContents.id === webContentsId
+      )
+
+      return overlay === undefined
+        ? null
+        : {
+            alwaysOnTop: overlay.isAlwaysOnTop(),
+            focusable: overlay.isFocusable(),
+            visible: overlay.isVisible(),
+          }
+    })
+
+const getParentLocalLayoutDialogState =
+  async (): Promise<LocalDialogState | null> =>
+    browser.electron.execute(async (electron: ElectronModule) => {
+      let fallbackState: LocalDialogState | null = null
+
+      for (const window of electron.BrowserWindow.getAllWindows()) {
+        const mode = new URL(window.webContents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
+
+        if (mode === '1' || mode === 'menu' || mode === 'tooltip') {
+          continue
+        }
+
+        const state = (await window.webContents.executeJavaScript(`
+          (() => {
+            const content = document.querySelector(
+              '[data-workspace-overlay-id="layout-creator"]'
+            )
+            const dialog = content?.closest('[role="dialog"]')
+
+            return dialog instanceof HTMLElement
+              ? {
+                  nativeOverlayActive:
+                    dialog.dataset.nativeOverlayActive === 'true',
+                  opacity: getComputedStyle(dialog).opacity,
+                }
+              : null
+          })()
+        `)) as LocalDialogState | null
+
+        if (state?.nativeOverlayActive === true) {
+          return state
+        }
+        fallbackState ??= state
+      }
+
+      return fallbackState
+    })
+
+const parentLocalLayoutDialogIsHidden = (
+  state: LocalDialogState | null
+): boolean =>
+  state === null ||
+  (state.nativeOverlayActive === true && state.opacity === '0')
+
+const closeOverlayMenuIfPresent = async (): Promise<void> => {
+  if ((await getOverlayMenuRect()) === null) {
+    return
+  }
+
+  await browser.electron.execute(async (electron: ElectronModule) => {
+    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+      const mode = new URL(window.webContents.getURL()).searchParams.get(
+        'nativeOverlay'
+      )
+
+      return mode === '1' || mode === 'menu'
+    })
+
+    overlay?.webContents.sendInputEvent({
+      type: 'keyDown',
+      keyCode: 'Escape',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  })
+
+  await browser.waitUntil(async () => (await getOverlayMenuRect()) === null, {
+    timeout: 5_000,
+    interval: 100,
+    timeoutMsg: 'NativeOverlay menu did not close before next smoke assertion',
+  })
+}
+
 const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   browser.electron.execute((electron: ElectronModule) => {
     const parent =
@@ -282,6 +439,32 @@ const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
     }
   })
 
+const mapOverlayViewportToScreenPixels = async (): Promise<PixelMapping> =>
+  browser.electron.execute((electron: ElectronModule) => {
+    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+      const mode = new URL(window.webContents.getURL()).searchParams.get(
+        'nativeOverlay'
+      )
+
+      return mode === '1' || mode === 'menu'
+    })
+
+    if (overlay === undefined) {
+      throw new Error('Electron overlay window unavailable')
+    }
+
+    const bounds = overlay.getContentBounds()
+    const display = electron.screen.getDisplayMatching(bounds)
+    const scale = display.scaleFactor
+
+    return {
+      offsetX: bounds.x * scale,
+      offsetY: bounds.y * scale,
+      scaleX: scale,
+      scaleY: scale,
+    }
+  })
+
 const mapCssRect = (rect: CssRect, mapping: PixelMapping): Bounds => ({
   left: Math.round((mapping.offsetX ?? 0) + rect.x * mapping.scaleX),
   top: Math.round((mapping.offsetY ?? 0) + rect.y * mapping.scaleY),
@@ -293,22 +476,17 @@ const mapCssRect = (rect: CssRect, mapping: PixelMapping): Bounds => ({
   ),
 })
 
-const intersectCssRect = (a: CssRect, b: CssRect): CssRect | null => {
-  const x = Math.max(a.x, b.x)
-  const y = Math.max(a.y, b.y)
-  const right = Math.min(a.x + a.width, b.x + b.width)
-  const bottom = Math.min(a.y + a.height, b.y + b.height)
+const intersectBounds = (a: Bounds, b: Bounds): Bounds | null => {
+  const left = Math.max(a.left, b.left)
+  const top = Math.max(a.top, b.top)
+  const right = Math.min(a.right, b.right)
+  const bottom = Math.min(a.bottom, b.bottom)
 
-  if (right <= x || bottom <= y) {
+  if (right <= left || bottom <= top) {
     return null
   }
 
-  return {
-    x,
-    y,
-    width: right - x,
-    height: bottom - y,
-  }
+  return { left, top, right, bottom }
 }
 
 const changedPixelCount = (
@@ -336,6 +514,10 @@ const changedPixelCount = (
 
   return changed
 }
+
+const sampledPixelCount = (bounds: Bounds): number =>
+  (Math.floor((bounds.right - bounds.left) / 2) + 1) *
+  (Math.floor((bounds.bottom - bounds.top) / 2) + 1)
 
 const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
   await browser.waitUntil(
@@ -405,31 +587,42 @@ const waitForLayoutDisplayAnchor = async (): Promise<CssRect> => {
 
 const waitForOverlayPaint = async (
   before: DecodedPng,
-  mapping: PixelMapping,
-  targetRect: CssRect
+  targetRect: CssRect,
+  surface: 'menu' | 'dialog'
 ): Promise<void> => {
+  const targetMapping = await mapViewportToScreenPixels()
+
   await browser.waitUntil(
     async () => {
-      const menuRect = await getOverlayMenuRect()
-      if (menuRect === null) {
+      const surfaceRect =
+        surface === 'menu'
+          ? await getOverlayMenuRect()
+          : await getOverlayDialogRect()
+      if (surfaceRect === null) {
         return false
       }
 
-      const overlapRect = intersectCssRect(menuRect, targetRect)
-      if (overlapRect === null) {
+      const surfaceMapping = await mapOverlayViewportToScreenPixels()
+      const surfaceBounds = mapCssRect(surfaceRect, surfaceMapping)
+      const targetBounds = mapCssRect(targetRect, targetMapping)
+      const overlapBounds = intersectBounds(surfaceBounds, targetBounds)
+      if (overlapBounds === null) {
         return false
       }
 
       const after = captureScreen()
-      return (
-        changedPixelCount(before, after, mapCssRect(overlapRect, mapping)) > 50
-      )
+      const changed = changedPixelCount(before, after, overlapBounds)
+
+      if (surface === 'dialog') {
+        return changed > 50 || changed / sampledPixelCount(overlapBounds) > 0.2
+      }
+
+      return changed > 50
     },
     {
       timeout: 5_000,
       interval: 150,
-      timeoutMsg:
-        'NativeOverlay menu did not visibly paint above the real Ghostty NSView',
+      timeoutMsg: `NativeOverlay ${surface} did not visibly paint above the real Ghostty NSView`,
     }
   )
 }
@@ -440,6 +633,42 @@ const waitForOverlayMenu = async (): Promise<void> => {
     interval: 100,
     timeoutMsg: 'NativeOverlay menu did not render in the overlay window',
   })
+}
+
+const waitForEnabledOverlayCheckbox = async (): Promise<void> => {
+  await browser.waitUntil(
+    async () =>
+      browser.electron.execute(async (electron: ElectronModule) => {
+        for (const overlay of electron.webContents.getAllWebContents()) {
+          const mode = new URL(overlay.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasEnabledCheckbox = (await overlay.executeJavaScript(`
+            Array.from(document.querySelectorAll('[role="menuitemcheckbox"]'))
+              .some((element) =>
+                element instanceof HTMLElement &&
+                element.getAttribute('aria-disabled') !== 'true'
+              )
+          `)) as boolean
+
+          if (hasEnabledCheckbox) {
+            return true
+          }
+        }
+
+        return false
+      }),
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: 'NativeOverlay menu had no enabled layout checkbox row',
+    }
+  )
 }
 
 describe('NativeOverlay BrowserWindow layering', () => {
@@ -486,9 +715,9 @@ describe('NativeOverlay BrowserWindow layering', () => {
     }
 
     const paneRect = await waitForRealNativeGhosttyPane()
+    await closeOverlayMenuIfPresent()
     await waitForLayoutDisplayAnchor()
     const before = captureScreen()
-    const mapping = await mapViewportToScreenPixels()
     const validationMode = await browser.execute<LayoutValidationMode, []>(
       () => {
         const compactReadout = document.querySelector(
@@ -511,8 +740,9 @@ describe('NativeOverlay BrowserWindow layering', () => {
       throw new Error('layout display trigger unavailable')
     }
     await waitForOverlayMenu()
+    await waitForEnabledOverlayCheckbox()
 
-    await waitForOverlayPaint(before, mapping, paneRect)
+    await waitForOverlayPaint(before, paneRect, 'menu')
 
     const checkbox = await clickEnabledOverlayCheckbox(validationMode)
     if (checkbox === null) {
@@ -542,5 +772,272 @@ describe('NativeOverlay BrowserWindow layering', () => {
         timeoutMsg: 'NativeOverlay layout checkbox action did not reach React',
       }
     )
+    await closeOverlayMenuIfPresent()
+  }).timeout(90_000)
+
+  it('renders the custom layout dialog above the real Ghostty NSView', async function () {
+    if (process.platform !== 'darwin') {
+      this.skip()
+    }
+
+    const hasNativeBridge = await browser.execute(() =>
+      Boolean(window.vimeflow?.ghosttyNative)
+    )
+    if (!hasNativeBridge) {
+      this.skip()
+    }
+
+    const paneRect = await waitForRealNativeGhosttyPane()
+    await waitForLayoutDisplayAnchor()
+    const before = captureScreen()
+
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>(
+          'button[aria-label="Configure displayed layouts"]'
+        )
+        ?.click()
+    })
+    await waitForOverlayMenu()
+
+    const clicked = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        const overlay = electron.webContents
+          .getAllWebContents()
+          .find((contents) => {
+            const mode = new URL(contents.getURL()).searchParams.get(
+              'nativeOverlay'
+            )
+
+            return mode === '1' || mode === 'menu'
+          })
+
+        if (!overlay) {
+          return false
+        }
+
+        return overlay.executeJavaScript(`
+          (() => {
+            const item = document.querySelector(
+              '[role="menuitem"][aria-label="Create custom layout"]'
+            )
+            if (!(item instanceof HTMLElement)) {
+              return false
+            }
+            item.click()
+            return true
+          })()
+        `) as Promise<boolean>
+      }
+    )
+    if (!clicked) {
+      throw new Error('Create custom layout menu item unavailable')
+    }
+
+    await browser.waitUntil(
+      async () => (await getOverlayDialogRect()) !== null,
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg: 'Layout Creator did not render in the overlay window',
+      }
+    )
+
+    await browser.waitUntil(
+      async () => {
+        const localDialogState = await getParentLocalLayoutDialogState()
+
+        return parentLocalLayoutDialogIsHidden(localDialogState)
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg:
+          'parent renderer did not hide the local Layout Creator dialog for native overlay',
+      }
+    )
+    const localDialogState = await getParentLocalLayoutDialogState()
+    expect(parentLocalLayoutDialogIsHidden(localDialogState)).toBe(true)
+
+    await browser.waitUntil(
+      async () => {
+        const state = await getLayoutCreatorOverlayWindowState()
+
+        return (
+          state?.alwaysOnTop === true &&
+          state.focusable === true &&
+          state.visible === true
+        )
+      },
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg:
+          'Layout Creator overlay window did not become visible and focusable',
+      }
+    )
+    const overlayWindowState = await getLayoutCreatorOverlayWindowState()
+    expect(overlayWindowState).toEqual({
+      alwaysOnTop: true,
+      focusable: true,
+      visible: true,
+    })
+
+    await waitForOverlayPaint(before, paneRect, 'dialog')
+
+    const trackCounts = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        let overlay:
+          | ReturnType<
+              ElectronModule['webContents']['getAllWebContents']
+            >[number]
+          | undefined
+        for (const contents of electron.webContents.getAllWebContents()) {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasLayoutCreator = (await contents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            overlay = contents
+            break
+          }
+        }
+
+        if (!overlay) {
+          return null
+        }
+
+        return overlay.executeJavaScript(`
+          (async () => {
+            const read = (axis) => {
+              const value = document.querySelector(
+                \`[data-layout-creator-track-count="\${axis.toLowerCase()}"]\`
+              )
+              return Number(value?.textContent)
+            }
+            const before = { cols: read('Cols'), rows: read('Rows') }
+            document.querySelector('button[aria-label="Add Cols"]')?.click()
+            await new Promise((resolve) => setTimeout(resolve, 100))
+            document.querySelector('button[aria-label="Add Rows"]')?.click()
+            await new Promise((resolve) => setTimeout(resolve, 1_000))
+            return {
+              before,
+              after: { cols: read('Cols'), rows: read('Rows') },
+            }
+          })()
+        `) as Promise<{
+          before: { cols: number; rows: number }
+          after: { cols: number; rows: number }
+        }>
+      }
+    )
+    expect(trackCounts?.after).toEqual({
+      cols: (trackCounts?.before.cols ?? 0) + 1,
+      rows: (trackCounts?.before.rows ?? 0) + 1,
+    })
+
+    const editorState = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        let overlay:
+          | ReturnType<ElectronModule['BrowserWindow']['getAllWindows']>[number]
+          | undefined
+        for (const window of electron.BrowserWindow.getAllWindows()) {
+          const mode = new URL(window.webContents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasLayoutCreator = (await window.webContents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            overlay = window
+            break
+          }
+        }
+
+        const parent = overlay?.getParentWindow()
+        if (!overlay || !parent) {
+          return null
+        }
+
+        const beforeName = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const input = document.querySelector('input[aria-label="Layout name"]')
+            input?.focus()
+            return input?.value ?? ''
+          })()
+        `)) as string
+        overlay.webContents.sendInputEvent({ type: 'char', keyCode: 'Z' })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const afterName = (await overlay.webContents.executeJavaScript(`
+          document.querySelector('input[aria-label="Layout name"]')?.value ?? ''
+        `)) as string
+
+        await overlay.webContents.executeJavaScript(`
+          Array.from(document.querySelectorAll('button'))
+            .find((button) => button.textContent?.includes('Code · JSON/YAML'))
+            ?.click()
+        `)
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const beforeCode = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const textarea = document.querySelector('textarea')
+            textarea?.focus()
+            textarea?.setSelectionRange(textarea.value.length, textarea.value.length)
+            return textarea?.value ?? ''
+          })()
+        `)) as string
+        overlay.webContents.sendInputEvent({ type: 'char', keyCode: ' ' })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const afterCode = (await overlay.webContents.executeJavaScript(`
+          document.querySelector('textarea')?.value ?? ''
+        `)) as string
+
+        parent.setBounds({ ...parent.getBounds(), height: 600 })
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        const scroll = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const region = document.querySelector('[role="dialog"] .overflow-y-auto')
+            if (!(region instanceof HTMLElement)) {
+              return null
+            }
+            region.scrollTop = region.scrollHeight
+            return {
+              overflowY: getComputedStyle(region).overflowY,
+              scrollable: region.scrollHeight > region.clientHeight,
+              scrolled: region.scrollTop > 0,
+            }
+          })()
+        `)) as {
+          overflowY: string
+          scrollable: boolean
+          scrolled: boolean
+        } | null
+
+        return { beforeName, afterName, beforeCode, afterCode, scroll }
+      }
+    )
+    expect(editorState).toMatchObject({
+      afterName: `${editorState?.beforeName ?? ''}Z`,
+      afterCode: `${editorState?.beforeCode ?? ''} `,
+      scroll: {
+        overflowY: 'auto',
+        scrollable: true,
+        scrolled: true,
+      },
+    })
   }).timeout(90_000)
 })

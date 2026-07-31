@@ -33,6 +33,7 @@ import {
   NATIVE_OVERLAY_CLOSE,
   NATIVE_OVERLAY_CLOSED,
   NATIVE_OVERLAY_KEYDOWN,
+  NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
   NATIVE_OVERLAY_OPEN,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
@@ -410,6 +411,11 @@ describe('preload nativeOverlay wiring', () => {
 
   test.each([
     ['ready', NATIVE_OVERLAY_READY, { surfaceId: 'surface-1' }],
+    [
+      'setMousePassthrough',
+      NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
+      { surfaceId: 'surface-1', passthrough: true },
+    ],
     ['action', NATIVE_OVERLAY_ACTION, { surfaceId: 'surface-1' }],
     ['close', NATIVE_OVERLAY_CLOSE, { surfaceId: 'surface-1' }],
   ])(

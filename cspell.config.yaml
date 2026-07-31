@@ -29,6 +29,9 @@ words:
   - notebookedit
   - multiedit
 
+  # PTY fd-passing transport (VIM-399)
+  - socketpair
+
   # Buffer-drain F6 fix: late-event tombstoning of removed pty ids
   - tombstoned
   - tombstoning

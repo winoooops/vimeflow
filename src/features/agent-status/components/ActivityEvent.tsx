@@ -171,6 +171,7 @@ export const ActivityDetailsTooltip = ({
         />
       }
       placement="left"
+      delayMs={100}
       bare
       interactive
       ariaLabel={ariaLabel}

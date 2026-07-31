@@ -12,8 +12,14 @@ import {
   type ReactElement,
 } from 'react'
 import { Button } from '@/components/Button'
+import {
+  Dialog,
+  type NativeOverlayActionHandler,
+  type NativeOverlayLayoutCreatorDialogPayload,
+} from '@/components/Dialog'
 import { IconButton } from '@/components/IconButton'
 import { SegmentedControl } from '@/components/SegmentedControl'
+import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import type { CustomPaneLayoutId } from '../../../sessions/types'
 import {
   MAX_LAYOUT_TRACKS,
@@ -52,6 +58,8 @@ export interface LayoutCreatorModalProps {
   editLayout?: PaneLayoutDefinition | undefined
   onSave: (definition: PaneLayoutDefinition) => void
   onCancel: () => void
+  nativeOverlay?: boolean
+  nativeSaveError?: string | null
 }
 
 interface GridCell {
@@ -83,15 +91,43 @@ const codeFormatOptions = [
   readonly icon: string
 }[]
 
-const creatorHintItems = [
-  { action: 'Click cells', detail: 'add panes' },
-  { action: 'Drag', detail: 'span an area' },
-  { action: 'Drag panes', detail: 'move' },
-  { action: 'Edges', detail: 'resize pane' },
-  { action: 'Outer grips', detail: 'resize tracks' },
-  { action: 'Right-click', detail: 'remove pane' },
-  { action: 'Esc', detail: 'close' },
-] as const
+const NATIVE_ACTION_CANCEL = 'layout-creator:cancel'
+const NATIVE_ACTION_SAVE = 'layout-creator:save'
+
+type NativeSavedLayoutResult =
+  | { readonly definition: PaneLayoutDefinition; readonly error?: undefined }
+  | { readonly definition?: undefined; readonly error: string }
+
+const savedLayoutFromNativeQuery = (
+  query: string,
+  existingIds: ReadonlySet<PaneLayoutDefinition['id']>,
+  existingId: CustomPaneLayoutId | undefined
+): NativeSavedLayoutResult => {
+  try {
+    const value: unknown = JSON.parse(query)
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      typeof (value as { title?: unknown }).title !== 'string'
+    ) {
+      return { error: 'Invalid layout' }
+    }
+
+    return {
+      definition: definitionFromDraft({
+        title: (value as { title: string }).title,
+        draft: parseDraftLayoutText(query, 'json'),
+        existingIds,
+        existingId,
+      }),
+    }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Invalid layout',
+    }
+  }
+}
 
 const trackTemplate = (units: readonly number[]): string =>
   units.map((unit) => `minmax(0, ${unit}fr)`).join(' ')
@@ -709,21 +745,33 @@ const TrackStepper = ({
   value,
   onChange,
 }: TrackStepperProps): ReactElement => (
-  <div className="inline-flex items-center gap-2 rounded-full bg-surface-container/50 px-2 py-1 font-mono text-[11px] text-on-surface-variant">
+  <div
+    className="inline-flex items-center gap-2 rounded-full bg-surface-container/50 px-2 py-1 font-mono text-[11px] text-on-surface-variant"
+    data-layout-creator-track-axis={label.toLowerCase()}
+    data-testid={`layout-creator-track-${label.toLowerCase()}`}
+  >
     <span className="uppercase tracking-[0.12em]">{label}</span>
     <IconButton
       icon="remove"
       label={`Remove ${label}`}
       size="sm"
+      showTooltip={TOOLTIP_SUPPRESSED}
       disabled={value <= 1}
       className="h-5 w-5"
       onClick={(): void => onChange(value - 1)}
     />
-    <span className="min-w-5 text-center text-on-surface">{value}</span>
+    <span
+      className="min-w-5 text-center text-on-surface"
+      data-layout-creator-track-count={label.toLowerCase()}
+      data-testid={`layout-creator-track-count-${label.toLowerCase()}`}
+    >
+      {value}
+    </span>
     <IconButton
       icon="add"
       label={`Add ${label}`}
       size="sm"
+      showTooltip={TOOLTIP_SUPPRESSED}
       disabled={value >= MAX_LAYOUT_TRACKS}
       className="h-5 w-5"
       onClick={(): void => onChange(value + 1)}
@@ -773,12 +821,12 @@ export const LayoutCreatorModal = ({
   editLayout = undefined,
   onSave,
   onCancel,
+  nativeOverlay = false,
+  nativeSaveError = null,
 }: LayoutCreatorModalProps): ReactElement | null => {
   const titleId = useId()
   const descriptionId = useId()
   const nameInputRef = useRef<HTMLInputElement | null>(null)
-  const panelRef = useRef<HTMLDivElement | null>(null)
-  const previousFocusRef = useRef<HTMLElement | null>(null)
   const [name, setName] = useState('')
   const [draft, setDraft] = useState<DraftPaneLayout>(createSingleDraftLayout)
   const [codeOpen, setCodeOpen] = useState(false)
@@ -812,27 +860,16 @@ export const LayoutCreatorModal = ({
   }, [editLayout, isOpen, seedLayout])
 
   useEffect(() => {
-    if (!isOpen) {
-      return undefined
-    }
-
-    previousFocusRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null
-    nameInputRef.current?.focus()
-
-    return (): void => {
-      previousFocusRef.current?.focus()
-      previousFocusRef.current = null
-    }
-  }, [isOpen])
-
-  useEffect(() => {
     if (!codeDirty) {
       setCodeText(serializeDraftLayout(draft, codeFormat))
     }
   }, [codeDirty, codeFormat, draft])
+
+  useEffect(() => {
+    if (nativeSaveError !== null) {
+      setSaveError(nativeSaveError)
+    }
+  }, [nativeSaveError])
 
   const updateDraft = useCallback((next: DraftPaneLayout): void => {
     setDraft(next)
@@ -867,66 +904,6 @@ export const LayoutCreatorModal = ({
     }
   }, [canSave, draft, editLayout?.id, existingIds, name, onSave])
 
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        onCancel()
-
-        return
-      }
-
-      if (event.key === 'Enter' && event.metaKey && canSave) {
-        event.preventDefault()
-        handleSave()
-
-        return
-      }
-
-      if (event.key !== 'Tab' || !panelRef.current) {
-        return
-      }
-
-      const focusable = Array.from(
-        panelRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter(
-        (element) =>
-          element.offsetParent !== null &&
-          element.getAttribute('aria-hidden') !== 'true'
-      )
-
-      if (focusable.length === 0) {
-        return
-      }
-
-      const currentIndex = focusable.indexOf(
-        document.activeElement as HTMLElement
-      )
-      const delta = event.shiftKey ? -1 : 1
-      let nextIndex: number
-
-      if (currentIndex === -1) {
-        nextIndex = event.shiftKey ? focusable.length - 1 : 0
-      } else {
-        nextIndex = (currentIndex + delta + focusable.length) % focusable.length
-      }
-
-      event.preventDefault()
-      focusable[nextIndex]?.focus()
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-
-    return (): void => {
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [canSave, handleSave, isOpen, onCancel])
-
   const applyCode = (): void => {
     try {
       const parsedDraft = parseDraftLayoutText(codeText, codeFormat)
@@ -947,16 +924,84 @@ export const LayoutCreatorModal = ({
     }
   }
 
-  const stopPropagation = (event: ReactMouseEvent): void => {
-    event.stopPropagation()
-  }
+  const title = editLayout === undefined ? 'Layout Creator' : 'Edit layout'
+  const saveLabel = editLayout === undefined ? 'Save & apply' : 'Save changes'
+
+  const existingId =
+    editLayout?.id === undefined
+      ? undefined
+      : (editLayout.id as CustomPaneLayoutId)
+
+  const nativeOverlayPayload = useMemo(
+    (): NativeOverlayLayoutCreatorDialogPayload => ({
+      kind: 'dialog',
+      dialog: 'layout-creator',
+      ariaLabel: title,
+      existingLayouts,
+      ...(seedLayout === undefined ? {} : { seedLayout }),
+      ...(editLayout === undefined ? {} : { editLayout }),
+      actions: {
+        cancel: NATIVE_ACTION_CANCEL,
+        save: NATIVE_ACTION_SAVE,
+      },
+    }),
+    [editLayout, existingLayouts, seedLayout, title]
+  )
+
+  const nativeOverlayActions = useMemo(
+    (): ReadonlyMap<string, NativeOverlayActionHandler> =>
+      new Map<string, NativeOverlayActionHandler>([
+        [NATIVE_ACTION_CANCEL, onCancel],
+        [
+          NATIVE_ACTION_SAVE,
+          {
+            retainSession: true,
+            reportSuccess: true,
+            run: (event): boolean | void => {
+              if (event?.query === undefined) {
+                return
+              }
+
+              const result = savedLayoutFromNativeQuery(
+                event.query,
+                existingIds,
+                existingId
+              )
+
+              if (result.definition === undefined) {
+                throw new Error(result.error)
+              }
+
+              try {
+                onSave(result.definition)
+                setSaveError(null)
+
+                return true
+              } catch (error) {
+                setSaveError(
+                  error instanceof Error ? error.message : 'Invalid layout'
+                )
+                throw error
+              }
+            },
+          },
+        ],
+      ]),
+    [existingId, existingIds, onCancel, onSave]
+  )
+
+  const handleOpenChange = useCallback(
+    (open: boolean): void => {
+      if (!open) {
+        onCancel()
+      }
+    },
+    [onCancel]
+  )
 
   if (!isOpen) {
     return null
   }
-
-  const title = editLayout === undefined ? 'Layout Creator' : 'Edit layout'
-  const saveLabel = editLayout === undefined ? 'Save & apply' : 'Save changes'
 
   const validationMessage = validation.ok
     ? `Valid · ${validation.slotCount} panes, fully tiled`
@@ -969,21 +1014,29 @@ export const LayoutCreatorModal = ({
           : `${validation.emptyCells} empty cells · fill or remove gaps`
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <Dialog
+      open={isOpen}
+      onOpenChange={handleOpenChange}
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      data-workspace-overlay-id="layout-creator"
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-surface-container-lowest/60 p-7 backdrop-blur-[14px]"
-      onMouseDown={onCancel}
+      initialFocusRef={nameInputRef}
+      size="xl"
+      panelClassName="flex max-h-[calc(100vh-2rem)] max-w-[960px] flex-col border-primary/25 bg-surface-container/95 shadow-[0_30px_80px_color-mix(in_srgb,var(--color-scrim)_60%,transparent)]"
+      nativeOverlay={nativeOverlay}
+      nativeOverlayPayload={nativeOverlayPayload}
+      nativeOverlayActions={nativeOverlayActions}
     >
       <div
-        ref={panelRef}
-        className="flex max-h-[92vh] w-full max-w-[960px] flex-col overflow-hidden rounded-2xl border border-primary/25 bg-surface-container/95 shadow-[0_30px_80px_color-mix(in_srgb,var(--color-scrim)_60%,transparent)]"
-        onMouseDown={stopPropagation}
+        data-workspace-overlay-id="layout-creator"
+        className="flex min-h-0 flex-1 flex-col"
+        onKeyDown={(event): void => {
+          if (event.key === 'Enter' && event.metaKey && canSave) {
+            event.preventDefault()
+            handleSave()
+          }
+        }}
       >
-        <div className="flex items-center gap-3 border-b border-outline-variant/25 px-5 py-3.5">
+        <div className="flex shrink-0 items-center gap-3 border-b border-outline-variant/25 px-5 py-3.5">
           <span
             className="material-symbols-outlined text-[20px] text-primary"
             aria-hidden="true"
@@ -1026,13 +1079,13 @@ export const LayoutCreatorModal = ({
           </Button>
         </div>
         {saveError !== null && (
-          <p className="border-b border-outline-variant/20 bg-error/10 px-5 py-2 font-mono text-[11px] text-error">
+          <p className="shrink-0 border-b border-outline-variant/20 bg-error/10 px-5 py-2 font-mono text-[11px] text-error">
             {saveError}
           </p>
         )}
 
-        <div className="min-h-0 flex-1 overflow-hidden px-3 py-3">
-          <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto overflow-x-hidden rounded-xl px-2 py-1 pr-3 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-outline-variant/35 [&::-webkit-scrollbar-thumb]:bg-clip-padding">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-outline-variant/35 [&::-webkit-scrollbar-thumb]:bg-clip-padding">
+          <div className="flex flex-col gap-4 rounded-xl px-2 py-1 pr-3">
             <p id={descriptionId} className="sr-only">
               Compose a terminal pane layout from tracks and pane slots.
             </p>
@@ -1149,7 +1202,7 @@ export const LayoutCreatorModal = ({
                 </div>
                 <textarea
                   value={codeText}
-                  className="min-h-[180px] w-full resize-y rounded-lg border border-outline-variant/30 bg-surface-container/65 p-3 font-mono text-[11px] leading-relaxed text-on-surface outline-none focus:border-primary/60"
+                  className="min-h-[180px] w-full resize-none rounded-lg border border-outline-variant/30 bg-surface-container/65 p-3 font-mono text-[11px] leading-relaxed text-on-surface outline-none focus:border-primary/60"
                   onChange={(event): void => {
                     setCodeText(event.target.value)
                     setCodeDirty(true)
@@ -1165,23 +1218,7 @@ export const LayoutCreatorModal = ({
             )}
           </div>
         </div>
-
-        <div className="border-t border-outline-variant/20 bg-surface-container-lowest/35 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-outline-variant/18 bg-surface-container/45 p-1.5 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--color-on-surface)_7%,transparent)]">
-            {creatorHintItems.map((item) => (
-              <span
-                key={item.action}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-surface-container-lowest/55 px-2 py-1 font-mono text-[10px] text-on-surface-muted"
-              >
-                <span className="font-semibold text-on-surface-variant">
-                  {item.action}
-                </span>
-                <span>{item.detail}</span>
-              </span>
-            ))}
-          </div>
-        </div>
       </div>
-    </div>
+    </Dialog>
   )
 }

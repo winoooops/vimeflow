@@ -7,6 +7,10 @@ pub mod bridge;
 pub mod cache;
 pub mod commands;
 pub(crate) mod events;
+#[cfg(unix)]
+pub mod fd_broker;
+#[cfg(unix)]
+pub mod fd_transport;
 pub(crate) mod foreground;
 pub mod state;
 #[cfg(feature = "e2e-test")]
