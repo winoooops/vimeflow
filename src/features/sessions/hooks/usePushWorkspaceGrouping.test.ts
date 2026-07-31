@@ -72,7 +72,6 @@ const makeSession = (over: Partial<Session> = {}): Session => ({
   workingDirectory: '/repo',
   agentType: 'claude-code',
   layout: 'vsplit',
-  activityPanelCollapsed: false,
   panes: [shellPane(), browserPane()],
   createdAt: '2026-01-01T00:00:00.000Z',
   lastActivityAt: '2026-01-01T00:00:00.000Z',

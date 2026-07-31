@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable testing-library/no-node-access */
 
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 // @ts-expect-error - tailwind.config.js has no type declarations
 import tailwindConfig from '../../../tailwind.config'
 
@@ -76,7 +76,6 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
@@ -105,9 +104,22 @@ import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 // eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsProvider'
+// eslint-disable-next-line import/first
+import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
+// eslint-disable-next-line import/first
+import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
+
+// Module-global panel stores persist across tests — reset them per test.
+beforeEach(() => {
+  window.localStorage.clear()
+  setActivityPanelCollapsed(false)
+  setDockOpen(false)
+  setDockTab('diff')
+  setDockPosition('bottom')
+})
 
 /**
  * Visual Verification Test Suite for Feature #20

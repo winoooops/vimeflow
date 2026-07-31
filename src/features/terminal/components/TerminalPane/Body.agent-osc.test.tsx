@@ -164,7 +164,6 @@ const createService = (): ControlledTerminalService => {
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn().mockResolvedValue([]),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
     emitData(sessionId: string, data: string, offsetStart?: number): void {

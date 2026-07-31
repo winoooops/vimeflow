@@ -13,7 +13,6 @@ const session = (overrides: Partial<Session> = {}): Session => ({
   workingDirectory: '/tmp/session-1',
   agentType: 'generic',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

@@ -5,7 +5,7 @@
  * This test suite verifies all requirements from Feature 23 are met.
  */
 
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
@@ -80,7 +80,6 @@ vi.mock('../terminal/services/terminalService', () => ({
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),
     updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-    setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
     killEphemeralPtys: vi.fn(),
     setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
   })),
@@ -109,9 +108,22 @@ import type { ReactElement } from 'react'
 import { WorkspaceView } from './WorkspaceView'
 // eslint-disable-next-line import/first
 import { SettingsProvider } from '../settings/SettingsProvider'
+// eslint-disable-next-line import/first
+import { setActivityPanelCollapsed } from './utils/activityPanelCollapsedStore'
+// eslint-disable-next-line import/first
+import { setDockOpen, setDockPosition, setDockTab } from './utils/dockStore'
 
 const render = (ui: ReactElement): ReturnType<typeof rtlRender> =>
   rtlRender(ui, { wrapper: SettingsProvider })
+
+// Module-global panel stores persist across tests — reset them per test.
+beforeEach(() => {
+  window.localStorage.clear()
+  setActivityPanelCollapsed(false)
+  setDockOpen(false)
+  setDockTab('diff')
+  setDockPosition('bottom')
+})
 
 describe('Feature 23: Final Phase 2 Verification', () => {
   describe('1. workspace zones render (VIM-76: icon rail removed)', () => {

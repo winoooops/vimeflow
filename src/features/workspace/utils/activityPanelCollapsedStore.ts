@@ -1,15 +1,14 @@
-// UI-only persistence + subscription for the workspace sidebar collapse
+// UI-only persistence + subscription for the right activity-panel collapse
 // preference. This is a WORKSPACE-GLOBAL choice (one flag for the app, not
-// per-session) so the sidebar stays collapsed/expanded as you switch sessions.
-// Mirrors the guards in features/editor/utils/readingStyleStore (SSR /
-// sandboxed contexts / quota errors all fall back to the default, never
-// throw).
+// per-session) so the panel stays collapsed/expanded as you switch sessions.
+// Mirrors features/workspace/utils/sidebarCollapsedStore (SSR / sandboxed
+// contexts / quota errors all fall back to the default, never throw).
 //
-// A tiny pub/sub backs `useSyncExternalStore` so the in-card toggle, the icon
-// rail toggle, the ⌘B shortcut, and the `:toggle-sidebar` command all stay in
-// sync the instant the flag changes.
+// A tiny pub/sub backs `useSyncExternalStore` so the fixed toggle, the
+// activity-panel shortcut, and the command palette entry all stay in sync
+// the instant the flag changes.
 
-const STORAGE_KEY = 'vimeflow:workspace:sidebarCollapsed'
+const STORAGE_KEY = 'vimeflow:workspace:activityPanelCollapsed'
 
 const getStorage = (): Storage | null => {
   if (typeof window === 'undefined') {
@@ -37,9 +36,9 @@ const readPersisted = (): boolean => {
 let current: boolean = readPersisted()
 const listeners = new Set<() => void>()
 
-export const getSidebarCollapsed = (): boolean => current
+export const getActivityPanelCollapsed = (): boolean => current
 
-export const setSidebarCollapsed = (collapsed: boolean): void => {
+export const setActivityPanelCollapsed = (collapsed: boolean): void => {
   if (collapsed === current) {
     return
   }
@@ -59,7 +58,7 @@ export const setSidebarCollapsed = (collapsed: boolean): void => {
   })
 }
 
-export const subscribeSidebarCollapsed = (
+export const subscribeActivityPanelCollapsed = (
   listener: () => void
 ): (() => void) => {
   listeners.add(listener)

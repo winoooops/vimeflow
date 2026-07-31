@@ -245,7 +245,7 @@ describe('LayoutDisplayMenu', () => {
     ])
   })
 
-  test('closes the native menu before launching the layout creator dialog', async () => {
+  test('retains the native menu action while closing before the layout creator dialog', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const user = userEvent.setup()
@@ -276,17 +276,47 @@ describe('LayoutDisplayMenu', () => {
     expect(createItem).toMatchObject({
       id: expect.any(String),
       label: 'Create custom layout',
+      closeOnSelect: false,
     })
-    expect(createItem).not.toHaveProperty('closeOnSelect')
 
     act(() => {
       nativeBridge.action({
         surfaceId: request.surfaceId,
         actionId: createItem?.type === 'separator' ? '' : createItem?.id,
+        closeOnSelect: createItem?.type === 'separator' ? undefined : false,
       })
     })
 
     expect(onCreateCustomLayout).toHaveBeenCalledOnce()
     await waitFor(() => expect(nativeBridge.close).toHaveBeenCalledOnce())
+    expect(nativeBridge.close).toHaveBeenCalledWith({
+      surfaceId: request.surfaceId,
+      reason: 'renderer',
+    })
+  })
+
+  test('opens the layout creator and lets the menu item own local close', async () => {
+    const user = userEvent.setup()
+    const onCreateCustomLayout = vi.fn()
+
+    render(
+      <LayoutDisplayMenu
+        activeLayoutId="vsplit"
+        visibleLayoutIds={['single', 'vsplit']}
+        onVisibleLayoutIdsChange={vi.fn()}
+        onCreateCustomLayout={onCreateCustomLayout}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: 'Configure displayed layouts' })
+    )
+
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create custom layout' })
+    )
+
+    expect(onCreateCustomLayout).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })
