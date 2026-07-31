@@ -31,6 +31,7 @@ pub struct AppSettings {
     pub ui_font: String,
     pub mono_font: String,
     pub terminal_font_family: String,
+    pub terminal_cursor_effect: String,
     pub reservoir_swell: String,
     pub session_island_display: String,
     pub diff_view_style: String,
@@ -83,6 +84,7 @@ impl Default for AppSettings {
             ui_font: "instrument".into(),
             mono_font: "jetbrains".into(),
             terminal_font_family: "JetBrains Mono".into(),
+            terminal_cursor_effect: "off".into(),
             reservoir_swell: "soft-mound".into(),
             session_island_display: "dots".into(),
             diff_view_style: "split".into(),
@@ -119,6 +121,7 @@ impl AppSettings {
             ("uiFont", self.ui_font.as_str()),
             ("monoFont", self.mono_font.as_str()),
             ("terminalFontFamily", self.terminal_font_family.as_str()),
+            ("terminalCursorEffect", self.terminal_cursor_effect.as_str()),
             ("reservoirSwell", self.reservoir_swell.as_str()),
             ("sessionIslandDisplay", self.session_island_display.as_str()),
             ("diffViewStyle", self.diff_view_style.as_str()),
@@ -254,6 +257,7 @@ mod tests {
             ui_font: "inter".into(),
             mono_font: "iosevka".into(),
             terminal_font_family: "Iosevka".into(),
+            terminal_cursor_effect: "warp".into(),
             reservoir_swell: "trailing".into(),
             session_island_display: "numbers".into(),
             diff_view_style: "unified".into(),
@@ -290,6 +294,7 @@ mod tests {
         assert_eq!(s.ui_font, "instrument");
         assert_eq!(s.mono_font, "jetbrains");
         assert_eq!(s.terminal_font_family, "JetBrains Mono");
+        assert_eq!(s.terminal_cursor_effect, "off");
         assert_eq!(s.reservoir_swell, "soft-mound");
         assert_eq!(s.session_island_display, "dots");
         assert_eq!(s.diff_view_style, "split");
@@ -324,6 +329,10 @@ mod tests {
         assert!(json.contains("\"accentHue\":285"), "json: {json}");
         assert!(
             json.contains("\"terminalFontFamily\":\"JetBrains Mono\""),
+            "json: {json}"
+        );
+        assert!(
+            json.contains("\"terminalCursorEffect\":\"off\""),
             "json: {json}"
         );
         assert!(

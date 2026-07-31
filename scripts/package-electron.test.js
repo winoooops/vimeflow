@@ -107,9 +107,17 @@ describe('package-electron script', () => {
       ['--linux', 'AppImage', '--x64'],
     ])
 
-    expect(buildCommands('mac-arm64').at(-1)).toEqual([
+    expect(buildCommands('mac-arm64').at(-2)).toEqual([
       'electron-builder',
       ['--mac', 'dmg', '--arm64'],
+    ])
+
+    expect(buildCommands('mac-arm64').at(-1)).toEqual([
+      'node',
+      [
+        'scripts/smoke-ghostty-native-parent.js',
+        'release/mac-arm64/Vimeflow.app/Contents/Resources/ghostty-parent',
+      ],
     ])
 
     expect(buildCommands('mac-arm64')).toContainEqual([

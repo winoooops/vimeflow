@@ -6,6 +6,10 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
 import {
+  cursorEffectFilename,
+  isTerminalCursorEffect,
+} from '@/features/terminal/cursorEffects'
+import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_PRESENTATION_PROBE,
@@ -89,6 +93,10 @@ interface GhosttyNativeParentAddon {
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
+  setCursorShader?: (
+    surface: GhosttyNativeSurface,
+    shaderPath: string
+  ) => boolean
   setResizeThrottleMs?: (
     surface: GhosttyNativeSurface,
     milliseconds: number
@@ -140,6 +148,7 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastFontFamily: string | null
+  lastCursorEffect: string | null
   lastResizeThrottleMs: number | null
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
@@ -354,6 +363,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
           isHexColor(value.backgroundColor)) &&
         (value.foregroundColor === undefined ||
           isHexColor(value.foregroundColor)) &&
+        (value.cursorEffect === undefined ||
+          isTerminalCursorEffect(value.cursorEffect)) &&
         isOptionalFiniteNumber(value.bottomCornerRadius) &&
         (value.resizeThrottleMs === undefined ||
           (typeof value.resizeThrottleMs === 'number' &&
@@ -604,6 +615,20 @@ export class GhosttyNativeParentController {
     ) {
       state.lastFontFamily = payload.fontFamily
       addon.setFontFamily?.(surface, payload.fontFamily)
+    }
+    const cursorEffect = payload.cursorEffect ?? 'off'
+    if (state.lastCursorEffect !== cursorEffect) {
+      state.lastCursorEffect = cursorEffect
+      const filename = cursorEffectFilename(cursorEffect)
+
+      const applied = addon.setCursorShader?.(
+        surface,
+        filename ? path.join(this.nativeParentDir, 'shaders', filename) : ''
+      )
+      if (applied === false) {
+        state.lastCursorEffect = null
+        throw new Error(`Ghostty rejected cursor effect: ${cursorEffect}`)
+      }
     }
     if (
       payload.resizeThrottleMs !== undefined &&
@@ -985,6 +1010,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
+      lastCursorEffect: null,
       lastResizeThrottleMs: null,
       lastResize: null,
       resizeTimer: null,
@@ -1470,6 +1496,7 @@ export class GhosttyNativeParentController {
     state.lastForegroundColor = null
     state.lastKeybindings = null
     state.lastFontFamily = null
+    state.lastCursorEffect = null
     // A recreated surface starts from the fork's defaults (throttle 0), so a
     // kept cache would dedupe the unchanged payload and silently strip the
     // agent's throttle from the new surface.

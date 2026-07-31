@@ -124,6 +124,13 @@ export function buildCommands(target) {
       ['npm', ['run', 'ghostty:native-parent:build']],
       ['npm', ['run', 'ghostty:native-parent:smoke']],
       ['electron-builder', ['--mac', 'dmg', '--arm64']],
+      [
+        'node',
+        [
+          'scripts/smoke-ghostty-native-parent.js',
+          'release/mac-arm64/Vimeflow.app/Contents/Resources/ghostty-parent',
+        ],
+      ],
     ]
   }
 

@@ -36,6 +36,7 @@ interface TerminalBodyProps {
   mode: BodyMode
   deferFit: boolean
   terminalFontFamily?: string
+  terminalCursorEffect?: string
   /** Engine-side resize coalescing for this pane's surface — computed from
    *  the pane's agent type by TerminalPane; native Ghostty only. */
   resizeThrottleMs?: number
@@ -66,6 +67,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       mode,
       deferFit,
       terminalFontFamily = undefined,
+      terminalCursorEffect = 'off',
       resizeThrottleMs = undefined,
     },
     ref
@@ -131,6 +133,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
           terminalFontFamily={terminalFontFamily}
+          terminalCursorEffect={terminalCursorEffect}
           resizeThrottleMs={resizeThrottleMs}
           onUnavailable={handleNativeUnavailable}
         />

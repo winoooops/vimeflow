@@ -1,14 +1,22 @@
+// cspell:ignore Ghostty
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import type { SystemFont } from '../../../../bindings/SystemFont'
+import type { SystemFont } from '@/bindings/SystemFont'
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_PICKER_FAMILIES,
   normalizeTerminalFontFamily,
-} from '../../../terminal/components/TerminalPane/terminalFont'
-import { SETTINGS_TARGET_IDS } from '../../sections'
-import { useSettings } from '../../hooks/useSettings'
-import type { SelectOption, SettingsPaneTargetProps } from '../../types'
-import { PaneTitle, Row, Select } from '../controls'
+} from '@/features/terminal/components/TerminalPane/terminalFont'
+import {
+  isTerminalCursorEffect,
+  TERMINAL_CURSOR_EFFECTS,
+} from '@/features/terminal/cursorEffects'
+import { PaneTitle, Row, Select } from '@/features/settings/components/controls'
+import { useSettings } from '@/features/settings/hooks/useSettings'
+import { SETTINGS_TARGET_IDS } from '@/features/settings/sections'
+import type {
+  SelectOption,
+  SettingsPaneTargetProps,
+} from '@/features/settings/types'
 
 const uniqueFamilies = (families: readonly string[]): string[] => {
   const seen = new Set<string>()
@@ -94,7 +102,7 @@ export const TerminalSettingsPane = ({
 
   return (
     <>
-      <PaneTitle title="Terminal" sub="Shell · Typography" />
+      <PaneTitle title="Terminal" sub="Shell · Typography · Cursor" />
 
       <Row
         label="Font Family"
@@ -103,7 +111,6 @@ export const TerminalSettingsPane = ({
         settingsTargetActive={
           activeTargetId === SETTINGS_TARGET_IDS.terminalFontFamily
         }
-        last
       >
         <Select
           value={terminalFontFamily}
@@ -113,6 +120,32 @@ export const TerminalSettingsPane = ({
           aria-label="Terminal font family"
           width={220}
           options={options}
+        />
+      </Row>
+
+      <Row
+        label="Cursor Effect"
+        hint="Animated native Ghostty cursor shader on macOS."
+        settingsTargetId={SETTINGS_TARGET_IDS.terminalCursorEffect}
+        settingsTargetActive={
+          activeTargetId === SETTINGS_TARGET_IDS.terminalCursorEffect
+        }
+        last
+      >
+        <Select
+          value={
+            isTerminalCursorEffect(settings.terminalCursorEffect)
+              ? settings.terminalCursorEffect
+              : 'off'
+          }
+          onChange={(value): void => {
+            if (isTerminalCursorEffect(value)) {
+              update({ terminalCursorEffect: value })
+            }
+          }}
+          aria-label="Terminal cursor effect"
+          width={220}
+          options={[...TERMINAL_CURSOR_EFFECTS]}
         />
       </Row>
     </>

@@ -1307,6 +1307,9 @@ export default defineConfig(({ mode }) => ({
                 }
               },
               vite: {
+                resolve: {
+                  alias: { '@': path.resolve(repoRoot, 'src') },
+                },
                 build: { outDir: 'dist-electron' },
               },
             },

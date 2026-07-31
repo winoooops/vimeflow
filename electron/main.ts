@@ -345,6 +345,7 @@ const isAppSettings = (value: unknown): value is AppSettings =>
   typeof value.uiFont === 'string' &&
   typeof value.monoFont === 'string' &&
   typeof value.terminalFontFamily === 'string' &&
+  typeof value.terminalCursorEffect === 'string' &&
   typeof value.reservoirSwell === 'string' &&
   typeof value.keymapPreset === 'string' &&
   typeof value.agentShimEnabled === 'boolean' &&
