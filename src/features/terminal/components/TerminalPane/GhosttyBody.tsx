@@ -48,8 +48,8 @@ interface GhosttyBodyProps {
   shortcutContext?: NativeGhosttyShortcutContext
   bottomCornerRadius?: number
   terminalFontFamily?: string
-  /** Engine-side resize coalescing for this pane's surface — see the
-   *  agent-type mapping where TerminalPane computes it. */
+  /** Async native fallback PTY resize coalescing for this pane. */
+  resizeThrottleMs?: number
   onUnavailable?: () => void
 }
 
@@ -125,6 +125,7 @@ const nativeGhosttyFrameKey = ({
   foregroundColor,
   bottomCornerRadius,
   fontFamily,
+  resizeThrottleMs,
   bounds,
   parentHeight,
   shortcutContext,
@@ -134,6 +135,7 @@ const nativeGhosttyFrameKey = ({
   foregroundColor: string
   bottomCornerRadius: number
   fontFamily?: string
+  resizeThrottleMs?: number
   bounds: NativeGhosttyBounds
   parentHeight: number
   shortcutContext?: NativeGhosttyShortcutContext
@@ -154,6 +156,7 @@ const nativeGhosttyFrameKey = ({
     backgroundColor,
     foregroundColor,
     fontFamily ?? '',
+    resizeThrottleMs ?? '',
     shortcutContext?.activePaneId ?? '',
     ...(shortcutContext?.paneIds ?? []),
   ].join(':')
@@ -182,6 +185,7 @@ export const GhosttyBody = ({
   shortcutContext = undefined,
   bottomCornerRadius = 0,
   terminalFontFamily = undefined,
+  resizeThrottleMs = undefined,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
   const theme = useTheme()
@@ -507,6 +511,7 @@ export const GhosttyBody = ({
         foregroundColor,
         bottomCornerRadius: nativeBottomCornerRadius,
         fontFamily: terminalFontFamily,
+        resizeThrottleMs,
         bounds,
         parentHeight,
         shortcutContext,
@@ -519,6 +524,7 @@ export const GhosttyBody = ({
         backgroundColor,
         foregroundColor,
         ...(terminalFontFamily ? { fontFamily: terminalFontFamily } : {}),
+        ...(resizeThrottleMs !== undefined ? { resizeThrottleMs } : {}),
         bottomCornerRadius: nativeBottomCornerRadius,
         parentHeight,
         visible,
@@ -538,6 +544,7 @@ export const GhosttyBody = ({
     backgroundColor,
     foregroundColor,
     terminalFontFamily,
+    resizeThrottleMs,
     bottomCornerRadius,
     cwd,
     flushQueuedNativeFrame,

@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-30
-ref_count: 97
+last_updated: 2026-07-31
+ref_count: 98
 ---
 
 # Documentation Accuracy
@@ -992,4 +992,17 @@ Stale documentation misleads future contributors and review agents.
 - **File:** `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** The winsize instrumentation block was inserted between the existing state-machine comment and `ApplyPtySlotWinsize`, leaving the comment about Bound, NativeActive, and Releasing behavior separated from the function it documents.
 - **Fix:** Moved the state-machine comment back immediately above `ApplyPtySlotWinsize`, with the instrumentation helpers kept above it. Future readers now see the function contract at the declaration it describes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 105. Removed resize-throttle cache left its fork-default comment behind
+
+- **Source:** github-claude | PR #766 round 1 | 2026-07-31
+- **Severity:** LOW
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** Removing the fork addon resize-throttle cache left a comment
+  that still described recreated surfaces starting from fork defaults and
+  deduping away an agent throttle payload.
+- **Fix:** Removed the stale cache-reset comment and updated the remaining
+  native resize-throttle docs to describe the main-process async fallback
+  behavior instead of the removed addon API.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

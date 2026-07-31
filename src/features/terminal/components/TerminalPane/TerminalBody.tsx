@@ -36,8 +36,8 @@ interface TerminalBodyProps {
   mode: BodyMode
   deferFit: boolean
   terminalFontFamily?: string
-  /** Engine-side resize coalescing for this pane's surface — computed from
-   *  the pane's agent type by TerminalPane; native Ghostty only. */
+  /** Async native fallback PTY resize coalescing for this pane. */
+  resizeThrottleMs?: number
 }
 
 export interface TerminalBodyHandle {
@@ -65,6 +65,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       mode,
       deferFit,
       terminalFontFamily = undefined,
+      resizeThrottleMs = undefined,
     },
     ref
   ): ReactElement {
@@ -129,6 +130,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
           terminalFontFamily={terminalFontFamily}
+          resizeThrottleMs={resizeThrottleMs}
           onUnavailable={handleNativeUnavailable}
         />
       )

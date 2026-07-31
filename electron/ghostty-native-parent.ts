@@ -148,6 +148,7 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastFontFamily: string | null
+  resizeThrottleMs: number
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
@@ -209,6 +210,9 @@ export const SURFACE_SETTLE_MS = 120
 
 const MAX_PENDING_CHUNKS = 64
 const MAX_SURFACES = 128
+// Upper bound for renderer-selected async resize coalescing. An unbounded
+// timer would leave the fallback PTY path effectively stuck at one size.
+const MAX_RESIZE_THROTTLE_MS = 1000
 // Leading+trailing throttle for PTY resize during live drags. Stock Ghostty
 // forwards every grid change with no timer (Surface.zig sizeCallback, dedupe
 // only); 16ms (~one frame) approximates that cadence while bounding bursts.
@@ -415,6 +419,11 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
         (value.foregroundColor === undefined ||
           isHexColor(value.foregroundColor)) &&
         isOptionalFiniteNumber(value.bottomCornerRadius) &&
+        (value.resizeThrottleMs === undefined ||
+          (typeof value.resizeThrottleMs === 'number' &&
+            Number.isFinite(value.resizeThrottleMs) &&
+            value.resizeThrottleMs >= 0 &&
+            value.resizeThrottleMs <= MAX_RESIZE_THROTTLE_MS)) &&
         typeof value.parentHeight === 'number' &&
         Number.isFinite(value.parentHeight) &&
         typeof value.visible === 'boolean' &&
@@ -659,6 +668,9 @@ export class GhosttyNativeParentController {
     ) {
       state.lastFontFamily = payload.fontFamily
       addon.setFontFamily?.(surface, payload.fontFamily)
+    }
+    if (payload.resizeThrottleMs !== undefined) {
+      state.resizeThrottleMs = payload.resizeThrottleMs
     }
     addon.setFrame(
       surface,
@@ -1033,6 +1045,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
+      resizeThrottleMs: GHOSTTY_RESIZE_THROTTLE_MS,
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
@@ -1488,7 +1501,7 @@ export class GhosttyNativeParentController {
 
       this.forwardPtyResize(resizeState, sessionId, pending.cols, pending.rows)
       this.armResizeThrottle(resizeState, sessionId, canForward)
-    }, GHOSTTY_RESIZE_THROTTLE_MS)
+    }, resizeState.resizeThrottleMs)
   }
 
   private forwardPtyResize(
@@ -1597,9 +1610,6 @@ export class GhosttyNativeParentController {
     state.lastForegroundColor = null
     state.lastKeybindings = null
     state.lastFontFamily = null
-    // A recreated surface starts from the fork's defaults (throttle 0), so a
-    // kept cache would dedupe the unchanged payload and silently strip the
-    // agent's throttle from the new surface.
   }
 
   private invokeSidecar(
