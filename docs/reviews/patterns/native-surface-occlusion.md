@@ -3,7 +3,7 @@ id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
 last_updated: 2026-07-31
-ref_count: 7
+ref_count: 8
 ---
 
 # Native Surface Occlusion
@@ -234,4 +234,20 @@ React overlays that drive Electron native WebContentsView visibility must regist
   item while keeping `nativeOverlayCloseOnSelect={false}`. The retained menu
   session now stays available for the owner callback and is replaced naturally
   by the focus-owned Layout Creator dialog.
+- **Commit:** same commit as this entry
+
+### 19. Retained native menu handoffs may need explicit suspension
+
+- **Source:** local-codex | PR #765 CI fix | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** The deterministic macOS Ghostty E2E smoke selected Create Custom
+  Layout from the retained native layout menu, then timed out waiting for the
+  Layout Creator dialog to render in the overlay webContents. Keeping the menu
+  retained but fully active left the old menu surface competing with the
+  focus-owned dialog handoff on the packaged native-overlay path.
+- **Fix:** Kept `nativeOverlayCloseOnSelect={false}` so the owner callback
+  remains registered, and added `nativeOverlaySuspendOnSelect` so Electron
+  temporarily hides/deactivates the menu surface while the Layout Creator dialog
+  opens and promotes the replacement overlay.
 - **Commit:** same commit as this entry

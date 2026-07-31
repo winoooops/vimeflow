@@ -277,13 +277,15 @@ describe('LayoutDisplayMenu', () => {
       id: expect.any(String),
       label: 'Create custom layout',
       closeOnSelect: false,
+      suspendOnSelect: true,
     })
-    expect(createItem).not.toHaveProperty('suspendOnSelect')
 
     act(() => {
       nativeBridge.action({
         surfaceId: request.surfaceId,
         actionId: createItem?.type === 'separator' ? '' : createItem?.id,
+        closeOnSelect: createItem?.type === 'separator' ? undefined : false,
+        suspendOnSelect: createItem?.type === 'separator' ? undefined : true,
       })
     })
 
