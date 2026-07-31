@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-30
-ref_count: 5
+last_updated: 2026-07-31
+ref_count: 6
 ---
 
 # Native Surface Occlusion
@@ -201,4 +201,21 @@ React overlays that drive Electron native WebContentsView visibility must regist
   though no parent-local dialog could cover the native surface.
 - **Fix:** Kept the smoke strict for visible parent-local dialogs but treated a
   missing parent-local dialog as hidden once the overlay dialog is visible.
+- **Commit:** same commit as this entry
+
+### 17. Layout creator handoff left stale native menu state active
+
+- **Source:** github-claude | PR #765 round 1 | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** A merge kept the layout-menu cleanup that removed explicit close
+  calls, but dropped the compensating native-overlay retain flag. The packaged
+  macOS path could therefore close or refresh the non-focusable menu surface
+  while the focus-owned Layout Creator dialog was opening, leaving the overlay
+  webContents rendered but the BrowserWindow hidden or non-focusable above the
+  Ghostty NSView.
+- **Fix:** Restored the explicit menu-close handoff: the layout-display menu now
+  sends its internal close signal after Create Custom Layout, and WorkspaceView
+  clears the controlled layout-display-open flag when creating or editing a
+  custom layout.
 - **Commit:** same commit as this entry

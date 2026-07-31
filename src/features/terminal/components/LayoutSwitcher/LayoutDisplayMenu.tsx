@@ -178,6 +178,7 @@ export const LayoutDisplayMenu = ({
             icon="dashboard_customize"
             onSelect={(): void => {
               onCreateCustomLayout()
+              closeMenu()
             }}
           >
             Create custom layout
