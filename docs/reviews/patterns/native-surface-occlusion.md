@@ -251,3 +251,20 @@ React overlays that drive Electron native WebContentsView visibility must regist
   temporarily hides/deactivates the menu surface while the Layout Creator dialog
   opens and promotes the replacement overlay.
 - **Commit:** same commit as this entry
+
+### 20. Retained native menu handoffs must close stale menu state
+
+- **Source:** local-codex | PR #765 CI fix | 2026-07-31
+- **Severity:** HIGH
+- **File:** `src/features/terminal/components/LayoutSwitcher/LayoutDisplayMenu.tsx`
+- **Finding:** Retaining the Create Custom Layout native menu action while
+  suspending the menu surface still left the owner-side menu state open during
+  the Layout Creator handoff. The stale menu surface could occupy the shared
+  overlay window long enough for the packaged macOS Ghostty smoke to time out
+  waiting for the dialog payload to render.
+- **Fix:** Kept `nativeOverlayCloseOnSelect={false}` so the native action
+  callback remains registered, but explicitly closed the layout menu state from
+  the Create Custom Layout handler and removed the suspend flag. The old menu
+  surface now clears before the focus-owned Layout Creator dialog opens as the
+  replacement overlay.
+- **Commit:** same commit as this entry

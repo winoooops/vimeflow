@@ -43,7 +43,6 @@ type LayoutDisplayMenuTriggerProps = Omit<
 >
 
 const CLOSE_NATIVE_OVERLAY_ON_CREATE_LAYOUT_SELECT = false
-const SUSPEND_NATIVE_OVERLAY_ON_CREATE_LAYOUT_SELECT = true
 
 const LayoutDisplayMenuTriggerIcon = (): ReactElement => (
   <svg
@@ -182,10 +181,8 @@ export const LayoutDisplayMenu = ({
             nativeOverlayCloseOnSelect={
               CLOSE_NATIVE_OVERLAY_ON_CREATE_LAYOUT_SELECT
             }
-            nativeOverlaySuspendOnSelect={
-              SUSPEND_NATIVE_OVERLAY_ON_CREATE_LAYOUT_SELECT
-            }
             onSelect={(): void => {
+              closeMenu()
               onCreateCustomLayout()
             }}
           >
