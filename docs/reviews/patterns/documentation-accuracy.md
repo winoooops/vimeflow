@@ -1006,3 +1006,16 @@ Stale documentation misleads future contributors and review agents.
   native resize-throttle docs to describe the main-process async fallback
   behavior instead of the removed addon API.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 106. Pattern index ref count drifted from source frontmatter
+
+- **Source:** github-claude | PR #766 round 3 | 2026-07-31
+- **Severity:** LOW
+- **File:** `docs/reviews/CLAUDE.md`
+- **Finding:** The Accessibility row in the review pattern index listed
+  `Refs` as 90 while `docs/reviews/patterns/accessibility.md` still had
+  `ref_count: 91`. The mismatch broke the documented invariant that the
+  pattern frontmatter and index row stay in lockstep.
+- **Fix:** Restored the Accessibility row's `Refs` value to 91 so it matches
+  the pattern file frontmatter.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -1233,3 +1233,18 @@ prevent showing previous data.
   the dialog. Added controller coverage that emits owner blur from inside the
   fake `show()` call.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 109. Async native fallback ignored the documented resize throttle override
+
+- **Source:** github-codex-connector | PR #766 round 3 | 2026-07-31
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The async PTY resize fallback initialized its throttle from
+  `GHOSTTY_RESIZE_THROTTLE_MS`, but every renderer pane update overwrote it
+  with the agent-registry interval before resize callbacks began. Setting the
+  documented environment override therefore had no effect for real panes.
+- **Fix:** Parse the resize throttle from the controller environment and track
+  whether it was explicitly configured. Renderer-provided agent intervals still
+  apply by default, but a valid environment override now takes precedence, with
+  fake-timer coverage pinning the 32 ms override over a 96 ms renderer value.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -219,13 +219,23 @@ const MAX_RESIZE_THROTTLE_MS = 1000
 // Env override is the tuning knob from the resize gray-band investigation.
 // An explicit 0 keeps a zero-delay window; empty/garbage/negative values
 // must fall back to the default (Number('') is 0, so guard before Number).
-const throttleMsRaw = process.env.GHOSTTY_RESIZE_THROTTLE_MS?.trim()
-const throttleMsOverride = throttleMsRaw ? Number(throttleMsRaw) : NaN
+const DEFAULT_GHOSTTY_RESIZE_THROTTLE_MS = 16
 
-const GHOSTTY_RESIZE_THROTTLE_MS =
-  Number.isFinite(throttleMsOverride) && throttleMsOverride >= 0
-    ? throttleMsOverride
-    : 16
+const parseResizeThrottleConfig = (
+  env: NodeJS.ProcessEnv
+): { resizeThrottleMs: number; hasEnvOverride: boolean } => {
+  const throttleMsRaw = env.GHOSTTY_RESIZE_THROTTLE_MS?.trim()
+  const throttleMsOverride = throttleMsRaw ? Number(throttleMsRaw) : NaN
+
+  if (Number.isFinite(throttleMsOverride) && throttleMsOverride >= 0) {
+    return { resizeThrottleMs: throttleMsOverride, hasEnvOverride: true }
+  }
+
+  return {
+    resizeThrottleMs: DEFAULT_GHOSTTY_RESIZE_THROTTLE_MS,
+    hasEnvOverride: false,
+  }
+}
 
 // Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in so
 // ordinary local runs can keep the fallback. The old helper flag is retained
@@ -489,6 +499,10 @@ export class GhosttyNativeParentController {
 
   private readonly shortcutInputBlocked: (win: BrowserWindow) => boolean
 
+  private readonly resizeThrottleMs: number
+
+  private readonly hasResizeThrottleEnvOverride: boolean
+
   private addon: GhosttyNativeParentAddon | null
 
   private addonLoadFailed = false
@@ -512,6 +526,9 @@ export class GhosttyNativeParentController {
     this.addon = deps.addon ?? null
     this.inputBlocked = deps.inputBlocked ?? ((): boolean => false)
     this.shortcutInputBlocked = deps.shortcutInputBlocked ?? this.inputBlocked
+    const resizeThrottleConfig = parseResizeThrottleConfig(this.env)
+    this.resizeThrottleMs = resizeThrottleConfig.resizeThrottleMs
+    this.hasResizeThrottleEnvOverride = resizeThrottleConfig.hasEnvOverride
   }
 
   registerIpc(): void {
@@ -669,7 +686,10 @@ export class GhosttyNativeParentController {
       state.lastFontFamily = payload.fontFamily
       addon.setFontFamily?.(surface, payload.fontFamily)
     }
-    if (payload.resizeThrottleMs !== undefined) {
+    if (
+      payload.resizeThrottleMs !== undefined &&
+      !this.hasResizeThrottleEnvOverride
+    ) {
       state.resizeThrottleMs = payload.resizeThrottleMs
     }
     addon.setFrame(
@@ -1045,7 +1065,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
-      resizeThrottleMs: GHOSTTY_RESIZE_THROTTLE_MS,
+      resizeThrottleMs: this.resizeThrottleMs,
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
