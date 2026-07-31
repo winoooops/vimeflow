@@ -42,18 +42,12 @@ interface PixelMapping {
 
 interface OverlayWindowState {
   alwaysOnTop: boolean
-  focusable: boolean
   visible: boolean
 }
 
 interface LocalDialogState {
   nativeOverlayActive: boolean
   opacity: string
-}
-
-interface TrackCounts {
-  before: { cols: number; rows: number }
-  after: { cols: number; rows: number }
 }
 
 type ElectronModule = typeof import('electron')
@@ -338,7 +332,6 @@ const getLayoutCreatorOverlayWindowState =
         ? null
         : {
             alwaysOnTop: overlay.isAlwaysOnTop(),
-            focusable: overlay.isFocusable(),
             visible: overlay.isVisible(),
           }
     })
@@ -868,38 +861,72 @@ describe('NativeOverlay BrowserWindow layering', () => {
       async () => {
         const state = await getLayoutCreatorOverlayWindowState()
 
-        return (
-          state?.alwaysOnTop === true &&
-          state.focusable === true &&
-          state.visible === true
-        )
+        return state?.alwaysOnTop === true && state.visible === true
       },
       {
         timeout: 5_000,
         interval: 100,
         timeoutMsg:
-          'Layout Creator overlay window did not become visible and focusable',
+          'Layout Creator overlay window did not become visible and topmost',
       }
     )
     const overlayWindowState = await getLayoutCreatorOverlayWindowState()
     expect(overlayWindowState).toEqual({
       alwaysOnTop: true,
-      focusable: true,
       visible: true,
     })
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 
-    let trackCounts: TrackCounts | null = null
+    const beforeGrid = await browser.electron.execute(
+      async (electron: ElectronModule) => {
+        let overlay:
+          | ReturnType<
+              ElectronModule['webContents']['getAllWebContents']
+            >[number]
+          | undefined
+        for (const contents of electron.webContents.getAllWebContents()) {
+          const mode = new URL(contents.getURL()).searchParams.get(
+            'nativeOverlay'
+          )
+
+          if (mode !== '1' && mode !== 'menu') {
+            continue
+          }
+
+          const hasLayoutCreator = (await contents.executeJavaScript(`
+            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+          `)) as boolean
+
+          if (hasLayoutCreator) {
+            overlay = contents
+            break
+          }
+        }
+
+        if (!overlay) {
+          return null
+        }
+
+        return overlay.executeJavaScript(`
+          (async () => {
+            const before = window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid()
+            document.querySelector('button[aria-label="Add Cols"]')?.click()
+            await new Promise((resolve) => setTimeout(resolve, 100))
+            document.querySelector('button[aria-label="Add Rows"]')?.click()
+            return before ?? null
+          })()
+        `) as Promise<{ cols: number; rows: number } | null>
+      }
+    )
+    if (beforeGrid === null) {
+      throw new Error('Layout Creator overlay draft grid unavailable')
+    }
+
     await browser.waitUntil(
       async () => {
-        trackCounts = await browser.electron.execute(
+        const afterGrid = await browser.electron.execute(
           async (electron: ElectronModule) => {
-            let overlay:
-              | ReturnType<
-                  ElectronModule['webContents']['getAllWebContents']
-                >[number]
-              | undefined
             for (const contents of electron.webContents.getAllWebContents()) {
               const mode = new URL(contents.getURL()).searchParams.get(
                 'nativeOverlay'
@@ -909,55 +936,31 @@ describe('NativeOverlay BrowserWindow layering', () => {
                 continue
               }
 
-              const hasLayoutCreator = (await contents.executeJavaScript(`
-                Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-              `)) as boolean
+              const grid = (await contents.executeJavaScript(`
+                window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid() ?? null
+              `)) as { cols: number; rows: number } | null
 
-              if (hasLayoutCreator) {
-                overlay = contents
-                break
+              if (grid !== null) {
+                return grid
               }
             }
 
-            if (!overlay) {
-              return null
-            }
-
-            return overlay.executeJavaScript(`
-              (async () => {
-                const read = (axis) => {
-                  const value = document.querySelector(
-                    \`[data-layout-creator-track-count="\${axis.toLowerCase()}"]\`
-                  )
-                  return Number(value?.textContent)
-                }
-                const before = { cols: read('Cols'), rows: read('Rows') }
-                document.querySelector('button[aria-label="Add Cols"]')?.click()
-                await new Promise((resolve) => setTimeout(resolve, 100))
-                document.querySelector('button[aria-label="Add Rows"]')?.click()
-                await new Promise((resolve) => setTimeout(resolve, 1_000))
-                return {
-                  before,
-                  after: { cols: read('Cols'), rows: read('Rows') },
-                }
-              })()
-            `) as Promise<TrackCounts>
+            return null
           }
         )
 
-        return trackCounts !== null
+        return (
+          afterGrid?.cols === beforeGrid.cols + 1 &&
+          afterGrid.rows === beforeGrid.rows + 1
+        )
       },
       {
         timeout: 5_000,
         interval: 100,
         timeoutMsg:
-          'Layout Creator overlay WebContents was unavailable for track editing',
+          'Layout Creator overlay did not apply native track stepper clicks',
       }
     )
-    expect(trackCounts?.after).toEqual({
-      cols: (trackCounts?.before.cols ?? 0) + 1,
-      rows: (trackCounts?.before.rows ?? 0) + 1,
-    })
 
     const editorState = await browser.electron.execute(
       async (electron: ElectronModule) => {

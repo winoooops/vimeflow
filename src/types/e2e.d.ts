@@ -10,6 +10,8 @@ declare global {
       getTerminalBufferForSession(sessionId: string): string
       getVisibleSessionId(): string | null
       getVisiblePtyId(): string | null
+      getLayoutCreatorGrid(): { cols: number; rows: number } | undefined
+      getLayoutCreatorDraftGrid(): { cols: number; rows: number } | undefined
       getActiveSessionIds(): string[]
       invokeBackend<T>(
         method: string,
