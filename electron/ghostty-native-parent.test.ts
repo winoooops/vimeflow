@@ -389,74 +389,6 @@ describe('ghostty native parent', () => {
     ).toThrow('invalid ghostty native parent update payload')
   })
 
-  test('forwards the per-pane resize throttle to the addon only on change', () => {
-    const surface = {}
-
-    const addon = {
-      create: vi.fn(() => surface),
-      setFrame: vi.fn(),
-      setFontFamily: vi.fn(),
-      setResizeThrottleMs: vi.fn(),
-      write: vi.fn(),
-      focus: vi.fn(),
-      destroy: vi.fn(),
-    }
-
-    const sidecar = {
-      invoke: vi.fn(() => Promise.resolve(undefined)),
-      onEvent: vi.fn(() => vi.fn()),
-      shutdown: vi.fn(() => Promise.resolve()),
-    } as unknown as Sidecar
-
-    const controller = setupGhosttyNativeParent({
-      sidecar,
-      platform: 'darwin',
-      env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
-      addon,
-    })
-
-    const update = (resizeThrottleMs: number): void => {
-      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
-        { sender: {} },
-        {
-          sessionId: 'pty-1',
-          paneId: 'pane-1',
-          cwd: '/tmp',
-          visible: true,
-          parentHeight: 900,
-          bounds: { x: 10, y: 20, width: 300, height: 200 },
-          resizeThrottleMs,
-        }
-      )
-    }
-
-    update(96)
-    update(96)
-
-    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(1)
-    expect(addon.setResizeThrottleMs).toHaveBeenCalledWith(surface, 96)
-
-    // Agent detection can reclassify a running pane mid-session.
-    update(0)
-
-    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(2)
-    expect(addon.setResizeThrottleMs).toHaveBeenLastCalledWith(surface, 0)
-
-    // A recreated surface starts from the fork's defaults, so the same value
-    // must be forwarded again — a kept cache would dedupe it away and
-    // silently strip the throttle from the new surface.
-    handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
-      { sender: {} },
-      { sessionId: 'pty-1', paneId: 'pane-1' }
-    )
-    update(0)
-
-    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(3)
-    expect(addon.setResizeThrottleMs).toHaveBeenLastCalledWith(surface, 0)
-
-    controller.dispose()
-  })
-
   test('rejects resize throttle payloads outside the millisecond domain', () => {
     const sidecar = {
       invoke: vi.fn(() => Promise.resolve(undefined)),
@@ -478,8 +410,6 @@ describe('ghostty native parent', () => {
       },
     })
 
-    // An unbounded value would arm the fork's dispatch timer effectively
-    // forever and freeze the surface's metric sync.
     for (const resizeThrottleMs of [-1, Number.MAX_VALUE, Number.NaN]) {
       expect(() =>
         handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
@@ -1980,6 +1910,189 @@ describe('ghostty native parent', () => {
       expect(sidecar.invoke).toHaveBeenCalledTimes(4)
       expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
         request: { sessionId: 'pty-1', cols: 90, rows: 50 },
+      })
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  test('uses the renderer throttle interval on the async resize fallback', async () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const callbacks: {
+        onResize?: (cols: number, rows: number) => void
+      } = {}
+      const surface = {}
+
+      const addon = {
+        create: vi.fn(
+          (
+            _bridge,
+            _handle,
+            _input,
+            resize,
+            _focus,
+            _shortcut,
+            _renamePane
+          ) => {
+            void _bridge
+            void _handle
+            void _input
+            void _focus
+            void _shortcut
+            void _renamePane
+            callbacks.onResize = resize
+
+            return surface
+          }
+        ),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+        isPtyNativeOwned: vi.fn(() => false),
+      }
+
+      const sidecar = {
+        invoke: vi.fn(() => Promise.resolve(undefined)),
+        onEvent: vi.fn(() => vi.fn()),
+        shutdown: vi.fn(() => Promise.resolve()),
+      } as unknown as Sidecar
+
+      controller = setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: { VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1' },
+        addon,
+      })
+
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+          resizeThrottleMs: 96,
+        }
+      )
+
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
+
+      callbacks.onResize?.(80, 24)
+      callbacks.onResize?.(81, 24)
+      callbacks.onResize?.(82, 24)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(16)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(80)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
+      })
+    } finally {
+      controller?.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  test('prefers the environment throttle over the renderer interval', async () => {
+    vi.useFakeTimers()
+    let controller: ReturnType<typeof setupGhosttyNativeParent> | null = null
+
+    try {
+      const callbacks: {
+        onResize?: (cols: number, rows: number) => void
+      } = {}
+      const surface = {}
+
+      const addon = {
+        create: vi.fn(
+          (
+            _bridge,
+            _handle,
+            _input,
+            resize,
+            _focus,
+            _shortcut,
+            _renamePane
+          ) => {
+            void _bridge
+            void _handle
+            void _input
+            void _focus
+            void _shortcut
+            void _renamePane
+            callbacks.onResize = resize
+
+            return surface
+          }
+        ),
+        setFrame: vi.fn(),
+        setFontFamily: vi.fn(),
+        write: vi.fn(),
+        focus: vi.fn(),
+        destroy: vi.fn(),
+        isPtyNativeOwned: vi.fn(() => false),
+      }
+
+      const sidecar = {
+        invoke: vi.fn(() => Promise.resolve(undefined)),
+        onEvent: vi.fn(() => vi.fn()),
+        shutdown: vi.fn(() => Promise.resolve()),
+      } as unknown as Sidecar
+
+      controller = setupGhosttyNativeParent({
+        sidecar,
+        platform: 'darwin',
+        env: {
+          VITE_GHOSTTY_NATIVE_MACOS_PARENT: '1',
+          GHOSTTY_RESIZE_THROTTLE_MS: '32',
+        },
+        addon,
+      })
+
+      handlers.get(GHOSTTY_NATIVE_UPDATE)?.(
+        { sender: {} },
+        {
+          sessionId: 'pty-1',
+          paneId: 'pane-1',
+          cwd: '/tmp',
+          visible: true,
+          parentHeight: 900,
+          bounds: { x: 10, y: 20, width: 300, height: 200 },
+          resizeThrottleMs: 96,
+        }
+      )
+
+      vi.advanceTimersByTime(SURFACE_SETTLE_MS)
+
+      callbacks.onResize?.(80, 24)
+      callbacks.onResize?.(81, 24)
+      callbacks.onResize?.(82, 24)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(31)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(sidecar.invoke).toHaveBeenCalledTimes(2)
+      expect(sidecar.invoke).toHaveBeenLastCalledWith('resize_pty', {
+        request: { sessionId: 'pty-1', cols: 82, rows: 24 },
       })
     } finally {
       controller?.dispose()

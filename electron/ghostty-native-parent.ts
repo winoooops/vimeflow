@@ -89,10 +89,6 @@ interface GhosttyNativeParentAddon {
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
-  setResizeThrottleMs?: (
-    surface: GhosttyNativeSurface,
-    milliseconds: number
-  ) => void
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
   // Test-only grid reader; absent on addons built before it was added.
@@ -152,7 +148,7 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastFontFamily: string | null
-  lastResizeThrottleMs: number | null
+  resizeThrottleMs: number
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
   pendingResize: { cols: number; rows: number } | null
@@ -214,10 +210,8 @@ export const SURFACE_SETTLE_MS = 120
 
 const MAX_PENDING_CHUNKS = 64
 const MAX_SURFACES = 128
-// Upper bound for the per-pane surface resize throttle accepted over IPC. The
-// fork arms a dispatch timer with this value; an unbounded number (e.g.
-// Number.MAX_VALUE) would leave that timer armed forever and freeze the
-// surface's metric sync. 1s is far beyond any sane coalescing window.
+// Upper bound for renderer-selected async resize coalescing. An unbounded
+// timer would leave the fallback PTY path effectively stuck at one size.
 const MAX_RESIZE_THROTTLE_MS = 1000
 // Leading+trailing throttle for PTY resize during live drags. Stock Ghostty
 // forwards every grid change with no timer (Surface.zig sizeCallback, dedupe
@@ -225,13 +219,23 @@ const MAX_RESIZE_THROTTLE_MS = 1000
 // Env override is the tuning knob from the resize gray-band investigation.
 // An explicit 0 keeps a zero-delay window; empty/garbage/negative values
 // must fall back to the default (Number('') is 0, so guard before Number).
-const throttleMsRaw = process.env.GHOSTTY_RESIZE_THROTTLE_MS?.trim()
-const throttleMsOverride = throttleMsRaw ? Number(throttleMsRaw) : NaN
+const DEFAULT_GHOSTTY_RESIZE_THROTTLE_MS = 16
 
-const GHOSTTY_RESIZE_THROTTLE_MS =
-  Number.isFinite(throttleMsOverride) && throttleMsOverride >= 0
-    ? throttleMsOverride
-    : 16
+const parseResizeThrottleConfig = (
+  env: NodeJS.ProcessEnv
+): { resizeThrottleMs: number; hasEnvOverride: boolean } => {
+  const throttleMsRaw = env.GHOSTTY_RESIZE_THROTTLE_MS?.trim()
+  const throttleMsOverride = throttleMsRaw ? Number(throttleMsRaw) : NaN
+
+  if (Number.isFinite(throttleMsOverride) && throttleMsOverride >= 0) {
+    return { resizeThrottleMs: throttleMsOverride, hasEnvOverride: true }
+  }
+
+  return {
+    resizeThrottleMs: DEFAULT_GHOSTTY_RESIZE_THROTTLE_MS,
+    hasEnvOverride: false,
+  }
+}
 
 // Packaged macOS is the shipped Ghostty path. Dev and e2e still opt in so
 // ordinary local runs can keep the fallback. The old helper flag is retained
@@ -495,6 +499,10 @@ export class GhosttyNativeParentController {
 
   private readonly shortcutInputBlocked: (win: BrowserWindow) => boolean
 
+  private readonly resizeThrottleMs: number
+
+  private readonly hasResizeThrottleEnvOverride: boolean
+
   private addon: GhosttyNativeParentAddon | null
 
   private addonLoadFailed = false
@@ -518,6 +526,9 @@ export class GhosttyNativeParentController {
     this.addon = deps.addon ?? null
     this.inputBlocked = deps.inputBlocked ?? ((): boolean => false)
     this.shortcutInputBlocked = deps.shortcutInputBlocked ?? this.inputBlocked
+    const resizeThrottleConfig = parseResizeThrottleConfig(this.env)
+    this.resizeThrottleMs = resizeThrottleConfig.resizeThrottleMs
+    this.hasResizeThrottleEnvOverride = resizeThrottleConfig.hasEnvOverride
   }
 
   registerIpc(): void {
@@ -677,10 +688,9 @@ export class GhosttyNativeParentController {
     }
     if (
       payload.resizeThrottleMs !== undefined &&
-      state.lastResizeThrottleMs !== payload.resizeThrottleMs
+      !this.hasResizeThrottleEnvOverride
     ) {
-      state.lastResizeThrottleMs = payload.resizeThrottleMs
-      addon.setResizeThrottleMs?.(surface, payload.resizeThrottleMs)
+      state.resizeThrottleMs = payload.resizeThrottleMs
     }
     addon.setFrame(
       surface,
@@ -1055,7 +1065,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
-      lastResizeThrottleMs: null,
+      resizeThrottleMs: this.resizeThrottleMs,
       lastResize: null,
       resizeTimer: null,
       pendingResize: null,
@@ -1511,7 +1521,7 @@ export class GhosttyNativeParentController {
 
       this.forwardPtyResize(resizeState, sessionId, pending.cols, pending.rows)
       this.armResizeThrottle(resizeState, sessionId, canForward)
-    }, GHOSTTY_RESIZE_THROTTLE_MS)
+    }, resizeState.resizeThrottleMs)
   }
 
   private forwardPtyResize(
@@ -1620,10 +1630,6 @@ export class GhosttyNativeParentController {
     state.lastForegroundColor = null
     state.lastKeybindings = null
     state.lastFontFamily = null
-    // A recreated surface starts from the fork's defaults (throttle 0), so a
-    // kept cache would dedupe the unchanged payload and silently strip the
-    // agent's throttle from the new surface.
-    state.lastResizeThrottleMs = null
   }
 
   private invokeSidecar(

@@ -42,14 +42,11 @@ export interface AgentDef extends PaneIdentity {
   } | null
   Icon?: AgentIcon
   /**
-   * Engine-side resize coalescing for this agent's native Ghostty surface,
-   * in milliseconds (0 = unthrottled). Content-dependent: an alt-screen TUI
-   * that fully repaints on every winsize needs ~96ms so the engine's reflow
-   * can keep up with a drag, while a primary-screen transcript that never
-   * re-emits its scrollback renders best unthrottled — throttled jumps read
-   * as blinking there. Values from a hands-on A/B across 0/32/48/64/96 on
-   * live panes. Rule for new agents: full-frame repaint per winsize → ~96;
-   * partial/in-place updates → 0.
+   * Main-process resize coalescing for the native Ghostty async PTY fallback.
+   * Native-owned PTYs bypass this path. Content-dependent: an alt-screen TUI
+   * that fully repaints on every winsize needs ~96ms so the engine's reflow can
+   * keep up with a drag, while primary-screen transcripts render best
+   * unthrottled.
    */
   resizeThrottleMs: number
   /**

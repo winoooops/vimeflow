@@ -48,8 +48,7 @@ interface GhosttyBodyProps {
   shortcutContext?: NativeGhosttyShortcutContext
   bottomCornerRadius?: number
   terminalFontFamily?: string
-  /** Engine-side resize coalescing for this pane's surface — see the
-   *  agent-type mapping where TerminalPane computes it. */
+  /** Async native fallback PTY resize coalescing for this pane. */
   resizeThrottleMs?: number
   onUnavailable?: () => void
 }
