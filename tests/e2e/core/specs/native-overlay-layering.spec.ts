@@ -201,7 +201,9 @@ const clickEnabledOverlayCheckbox = async (
         const result = (await overlay.executeJavaScript(`
           (() => {
             const item = Array.from(
-              document.querySelectorAll('[role="menuitemcheckbox"]')
+              document.querySelectorAll(
+                '[role="menu"][aria-label="Displayed layouts"] [role="menuitemcheckbox"]'
+              )
             ).find((element) =>
               element.getAttribute('aria-disabled') !== 'true' &&
               element instanceof HTMLElement
@@ -256,7 +258,7 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
     return overlay.executeJavaScript(`
       (() => {
         const rect = document
-          .querySelector('[role="menu"]')
+          .querySelector('[role="menu"][aria-label="Displayed layouts"]')
           ?.getBoundingClientRect()
         return rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
@@ -671,7 +673,9 @@ const waitForEnabledOverlayCheckbox = async (): Promise<void> => {
           }
 
           const hasEnabledCheckbox = (await overlay.executeJavaScript(`
-            Array.from(document.querySelectorAll('[role="menuitemcheckbox"]'))
+            Array.from(document.querySelectorAll(
+              '[role="menu"][aria-label="Displayed layouts"] [role="menuitemcheckbox"]'
+            ))
               .some((element) =>
                 element instanceof HTMLElement &&
                 element.getAttribute('aria-disabled') !== 'true'
@@ -841,7 +845,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
         return overlay.executeJavaScript(`
           (() => {
             const item = document.querySelector(
-              '[role="menuitem"][aria-label="Create custom layout"]'
+              '[role="menu"][aria-label="Displayed layouts"] [role="menuitem"][aria-label="Create custom layout"]'
             )
             if (!(item instanceof HTMLElement)) {
               return false

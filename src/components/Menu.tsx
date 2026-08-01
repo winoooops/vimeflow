@@ -760,7 +760,6 @@ interface MenuRowNativeOverlayAction {
   pressed?: boolean
   disabled?: boolean
   closeOnSelect?: boolean
-  suspendOnSelect?: boolean
   onSelect: () => NativeOverlayActionResult
 }
 
@@ -981,7 +980,6 @@ interface MenuItemProps {
   active?: boolean
   disabled?: boolean
   nativeOverlayCloseOnSelect?: boolean
-  nativeOverlaySuspendOnSelect?: boolean
   onSelect: () => void
   children: ReactNode
 }
@@ -1305,7 +1303,6 @@ const nativeMenuSubActionFromRowAction = (
     : { pressed: nativeAction.pressed }),
   ...(nativeAction.disabled === true ? { disabled: true } : {}),
   ...(nativeAction.closeOnSelect === false ? { closeOnSelect: false } : {}),
-  ...(nativeAction.suspendOnSelect === true ? { suspendOnSelect: true } : {}),
 })
 
 const nativeMenuCompositeActionsFromRowActions = (
@@ -1533,9 +1530,6 @@ const nativeMenuItemFromElement = (
         : { shortcut: formatShortcut(element.props.shortcut) }),
       ...(element.props.nativeOverlayCloseOnSelect === false
         ? { closeOnSelect: false }
-        : {}),
-      ...(element.props.nativeOverlaySuspendOnSelect === true
-        ? { suspendOnSelect: true }
         : {}),
       ...(disabled ? { disabled: true } : {}),
     },
