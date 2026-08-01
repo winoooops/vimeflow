@@ -245,7 +245,7 @@ describe('LayoutDisplayMenu', () => {
     ])
   })
 
-  test('retains the native menu action while closing before the layout creator dialog', async () => {
+  test('closes the native menu before opening the layout creator dialog', async () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const user = userEvent.setup()
@@ -276,14 +276,13 @@ describe('LayoutDisplayMenu', () => {
     expect(createItem).toMatchObject({
       id: expect.any(String),
       label: 'Create custom layout',
-      closeOnSelect: false,
     })
+    expect(createItem).not.toHaveProperty('closeOnSelect')
 
     act(() => {
       nativeBridge.action({
         surfaceId: request.surfaceId,
         actionId: createItem?.type === 'separator' ? '' : createItem?.id,
-        closeOnSelect: createItem?.type === 'separator' ? undefined : false,
       })
     })
 

@@ -42,7 +42,6 @@ export interface NativeOverlayMenuActionItem {
   icon?: string
   feedback?: 'copy'
   closeOnSelect?: boolean
-  suspendOnSelect?: boolean
   shortcut?: string
   disabled?: boolean
 }
@@ -69,7 +68,6 @@ export interface NativeOverlayMenuSubAction {
   pressed?: boolean
   disabled?: boolean
   closeOnSelect?: boolean
-  suspendOnSelect?: boolean
 }
 
 export interface NativeOverlayMenuCompositeItem {

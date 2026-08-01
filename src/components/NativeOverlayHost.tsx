@@ -1621,7 +1621,6 @@ export const NativeOverlayHost = ({
     options: {
       closeOnSelect?: boolean
       feedback?: 'copy'
-      suspendOnSelect?: boolean
     } = {}
   ): void => {
     const closeOnSelect = options.closeOnSelect !== false
@@ -1635,7 +1634,6 @@ export const NativeOverlayHost = ({
       surfaceId: request.surfaceId,
       actionId,
       ...(closeOnSelect ? {} : { closeOnSelect: false }),
-      ...(options.suspendOnSelect === true ? { suspendOnSelect: true } : {}),
       ...(options.feedback === undefined ? {} : { feedback: options.feedback }),
     })
   }
@@ -1750,7 +1748,6 @@ export const NativeOverlayHost = ({
                           if (action.disabled !== true) {
                             dispatchAction(action.id, {
                               closeOnSelect: action.closeOnSelect,
-                              suspendOnSelect: action.suspendOnSelect,
                             })
                           }
                         }}
@@ -1796,7 +1793,6 @@ export const NativeOverlayHost = ({
                     dispatchAction(item.id, {
                       closeOnSelect: item.closeOnSelect,
                       feedback: item.feedback,
-                      suspendOnSelect: item.suspendOnSelect,
                     })
                   }
                 }}

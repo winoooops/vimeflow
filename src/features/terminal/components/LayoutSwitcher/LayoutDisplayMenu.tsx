@@ -42,8 +42,6 @@ type LayoutDisplayMenuTriggerProps = Omit<
   'aria-label' | 'children' | 'type'
 >
 
-const CLOSE_NATIVE_OVERLAY_ON_CREATE_LAYOUT_SELECT = false
-
 const LayoutDisplayMenuTriggerIcon = (): ReactElement => (
   <svg
     width="14"
@@ -176,16 +174,7 @@ export const LayoutDisplayMenu = ({
       {onCreateCustomLayout !== undefined && (
         <Menu.Section>
           <div className="mx-1 my-1 h-px bg-outline-variant/25" />
-          <Menu.Item
-            icon="dashboard_customize"
-            nativeOverlayCloseOnSelect={
-              CLOSE_NATIVE_OVERLAY_ON_CREATE_LAYOUT_SELECT
-            }
-            onSelect={(): void => {
-              closeMenu()
-              onCreateCustomLayout()
-            }}
-          >
+          <Menu.Item icon="dashboard_customize" onSelect={onCreateCustomLayout}>
             Create custom layout
           </Menu.Item>
         </Menu.Section>
