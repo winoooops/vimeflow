@@ -1684,7 +1684,7 @@ export const NativeOverlayHost = ({
                   aria-label={item.label}
                   onChange={(): void => {
                     if (item.disabled !== true) {
-                      dispatchAction(item.id)
+                      dispatchAction(item.id, { closeOnSelect: false })
                     }
                   }}
                 >

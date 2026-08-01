@@ -2,8 +2,8 @@
 id: guard-branch-correctness
 category: correctness
 created: 2026-06-11
-last_updated: 2026-06-19
-ref_count: 0
+last_updated: 2026-07-31
+ref_count: 1
 ---
 
 # Guard Branch Correctness
@@ -32,4 +32,13 @@ Review every branch whose two arms return the same expression. Either remove the
 - **File:** `src/features/terminal/layout-registry/layoutRegistry.ts` L77-82
 - **Finding:** `autoShrinkLayoutFor` returned the current custom layout for every `nextPaneCount <= current.capacity`, including `0`. The builtin `nextPaneCount <= 1 -> 'single'` guard ran only after the workspace early-return, so a caller relying on `autoShrinkLayoutFor(0, 'custom:X')` returning `'single'` would silently get the custom id instead.
 - **Fix:** Changed the workspace early-return condition to `nextPaneCount >= 1 && nextPaneCount <= current.capacity` so the zero-pane case falls through to `'single'` explicitly. Added a regression test for `autoShrinkLayoutFor(0, 'custom:grid-2x2')`.
+- **Commit:** same commit as this entry
+
+### 3. Optional shader export guard treated absence as success
+
+- **Source:** github-claude | PR #767 round 1 | 2026-07-31
+- **Severity:** HIGH
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The native parent called `addon.setCursorShader?.(...)` and only rejected an explicit `false` return. A stale native addon without the export returned `undefined`, so selecting a shader appeared to succeed while no shader was applied.
+- **Fix:** Split the shader path from the capability check. Missing `setCursorShader` now rejects non-`off` shader requests, while `off` remains a supported no-op for older addons, and a regression test covers the missing-export path.
 - **Commit:** same commit as this entry

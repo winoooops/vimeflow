@@ -426,6 +426,36 @@ describe('GhosttyBody', () => {
     })
   })
 
+  test('updates the native cursor effect without remounting', async () => {
+    const props = {
+      paneId: 'pane-1',
+      ptyId: 'pty-1',
+      cwd: '/tmp',
+      active: true,
+      service: createService(),
+    }
+
+    const { rerender } = render(
+      <GhosttyBody {...props} terminalCursorEffect="warp" />
+    )
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ cursorEffect: 'warp' })
+      )
+    })
+
+    vi.mocked(updateNativeGhostty).mockClear()
+
+    rerender(<GhosttyBody {...props} terminalCursorEffect="ripple" />)
+
+    await waitFor(() => {
+      expect(updateNativeGhostty).toHaveBeenCalledWith(
+        expect.objectContaining({ cursorEffect: 'ripple' })
+      )
+    })
+  })
+
   test('sends native frame updates when only shortcut context changes', async () => {
     const firstShortcutContext = {
       paneIds: ['pane-1', 'pane-2'],

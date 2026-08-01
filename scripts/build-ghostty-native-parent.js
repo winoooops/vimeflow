@@ -1,5 +1,5 @@
-// cspell:ignore codesign ghostty Ghostty libghostty mmacosx otool swiftpm xcframework xcrun
-import { existsSync, mkdirSync, copyFileSync, rmSync } from 'node:fs'
+// cspell:ignore codesign ghostty Ghostty glslang libghostty mmacosx otool swiftpm xcframework xcrun
+import { existsSync, mkdirSync, copyFileSync, cpSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -9,6 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const smokeDir = join(repoRoot, 'native/ghostty-helper')
 const outputDir = join(repoRoot, 'dist-native/ghostty-parent')
+
 const scratchDir = join(tmpdir(), 'vimeflow-ghostty-electron-parent-swiftpm')
 
 const addonSource = join(
@@ -17,12 +18,18 @@ const addonSource = join(
 )
 const addonOutput = join(outputDir, 'ghostty_native_parent.node')
 const bridgeOutput = join(outputDir, 'libGhosttyElectronBridge.dylib')
+const shaderSourceDir = join(repoRoot, 'native/ghostty-parent/shaders')
 
 const ghosttyScratchXcframework = join(
   scratchDir,
   'artifacts/libghostty-spm/libghostty/GhosttyKit.xcframework'
 )
 const ghosttyScratchPlist = join(ghosttyScratchXcframework, 'Info.plist')
+
+const ghosttyScratchArchive = join(
+  ghosttyScratchXcframework,
+  'macos-arm64/libghostty.a'
+)
 
 const nodeIncludeDir = [
   join(dirname(dirname(process.execPath)), 'include/node'),
@@ -49,10 +56,19 @@ execFileSync(
   }
 )
 
+const ghosttySymbols = execFileSync('nm', ['-gU', ghosttyScratchArchive], {
+  encoding: 'utf8',
+})
+if (!ghosttySymbols.includes('_glslang_initialize_process')) {
+  throw new Error('libghostty was built without custom shader support')
+}
+
 copyFileSync(
   join(scratchDir, 'debug/libGhosttyElectronBridge.dylib'),
   bridgeOutput
 )
+rmSync(join(outputDir, 'shaders'), { recursive: true, force: true })
+cpSync(shaderSourceDir, join(outputDir, 'shaders'), { recursive: true })
 
 // Node native addons are Mach-O bundles; N-API symbols are resolved from Node at load time.
 execFileSync(

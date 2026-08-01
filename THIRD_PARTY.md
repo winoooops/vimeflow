@@ -22,6 +22,12 @@ For the full transitive list, see `package-lock.json`. Apache-2.0 packages prese
 | ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ioskeley Mono | OFL-1.1 | UI / code monospace face. © 2025 Ahmed Hatem. Vendored woff2 under `src/assets/fonts/ioskeley/`; the full OFL text ships at `resources/licenses/IoskeleyMono-OFL.txt` (see `electron-builder.yml` `extraResources`). |
 
+## Bundled native assets
+
+| Asset                  | License | Notes                                                                                                                                                                                            |
+| ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ghostty cursor shaders | MIT     | Cursor effects by Sahaj Bhatt, bundled from `sahaj-b/ghostty-cursor-shaders` commit `0a274beac8b93ee6ce6b94402b7313a0417b8e38`; the license ships at `resources/ghostty-parent/shaders/LICENSE`. |
+
 ## Rust dependencies
 
 For the Rust sidecar (`vimeflow-backend`), see `Cargo.lock` and the `LICENSE` files in each crate's source. The sidecar depends only on MIT / Apache-2.0 / BSD-3-Clause crates as of this release.

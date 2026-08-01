@@ -17,6 +17,7 @@ describe('DEFAULT_SETTINGS', () => {
       uiFont: 'instrument',
       monoFont: 'jetbrains',
       terminalFontFamily: 'JetBrains Mono',
+      terminalCursorEffect: 'off',
       reservoirSwell: 'soft-mound',
       sessionIslandDisplay: 'dots',
       diffViewStyle: 'split',

@@ -13,6 +13,7 @@ import { useIsPresent } from 'framer-motion'
 import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
 import type { PtyReplay } from '../../types'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import { isTerminalCursorEffect } from '@/features/terminal/cursorEffects'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   attachNativeGhosttyOutput,
@@ -48,6 +49,7 @@ interface GhosttyBodyProps {
   shortcutContext?: NativeGhosttyShortcutContext
   bottomCornerRadius?: number
   terminalFontFamily?: string
+  terminalCursorEffect?: string
   /** Async native fallback PTY resize coalescing for this pane. */
   resizeThrottleMs?: number
   onUnavailable?: () => void
@@ -125,6 +127,7 @@ const nativeGhosttyFrameKey = ({
   foregroundColor,
   bottomCornerRadius,
   fontFamily,
+  cursorEffect,
   resizeThrottleMs,
   bounds,
   parentHeight,
@@ -135,6 +138,7 @@ const nativeGhosttyFrameKey = ({
   foregroundColor: string
   bottomCornerRadius: number
   fontFamily?: string
+  cursorEffect: string
   resizeThrottleMs?: number
   bounds: NativeGhosttyBounds
   parentHeight: number
@@ -156,6 +160,7 @@ const nativeGhosttyFrameKey = ({
     backgroundColor,
     foregroundColor,
     fontFamily ?? '',
+    cursorEffect,
     resizeThrottleMs ?? '',
     shortcutContext?.activePaneId ?? '',
     ...(shortcutContext?.paneIds ?? []),
@@ -185,12 +190,18 @@ export const GhosttyBody = ({
   shortcutContext = undefined,
   bottomCornerRadius = 0,
   terminalFontFamily = undefined,
+  terminalCursorEffect = 'off',
   resizeThrottleMs = undefined,
   onUnavailable = undefined,
 }: GhosttyBodyProps): ReactElement => {
   const theme = useTheme()
   const backgroundColor = theme.terminal.background
   const foregroundColor = theme.terminal.foreground
+
+  const cursorEffect = isTerminalCursorEffect(terminalCursorEffect)
+    ? terminalCursorEffect
+    : 'off'
+
   const containerRef = useRef<HTMLDivElement | null>(null)
   const frameIdRef = useRef<number | null>(null)
   const inFlightNativeFrameRef = useRef<Promise<void> | null>(null)
@@ -511,6 +522,7 @@ export const GhosttyBody = ({
         foregroundColor,
         bottomCornerRadius: nativeBottomCornerRadius,
         fontFamily: terminalFontFamily,
+        cursorEffect,
         resizeThrottleMs,
         bounds,
         parentHeight,
@@ -524,6 +536,7 @@ export const GhosttyBody = ({
         backgroundColor,
         foregroundColor,
         ...(terminalFontFamily ? { fontFamily: terminalFontFamily } : {}),
+        cursorEffect,
         ...(resizeThrottleMs !== undefined ? { resizeThrottleMs } : {}),
         bottomCornerRadius: nativeBottomCornerRadius,
         parentHeight,
@@ -544,6 +557,7 @@ export const GhosttyBody = ({
     backgroundColor,
     foregroundColor,
     terminalFontFamily,
+    cursorEffect,
     resizeThrottleMs,
     bottomCornerRadius,
     cwd,

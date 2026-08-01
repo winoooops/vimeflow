@@ -338,6 +338,7 @@ private final class EmbeddedGhosttyChild {
     private var backgroundHexColor = "000000"
     private var foregroundHexColor = "ffffff"
     private var fontFamily: String?
+    private var cursorShaderPath: String?
 
     init(callbacks: CallbackBox) {
         self.callbacks = callbacks
@@ -390,21 +391,42 @@ private final class EmbeddedGhosttyChild {
         applyTheme()
     }
 
+    @discardableResult
+    func setCursorShader(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextPath = trimmed.isEmpty ? nil : trimmed
+        guard nextPath != cursorShaderPath else { return true }
+
+        let previousPath = cursorShaderPath
+        cursorShaderPath = nextPath
+        guard applyTheme() else {
+            cursorShaderPath = previousPath
+            return false
+        }
+
+        return true
+    }
+
     private func terminalConfiguration() -> TerminalConfiguration {
-        let configuration = TerminalConfiguration()
+        var configuration = TerminalConfiguration()
             .background(backgroundHexColor)
             .foreground(foregroundHexColor)
 
-        guard let fontFamily else {
-            return configuration
+        if let fontFamily {
+            configuration = configuration.fontFamily(fontFamily)
         }
 
-        return configuration.fontFamily(fontFamily)
+        if let cursorShaderPath {
+            configuration = configuration.custom("custom-shader", cursorShaderPath)
+        }
+
+        return configuration
     }
 
-    private func applyTheme() {
+    @discardableResult
+    private func applyTheme() -> Bool {
         let configuration = terminalConfiguration()
-        controller.setTheme(TerminalTheme(
+        return controller.setTheme(TerminalTheme(
             light: configuration,
             dark: configuration
         ))
@@ -515,6 +537,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var backgroundHexColor = "000000"
     private var foregroundHexColor = "ffffff"
     private var fontFamily: String?
+    private var cursorShaderPath: String?
     private var secondaryChild: EmbeddedGhosttyChild?
     private var dividerView: EmbeddedGhosttyDividerView?
     private var secondarySplitRatio: CGFloat = 0.34
@@ -719,21 +742,42 @@ private final class EmbeddedGhosttySurface: NSObject {
         secondaryChild?.setFontFamily(trimmed)
     }
 
+    @discardableResult
+    func setCursorShader(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextPath = trimmed.isEmpty ? nil : trimmed
+        guard nextPath != cursorShaderPath else { return true }
+
+        let previousPath = cursorShaderPath
+        cursorShaderPath = nextPath
+        guard applyTheme() else {
+            cursorShaderPath = previousPath
+            return false
+        }
+
+        secondaryChild?.setCursorShader(trimmed)
+        return true
+    }
     private func terminalConfiguration() -> TerminalConfiguration {
-        let configuration = TerminalConfiguration()
+        var configuration = TerminalConfiguration()
             .background(backgroundHexColor)
             .foreground(foregroundHexColor)
 
-        guard let fontFamily else {
-            return configuration
+        if let fontFamily {
+            configuration = configuration.fontFamily(fontFamily)
         }
 
-        return configuration.fontFamily(fontFamily)
+        if let cursorShaderPath {
+            configuration = configuration.custom("custom-shader", cursorShaderPath)
+        }
+
+        return configuration
     }
 
-    private func applyTheme() {
+    @discardableResult
+    private func applyTheme() -> Bool {
         let configuration = terminalConfiguration()
-        controller.setTheme(TerminalTheme(
+        return controller.setTheme(TerminalTheme(
             light: configuration,
             dark: configuration
         ))
@@ -744,7 +788,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     }
 
     /// Fingerprint of what Core Animation is PRESENTING right now, as
-    /// `id=<layer-contents identity>,seed=<IOSurface seed>`.
+    /// `id=<layer-contents identity>,seed=<IOSurface seed>,acceptedShader=<path|off>`.
     ///
     /// Diagnostics only. `readViewportText` proves what the GRID holds; this
     /// probes the other end — whether the presented frame is still changing.
@@ -761,7 +805,7 @@ private final class EmbeddedGhosttySurface: NSObject {
             seed = IOSurfaceGetSeed(contents as! IOSurfaceRef)
         }
 
-        return "id=\(identity),seed=\(seed)"
+        return "id=\(identity),seed=\(seed),acceptedShader=\(cursorShaderPath ?? "off")"
     }
 
     /// The visible grid as text, one line per row.
@@ -804,6 +848,9 @@ private final class EmbeddedGhosttySurface: NSObject {
         child.setForegroundColor(foregroundHexColor)
         if let fontFamily {
             child.setFontFamily(fontFamily)
+        }
+        if let cursorShaderPath {
+            child.setCursorShader(cursorShaderPath)
         }
         container.addSubview(child.terminalView)
         secondaryChild = child
@@ -1341,6 +1388,22 @@ public func vimeflowGhosttySetFontFamily(
     }
 }
 
+@_cdecl("vimeflow_ghostty_set_cursor_shader")
+public func vimeflowGhosttySetCursorShader(
+    _ surfacePointer: UnsafeMutableRawPointer?,
+    _ shaderPathPointer: UnsafePointer<CChar>?
+) -> Bool {
+    guard let surfacePointer, let shaderPathPointer else {
+        return false
+    }
+
+    let pointer = SendablePointer(value: surfacePointer)
+    let shaderPath = String(cString: shaderPathPointer)
+    return mainActorSync {
+        guard let surface = liveSurface(from: pointer) else { return false }
+        return surface.setCursorShader(shaderPath)
+    }
+}
 @_cdecl("vimeflow_ghostty_write")
 public func vimeflowGhosttyWrite(
     _ surfacePointer: UnsafeMutableRawPointer?,

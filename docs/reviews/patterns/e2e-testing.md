@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-29
-ref_count: 25
+last_updated: 2026-07-31
+ref_count: 26
 ---
 
 # E2E Testing
@@ -569,4 +569,13 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Assert the stable window contract with `isAlwaysOnTop()`,
   `isFocusable()`, and `isVisible()`, then keep the existing overlay paint and
   direct control-editing assertions as the functional proof.
+- **Commit:** same commit as this entry
+
+### 47. Presentation fingerprints must isolate the rendered-frame signal
+
+- **Source:** github-codex-connector | PR #767 round 1 | 2026-07-31
+- **Severity:** P2 / MEDIUM
+- **File:** `tests/e2e/terminal/specs/ghostty-runtime.spec.ts`
+- **Finding:** The Ghostty cursor shader smoke compared the full presentation fingerprint after appending `acceptedShader`. Changing only the accepted shader path could satisfy the inequality even when the presented frame `id` and `seed` were unchanged.
+- **Fix:** Parse the rendered-frame portion of the fingerprint separately, wait for shader acceptance, and require the `id`/`seed` portion to change before the smoke passes.
 - **Commit:** same commit as this entry

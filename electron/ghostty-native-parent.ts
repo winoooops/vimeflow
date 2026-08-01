@@ -6,6 +6,10 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { DIALOG_SELECTOR } from '../src/features/workspace/containerIds'
 import {
+  cursorEffectFilename,
+  isTerminalCursorEffect,
+} from '@/features/terminal/cursorEffects'
+import {
   GHOSTTY_NATIVE_DATA,
   GHOSTTY_NATIVE_DESTROY,
   GHOSTTY_NATIVE_PRESENTATION_PROBE,
@@ -89,6 +93,10 @@ interface GhosttyNativeParentAddon {
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
+  setCursorShader?: (
+    surface: GhosttyNativeSurface,
+    shaderPath: string
+  ) => boolean
   write: (surface: GhosttyNativeSurface, data: string) => void
   focus: (surface: GhosttyNativeSurface) => void
   // Test-only grid reader; absent on addons built before it was added.
@@ -148,6 +156,7 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastFontFamily: string | null
+  lastCursorEffect: string | null
   resizeThrottleMs: number
   lastResize: { cols: number; rows: number } | null
   resizeTimer: ReturnType<typeof setTimeout> | null
@@ -428,6 +437,8 @@ function isNativePayload<TKind extends keyof GhosttyNativePayloadByKind>(
           isHexColor(value.backgroundColor)) &&
         (value.foregroundColor === undefined ||
           isHexColor(value.foregroundColor)) &&
+        (value.cursorEffect === undefined ||
+          isTerminalCursorEffect(value.cursorEffect)) &&
         isOptionalFiniteNumber(value.bottomCornerRadius) &&
         (value.resizeThrottleMs === undefined ||
           (typeof value.resizeThrottleMs === 'number' &&
@@ -685,6 +696,24 @@ export class GhosttyNativeParentController {
     ) {
       state.lastFontFamily = payload.fontFamily
       addon.setFontFamily?.(surface, payload.fontFamily)
+    }
+    const cursorEffect = payload.cursorEffect ?? 'off'
+    if (state.lastCursorEffect !== cursorEffect) {
+      state.lastCursorEffect = cursorEffect
+      const filename = cursorEffectFilename(cursorEffect)
+
+      const shaderPath = filename
+        ? path.join(this.nativeParentDir, 'shaders', filename)
+        : ''
+
+      const applied =
+        typeof addon.setCursorShader === 'function'
+          ? addon.setCursorShader(surface, shaderPath)
+          : filename === undefined
+      if (applied === false) {
+        state.lastCursorEffect = null
+        throw new Error(`Ghostty rejected cursor effect: ${cursorEffect}`)
+      }
     }
     if (
       payload.resizeThrottleMs !== undefined &&
@@ -1065,6 +1094,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
+      lastCursorEffect: null,
       resizeThrottleMs: this.resizeThrottleMs,
       lastResize: null,
       resizeTimer: null,
@@ -1630,6 +1660,7 @@ export class GhosttyNativeParentController {
     state.lastForegroundColor = null
     state.lastKeybindings = null
     state.lastFontFamily = null
+    state.lastCursorEffect = null
   }
 
   private invokeSidecar(

@@ -1,5 +1,6 @@
 // cspell:ignore Ghostty ghostty GHOSTTY
 import type { BurnerPlacement } from '@/bindings/BurnerPlacement'
+import type { TerminalCursorEffect } from '@/features/terminal/cursorEffects'
 
 export interface GhosttyNativeBounds {
   x: number
@@ -28,6 +29,7 @@ export interface GhosttyNativeUpdateRequest extends GhosttyNativePaneRequest {
   backgroundColor?: string
   foregroundColor?: string
   fontFamily?: string
+  cursorEffect?: TerminalCursorEffect
   /** Main-process async fallback PTY resize coalescing for this pane. */
   resizeThrottleMs?: number
   bottomCornerRadius?: number

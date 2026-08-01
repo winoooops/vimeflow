@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   uiFont: 'instrument',
   monoFont: 'jetbrains',
   terminalFontFamily: 'JetBrains Mono',
+  terminalCursorEffect: 'off',
   reservoirSwell: 'soft-mound',
   sessionIslandDisplay: 'dots',
   diffViewStyle: 'split',

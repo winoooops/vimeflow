@@ -3496,6 +3496,7 @@ const WorkspaceViewContent = (): ReactElement => {
               openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
               terminalFontFamily={settings.terminalFontFamily}
+              terminalCursorEffect={settings.terminalCursorEffect}
               outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
             />
           </div>

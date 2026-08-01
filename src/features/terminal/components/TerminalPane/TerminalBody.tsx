@@ -36,6 +36,7 @@ interface TerminalBodyProps {
   mode: BodyMode
   deferFit: boolean
   terminalFontFamily?: string
+  terminalCursorEffect?: string
   /** Async native fallback PTY resize coalescing for this pane. */
   resizeThrottleMs?: number
 }
@@ -65,6 +66,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       mode,
       deferFit,
       terminalFontFamily = undefined,
+      terminalCursorEffect = 'off',
       resizeThrottleMs = undefined,
     },
     ref
@@ -130,6 +132,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
           terminalFontFamily={terminalFontFamily}
+          terminalCursorEffect={terminalCursorEffect}
           resizeThrottleMs={resizeThrottleMs}
           onUnavailable={handleNativeUnavailable}
         />

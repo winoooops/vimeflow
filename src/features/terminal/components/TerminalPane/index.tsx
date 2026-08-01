@@ -89,6 +89,7 @@ export interface TerminalPaneProps {
   deferFit?: boolean
   showFocusHighlight?: boolean
   terminalFontFamily?: string
+  terminalCursorEffect?: string
   shortcutContext?: NativeGhosttyShortcutContext
   shortcutHint?: string
   /**
@@ -138,6 +139,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       deferFit = false,
       showFocusHighlight = true,
       terminalFontFamily = undefined,
+      terminalCursorEffect = 'off',
       shortcutContext = undefined,
       shortcutHint = undefined,
       paneDraggable = false,
@@ -423,6 +425,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
               mode={bodyMode}
               deferFit={deferFit}
               terminalFontFamily={terminalFontFamily}
+              terminalCursorEffect={terminalCursorEffect}
               resizeThrottleMs={resizeThrottleMs}
             />
           </div>
