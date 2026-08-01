@@ -381,6 +381,7 @@ interface IpcMainLike {
 
 const OVERLAY_LOAD_TIMEOUT_MS = 5000
 const OVERLAY_RENDER_TIMEOUT_MS = 5000
+const FOCUS_HANDOFF_GRACE_MS = 250
 const MAX_OVERLAY_ITEMS = 200
 const MAX_OVERLAY_SECTIONS = 50
 const MAX_OVERLAY_SUB_ACTIONS = 20
@@ -1711,7 +1712,7 @@ export class NativeOverlayController {
 
       this.internalFocusHandoffTimers.delete(surfaceId)
       this.internalFocusHandoffSurfaceIds.delete(surfaceId)
-    }, 0)
+    }, FOCUS_HANDOFF_GRACE_MS)
     this.internalFocusHandoffTimers.set(surfaceId, timer)
   }
 
