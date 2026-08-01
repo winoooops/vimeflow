@@ -1018,7 +1018,14 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return
     }
 
-    if (!cursorEffectAddonRef.current && terminalCursorEffect !== 'off') {
+    if (terminalCursorEffect === 'off') {
+      cursorEffectAddonRef.current?.dispose()
+      cursorEffectAddonRef.current = null
+
+      return
+    }
+
+    if (!cursorEffectAddonRef.current) {
       const addon = new XtermCursorEffectAddon(
         terminalCursorEffect,
         theme.terminal.cursor
@@ -1029,7 +1036,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       return
     }
 
-    cursorEffectAddonRef.current?.setEffect(
+    cursorEffectAddonRef.current.setEffect(
       terminalCursorEffect,
       theme.terminal.cursor
     )

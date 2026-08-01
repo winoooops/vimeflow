@@ -983,6 +983,35 @@ describe('Body', () => {
     expect(Terminal).toHaveBeenCalledTimes(1)
   })
 
+  test('disposes the cursor effect addon when effects are disabled', async () => {
+    const disposeSpy = vi.spyOn(XtermCursorEffectAddon.prototype, 'dispose')
+
+    const { rerender } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        terminalCursorEffect="tail"
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.loadAddon).toHaveBeenCalledWith(
+        expect.any(XtermCursorEffectAddon)
+      )
+    })
+
+    rerender(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    expect(disposeSpy).toHaveBeenCalledTimes(1)
+  })
+
   test('falls back to Canvas2D renderer when WebGL addon construction throws', async () => {
     // WebglAddon throws (top-level mock); Body.tsx must load CanvasAddon instead so customGlyphs stays active.
     expect(() => {

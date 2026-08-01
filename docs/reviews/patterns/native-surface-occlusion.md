@@ -2,7 +2,7 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-07-31
+last_updated: 2026-08-01
 ref_count: 8
 ---
 
@@ -267,4 +267,19 @@ React overlays that drive Electron native WebContentsView visibility must regist
   the Create Custom Layout handler and removed the suspend flag. The old menu
   surface now clears before the focus-owned Layout Creator dialog opens as the
   replacement overlay.
+- **Commit:** same commit as this entry
+
+### 21. Native overlay smoke helpers must ignore stale hidden overlay hosts
+
+- **Source:** local-codex | PR #769 CI fix | 2026-08-01
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke found Layout Creator DOM
+  in any native overlay webContents, then asserted the owning BrowserWindow was
+  visible and always on top. A reused or hidden overlay host with stale dialog
+  DOM could win that lookup even when the active replacement overlay was the
+  one the smoke needed to validate.
+- **Fix:** Prefer the Layout Creator overlay host whose BrowserWindow is both
+  visible and always-on-top, keeping a fallback only for diagnostics while the
+  wait loop is still converging.
 - **Commit:** same commit as this entry
