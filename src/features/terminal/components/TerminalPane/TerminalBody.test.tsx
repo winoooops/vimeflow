@@ -1,4 +1,4 @@
-// cspell:ignore ghostty Ghostty
+// cspell:ignore ghostty Ghostty glsl
 import { act, render, screen, waitFor } from '@testing-library/react'
 import {
   forwardRef,
@@ -23,7 +23,9 @@ const bodyMocks = vi.hoisted(() => ({
     shortcutContext?: NativeGhosttyShortcutContext
     bottomCornerRadius?: number
     terminalFontFamily?: string
+    terminalCursorEffect?: string
   } | null,
+  xtermProps: null as { terminalCursorEffect?: string } | null,
   xtermFocus: vi.fn(),
 }))
 
@@ -36,12 +38,14 @@ vi.mock('./GhosttyBody', () => {
     shortcutContext = undefined,
     bottomCornerRadius = undefined,
     terminalFontFamily = undefined,
+    terminalCursorEffect = undefined,
   }: {
     onUnavailable?: () => void
     onRequestFocus?: () => void
     shortcutContext?: NativeGhosttyShortcutContext
     bottomCornerRadius?: number
     terminalFontFamily?: string
+    terminalCursorEffect?: string
   }): ReactElement => {
     bodyMocks.ghosttyProps = {
       onUnavailable,
@@ -49,6 +53,7 @@ vi.mock('./GhosttyBody', () => {
       shortcutContext,
       bottomCornerRadius,
       terminalFontFamily,
+      terminalCursorEffect,
     }
 
     return <div data-testid="ghostty-body" />
@@ -61,9 +66,10 @@ vi.mock('./GhosttyBody', () => {
 vi.mock('./Body', () => {
   const MockBody = forwardRef(
     (
-      _props: unknown,
+      { terminalCursorEffect }: { terminalCursorEffect: string | undefined },
       ref: ForwardedRef<{ focusTerminal: () => void }>
     ): ReactElement => {
+      bodyMocks.xtermProps = { terminalCursorEffect }
       useImperativeHandle(ref, () => ({
         focusTerminal: bodyMocks.xtermFocus,
       }))
@@ -83,6 +89,7 @@ describe('TerminalBody', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     bodyMocks.ghosttyProps = null
+    bodyMocks.xtermProps = null
     nativeMocks.shouldUseNativeGhostty.mockReturnValue(true)
   })
 
@@ -164,6 +171,54 @@ describe('TerminalBody', () => {
     )
 
     expect(bodyMocks.ghosttyProps?.terminalFontFamily).toBe('Iosevka')
+  })
+
+  test('passes an allowlisted cursor effect to either terminal renderer', () => {
+    const { rerender } = render(
+      <TerminalBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        terminalCursorEffect="tail"
+        mode="attach"
+        deferFit={deferFit}
+      />
+    )
+
+    expect(bodyMocks.ghosttyProps?.terminalCursorEffect).toBe('tail')
+
+    nativeMocks.shouldUseNativeGhostty.mockReturnValue(false)
+    rerender(
+      <TerminalBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        terminalCursorEffect="tail"
+        mode="attach"
+        deferFit={deferFit}
+      />
+    )
+
+    expect(bodyMocks.xtermProps?.terminalCursorEffect).toBe('tail')
+
+    rerender(
+      <TerminalBody
+        paneId="pane-1"
+        ptyId="pty-1"
+        cwd="/tmp"
+        active
+        service={createService()}
+        terminalCursorEffect="../../custom.glsl"
+        mode="attach"
+        deferFit={deferFit}
+      />
+    )
+
+    expect(bodyMocks.xtermProps?.terminalCursorEffect).toBe('off')
   })
 
   test('falls back to xterm when imperative native focus rejects', async () => {

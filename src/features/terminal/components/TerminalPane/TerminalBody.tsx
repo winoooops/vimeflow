@@ -18,6 +18,7 @@ import {
 } from '../../nativeGhosttyClient'
 import { Body as XtermBody, type BodyHandle, type BodyMode } from './Body'
 import { GhosttyBody } from './GhosttyBody'
+import { isTerminalCursorEffect } from '../../cursorEffects'
 
 interface TerminalBodyProps {
   paneId: string
@@ -74,6 +75,10 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
     const xtermRef = useRef<BodyHandle>(null)
     const [nativeUnavailable, setNativeUnavailable] = useState(false)
     const useNativeGhostty = shouldUseNativeGhostty() && !nativeUnavailable
+
+    const cursorEffect = isTerminalCursorEffect(terminalCursorEffect)
+      ? terminalCursorEffect
+      : 'off'
 
     const handleNativeUnavailable = useCallback((): void => {
       setNativeUnavailable(true)
@@ -132,7 +137,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
           terminalFontFamily={terminalFontFamily}
-          terminalCursorEffect={terminalCursorEffect}
+          terminalCursorEffect={cursorEffect}
           resizeThrottleMs={resizeThrottleMs}
           onUnavailable={handleNativeUnavailable}
         />
@@ -152,6 +157,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
         mode={mode}
         deferFit={deferFit}
         terminalFontFamily={terminalFontFamily}
+        terminalCursorEffect={cursorEffect}
       />
     )
   }

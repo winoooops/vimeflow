@@ -11,6 +11,7 @@ import {
   terminalCache,
   type BodyHandle,
 } from './Body'
+import { XtermCursorEffectAddon } from './XtermCursorEffectAddon'
 import { TERMINAL_FONT_FAMILY, resolveTerminalFontFamily } from './terminalFont'
 import { useTerminal, type UseTerminalReturn } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
@@ -948,6 +949,40 @@ describe('Body', () => {
     })
   })
 
+  test('loads the cursor effect addon only after an effect is enabled', async () => {
+    const { rerender } = render(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+      />
+    )
+
+    await waitFor(() => {
+      expect(Terminal).toHaveBeenCalledTimes(1)
+    })
+
+    expect(mockTerminal.loadAddon).not.toHaveBeenCalledWith(
+      expect.any(XtermCursorEffectAddon)
+    )
+
+    rerender(
+      <Body
+        sessionId="test-session"
+        cwd="/home/user"
+        service={defaultMockService}
+        terminalCursorEffect="tail"
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockTerminal.loadAddon).toHaveBeenCalledWith(
+        expect.any(XtermCursorEffectAddon)
+      )
+    })
+    expect(Terminal).toHaveBeenCalledTimes(1)
+  })
+
   test('falls back to Canvas2D renderer when WebGL addon construction throws', async () => {
     // WebglAddon throws (top-level mock); Body.tsx must load CanvasAddon instead so customGlyphs stays active.
     expect(() => {
@@ -1034,7 +1069,7 @@ describe('Body', () => {
       expect(capturedHandler).not.toBeNull()
     })
 
-    // Pre-loss: FitAddon + WebGL addon loaded; CanvasAddon NOT yet constructed.
+    // Pre-loss: FitAddon + WebGL addon loaded; CanvasAddon is absent.
     expect(mockTerminal.loadAddon).toHaveBeenCalledTimes(2)
     expect(CanvasAddon).not.toHaveBeenCalled()
 
