@@ -35,11 +35,13 @@ import {
 } from './agentCwdGuard'
 import { parseAgentCwdHint } from './agentCwdHint'
 import { parseOsc7Cwd, WINDOWS_DRIVE_PATH } from './osc7'
+import { XtermCursorEffectAddon } from './XtermCursorEffectAddon'
 import {
   TERMINAL_FONT_SIZE,
   loadTerminalFonts,
   resolveTerminalFontFamily,
 } from './terminalFont'
+import type { TerminalCursorEffect } from '../../cursorEffects'
 import '@xterm/xterm/css/xterm.css'
 
 const AGENT_CWD_HINT_BUFFER_SIZE = 4096
@@ -220,6 +222,9 @@ export interface BodyProps {
    * bundled and platform fallbacks so stale settings keep rendering.
    */
   terminalFontFamily?: string
+
+  /** Cursor animation used by the xterm renderer on Linux and native fallback. */
+  terminalCursorEffect?: TerminalCursorEffect
 }
 
 export interface BodyHandle {
@@ -241,6 +246,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
     onFocusChange = undefined,
     deferFit = false,
     terminalFontFamily = '',
+    terminalCursorEffect = 'off',
   },
   ref
 ): ReactElement {
@@ -251,6 +257,7 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
   // with the live terminal background so that strip is invisible.
   const theme = useTheme()
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const cursorEffectAddonRef = useRef<XtermCursorEffectAddon | null>(null)
   const deferFitRef = useRef(deferFit)
   const previousDeferFitRef = useRef(deferFit)
   const cancelScheduledFitRef = useRef<(() => void) | null>(null)
@@ -994,6 +1001,8 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       webglAddon = null
       canvasAddon?.dispose()
       canvasAddon = null
+      cursorEffectAddonRef.current?.dispose()
+      cursorEffectAddonRef.current = null
       const entry = terminalCache.get(sessionId)
       if (entry) {
         entry.terminal.dispose()
@@ -1003,6 +1012,35 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
       fitAddonRef.current = null
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (!terminal) {
+      return
+    }
+
+    if (terminalCursorEffect === 'off') {
+      cursorEffectAddonRef.current?.dispose()
+      cursorEffectAddonRef.current = null
+
+      return
+    }
+
+    if (!cursorEffectAddonRef.current) {
+      const addon = new XtermCursorEffectAddon(
+        terminalCursorEffect,
+        theme.terminal.cursor
+      )
+      terminal.loadAddon(addon)
+      cursorEffectAddonRef.current = addon
+
+      return
+    }
+
+    cursorEffectAddonRef.current.setEffect(
+      terminalCursorEffect,
+      theme.terminal.cursor
+    )
+  }, [terminal, terminalCursorEffect, theme.terminal.cursor])
 
   useEffect(() => {
     if (

@@ -125,7 +125,7 @@ export const TerminalSettingsPane = ({
 
       <Row
         label="Cursor Effect"
-        hint="Animated native Ghostty cursor shader on macOS."
+        hint="Animated cursor effect on macOS and Linux."
         settingsTargetId={SETTINGS_TARGET_IDS.terminalCursorEffect}
         settingsTargetActive={
           activeTargetId === SETTINGS_TARGET_IDS.terminalCursorEffect

@@ -269,6 +269,8 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
 
 const getOverlayDialogRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
+    let fallbackRect: CssRect | null = null
+
     for (const overlay of electron.webContents.getAllWebContents()) {
       const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
 
@@ -290,11 +292,22 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
       `)) as CssRect | null
 
       if (rect !== null) {
-        return rect
+        const overlayWindow = electron.BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.id === overlay.id
+        )
+
+        if (
+          overlayWindow?.isVisible() === true &&
+          overlayWindow.isAlwaysOnTop()
+        ) {
+          return rect
+        }
+
+        fallbackRect ??= rect
       }
     }
 
-    return null
+    return fallbackRect
   })
 
 const getLayoutCreatorOverlayDraftGrid = async (): Promise<{
@@ -324,42 +337,45 @@ const getLayoutCreatorOverlayDraftGrid = async (): Promise<{
 const getLayoutCreatorOverlayWindowState =
   async (): Promise<OverlayWindowState | null> =>
     browser.electron.execute(async (electron: ElectronModule) => {
-      const webContentsId = await (async (): Promise<number | null> => {
-        for (const contents of electron.webContents.getAllWebContents()) {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+      let fallbackState: OverlayWindowState | null = null
 
-          if (mode !== '1' && mode !== 'menu') {
-            continue
-          }
+      for (const contents of electron.webContents.getAllWebContents()) {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
 
-          const hasLayoutCreator = (await contents.executeJavaScript(`
-            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-          `)) as boolean
-
-          if (hasLayoutCreator) {
-            return contents.id
-          }
+        if (mode !== '1' && mode !== 'menu') {
+          continue
         }
 
-        return null
-      })()
+        const hasLayoutCreator = (await contents.executeJavaScript(`
+          Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+        `)) as boolean
 
-      if (webContentsId === null) {
-        return null
+        if (!hasLayoutCreator) {
+          continue
+        }
+
+        const overlay = electron.BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.id === contents.id
+        )
+        if (overlay === undefined) {
+          continue
+        }
+
+        const state = {
+          alwaysOnTop: overlay.isAlwaysOnTop(),
+          visible: overlay.isVisible(),
+        }
+
+        if (state.alwaysOnTop && state.visible) {
+          return state
+        }
+
+        fallbackState ??= state
       }
 
-      const overlay = electron.BrowserWindow.getAllWindows().find(
-        (window) => window.webContents.id === webContentsId
-      )
-
-      return overlay === undefined
-        ? null
-        : {
-            alwaysOnTop: overlay.isAlwaysOnTop(),
-            visible: overlay.isVisible(),
-          }
+      return fallbackState
     })
 
 const getParentLocalLayoutDialogState =
