@@ -2,8 +2,8 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-07-30
-ref_count: 45
+last_updated: 2026-07-31
+ref_count: 46
 ---
 
 # Testing Gaps
@@ -927,4 +927,19 @@ filesystem scope restrictions).
 - **File:** `electron/main.ts`
 - **Finding:** The main app startup path created the PTY fd transport before spawning the sidecar and notified the addon after spawn, but there was no direct test for that ordering because `main.ts` is difficult to import without running Electron lifecycle side effects.
 - **Fix:** Extracted the sidecar bootstrap sequence into `electron/main-sidecar-bootstrap.ts` and added sibling tests proving create-before-spawn, notify-after-spawn, transport fd propagation, and disabled-native skip behavior.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 94. Restored agent metadata shipped without restored registry coverage
+
+- **Source:** github-claude | PR #766 round 2 | 2026-07-31
+- **Severity:** MEDIUM
+- **File:** `src/agents/registry.test.ts`
+- **Finding:** `AgentDef.resizeThrottleMs` and the per-agent values were
+  restored after review, but the registry tests that validate finite
+  non-negative throttle values and pin Claude at 96 ms were not restored with
+  the field. A future registry cleanup could silently remove the mitigation
+  again.
+- **Fix:** Re-added shape assertions for finite non-negative throttle values
+  and a dedicated per-agent value-pinning test for Claude and the unthrottled
+  agents.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -319,9 +319,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
-    // Per-agent surface tuning lives with the rest of the agent's profile —
-    // see resizeThrottleMs in src/agents/registry.ts for the rationale and
-    // the rule for classifying new agents.
     const resizeThrottleMs =
       AGENTS[agentTypeToRegistryKey(pane.agentType)].resizeThrottleMs
 

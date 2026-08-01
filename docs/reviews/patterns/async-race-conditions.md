@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-30
-ref_count: 96
+last_updated: 2026-07-31
+ref_count: 97
 ---
 
 # Async Race Conditions
@@ -1201,4 +1201,50 @@ prevent showing previous data.
 - **File:** `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** The PTY release-ack path enqueued a resize flush from the transport thread while the engine resize callback could independently enqueue a newer resize for the same slot. Cross-thread `napi_threadsafe_function` ordering could deliver the stale release flush after the fresher callback.
 - **Fix:** Added a per-slot resize epoch, captured it when release starts, and skipped the release-ack flush when a newer engine callback has advanced the epoch. The fresher callback's own async resize event remains the authoritative Rust metadata update.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 107. Async native fallback lost agent-specific resize mitigation
+
+- **Source:** github-codex-connector | PR #766 round 1 | 2026-07-31
+- **Severity:** P1 / HIGH
+- **File:** `native/ghostty-helper/Package.swift`
+- **Finding:** Returning to upstream `libghostty-spm` removed the fork addon's
+  surface resize-throttle API, but the fail-soft async PTY resize path still
+  has the 20-50 ms lag that motivated Claude's 96 ms mitigation.
+- **Fix:** Restored renderer-provided per-agent resize throttle metadata and
+  applied it inside the Electron main-process async resize queue. Native-owned
+  PTY resize metadata continues to bypass the throttle, and regression tests
+  pin both the 96 ms async fallback interval and IPC validation bounds.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 108. Focused native overlay dialog closed during its own focus handoff
+
+- **Source:** deterministic CI failure | PR #766 round 2 | 2026-07-31
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The layout-creator native overlay calls `show()` and `focus()`
+  so text editing lives in the overlay window. On macOS CI the owner window can
+  emit `blur` while Electron is still synchronously promoting that overlay, and
+  `app.isActive()` may report false in the runner, so the blur handler closed
+  the dialog before it became visible/topmost.
+- **Fix:** Track a synchronous internal focus-handoff surface while promoting a
+  focus-owned dialog and ignore blur only during that call stack. The guard is
+  cleared in `finally`, so real later deactivation blur events still dismiss
+  the dialog. Added controller coverage that emits owner blur from inside the
+  fake `show()` call.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 109. Async native fallback ignored the documented resize throttle override
+
+- **Source:** github-codex-connector | PR #766 round 3 | 2026-07-31
+- **Severity:** P2 / MEDIUM
+- **File:** `electron/ghostty-native-parent.ts`
+- **Finding:** The async PTY resize fallback initialized its throttle from
+  `GHOSTTY_RESIZE_THROTTLE_MS`, but every renderer pane update overwrote it
+  with the agent-registry interval before resize callbacks began. Setting the
+  documented environment override therefore had no effect for real panes.
+- **Fix:** Parse the resize throttle from the controller environment and track
+  whether it was explicitly configured. Renderer-provided agent intervals still
+  apply by default, but a valid environment override now takes precedence, with
+  fake-timer coverage pinning the 32 ms override over a 96 ms renderer value.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

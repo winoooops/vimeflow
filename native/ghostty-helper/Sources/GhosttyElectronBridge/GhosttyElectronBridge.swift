@@ -758,11 +758,6 @@ private final class EmbeddedGhosttySurface: NSObject {
         secondaryChild?.setCursorShader(trimmed)
         return true
     }
-
-    func setResizeThrottle(milliseconds: Double) {
-        terminalView.setResizeThrottle(milliseconds: milliseconds)
-    }
-
     private func terminalConfiguration() -> TerminalConfiguration {
         var configuration = TerminalConfiguration()
             .background(backgroundHexColor)
@@ -1409,23 +1404,6 @@ public func vimeflowGhosttySetCursorShader(
         return surface.setCursorShader(shaderPath)
     }
 }
-
-@_cdecl("vimeflow_ghostty_set_resize_throttle_ms")
-public func vimeflowGhosttySetResizeThrottleMs(
-    _ surfacePointer: UnsafeMutableRawPointer?,
-    _ milliseconds: Double
-) {
-    guard let surfacePointer else {
-        return
-    }
-
-    let pointer = SendablePointer(value: surfacePointer)
-    mainActorSync {
-        guard let surface = liveSurface(from: pointer) else { return }
-        surface.setResizeThrottle(milliseconds: milliseconds)
-    }
-}
-
 @_cdecl("vimeflow_ghostty_write")
 public func vimeflowGhosttyWrite(
     _ surfacePointer: UnsafeMutableRawPointer?,

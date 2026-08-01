@@ -37,8 +37,7 @@ interface TerminalBodyProps {
   deferFit: boolean
   terminalFontFamily?: string
   terminalCursorEffect?: string
-  /** Engine-side resize coalescing for this pane's surface — computed from
-   *  the pane's agent type by TerminalPane; native Ghostty only. */
+  /** Async native fallback PTY resize coalescing for this pane. */
   resizeThrottleMs?: number
 }
 

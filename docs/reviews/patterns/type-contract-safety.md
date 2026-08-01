@@ -2,7 +2,7 @@
 id: type-contract-safety
 category: code-quality
 created: 2026-06-15
-last_updated: 2026-07-22
+last_updated: 2026-07-31
 ref_count: 13
 ---
 
@@ -240,4 +240,19 @@ SettingsTargetId>`, so new available settings sections could miss a
 - **Fix:** Typed the map as `Record<AvailableSettingsSectionId,
 SettingsTargetId>` and changed the test to assert generated child commands
   pass non-null targets instead of maintaining a duplicate expected map.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Renderer IPC request type omitted a restored wire field
+
+- **Source:** github-claude | PR #766 round 2 | 2026-07-31
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/nativeGhosttyClient.ts`
+- **Finding:** The renderer-side `NativeGhosttyUpdateRequest` did not declare
+  `resizeThrottleMs` after the field was restored in the agent registry and
+  Electron-side Ghostty update contract. The value still flowed at runtime
+  through untyped preload forwarding, but future typed request builders could
+  drop the field or trip excess-property checks.
+- **Fix:** Added `resizeThrottleMs?: number` to the renderer IPC request type
+  so the registry-to-renderer-to-main-process resize throttle chain is covered
+  by TypeScript on both sides of the bridge.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
