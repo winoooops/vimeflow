@@ -1,5 +1,12 @@
 // cspell:ignore codesign ghostty Ghostty glslang libghostty mmacosx otool swiftpm xcframework xcrun
-import { existsSync, mkdirSync, copyFileSync, cpSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+  cpSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -26,11 +33,6 @@ const ghosttyScratchXcframework = join(
 )
 const ghosttyScratchPlist = join(ghosttyScratchXcframework, 'Info.plist')
 
-const ghosttyScratchArchive = join(
-  ghosttyScratchXcframework,
-  'macos-arm64/libghostty.a'
-)
-
 const nodeIncludeDir = [
   join(dirname(dirname(process.execPath)), 'include/node'),
   '/usr/local/include/node',
@@ -56,8 +58,29 @@ execFileSync(
   }
 )
 
+// The macOS slice is named for the architectures it carries — `macos-arm64`
+// when built arm64-only, `macos-arm64_x86_64` when universal — so resolve it
+// rather than assuming either.
+const macosSlice = readdirSync(ghosttyScratchXcframework).find((entry) =>
+  entry.startsWith('macos-arm64')
+)
+if (!macosSlice) {
+  throw new Error(
+    `no macOS arm64 slice in ${ghosttyScratchXcframework} — check the libghostty-spm pin`
+  )
+}
+
+const ghosttyScratchArchive = join(
+  ghosttyScratchXcframework,
+  macosSlice,
+  'libghostty.a'
+)
+
+// A universal slice carries a symbol table well past node's 1 MB default,
+// which surfaces as a bare ENOBUFS rather than anything about symbols.
 const ghosttySymbols = execFileSync('nm', ['-gU', ghosttyScratchArchive], {
   encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
 })
 if (!ghosttySymbols.includes('_glslang_initialize_process')) {
   throw new Error('libghostty was built without custom shader support')
