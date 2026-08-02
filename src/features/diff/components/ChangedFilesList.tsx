@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FocusEvent, KeyboardEvent, ReactElement, RefObject } from 'react'
 import { IconButton } from '@/components/IconButton'
 import { ResizeHandle } from '@/components/ResizeHandle'
@@ -62,6 +62,7 @@ const hasNoReviewComments = (): boolean => false
 const PINNED_WIDTH_INITIAL = 256
 const PINNED_WIDTH_MIN = 192
 const PINNED_WIDTH_MAX = 480
+const DIFF_RIGHT_PANE_MIN_WIDTH = 192
 const RESIZE_STEP = 20
 const RESIZE_SHIFT_STEP = 100
 
@@ -425,15 +426,20 @@ export const ChangedFilesListSurface = ({
   onAddFileComment,
   hasReviewComments = hasNoReviewComments,
 }: ChangedFilesListSurfaceProps): ReactElement => {
+  const paneRef = useRef<HTMLDivElement | null>(null)
+  const [pinnedWidthMax, setPinnedWidthMax] = useState(PINNED_WIDTH_MAX)
+
   const {
     size: pinnedWidth,
     isDragging,
     handleMouseDown,
     adjustBy,
+    resetToSize,
+    sizeRef,
   } = useResizable({
     initial: PINNED_WIDTH_INITIAL,
     min: PINNED_WIDTH_MIN,
-    max: PINNED_WIDTH_MAX,
+    max: pinnedWidthMax,
   })
   const surfaceSelectionKey = getSelectionKey(selectedFile)
   const initialSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
@@ -446,6 +452,46 @@ export const ChangedFilesListSurface = ({
       previousSelectionKeyRef.current = surfaceSelectionKey
     }
   }, [surfaceSelectionKey])
+
+  useEffect(() => {
+    const parent = paneRef.current?.parentElement
+
+    if (!pinned || parent === undefined || parent === null) {
+      return
+    }
+
+    const syncPinnedMax = (width: number): void => {
+      if (width <= 0) {
+        return
+      }
+
+      const nextMax = Math.max(
+        PINNED_WIDTH_MIN,
+        Math.min(PINNED_WIDTH_MAX, width - DIFF_RIGHT_PANE_MIN_WIDTH)
+      )
+
+      setPinnedWidthMax(nextMax)
+      resetToSize(sizeRef.current, PINNED_WIDTH_MIN, nextMax)
+    }
+
+    syncPinnedMax(parent.getBoundingClientRect().width)
+
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      syncPinnedMax(
+        entries[0]?.contentRect.width ?? parent.getBoundingClientRect().width
+      )
+    })
+
+    observer.observe(parent)
+
+    return (): void => {
+      observer.disconnect()
+    }
+  }, [pinned, resetToSize, sizeRef])
 
   const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
     const nextTarget = event.relatedTarget
@@ -474,7 +520,7 @@ export const ChangedFilesListSurface = ({
       adjustBy(PINNED_WIDTH_MIN - pinnedWidth)
     } else if (event.key === 'End') {
       event.preventDefault()
-      adjustBy(PINNED_WIDTH_MAX - pinnedWidth)
+      adjustBy(pinnedWidthMax - pinnedWidth)
     }
   }
 
@@ -498,6 +544,7 @@ export const ChangedFilesListSurface = ({
   if (pinned) {
     return (
       <div
+        ref={paneRef}
         data-testid="changed-files-pane"
         style={{ width: pinnedWidth }}
         className="relative h-full shrink-0 overflow-hidden border-r border-outline-variant/30 bg-surface-container-high/85"
@@ -508,7 +555,7 @@ export const ChangedFilesListSurface = ({
           isDragging={isDragging}
           ariaValueNow={pinnedWidth}
           ariaValueMin={PINNED_WIDTH_MIN}
-          ariaValueMax={PINNED_WIDTH_MAX}
+          ariaValueMax={pinnedWidthMax}
           ariaLabel="Resize changed files"
           onMouseDown={handleMouseDown}
           onKeyDown={handleResizeKeyDown}

@@ -1,6 +1,7 @@
 import { describe, test, expect, vi } from 'vitest'
 import { StrictMode } from 'react'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -11,6 +12,10 @@ import { userEvent } from '@testing-library/user-event'
 import { getCommand, type CommandId } from '@/features/keymap/catalog'
 import type { Keybindings } from '@/features/keymap/useKeybindings'
 import { resolveDefault } from '@/features/keymap/resolve'
+import {
+  MockResizeObserver,
+  installMockResizeObserver,
+} from '@/test/mockResizeObserver'
 import type { ChangedFile } from '../types'
 import { ChangedFilesList, ChangedFilesListSurface } from './ChangedFilesList'
 
@@ -668,6 +673,129 @@ describe('ChangedFilesListSurface', () => {
     await waitFor(() => expect(pane).toHaveStyle({ width: '300px' }))
 
     fireEvent.mouseUp(document)
+  })
+
+  test('clamps pinned width to leave room for the diff pane', async () => {
+    const user = userEvent.setup()
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'diff-body-region'
+          ? new DOMRect(0, 0, 480, 400)
+          : new DOMRect(0, 0, 0, 0)
+      })
+
+    render(
+      <div data-testid="diff-body-region">
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={null}
+          pinned
+          revealed
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </div>
+    )
+
+    const handle = screen.getByRole('separator', {
+      name: 'Resize changed files',
+    })
+    const pane = screen.getByTestId('changed-files-pane')
+
+    await waitFor(() => expect(handle).toHaveAttribute('aria-valuemax', '288'))
+
+    handle.focus()
+    await user.keyboard('{End}')
+
+    expect(pane).toHaveStyle({ width: '288px' })
+    expect(handle).toHaveAttribute('aria-valuenow', '288')
+
+    fireEvent.mouseDown(handle, { clientX: 288 })
+    fireEvent.mouseMove(document, { clientX: 640 })
+
+    await waitFor(() => expect(pane).toHaveStyle({ width: '288px' }))
+
+    fireEvent.mouseUp(document)
+
+    rectSpy.mockRestore()
+    globalThis.ResizeObserver = originalResizeObserver
+  })
+
+  test('re-clamps pinned width when the diff body narrows', async () => {
+    const user = userEvent.setup()
+    const originalResizeObserver = globalThis.ResizeObserver
+    installMockResizeObserver()
+    let bodyWidth = 800
+
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.testid === 'diff-body-region'
+          ? new DOMRect(0, 0, bodyWidth, 400)
+          : new DOMRect(0, 0, 0, 0)
+      })
+
+    render(
+      <div data-testid="diff-body-region">
+        <ChangedFilesListSurface
+          bindingFor={bindingFor}
+          files={mockFiles}
+          selectedFile={null}
+          pinned
+          revealed
+          onReveal={vi.fn()}
+          onToggle={vi.fn()}
+          onScheduleHide={vi.fn()}
+          onTogglePinned={vi.fn()}
+          onSelectFile={vi.fn()}
+          onAddFileComment={vi.fn()}
+        />
+      </div>
+    )
+
+    const body = screen.getByTestId('diff-body-region')
+
+    const handle = screen.getByRole('separator', {
+      name: 'Resize changed files',
+    })
+    const pane = screen.getByTestId('changed-files-pane')
+
+    await waitFor(() => expect(handle).toHaveAttribute('aria-valuemax', '480'))
+
+    handle.focus()
+    await user.keyboard('{End}')
+
+    expect(pane).toHaveStyle({ width: '480px' })
+
+    const observer = MockResizeObserver.instances.find((instance) =>
+      instance.observe.mock.calls.some(([element]) => element === body)
+    )
+
+    if (observer === undefined) {
+      throw new Error('Expected changed-files parent ResizeObserver')
+    }
+
+    bodyWidth = 400
+    act(() => {
+      observer.trigger({ width: bodyWidth, height: 400 })
+    })
+
+    await waitFor(() => {
+      expect(handle).toHaveAttribute('aria-valuemax', '208')
+      expect(pane).toHaveStyle({ width: '208px' })
+    })
+
+    rectSpy.mockRestore()
+    globalThis.ResizeObserver = originalResizeObserver
   })
 
   test('keeps the panel open when activating after focus reveal', async () => {

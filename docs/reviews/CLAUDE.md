@@ -109,7 +109,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 9        | 5    | 2026-07-21   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
-| [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 3        | 3    | 2026-06-18   |
+| [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 4        | 4    | 2026-08-02   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
