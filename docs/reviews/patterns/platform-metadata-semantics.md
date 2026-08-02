@@ -3,7 +3,7 @@ id: platform-metadata-semantics
 category: cross-platform
 created: 2026-06-22
 last_updated: 2026-06-22
-ref_count: 1
+ref_count: 2
 ---
 
 # Platform Metadata Semantics

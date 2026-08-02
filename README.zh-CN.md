@@ -25,6 +25,7 @@ Vimeflow 是一个基于 Electron 的桌面应用，由 Rust 编写的 `vimeflow
 - [Worktree 集成](#worktree-集成)
 - [命令面板与设置](#命令面板与设置)
 - [主题](#主题)
+- [光标特效](#光标特效)
 - [Linux](#linux)
 - [当前支持范围](#当前支持范围)
 - [从源码构建和运行](#从源码构建和运行)
@@ -150,6 +151,29 @@ The Lens 主题系统内置了多套主题 —— **Catppuccin**（默认深色�
 </div>
 
 <sub><i>Try it:<br>1. 按 `⌘;` 执行 `:theme`。<br> 2. 在列表中上下移动，工作区会实时预览每套主题。<br> 3. 按 `Enter` 应用，按 `Esc` 取消预览。</i></sub>
+
+## 光标特效
+
+五种光标拖尾动效，默认关闭。在 macOS 上它们是运行在 Ghostty 引擎内部的真实 GLSL 着色器；在 Linux 上由 xterm.js 插件绘制等效效果。每种特效都由光标移动触发，因此它们之间的差异，体现在对「跳跃」与「连续移动」的不同响应上。
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><div><sub><b>Warp</b> —— 跳转时在两点之间拉伸</sub></div><img src="docs/media/cursor-warp.gif" alt="Warp 光标特效 —— 光标在文件中跳转时被拉伸并回弹" width="100%" /></td>
+    <td width="50%" valign="top"><div><sub><b>Sweep</b> —— 亮带沿移动路径扫过</sub></div><img src="docs/media/cursor-sweep.gif" alt="Sweep 光标特效 —— 一道亮带沿光标经过的路径扫过" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><div><sub><b>Tail</b> —— 拖出一道渐隐的尾迹</sub></div><img src="docs/media/cursor-tail.gif" alt="Tail 光标特效 —— 光标在缓冲区中移动时拖出一道渐隐的尾迹" width="100%" /></td>
+    <td width="50%" valign="top"><div><sub><b>Ripple</b> —— 每个落点扩散出一圈涟漪</sub></div><img src="docs/media/cursor-ripple.gif" alt="Ripple 光标特效 —— 光标每次落点都向外扩散出一圈涟漪" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><div><sub><b>Sonic Boom</b> —— 快速长距离移动时迸发冲击波</sub></div><img src="docs/media/cursor-sonic-boom.gif" alt="Sonic Boom 光标特效 —— 快速长距离移动时从光标处迸发冲击波" width="100%" /></td>
+    <td width="50%" valign="top"></td>
+  </tr>
+</table>
+
+<sub><i>Try it:<br>1. 打开 **设置** → **终端**。<br> 2. 将 **Cursor Effect** 设为 Warp、Sweep、Tail、Ripple 或 Sonic Boom 之一 —— 实时生效，无需重启。<br> 3. 设回 **Off** 即可关闭。</i></sub>
+
+<sub><i>macOS 上这些特效需要保留着色器编译器的 `libghostty`，而[上游](https://github.com/Lakr233/libghostty-spm)将其裁掉了 —— 打包版本链接的是保留它的[替代版本](https://github.com/winoooops/libghostty-spm-shaders)。Linux 不需要。着色器为 MIT 协议，作者 Sahaj Bhatt（[`sahaj-b/ghostty-cursor-shaders`](https://github.com/sahaj-b/ghostty-cursor-shaders)）。</i></sub>
 
 ## Linux
 
