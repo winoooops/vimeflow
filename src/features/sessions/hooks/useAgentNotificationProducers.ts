@@ -19,6 +19,8 @@ interface TargetPane {
   readonly pane: Pane
 }
 
+const TURN_COMPLETE_SETTLE_DELAY_MS = 750
+
 const findTarget = (
   sessions: readonly Session[],
   ptyId: string
@@ -61,6 +63,50 @@ export const useAgentNotificationProducers = ({
   useEffect(() => {
     let cancelled = false
     const unlisten: UnlistenFn[] = []
+    const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+    const cancelTurnComplete = (ptyId: string): void => {
+      const timer = completionTimers.get(ptyId)
+      if (timer === undefined) {
+        return
+      }
+
+      clearTimeout(timer)
+      completionTimers.delete(ptyId)
+    }
+
+    const scheduleTurnComplete = (
+      ptyId: string,
+      agentSessionId: string
+    ): void => {
+      cancelTurnComplete(ptyId)
+
+      const timer = setTimeout(() => {
+        completionTimers.delete(ptyId)
+        const phase = phasesRef.current.get(ptyId)
+        const target = findTarget(sessionsRef.current, ptyId)
+
+        if (
+          phase?.phase !== 'idle' ||
+          phase.agentSessionId !== agentSessionId ||
+          target === undefined ||
+          erroredPtyIdsRef.current.delete(ptyId) ||
+          !isBackgroundTarget(target, activeSessionIdRef.current)
+        ) {
+          return
+        }
+
+        publishRef.current({
+          sessionId: target.session.id,
+          ptyId: target.pane.ptyId,
+          reason: 'turn-complete',
+          title: `${agentForPane(target.pane).name} finished`,
+          occurredAt: Date.now(),
+        })
+      }, TURN_COMPLETE_SETTLE_DELAY_MS)
+
+      completionTimers.set(ptyId, timer)
+    }
 
     const stopTerminalAttention = subscribeTerminalAttention((payload) => {
       const target = findTarget(sessionsRef.current, payload.ptyId)
@@ -107,25 +153,18 @@ export const useAgentNotificationProducers = ({
 
         if (payload.phase === 'running') {
           erroredPtyIdsRef.current.delete(payload.sessionId)
+          cancelTurnComplete(payload.sessionId)
         }
 
         if (
           payload.phase !== 'idle' ||
           previous?.phase !== 'running' ||
-          previous.agentSessionId !== payload.agentSessionId ||
-          erroredPtyIdsRef.current.delete(payload.sessionId) ||
-          !isBackgroundTarget(target, activeSessionIdRef.current)
+          previous.agentSessionId !== payload.agentSessionId
         ) {
           return
         }
 
-        publishRef.current({
-          sessionId: target.session.id,
-          ptyId: target.pane.ptyId,
-          reason: 'turn-complete',
-          title: `${agentForPane(target.pane).name} finished`,
-          occurredAt: Date.now(),
-        })
+        scheduleTurnComplete(payload.sessionId, payload.agentSessionId)
       }
     )
 
@@ -139,6 +178,7 @@ export const useAgentNotificationProducers = ({
 
         if (payload.reason === 'agent-error') {
           erroredPtyIdsRef.current.add(payload.ptyId)
+          cancelTurnComplete(payload.ptyId)
         }
 
         if (!isBackgroundTarget(target, activeSessionIdRef.current)) {
@@ -181,6 +221,8 @@ export const useAgentNotificationProducers = ({
       cancelled = true
       stopTerminalAttention()
       unlisten.forEach((stop) => stop())
+      completionTimers.forEach((timer) => clearTimeout(timer))
+      completionTimers.clear()
     }
   }, [])
 }

@@ -51,6 +51,7 @@ afterEach(() => {
   __resetBackendEventSubscriptions()
   listeners.clear()
   delete window.vimeflow
+  vi.useRealTimers()
 })
 
 const installBridge = (): void => {
@@ -86,6 +87,7 @@ describe('useAgentNotificationProducers', () => {
     )
 
     await waitFor(() => expect(listeners.has('agent-lifecycle')).toBe(true))
+    vi.useFakeTimers()
 
     act(() => {
       emit<AgentLifecycleEvent>('agent-lifecycle', {
@@ -107,6 +109,12 @@ describe('useAgentNotificationProducers', () => {
       })
     })
 
+    expect(publish).not.toHaveBeenCalled()
+
+    act(() => {
+      vi.advanceTimersByTime(750)
+    })
+
     expect(publish).toHaveBeenCalledOnce()
     expect(publish).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -114,6 +122,63 @@ describe('useAgentNotificationProducers', () => {
         ptyId: 'pty-background',
         reason: 'turn-complete',
         title: 'Claude Code finished',
+      })
+    )
+  })
+
+  test('suppresses completion when a same-turn error arrives after idle', async () => {
+    installBridge()
+    const publish = vi.fn()
+    const background = session('background', 'pty-background')
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [session('active', 'pty-active'), background],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => {
+      expect(listeners.has('agent-lifecycle')).toBe(true)
+      expect(listeners.has('agent-attention')).toBe(true)
+    })
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-background',
+        phase: 'running',
+      })
+
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-background',
+        phase: 'idle',
+      })
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+
+    act(() => {
+      emit<AgentAttentionEvent>('agent-attention', {
+        ptyId: 'pty-background',
+        reason: 'agent-error',
+        title: 'Claude failed',
+        body: 'request failed',
+        occurredAt: BigInt(42),
+        dedupeKey: null,
+      })
+
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'agent-error',
+        title: 'Claude failed',
       })
     )
   })

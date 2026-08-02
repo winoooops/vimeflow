@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-30
-ref_count: 95
+last_updated: 2026-08-02
+ref_count: 96
 ---
 
 # Async Race Conditions
@@ -1201,4 +1201,20 @@ prevent showing previous data.
 - **File:** `native/ghostty-parent/ghostty_native_parent.cc`
 - **Finding:** The PTY release-ack path enqueued a resize flush from the transport thread while the engine resize callback could independently enqueue a newer resize for the same slot. Cross-thread `napi_threadsafe_function` ordering could deliver the stale release flush after the fresher callback.
 - **Fix:** Added a per-slot resize epoch, captured it when release starts, and skipped the release-ack flush when a newer engine callback has advanced the epoch. The fresher callback's own async resize event remains the authoritative Rust metadata update.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 107. Completion notification could overtake same-turn error attention
+
+- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Claude lifecycle and hook-tail attention events are emitted by
+  separate backend threads. A running-to-idle lifecycle edge could reach the
+  renderer before the same failed turn's `StopFailure` attention, causing a
+  background pane to publish both "Claude Code finished" and "Claude failed".
+- **Fix:** Deferred turn-complete notifications behind a short per-PTY
+  cancellable settle timer. A same-PTY `agent-error` cancels the pending
+  completion, and the timer rechecks the latest phase, active pane, and error
+  marker before publishing. Added regression coverage for the idle-then-error
+  ordering.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
