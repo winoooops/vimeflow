@@ -94,6 +94,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 16   | 2026-07-19   |
 | [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 34       | 19   | 2026-08-01   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
+| [Platform Metadata Semantics](patterns/platform-metadata-semantics.md)                               | cross-platform     | 2        | 2    | 2026-06-22   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 3        | 1    | 2026-07-31   |
 | [Identifier Prefix Matching](patterns/identifier-prefix-matching.md)                                 | correctness        | 4        | 2    | 2026-06-17   |
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
@@ -103,6 +104,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 3        | 3    | 2026-07-30   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 20       | 13   | 2026-07-31   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 3        | 2    | 2026-07-26   |
+| [String Protocol Coupling](patterns/string-protocol-coupling.md)                                     | code-quality       | 3        | 2    | 2026-08-02   |
 | [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 11   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
