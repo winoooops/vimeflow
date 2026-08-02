@@ -1,12 +1,12 @@
 {
-  "originHash" : "a8fdce6637a149e356da3e7aa2135372c71ae1a5e9ced7cc4108545ee7a77265",
+  "originHash" : "cb9c6c96d62d680cfb05c10c3ac8bb7f1dabb533d0ae611d90ab2c40cbd16dd3",
   "pins" : [
     {
-      "identity" : "libghostty-spm",
+      "identity" : "libghostty-spm-shaders",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/winoooops/libghostty-spm.git",
+      "location" : "https://github.com/winoooops/libghostty-spm-shaders.git",
       "state" : {
-        "revision" : "fe5c19bd2db3f876e22089651a446bbf3cc73758"
+        "revision" : "e2165a8c96c5dad788746fd08187e6d11c39fd8d"
       }
     },
     {

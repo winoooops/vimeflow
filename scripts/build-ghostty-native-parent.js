@@ -27,11 +27,28 @@ const addonOutput = join(outputDir, 'ghostty_native_parent.node')
 const bridgeOutput = join(outputDir, 'libGhosttyElectronBridge.dylib')
 const shaderSourceDir = join(repoRoot, 'native/ghostty-parent/shaders')
 
-const ghosttyScratchXcframework = join(
-  scratchDir,
-  'artifacts/libghostty-spm/libghostty/GhosttyKit.xcframework'
-)
-const ghosttyScratchPlist = join(ghosttyScratchXcframework, 'Info.plist')
+// SwiftPM keys the artifacts directory by package identity, which is derived
+// from the dependency's repo name — so renaming the dependency moves this path.
+// Resolve it rather than hardcode a name a rename silently invalidates.
+const scratchArtifactsDir = join(scratchDir, 'artifacts')
+
+const resolveScratchXcframework = () => {
+  if (!existsSync(scratchArtifactsDir)) {
+    return null
+  }
+  for (const packageIdentity of readdirSync(scratchArtifactsDir)) {
+    const candidate = join(
+      scratchArtifactsDir,
+      packageIdentity,
+      'libghostty/GhosttyKit.xcframework'
+    )
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
 
 const nodeIncludeDir = [
   join(dirname(dirname(process.execPath)), 'include/node'),
@@ -45,7 +62,8 @@ if (!nodeIncludeDir) {
 
 mkdirSync(outputDir, { recursive: true })
 
-if (existsSync(ghosttyScratchXcframework) && !existsSync(ghosttyScratchPlist)) {
+const staleXcframework = resolveScratchXcframework()
+if (staleXcframework && !existsSync(join(staleXcframework, 'Info.plist'))) {
   rmSync(scratchDir, { recursive: true, force: true })
 }
 
@@ -58,6 +76,13 @@ execFileSync(
   }
 )
 
+const ghosttyScratchXcframework = resolveScratchXcframework()
+if (!ghosttyScratchXcframework) {
+  throw new Error(
+    `no GhosttyKit.xcframework under ${scratchArtifactsDir} — check the libghostty-spm-shaders pin`
+  )
+}
+
 // The macOS slice is named for the architectures it carries — `macos-arm64`
 // when built arm64-only, `macos-arm64_x86_64` when universal — so resolve it
 // rather than assuming either.
@@ -66,7 +91,7 @@ const macosSlice = readdirSync(ghosttyScratchXcframework).find((entry) =>
 )
 if (!macosSlice) {
   throw new Error(
-    `no macOS arm64 slice in ${ghosttyScratchXcframework} — check the libghostty-spm pin`
+    `no macOS arm64 slice in ${ghosttyScratchXcframework} — check the libghostty-spm-shaders pin`
   )
 }
 
