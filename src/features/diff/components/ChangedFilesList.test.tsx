@@ -1,6 +1,12 @@
 import { describe, test, expect, vi } from 'vitest'
 import { StrictMode } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { getCommand, type CommandId } from '@/features/keymap/catalog'
 import type { Keybindings } from '@/features/keymap/useKeybindings'
@@ -601,6 +607,68 @@ describe('ChangedFilesListSurface', () => {
       staged: false,
     },
   ]
+
+  test('resizes only the pinned changed-files pane', async () => {
+    const user = userEvent.setup()
+    const unpinned = false
+
+    const { rerender } = render(
+      <ChangedFilesListSurface
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={null}
+        pinned={unpinned}
+        revealed
+        onReveal={vi.fn()}
+        onToggle={vi.fn()}
+        onScheduleHide={vi.fn()}
+        onTogglePinned={vi.fn()}
+        onSelectFile={vi.fn()}
+        onAddFileComment={vi.fn()}
+      />
+    )
+
+    expect(
+      screen.queryByRole('separator', { name: 'Resize changed files' })
+    ).not.toBeInTheDocument()
+
+    rerender(
+      <ChangedFilesListSurface
+        bindingFor={bindingFor}
+        files={mockFiles}
+        selectedFile={null}
+        pinned
+        revealed
+        onReveal={vi.fn()}
+        onToggle={vi.fn()}
+        onScheduleHide={vi.fn()}
+        onTogglePinned={vi.fn()}
+        onSelectFile={vi.fn()}
+        onAddFileComment={vi.fn()}
+      />
+    )
+
+    const handle = screen.getByRole('separator', {
+      name: 'Resize changed files',
+    })
+    const pane = screen.getByTestId('changed-files-pane')
+
+    expect(pane).toHaveStyle({ width: '256px' })
+    expect(handle).toHaveAttribute('aria-valuenow', '256')
+
+    handle.focus()
+    await user.keyboard('{ArrowRight}')
+
+    expect(pane).toHaveStyle({ width: '276px' })
+    expect(handle).toHaveAttribute('aria-valuenow', '276')
+
+    fireEvent.mouseDown(handle, { clientX: 276 })
+    fireEvent.mouseMove(document, { clientX: 300 })
+
+    await waitFor(() => expect(pane).toHaveStyle({ width: '300px' }))
+
+    fireEvent.mouseUp(document)
+  })
 
   test('keeps the panel open when activating after focus reveal', async () => {
     const user = userEvent.setup()

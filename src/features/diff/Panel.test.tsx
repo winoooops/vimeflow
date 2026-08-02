@@ -1319,9 +1319,12 @@ describe('Panel', () => {
 
       expect(screen.getByTestId('changed-files-pane')).toHaveClass(
         'h-full',
-        'w-64',
         'shrink-0'
       )
+
+      expect(screen.getByTestId('changed-files-pane')).toHaveStyle({
+        width: '256px',
+      })
 
       expect(screen.getByTestId('diff-body-region')).toContainElement(
         screen.getByTestId('changed-files-pane')
