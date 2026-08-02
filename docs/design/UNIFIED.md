@@ -551,7 +551,7 @@ Centered open-session navigation in the 44px main-canvas top chrome. It is addit
 - Display setting: `sessionIslandDisplay` is `dots` (default), `numbers` (global Active position), or `labels` (active name only).
 - Accessibility: `nav[aria-label="Open sessions"]`; every indicator is a named button with `aria-current="page"` only on the selected open session and uses the shared `Tooltip`.
 - Responsive: below a 700px main-column width, the layout pillar yields space by collapsing to the active layout readout plus its configuration menu. The session island remains centered.
-- Notifications: the quiet outline-bell placeholder is absent unless `VITE_SESSION_ISLAND_NOTIFICATIONS=1`; notification state/badges are deferred.
+- Notifications: no bell is reserved before the first background event. A live background completion, explicit agent attention event, or BEL/OSC 9/777 signal enters the in-memory notification center; unread state rests as a bell/count badge, arrivals take over as a toast, and the grouped panel opens over native Ghostty through the shared `Popover` overlay path.
 
 ---
 
