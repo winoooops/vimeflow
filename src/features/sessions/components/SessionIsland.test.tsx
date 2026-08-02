@@ -325,7 +325,7 @@ describe('SessionIsland', () => {
     )
   })
 
-  test('omits notification chrome until the first record arrives', () => {
+  test('omits the quiet notification slot by default and renders it on request', () => {
     const props = {
       sessions: sessions(1),
       activeSessionId: 'session-1',
@@ -334,50 +334,13 @@ describe('SessionIsland', () => {
     }
     const { rerender } = render(<SessionIsland {...props} />)
 
-    expect(
-      screen.queryByRole('button', { name: /Notifications/ })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId('session-island-notifications')).toBeNull()
 
-    rerender(
-      <SessionIsland
-        {...props}
-        notifications={{
-          records: [],
-          onOpen: vi.fn(),
-          onDismiss: vi.fn(),
-          onMarkAllRead: vi.fn(),
-          onClear: vi.fn(),
-        }}
-      />
+    rerender(<SessionIsland {...props} showNotifications />)
+
+    expect(screen.getByTestId('session-island-notifications')).toHaveClass(
+      'material-symbols-outlined'
     )
-
-    expect(
-      screen.queryByRole('button', { name: /Notifications/ })
-    ).not.toBeInTheDocument()
-
-    rerender(
-      <SessionIsland
-        {...props}
-        notifications={{
-          records: [
-            {
-              id: 'notification-1',
-              sessionId: 'session-1',
-              ptyId: 'pty-1',
-              reason: 'turn-complete',
-              title: 'Turn complete',
-              occurredAt: 1,
-              read: false,
-            },
-          ],
-          onOpen: vi.fn(),
-          onDismiss: vi.fn(),
-          onMarkAllRead: vi.fn(),
-          onClear: vi.fn(),
-        }}
-      />
-    )
-
-    expect(screen.getByRole('status')).toHaveTextContent('Turn complete')
+    expect(screen.getAllByRole('button')).toHaveLength(1)
   })
 })

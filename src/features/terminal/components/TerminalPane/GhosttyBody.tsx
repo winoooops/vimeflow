@@ -14,10 +14,6 @@ import type { NotifyPaneReady, RestoreData } from '../../hooks/useTerminal'
 import type { PtyReplay } from '../../types'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
 import { isTerminalCursorEffect } from '@/features/terminal/cursorEffects'
-import {
-  emitTerminalAttention,
-  TerminalAttentionScanner,
-} from '../../notifications'
 import type { ITerminalService } from '../../services/terminalService'
 import {
   attachNativeGhosttyOutput,
@@ -218,7 +214,6 @@ export const GhosttyBody = ({
   const agentCwdOutputBufferRef = useRef('')
   const agentCwdHintContextRef = useRef('')
   const cursorRef = useRef(restoredFrom?.replayEndOffset ?? 0)
-  const attentionScannerRef = useRef(new TerminalAttentionScanner())
   const cwdRef = useRef(cwd)
   cwdRef.current = cwd
   const agentCwdRef = useRef(cwd)
@@ -277,7 +272,6 @@ export const GhosttyBody = ({
     agentCwdRef.current = cwdRef.current
     agentCwdSourceRef.current = 'prop'
     cursorRef.current = restoredFrom?.replayEndOffset ?? 0
-    attentionScannerRef.current = new TerminalAttentionScanner()
   }, [ptyId, restoredFrom?.replayEndOffset])
 
   const applyOsc7Cwd = useCallback((payload: string): void => {
@@ -432,12 +426,6 @@ export const GhosttyBody = ({
         return false
       }
 
-      for (const body of attentionScannerRef.current.push(data)) {
-        emitTerminalAttention({
-          ptyId,
-          ...(body.length === 0 ? {} : { body }),
-        })
-      }
       handleNativeOutput(data)
       if (sendToNative) {
         void sendOutputToNative(data)
@@ -450,7 +438,7 @@ export const GhosttyBody = ({
 
       return true
     },
-    [handleNativeOutput, ptyId, sendOutputToNative]
+    [handleNativeOutput, sendOutputToNative]
   )
 
   // Keep only one IPC in flight. Resize can fire faster than native can apply

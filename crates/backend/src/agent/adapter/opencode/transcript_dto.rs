@@ -44,16 +44,6 @@ pub(crate) enum OpencodeEventType {
     SessionStatus,
     #[serde(rename = "session.error")]
     SessionError,
-    #[serde(rename = "permission.asked")]
-    PermissionAsked,
-    #[serde(rename = "permission.replied")]
-    PermissionReplied,
-    #[serde(rename = "question.asked")]
-    QuestionAsked,
-    #[serde(rename = "question.replied")]
-    QuestionReplied,
-    #[serde(rename = "question.rejected")]
-    QuestionRejected,
     #[serde(rename = "session.diff")]
     SessionDiff,
     #[serde(rename = "message.updated")]

@@ -12,7 +12,6 @@ import {
   updateNativeGhostty,
 } from '../../nativeGhosttyClient'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
-import { subscribeTerminalAttention } from '../../notifications'
 import {
   GhosttyBody,
   nativeGhosttyBoundsFromRect,
@@ -1161,36 +1160,6 @@ describe('GhosttyBody', () => {
         data: '\u001b]7;file:///repo/live\u0007',
       })
     )
-  })
-
-  test('normalizes live native bell and split OSC attention but ignores OSC 7', async () => {
-    const attention = vi.fn()
-    const unsubscribe = subscribeTerminalAttention(attention)
-    render(
-      <GhosttyBody
-        paneId="pane-1"
-        ptyId="pty-1"
-        cwd="/tmp"
-        active
-        service={createService()}
-      />
-    )
-    await waitFor(() => expect(outputListener).not.toBeNull())
-
-    act(() => {
-      outputListener?.('pty-1', '\x07', 0, 1)
-      outputListener?.('pty-1', '\x1b]9;build ', 1, 10)
-      outputListener?.('pty-1', 'done\x07', 11, 5)
-      outputListener?.('pty-1', '\x1b]7;file:///tmp/next\x07', 16, 21)
-    })
-    unsubscribe()
-
-    expect(attention).toHaveBeenCalledTimes(2)
-    expect(attention).toHaveBeenNthCalledWith(1, { ptyId: 'pty-1' })
-    expect(attention).toHaveBeenNthCalledWith(2, {
-      ptyId: 'pty-1',
-      body: 'build done',
-    })
   })
 
   test('skips pane-ready drain events already covered by restored output', async () => {

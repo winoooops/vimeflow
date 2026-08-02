@@ -3,6 +3,7 @@
 //! This module handles PTY (pseudo-terminal) spawning, lifecycle management,
 //! and IPC communication with the frontend.
 
+pub mod bridge;
 pub mod cache;
 pub mod commands;
 pub(crate) mod events;
