@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-31
+last_updated: 2026-08-02
 ref_count: 97
 ---
 
@@ -1247,4 +1247,18 @@ prevent showing previous data.
   whether it was explicitly configured. Renderer-provided agent intervals still
   apply by default, but a valid environment override now takes precedence, with
   fake-timer coverage pinning the 32 ms override over a 96 ms renderer value.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 110. Native Ghostty SwiftPM pin referenced an unreachable fork commit
+
+- **Source:** deterministic CI failure | PR #771 round 1 | 2026-08-02
+- **Severity:** HIGH
+- **File:** `native/ghostty-helper/Package.swift`
+- **Finding:** The macOS native Ghostty smoke failed before building because
+  SwiftPM could fetch `winoooops/libghostty-spm` but could not check out the
+  pinned revision, reporting `unable to read tree` for the missing commit.
+- **Fix:** Repointed the SwiftPM manifest and resolved pins to the reachable
+  shader-enabled release commit used by the fork's published
+  `shaders-1.3.2-1` artifact, keeping the native parent build on the intended
+  custom-shader-capable distribution.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
