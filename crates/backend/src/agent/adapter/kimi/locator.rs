@@ -61,6 +61,7 @@ const KIMI_INDEX_FRESHNESS_SLACK: Duration = Duration::from_secs(3);
 // Paired with `KIMI_INDEX_FRESHNESS_SLACK` as the lower (clock-skew) bound.
 const KIMI_OWN_WINDOW: Duration = Duration::from_secs(30);
 const KIMI_RESUME_LOG_TAIL_BYTES: u64 = 64 * 1024;
+const MAX_RECOVERY_PATHS: usize = 256;
 
 /// One `session_index.jsonl` line.
 #[derive(Deserialize)]
@@ -90,12 +91,12 @@ struct ProcessStartEvidence {
 
 pub(crate) struct KimiLocator {
     kimi_home: PathBuf,
+    validator_root: PathBuf,
     agent_pid: u32,
     pty_start: SystemTime,
     // `Some("/proc")` on Linux (or a tempdir in tests); `None` on macOS,
     // where the proc-fd / proc-environ fast-paths skip themselves.
     proc_root: Option<PathBuf>,
-    honor_proc_env_home: bool,
     // The session dir of the LAST successful `locate`, shared with the
     // decoder (same Arc) so it can read sibling `agents/agent-*` wires.
     resolved_session_dir: Arc<Mutex<Option<PathBuf>>>,
@@ -108,6 +109,7 @@ pub(crate) struct KimiLocator {
     usage: Arc<Mutex<UsageState>>,
     resume_evidence: Arc<Mutex<HashMap<String, SystemTime>>>,
     process_start: Arc<Mutex<Option<ProcessStartEvidence>>>,
+    recovery_paths: Arc<Mutex<Vec<PathBuf>>>,
 }
 
 /// Out-of-band kimi plan-usage state behind the locator's shared Arc. The
@@ -163,18 +165,46 @@ impl KimiLocator {
         proc_root: Option<PathBuf>,
         honor_proc_env_home: bool,
     ) -> Self {
+        let kimi_home = if honor_proc_env_home {
+            proc_root
+                .as_deref()
+                .and_then(|root| kimi_home_from_proc_environ(root, agent_pid))
+                .unwrap_or(kimi_home)
+        } else {
+            kimi_home
+        };
+        let validator_root =
+            std::fs::canonicalize(&kimi_home).unwrap_or_else(|_| kimi_home.clone());
         Self {
             kimi_home,
+            validator_root,
             agent_pid,
             pty_start,
             proc_root,
-            honor_proc_env_home,
             resolved_session_dir: Arc::new(Mutex::new(None)),
             resolved_cwd: Arc::new(Mutex::new(None)),
             usage: Arc::new(Mutex::new(UsageState::default())),
             resume_evidence: Arc::new(Mutex::new(HashMap::new())),
             process_start: Arc::new(Mutex::new(None)),
+            recovery_paths: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub(crate) fn remember_recovery_path(&self, path: PathBuf) {
+        let mut paths = self.recovery_paths.lock().expect("recovery_paths lock");
+        paths.retain(|existing| existing != &path);
+        paths.push(path);
+        let excess = paths.len().saturating_sub(MAX_RECOVERY_PATHS);
+        if excess > 0 {
+            paths.drain(..excess);
+        }
+    }
+
+    pub(crate) fn recovery_paths(&self) -> Vec<PathBuf> {
+        self.recovery_paths
+            .lock()
+            .expect("recovery_paths lock")
+            .clone()
     }
 
     /// The session dir (`.../sessions/wd_*/session_*`) of the last
@@ -283,15 +313,11 @@ impl KimiLocator {
     /// else the constructor `kimi_home`. Shared with the validator so the
     /// trust root is resolved from one source.
     pub(crate) fn effective_home(&self) -> PathBuf {
-        if self.honor_proc_env_home {
-            return self
-                .proc_root
-                .as_deref()
-                .and_then(|root| kimi_home_from_proc_environ(root, self.agent_pid))
-                .unwrap_or_else(|| self.kimi_home.clone());
-        }
-
         self.kimi_home.clone()
+    }
+
+    pub(crate) fn validator_root(&self) -> &Path {
+        &self.validator_root
     }
 
     fn session_index_path(&self, home: &Path) -> PathBuf {

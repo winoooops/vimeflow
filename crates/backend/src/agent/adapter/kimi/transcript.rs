@@ -6,9 +6,9 @@
 //! per-session [`KimiTranscriptDecoder`]) without the codex test-runner
 //! machinery (deferred per the kimi state spec).
 
-use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
-use std::io::{self, BufReader};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -27,8 +27,8 @@ use crate::agent::events::{
     emit_agent_status, emit_agent_tool_call, emit_agent_turn, record_lifecycle, record_tool_call,
     ReplayActivity,
 };
-use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
-use crate::agent::review::{extract_agent_review, map_review_outcome};
+use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome, AgentReplyOutcome};
+use crate::agent::review::{extract_agent_review, map_review_outcome, AgentReviewOutcome};
 use crate::agent::types::{
     AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentReviewEvent, AgentToolCallEvent,
     AgentTurnEvent, ToolCallStatus,
@@ -42,6 +42,9 @@ const MAX_ARGS_LEN: usize = 1024;
 /// contract puts the sentinel block at the end of the turn. Matches the
 /// opencode bridge plugin's `MAX_REPLY_TEXT`.
 const MAX_TURN_TEXT_BYTES: usize = 32 * 1024;
+const MAX_RECOVERY_BYTES_PER_PATH: u64 = 128 * 1024;
+const MAX_RECOVERY_COMPLETED_TURNS: usize = 512;
+const MAX_RECOVERED_REPLY_EVENTS: usize = 128;
 
 /// How often the session supervisor rescans `state.json` for newly-spawned
 /// sub-agents, and the tick at which it checks the stop flag while waiting.
@@ -288,19 +291,64 @@ pub(super) fn start_tailing(
     Ok(TranscriptHandle::new(stop_flag, join_handle))
 }
 
-fn recover_turn_texts(transcript_path: &Path) -> Result<Vec<String>, String> {
-    let file = File::open(transcript_path).map_err(|error| {
-        format!(
-            "Failed to open Kimi transcript for recovery: {}: {}",
-            transcript_path.display(),
-            error
-        )
-    })?;
+fn open_recovery_file(path: &Path, kimi_root: &Path) -> Result<Option<(PathBuf, File)>, String> {
+    let canonical =
+        match validate_transcript_path_with_root(path.to_string_lossy().as_ref(), kimi_root) {
+            Ok(canonical) => canonical,
+            Err(_) => return Ok(None),
+        };
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to inspect Kimi transcript for recovery: {}: {}",
+                path.display(),
+                error
+            ));
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Ok(None);
+    }
+
+    let mut options = OpenOptions::new();
+    options.read(true);
+    crate::filesystem::scope::open_nofollow(path, options).map(|file| Some((canonical, file)))
+}
+
+fn recover_path_turn_texts(mut file: File) -> Result<VecDeque<String>, String> {
+    let file_len = file
+        .metadata()
+        .map_err(|error| format!("Failed to inspect Kimi transcript recovery window: {error}"))?
+        .len();
+    let start = file_len.saturating_sub(MAX_RECOVERY_BYTES_PER_PATH);
+    let starts_at_line_boundary = if start == 0 {
+        true
+    } else {
+        file.seek(SeekFrom::Start(start - 1))
+            .and_then(|_| {
+                let mut preceding = [0u8; 1];
+                file.read_exact(&mut preceding)?;
+                Ok(preceding[0] == b'\n')
+            })
+            .map_err(|error| format!("Failed to seek Kimi transcript recovery window: {error}"))?
+    };
+    file.seek(SeekFrom::Start(start))
+        .map_err(|error| format!("Failed to seek Kimi transcript recovery window: {error}"))?;
+
+    let mut reader = BufReader::new(file.take(MAX_RECOVERY_BYTES_PER_PATH));
+    if !starts_at_line_boundary {
+        let mut partial = Vec::new();
+        reader
+            .read_until(b'\n', &mut partial)
+            .map_err(|error| format!("Failed to align Kimi transcript recovery window: {error}"))?;
+    }
     let mut in_user_turn = false;
     let mut turn_text = String::new();
-    let mut completed = Vec::new();
+    let mut completed = VecDeque::new();
 
-    for_each_bounded_line(BufReader::new(file), "Kimi transcript recovery", |line| {
+    for_each_bounded_line(reader, "Kimi transcript recovery", |line| {
         let Ok(dto) = serde_json::from_str::<KimiLineDto>(line) else {
             return;
         };
@@ -340,7 +388,10 @@ fn recover_turn_texts(transcript_path: &Path) -> Result<Vec<String>, String> {
                     KimiLoopEventType::StepEnd
                         if event.finish_reason.as_deref() == Some("end_turn") =>
                     {
-                        completed.push(std::mem::take(&mut turn_text));
+                        completed.push_back(std::mem::take(&mut turn_text));
+                        if completed.len() > MAX_RECOVERY_COMPLETED_TURNS {
+                            completed.pop_front();
+                        }
                         in_user_turn = false;
                     }
                     _ => {}
@@ -349,49 +400,76 @@ fn recover_turn_texts(transcript_path: &Path) -> Result<Vec<String>, String> {
             _ => {}
         }
     })
-    .map_err(|error| {
-        format!(
-            "Failed to read Kimi transcript for recovery: {}: {}",
-            transcript_path.display(),
-            error
-        )
-    })?;
+    .map_err(|error| format!("Failed to read Kimi transcript recovery window: {}", error))?;
 
     Ok(completed)
 }
 
+fn recover_turn_texts(paths: &[PathBuf], kimi_root: &Path) -> Result<VecDeque<String>, String> {
+    let mut seen = HashSet::new();
+    let mut completed = VecDeque::new();
+    for path in paths {
+        let Some((canonical, file)) = open_recovery_file(path, kimi_root)? else {
+            continue;
+        };
+        if !seen.insert(canonical) {
+            continue;
+        }
+        for text in recover_path_turn_texts(file)? {
+            completed.push_back(text);
+            if completed.len() > MAX_RECOVERY_COMPLETED_TURNS {
+                completed.pop_front();
+            }
+        }
+    }
+    Ok(completed)
+}
+
+fn extract_turn_protocols(text: &str) -> (Option<AgentReplyOutcome>, Option<AgentReviewOutcome>) {
+    let reply = extract_agent_reply(text);
+    let review = extract_agent_review(text);
+    if reply.is_some() && review.is_some() {
+        return (None, None);
+    }
+    (reply, review)
+}
+
 pub(super) fn recover_replies(
-    transcript_path: &Path,
+    transcript_paths: &[PathBuf],
+    kimi_root: &Path,
     session_id: &str,
     nonces: &HashSet<String>,
 ) -> Result<Vec<AgentReplyEvent>, String> {
-    let mut pending = nonces.clone();
-    let mut recovered = Vec::new();
-    for text in recover_turn_texts(transcript_path)? {
-        let Some(outcome) = extract_agent_reply(&text) else {
+    let mut recovered = VecDeque::new();
+    for text in recover_turn_texts(transcript_paths, kimi_root)? {
+        let (Some(outcome), None) = extract_turn_protocols(&text) else {
             continue;
         };
         let event = map_agent_reply_outcome(session_id, outcome);
         if event
             .nonce
             .as_ref()
-            .is_some_and(|nonce| pending.remove(nonce))
+            .is_some_and(|nonce| nonces.contains(nonce))
         {
-            recovered.push(event);
+            recovered.push_back(event);
+            if recovered.len() > MAX_RECOVERED_REPLY_EVENTS {
+                recovered.pop_front();
+            }
         }
     }
-    Ok(recovered)
+    Ok(recovered.into())
 }
 
 pub(super) fn recover_reviews(
-    transcript_path: &Path,
+    transcript_paths: &[PathBuf],
+    kimi_root: &Path,
     session_id: &str,
     nonces: &HashSet<String>,
 ) -> Result<Vec<AgentReviewEvent>, String> {
     let mut pending = nonces.clone();
     let mut recovered = Vec::new();
-    for text in recover_turn_texts(transcript_path)? {
-        let Some(outcome) = extract_agent_review(&text) else {
+    for text in recover_turn_texts(transcript_paths, kimi_root)? {
+        let (None, Some(outcome)) = extract_turn_protocols(&text) else {
             continue;
         };
         let event = map_review_outcome(session_id, outcome);
@@ -616,11 +694,13 @@ fn run_session_supervisor(
 
     loop {
         if let Some(located) = locator.refresh_located_source() {
+            let recovery_path = located.status_path.clone();
             let next_main_wire = fs::canonicalize(&located.status_path)
                 .unwrap_or_else(|_| located.status_path.clone());
             if let Some(next_session_dir) = session_dir_from_wire(&next_main_wire) {
                 let changed = next_main_wire != main_wire || next_session_dir != session_dir;
                 if changed {
+                    locator.remember_recovery_path(recovery_path);
                     super::kdbg(&format!(
                         "SUPERVISOR switch session old={} new={} main_wire={}",
                         session_dir.display(),
@@ -1044,14 +1124,15 @@ impl KimiTranscriptDecoder {
         if !self.replay_done {
             return;
         }
-        if let Some(reply) = extract_agent_reply(&reply_text) {
+        let (reply, review) = extract_turn_protocols(&reply_text);
+        if let Some(reply) = reply {
             let event = map_agent_reply_outcome(&self.session_id, reply);
             if let Err(e) = emit_agent_reply(self.events.as_ref(), &event) {
                 log::warn!("Failed to emit agent-reply event: {}", e);
             }
         }
 
-        if let Some(review) = extract_agent_review(&reply_text) {
+        if let Some(review) = review {
             let event = map_review_outcome(&self.session_id, review);
             if let Err(e) = emit_agent_review(self.events.as_ref(), &event) {
                 log::warn!("Failed to emit agent-review event: {}", e);
@@ -1585,20 +1666,24 @@ mod tests {
         let handle = start_tailing(
             sink.clone(),
             "sid".to_string(),
-            old_wire,
+            old_wire.clone(),
             Some(work.path().to_path_buf()),
-            locator,
+            locator.clone(),
         )
         .expect("tailing starts");
 
         let new_session = session_under(kimi_home.path(), "session_new");
-        write_main_session(
+        let new_wire = write_main_session(
             &new_session,
-            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n\
-             {\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n\
-             {\"type\":\"context.append_loop_event\",\"time\":1781345364384,\"event\":{\"type\":\"tool.call\",\"toolCallId\":\"new-tool\",\"name\":\"Glob\",\"args\":{\"path\":\"src\"}}}\n\
-             {\"type\":\"context.append_loop_event\",\"time\":1781345364999,\"event\":{\"type\":\"tool.result\",\"toolCallId\":\"new-tool\"}}\n\
-             {\"type\":\"usage.record\",\"usage\":{\"inputOther\":10,\"output\":2,\"inputCacheRead\":20,\"inputCacheCreation\":0}}\n",
+            &format!(
+                "{{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}}\n\
+                 {{\"type\":\"turn.prompt\",\"origin\":{{\"kind\":\"user\"}}}}\n\
+                 {{\"type\":\"context.append_loop_event\",\"time\":1781345364384,\"event\":{{\"type\":\"tool.call\",\"toolCallId\":\"new-tool\",\"name\":\"Glob\",\"args\":{{\"path\":\"src\"}}}}}}\n\
+                 {{\"type\":\"context.append_loop_event\",\"time\":1781345364999,\"event\":{{\"type\":\"tool.result\",\"toolCallId\":\"new-tool\"}}}}\n{}\n{}\n\
+                 {{\"type\":\"usage.record\",\"usage\":{{\"inputOther\":10,\"output\":2,\"inputCacheRead\":20,\"inputCacheCreation\":0}}}}\n",
+                content_part_line("text", "text", KIMI_SENTINEL_REVIEW),
+                END_TURN,
+            ),
         );
         set_session_activity(&new_session, new_time);
         write_session_index(
@@ -1616,6 +1701,17 @@ mod tests {
             "status must carry the new kimi session id after supervisor switch",
         );
         handle.stop();
+
+        let recovery_paths = locator.recovery_paths();
+        assert!(recovery_paths.contains(&new_wire));
+        let reviews = recover_reviews(
+            &recovery_paths,
+            kimi_home.path(),
+            "sid",
+            &HashSet::from(["review123".to_string()]),
+        )
+        .expect("recover review from supervisor-selected session");
+        assert_eq!(reviews.len(), 1);
 
         assert_eq!(sink.count("agent-tool-call"), 0);
         assert_eq!(summary["cwd"], work.path().to_string_lossy().as_ref());
@@ -2056,6 +2152,25 @@ mod tests {
     }
 
     #[test]
+    fn turn_with_both_protocols_emits_neither_event() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line(
+            "text",
+            "text",
+            &format!("{KIMI_SENTINEL_REPLY}\n{KIMI_SENTINEL_REVIEW}"),
+        ));
+        decoder.decode_line(END_TURN);
+
+        assert!(agent_reply_events(&sink).is_empty());
+        assert!(agent_review_events(&sink).is_empty());
+    }
+
+    #[test]
     fn recovery_reconstructs_requested_reply_and_review_turns() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let wire = tmp.path().join("wire.jsonl");
@@ -2069,16 +2184,111 @@ mod tests {
         ]
         .join("\n");
         std::fs::write(&wire, format!("{raw}\n")).expect("write wire");
+        let paths = [wire.clone()];
 
         let reply_nonces = HashSet::from(["abc123".to_string()]);
-        let replies = recover_replies(&wire, "sid", &reply_nonces).expect("recover replies");
+        let replies =
+            recover_replies(&paths, tmp.path(), "sid", &reply_nonces).expect("recover replies");
         assert_eq!(replies.len(), 1);
         assert_eq!(replies[0].nonce.as_deref(), Some("abc123"));
 
         let review_nonces = HashSet::from(["review123".to_string()]);
-        let reviews = recover_reviews(&wire, "sid", &review_nonces).expect("recover reviews");
+        let reviews =
+            recover_reviews(&paths, tmp.path(), "sid", &review_nonces).expect("recover reviews");
         assert_eq!(reviews.len(), 1);
         assert_eq!(reviews[0].nonce.as_deref(), Some("review123"));
+    }
+
+    #[test]
+    fn recovery_keeps_bounded_same_nonce_reply_turns_in_order() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let wire = tmp.path().join("wire.jsonl");
+        let first = KIMI_SENTINEL_REPLY.replace("done", "first");
+        let second = KIMI_SENTINEL_REPLY.replace("done", "second");
+        let raw = [
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#.to_string(),
+            content_part_line("text", "text", &first),
+            END_TURN.to_string(),
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#.to_string(),
+            content_part_line("text", "text", &second),
+            END_TURN.to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&wire, format!("{raw}\n")).expect("write wire");
+
+        let replies = recover_replies(
+            &[wire],
+            tmp.path(),
+            "sid",
+            &HashSet::from(["abc123".to_string()]),
+        )
+        .expect("recover replies");
+
+        assert_eq!(replies.len(), 2);
+        assert_eq!(replies[0].replies.as_ref().unwrap()[0].text, "first");
+        assert_eq!(replies[1].replies.as_ref().unwrap()[0].text, "second");
+    }
+
+    #[test]
+    fn recovery_reads_only_the_bounded_tail_window() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let wire = tmp.path().join("wire.jsonl");
+        let old = KIMI_SENTINEL_REPLY.replace("abc123", "old123");
+        let recent = KIMI_SENTINEL_REPLY.replace("abc123", "new123");
+        let raw = format!(
+            "{{\"type\":\"turn.prompt\",\"origin\":{{\"kind\":\"user\"}}}}\n{}\n{}\n{}\n\
+             {{\"type\":\"turn.prompt\",\"origin\":{{\"kind\":\"user\"}}}}\n{}\n{}\n",
+            content_part_line("text", "text", &old),
+            END_TURN,
+            "x".repeat(MAX_RECOVERY_BYTES_PER_PATH as usize),
+            content_part_line("text", "text", &recent),
+            END_TURN,
+        );
+        std::fs::write(&wire, raw).expect("write wire");
+
+        let replies = recover_replies(
+            &[wire],
+            tmp.path(),
+            "sid",
+            &HashSet::from(["old123".to_string(), "new123".to_string()]),
+        )
+        .expect("recover replies");
+
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].nonce.as_deref(), Some("new123"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rejects_a_transcript_replaced_by_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("root");
+        let outside = tempfile::tempdir().expect("outside");
+        let wire = root.path().join("wire.jsonl");
+        let outside_wire = outside.path().join("wire.jsonl");
+        std::fs::write(&wire, "").expect("write initial wire");
+        std::fs::write(
+            &outside_wire,
+            format!(
+                "{{\"type\":\"turn.prompt\",\"origin\":{{\"kind\":\"user\"}}}}\n{}\n{}\n",
+                content_part_line("text", "text", KIMI_SENTINEL_REPLY),
+                END_TURN,
+            ),
+        )
+        .expect("write outside wire");
+        std::fs::remove_file(&wire).expect("remove initial wire");
+        symlink(&outside_wire, &wire).expect("replace with symlink");
+
+        let replies = recover_replies(
+            &[wire],
+            root.path(),
+            "sid",
+            &HashSet::from(["abc123".to_string()]),
+        )
+        .expect("unsafe path is skipped");
+
+        assert!(replies.is_empty());
     }
 
     #[test]

@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-26
-ref_count: 15
+last_updated: 2026-08-01
+ref_count: 16
 ---
 
 # Parser Resilience
@@ -383,3 +383,12 @@ true` and drop the chunk.
 - **Finding:** The Codex code-mode JavaScript string decoder only handled a small escape table and treated all other escape introducers as literal characters after dropping the backslash. Valid `\xHH`, `\uHHHH`, and `\u{...}` string literals in `exec_command` args, workdirs, or `apply_patch` text were reconstructed incorrectly.
 - **Fix:** Added explicit hex, fixed-width Unicode, braced Unicode, and UTF-16 surrogate-pair decoding. Malformed hex/unicode forms now make the extractor abstain instead of returning corrupted text, with regression coverage for command extraction and patch-path extraction.
 - **Commit:** same commit as this entry
+
+### 29. Kimi completed turns could emit both structured protocols
+
+- **Source:** local-codex | Kimi hunk-review local review | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Live and recovered Kimi turns independently extracted reply and review sentinels, so one nonconforming turn containing both blocks could mutate unrelated pending feedback and delegated-review state. Recovery also consumed a reply nonce after its first match even though finding-thread follow-ups intentionally reuse that nonce.
+- **Fix:** Arbitrate both extractors once per completed turn and emit neither when both match; retain ordered same-nonce reply turns within the shared event cap while reviews remain one-shot. Added live arbitration and multi-turn recovery regressions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
