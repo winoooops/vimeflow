@@ -2,8 +2,8 @@
 id: filesystem-scope
 category: security
 created: 2026-04-09
-last_updated: 2026-06-22
-ref_count: 8
+last_updated: 2026-08-01
+ref_count: 9
 ---
 
 # Filesystem Scope
@@ -272,4 +272,13 @@ preserve their original Tauri-era paths.
 - **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
 - **Finding:** `handleSessionInfo` normalized `info.directory` to a string for change detection but passed the raw value into `writeIndexRow`. Missing or non-string directory values could serialize as absent/null and remove the locator's cwd fallback signal.
 - **Fix:** Passed the already-coerced `directory` binding into `writeIndexRow`, so invalid directory payloads become an explicit empty string. Added a bridge regression test for an omitted directory field.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 29. Kimi recovery trusted one stale, followable transcript path
+
+- **Source:** local-codex | Kimi hunk-review local review | 2026-08-01
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/{locator.rs,transcript.rs}`
+- **Finding:** Recovery scanned only the attach-time transcript even after the Kimi supervisor switched sessions, and reopened the retained path with `File::open`. Missed replies in the new session were unrecoverable, while a later leaf-symlink substitution could redirect recovery outside the frozen Kimi root.
+- **Fix:** Retain a bounded history of supervisor-selected paths, freeze a canonical validator root at attach, revalidate every candidate, deduplicate canonical targets, and reuse the kernel-level no-follow opener on the original path. Regression coverage recovers from a switched session and rejects a substituted symlink.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

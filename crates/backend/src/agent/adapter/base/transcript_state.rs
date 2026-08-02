@@ -748,7 +748,8 @@ mod tests {
     fn recovery_source_survives_stop_without_restarting_the_tailer() {
         struct RecoveringStreamer {
             tail_calls: Arc<AtomicUsize>,
-            recover_calls: Arc<AtomicUsize>,
+            reply_calls: Arc<AtomicUsize>,
+            review_calls: Arc<AtomicUsize>,
         }
 
         impl TranscriptStreamer for RecoveringStreamer {
@@ -770,16 +771,28 @@ mod tests {
                 _transcript_path: &std::path::Path,
                 _nonces: &std::collections::HashSet<String>,
             ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
-                self.recover_calls.fetch_add(1, Ordering::Relaxed);
+                self.reply_calls.fetch_add(1, Ordering::Relaxed);
+                Ok(Vec::new())
+            }
+
+            fn recover_reviews(
+                &self,
+                _session_id: &str,
+                _transcript_path: &std::path::Path,
+                _nonces: &std::collections::HashSet<String>,
+            ) -> Result<Vec<crate::agent::types::AgentReviewEvent>, String> {
+                self.review_calls.fetch_add(1, Ordering::Relaxed);
                 Ok(Vec::new())
             }
         }
 
         let tail_calls = Arc::new(AtomicUsize::new(0));
-        let recover_calls = Arc::new(AtomicUsize::new(0));
+        let reply_calls = Arc::new(AtomicUsize::new(0));
+        let review_calls = Arc::new(AtomicUsize::new(0));
         let streamer: Arc<dyn TranscriptStreamer> = Arc::new(RecoveringStreamer {
             tail_calls: tail_calls.clone(),
-            recover_calls: recover_calls.clone(),
+            reply_calls: reply_calls.clone(),
+            review_calls: review_calls.clone(),
         });
         let sink = Arc::new(FakeEventSink::new());
         let tmp = tempfile::tempdir().expect("temp dir");
@@ -805,9 +818,16 @@ mod tests {
                 &std::collections::HashSet::from(["nonce-1".to_string()]),
             )
             .expect("recover replies");
+        state
+            .recover_reviews(
+                "pty-1",
+                &std::collections::HashSet::from(["nonce-1".to_string()]),
+            )
+            .expect("recover reviews");
 
         assert_eq!(tail_calls.load(Ordering::Relaxed), 1);
-        assert_eq!(recover_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(reply_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(review_calls.load(Ordering::Relaxed), 1);
         assert!(!state.contains("pty-1"));
 
         state.forget_recovery_source("pty-1");
@@ -817,7 +837,14 @@ mod tests {
                 &std::collections::HashSet::from(["nonce-1".to_string()]),
             )
             .expect("missing source returns empty");
-        assert_eq!(recover_calls.load(Ordering::Relaxed), 1);
+        state
+            .recover_reviews(
+                "pty-1",
+                &std::collections::HashSet::from(["nonce-1".to_string()]),
+            )
+            .expect("missing source returns empty");
+        assert_eq!(reply_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(review_calls.load(Ordering::Relaxed), 1);
     }
 
     /// PR #302 cycle 15 F1 — `SessionGate::lock` returns a

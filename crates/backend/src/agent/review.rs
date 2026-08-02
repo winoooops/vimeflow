@@ -55,15 +55,12 @@ struct FindingDto {
 /// Some(Malformed { .. })   → sentinel present but truncated or schema-invalid.
 /// Some(Structured { .. })  → schema-valid (findings may be empty).
 pub(crate) fn extract_agent_review(reply_text: &str) -> Option<AgentReviewOutcome> {
-    let open = reply_text.find(OPEN)?;
-    let after = open + OPEN.len();
-    let Some(rel) = reply_text[after..].find(CLOSE) else {
+    let block = crate::agent::reply::select_protocol_block(reply_text, OPEN, CLOSE)?;
+    let json = crate::agent::reply::normalize_reply_json(block.body.trim());
+    if !block.complete {
         // open sentinel, no close → truncated
-        let json = crate::agent::reply::normalize_reply_json(reply_text[after..].trim());
         return Some(malformed(&json));
-    };
-    let close = after + rel;
-    let json = crate::agent::reply::normalize_reply_json(reply_text[after..close].trim());
+    }
 
     match validate(&json) {
         Some((nonce, reviewer, findings, omitted_finding_count)) => {
@@ -217,6 +214,19 @@ mod tests {
     #[test]
     fn no_sentinel_is_none() {
         assert_eq!(extract_agent_review("nothing here"), None);
+    }
+
+    #[test]
+    fn last_complete_standalone_block_wins() {
+        let example = block(r#"{"v":1,"nonce":"old","reviewer":"example","findings":[]}"#);
+        let real = block(r#"{"v":1,"nonce":"new","reviewer":"Kimi","findings":[]}"#);
+        let text = format!("The inline marker {OPEN} is prose.\n{example}\n{real}");
+
+        let outcome = extract_agent_review(&text).expect("block found");
+        assert!(matches!(
+            outcome,
+            AgentReviewOutcome::Structured { ref nonce, .. } if nonce == "new"
+        ));
     }
 
     #[test]

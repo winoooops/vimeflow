@@ -56,6 +56,8 @@ export interface AgentDef extends PaneIdentity {
    * once opencode ships a usage endpoint.
    */
   quotaNotice?: QuotaNotice
+  /** Opt-in only after live + recovery support is complete. */
+  supportsHunkReview?: true
 }
 
 export const AGENTS = {
@@ -67,6 +69,7 @@ export const AGENTS = {
     Icon: ClaudeCode,
     model: 'sonnet-4',
     resizeThrottleMs: 96,
+    supportsHunkReview: true,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--resume',
@@ -84,6 +87,7 @@ export const AGENTS = {
     Icon: Codex,
     model: 'gpt-5-codex',
     resizeThrottleMs: 0,
+    supportsHunkReview: true,
     resumeCommands: {
       latest: 'resume --last',
       byIdPrefix: 'resume',
@@ -103,6 +107,7 @@ export const AGENTS = {
     // pi-tui's destructive full renders flicker at ANY throttle; tracked
     // upstream (MoonshotAI/kimi-code#2324). Re-evaluate when that lands.
     resizeThrottleMs: 0,
+    supportsHunkReview: true,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--session',
@@ -158,6 +163,9 @@ export const AGENTS = {
 export type AgentId = keyof typeof AGENTS
 
 export type Agent = (typeof AGENTS)[AgentId]
+
+export const supportsHunkReview = (agentId: AgentId): boolean =>
+  (AGENTS[agentId] as AgentDef).supportsHunkReview ?? false
 
 export const agentTypeToRegistryKey = (
   agentType: AgentStatus['agentType']

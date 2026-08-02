@@ -18,19 +18,19 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/winoooops/libghostty-spm.git", revision: "57c958b0418a53ca6cf64a3d77f3b1e689962054"),
+        .package(url: "https://github.com/winoooops/libghostty-spm-shaders.git", revision: "e2165a8c96c5dad788746fd08187e6d11c39fd8d"),
     ],
     targets: [
         .executableTarget(
             name: "GhosttyNativeMacosSmoke",
             dependencies: [
-                .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+                .product(name: "GhosttyTerminal", package: "libghostty-spm-shaders"),
             ]
         ),
         .target(
             name: "GhosttyElectronBridge",
             dependencies: [
-                .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+                .product(name: "GhosttyTerminal", package: "libghostty-spm-shaders"),
             ]
         ),
         .testTarget(

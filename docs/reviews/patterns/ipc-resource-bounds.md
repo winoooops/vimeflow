@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-07-30
-ref_count: 9
+last_updated: 2026-08-01
+ref_count: 10
 ---
 
 # IPC Resource Bounds
@@ -241,4 +241,13 @@ not become repeated unhandled main-process failures.
 - **File:** `electron/ghostty-native-parent.ts`
 - **Finding:** The PTY fd transport bootstrap rejected `undefined` and negative fd values but did not require the addon result to be an integer, so `NaN` could pass the `< 0` check and fail later inside child-process spawn with less clear fallback behavior.
 - **Fix:** Require `Number.isInteger(transportFd)` before accepting the descriptor and extend bootstrap fallback coverage with a `NaN` addon result.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 18. Kimi recovery retained an unbounded transcript history in memory
+
+- **Source:** local-codex | Kimi hunk-review local review | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** The recovery scanner bounded individual JSONL lines but accumulated every completed 32 KiB turn before filtering requested nonces, allowing a large wire to allocate excessive memory and block the sidecar recovery IPC.
+- **Fix:** Read at most the newest 128 KiB from each of at most 256 retained paths, keep at most 512 completed turns, and cap same-nonce reply recovery at the newest 128 events. Added tail-window and ordering regressions.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

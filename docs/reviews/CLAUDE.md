@@ -43,7 +43,7 @@ When appending findings to a pattern file, label the source so future readers ca
 
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
-| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 28       | 7    | 2026-06-22   |
+| [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 29       | 9    | 2026-08-01   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 21       | 9    | 2026-08-01   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 64   | 2026-06-27   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
@@ -72,7 +72,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 17       | 9    | 2026-07-30   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 18       | 10   | 2026-08-01   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
@@ -92,7 +92,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 33       | 22   | 2026-07-25   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 16   | 2026-07-19   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 28       | 15   | 2026-07-26   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 34       | 19   | 2026-08-01   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 3        | 1    | 2026-07-31   |
 | [Identifier Prefix Matching](patterns/identifier-prefix-matching.md)                                 | correctness        | 4        | 2    | 2026-06-17   |

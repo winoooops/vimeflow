@@ -10,6 +10,56 @@ use crate::agent::types::{AgentReply, AgentReplyEvent, AgentReplyStatus, AgentRe
 const OPEN: &str = "<<<VIMEFLOW_REPLY";
 const CLOSE: &str = "VIMEFLOW_REPLY>>>";
 
+pub(crate) struct ProtocolBlock<'a> {
+    pub raw: &'a str,
+    pub body: &'a str,
+    pub complete: bool,
+}
+
+fn standalone_marker_offset(line: &str, marker: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    (trimmed == marker
+        || trimmed
+            .strip_prefix('>')
+            .is_some_and(|quoted| quoted.trim() == marker))
+    .then(|| line.find(marker))?
+}
+
+pub(crate) fn select_protocol_block<'a>(
+    text: &'a str,
+    open: &str,
+    close: &str,
+) -> Option<ProtocolBlock<'a>> {
+    let mut offset = 0;
+    let mut current_open = None;
+    let mut last_complete = None;
+
+    for chunk in text.split_inclusive('\n') {
+        let line = chunk.trim_end_matches(['\r', '\n']);
+        if let Some(marker_offset) = standalone_marker_offset(line, open) {
+            current_open = Some((offset + marker_offset, offset + chunk.len()));
+        } else if let (Some((raw_start, body_start)), Some(marker_offset)) =
+            (current_open, standalone_marker_offset(line, close))
+        {
+            last_complete = Some(ProtocolBlock {
+                raw: &text[raw_start..offset + marker_offset + close.len()],
+                body: &text[body_start..offset],
+                complete: true,
+            });
+            current_open = None;
+        }
+        offset += chunk.len();
+    }
+
+    last_complete.or_else(|| {
+        current_open.map(|(raw_start, body_start)| ProtocolBlock {
+            raw: &text[raw_start..],
+            body: &text[body_start..],
+            complete: false,
+        })
+    })
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) enum AgentReplyOutcome {
     // `nonce` is best-effort: Some when the block is a parseable object with a
@@ -76,38 +126,16 @@ struct ReplyDto {
 /// after the last close don't shadow a complete block; with no close at all,
 /// the last open still degrades to Malformed-with-nonce.
 pub(crate) fn extract_agent_reply(reply_text: &str) -> Option<AgentReplyOutcome> {
-    let mut cursor = 0;
-    let mut last_complete: Option<(usize, usize)> = None;
-    let mut trailing_orphan_open = None;
-
-    while let Some(open_rel) = reply_text[cursor..].find(OPEN) {
-        let open_at = cursor + open_rel;
-        let after_open = open_at + OPEN.len();
-
-        let Some(close_rel) = reply_text[after_open..].find(CLOSE) else {
-            trailing_orphan_open = reply_text[open_at..].rfind(OPEN).map(|at| open_at + at);
-            break;
-        };
-
-        let close_at = after_open + close_rel;
-        last_complete = Some((open_at, close_at));
-        cursor = close_at + CLOSE.len();
-    }
-
-    let Some((open_at, close_at)) = last_complete else {
-        let open_at = trailing_orphan_open?;
-        let after_open = open_at + OPEN.len();
-        let json = normalize_reply_json(reply_text[after_open..].trim());
+    let block = select_protocol_block(reply_text, OPEN, CLOSE)?;
+    let json = normalize_reply_json(block.body.trim());
+    if !block.complete {
         // open sentinel, no close → truncated
         return Some(AgentReplyOutcome::Malformed {
-            raw: reply_text[open_at..].to_string(),
+            raw: block.raw.to_string(),
             nonce: best_effort_nonce(&json),
         });
-    };
-
-    let after_open = open_at + OPEN.len();
-    let raw = reply_text[open_at..close_at + CLOSE.len()].to_string();
-    let json = normalize_reply_json(reply_text[after_open..close_at].trim());
+    }
+    let raw = block.raw.to_string();
 
     match validate(&json) {
         Some((nonce, replies)) => Some(AgentReplyOutcome::Structured {
@@ -231,6 +259,20 @@ mod tests {
             panic!("expected structured outcome");
         };
         assert_eq!(replies[0].text, "actually done");
+    }
+
+    #[test]
+    fn inline_marker_before_the_final_block_is_plain_prose() {
+        let real = block(
+            r#"{"v":1,"nonce":"real42","replies":[{"id":1,"status":"resolved","text":"actually done"}]}"#,
+        );
+        let text = format!("The marker {OPEN} is documented here.\n{real}");
+
+        let outcome = extract_agent_reply(&text).expect("block found");
+        assert!(matches!(
+            outcome,
+            AgentReplyOutcome::Structured { ref nonce, .. } if nonce == "real42"
+        ));
     }
 
     #[test]

@@ -193,7 +193,7 @@ pub(super) fn canonicalize_within_home(
 /// they ever drift across files, the Windows post-open check gets
 /// silently skipped (this is exactly how finding #9 in the review
 /// knowledge base slipped through the first time).
-pub(super) fn open_nofollow(path: &Path, mut options: OpenOptions) -> Result<File, String> {
+pub(crate) fn open_nofollow(path: &Path, mut options: OpenOptions) -> Result<File, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
