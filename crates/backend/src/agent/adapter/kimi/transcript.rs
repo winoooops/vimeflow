@@ -529,9 +529,16 @@ fn clamp_turn_text(text: &mut String) {
         return;
     }
     let excess = text.len() - MAX_TURN_TEXT_BYTES;
-    let cut = (excess..text.len())
+    let utf8_cut = (excess..text.len())
         .find(|&index| text.is_char_boundary(index))
         .unwrap_or(excess);
+    let cut = if utf8_cut == 0 || text.as_bytes()[utf8_cut - 1] == b'\n' {
+        utf8_cut
+    } else {
+        text[utf8_cut..]
+            .find('\n')
+            .map_or(text.len(), |newline| utf8_cut + newline + 1)
+    };
     text.drain(..cut);
 }
 
@@ -2227,6 +2234,21 @@ mod tests {
 
         assert!(agent_reply_events(&sink).is_empty());
         assert_eq!(agent_review_events(&sink).len(), 1);
+    }
+
+    #[test]
+    fn turn_text_clamp_does_not_promote_an_inline_marker() {
+        let padding = "y".repeat(
+            MAX_TURN_TEXT_BYTES
+                .saturating_sub(KIMI_SENTINEL_REPLY.len())
+                .saturating_sub(1),
+        );
+        let mut text = format!("inline{KIMI_SENTINEL_REPLY}\n{padding}");
+
+        clamp_turn_text(&mut text);
+
+        assert!(text.len() <= MAX_TURN_TEXT_BYTES);
+        assert!(extract_agent_reply(&text).is_none());
     }
 
     #[test]

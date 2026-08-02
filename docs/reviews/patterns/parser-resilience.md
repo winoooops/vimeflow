@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-08-01
-ref_count: 18
+ref_count: 19
 ---
 
 # Parser Resilience
@@ -427,4 +427,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
 - **Finding:** Kimi recovery concatenated completed turns in retained-path order. After an A → B → A supervisor sequence, all B turns preceded all A turns, so same-nonce replies could be restored out of chronological order and one-shot review recovery could consume the wrong match.
 - **Fix:** Keep the newest 512 completed turns in a bounded heap keyed by `step.end` timestamp plus stable path/line ordinals, then sort that bounded set before shared extraction. Added a two-transcript regression whose retained-path order differs from completion order.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Byte clamps could manufacture standalone protocol markers
+
+- **Source:** local-codex | Kimi hunk-review local review round 4 | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi's 32 KiB turn-text clamp cut only at a UTF-8 boundary. If it removed prose immediately before an inline protocol marker, that marker moved to byte zero and the standalone-line selector could misclassify the originally invalid block as actionable feedback.
+- **Fix:** Advance every mid-line clamp through the next newline, or clear the fragment when none exists, so truncation cannot create a new line boundary. Added a regression whose old cut promoted an inline reply marker.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
