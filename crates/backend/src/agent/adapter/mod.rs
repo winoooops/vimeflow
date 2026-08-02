@@ -135,7 +135,7 @@ impl traits::StatusSourceLocator for NoOpAdapter {
         // adapter a plausible app-data status path. The watcher never
         // actually reads it because NoOp's decoder/streamer Errs out below.
         Ok(LocatedStatusSource {
-            status_path: crate::terminal::bridge::session_status_file(
+            status_path: crate::agent::adapter::claude_code::bridge::session_status_file(
                 &self.app_data_dir,
                 cwd,
                 session_id,
@@ -426,7 +426,11 @@ mod noop_tests {
         .expect("noop adapter always resolves a status source");
         assert_eq!(
             src.status_path,
-            crate::terminal::bridge::session_status_file(&app_data_dir, &cwd, "sid")
+            crate::agent::adapter::claude_code::bridge::session_status_file(
+                &app_data_dir,
+                &cwd,
+                "sid",
+            )
         );
         assert_eq!(src.trust_root, app_data_dir);
         // NoOp adapters never know a static transcript path — Step 0c

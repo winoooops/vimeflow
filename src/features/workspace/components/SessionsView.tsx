@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 import { List } from '../../sessions/components/List'
+import type { NotificationRecord } from '../../sessions/hooks/useNotificationCenter'
 import type { Session, SessionCloseResult } from '../../sessions/types'
 import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
 
@@ -12,6 +13,7 @@ export interface SessionsViewProps {
   onRenameSession: (id: string, name: string) => void
   onReorderSessions: (reordered: Session[]) => void
   layoutRegistry: PaneLayoutRegistry
+  notificationRecords?: readonly NotificationRecord[]
 }
 
 export const SessionsView = ({
@@ -23,6 +25,7 @@ export const SessionsView = ({
   onRenameSession,
   onReorderSessions,
   layoutRegistry,
+  notificationRecords = [],
 }: SessionsViewProps): ReactElement => (
   // Tailwind v4 puts utilities in a higher cascade layer than `@layer base`
   // (where Preflight's `[hidden] { display: none }` lives), so a hardcoded
@@ -44,6 +47,7 @@ export const SessionsView = ({
       onRenameSession={onRenameSession}
       onReorderSessions={onReorderSessions}
       layoutRegistry={layoutRegistry}
+      notificationRecords={notificationRecords}
     />
   </div>
 )

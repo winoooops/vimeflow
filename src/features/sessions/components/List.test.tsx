@@ -3,6 +3,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { List } from './List'
+import type { NotificationRecord } from '../hooks/useNotificationCenter'
 import type { Session } from '../types'
 
 const mockSessions: Session[] = [
@@ -156,6 +157,59 @@ describe('List', () => {
     expect(screen.getByTestId('session-group-recent')).toHaveTextContent(
       'Recent'
     )
+  })
+
+  test('maps unread notification reasons to active session flags', () => {
+    const notificationRecords: readonly NotificationRecord[] = [
+      {
+        id: 'stale-notice',
+        sessionId: 'sess-1',
+        ptyId: 'removed-pty',
+        reason: 'agent-error',
+        title: 'Stale error',
+        occurredAt: 3,
+        read: false,
+      },
+      {
+        id: 'notice-1',
+        sessionId: 'sess-1',
+        ptyId: 'sess-1',
+        reason: 'question-requested',
+        title: 'Question',
+        occurredAt: 1,
+        read: false,
+      },
+      {
+        id: 'notice-2',
+        sessionId: 'sess-2',
+        ptyId: 'sess-2',
+        reason: 'agent-error',
+        title: 'Agent error',
+        occurredAt: 2,
+        read: false,
+      },
+    ]
+
+    render(
+      <List
+        sessions={mockSessions}
+        activeSessionId="sess-1"
+        onSessionClick={mockOnSessionClick}
+        notificationRecords={notificationRecords}
+      />
+    )
+
+    expect(
+      within(screen.getByText('auth middleware').closest('li')!).getByLabelText(
+        'Needs your attention'
+      )
+    ).toBeInTheDocument()
+
+    expect(
+      within(screen.getByText('fix: login bug').closest('li')!).getByLabelText(
+        'Agent error'
+      )
+    ).toBeInTheDocument()
   })
 
   test('section headers show per-group counts', () => {

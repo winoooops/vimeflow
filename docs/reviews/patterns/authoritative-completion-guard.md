@@ -2,7 +2,7 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-07-21
+last_updated: 2026-08-02
 ref_count: 5
 ---
 
@@ -153,4 +153,13 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   tool name so both direct and code-mode-promoted `apply_patch` calls wait for
   `patch_apply_end`. Added a regression test proving the promoted call remains
   pending through generic output and emits failed when `patch_apply_end` fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. OpenCode session errors left lifecycle running
+
+- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** OpenCode `session.error` emitted an alert while leaving `turn_active` true, even though the bridge documents that error-ending turns do not receive a later idle event.
+- **Fix:** Treat `session.error` as a terminal lifecycle edge for the active OpenCode turn by clearing `turn_active` and recording Idle immediately after emitting the error notification.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

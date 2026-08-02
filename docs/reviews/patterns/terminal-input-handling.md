@@ -2,7 +2,7 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-07-08
+last_updated: 2026-08-02
 ref_count: 7
 ---
 
@@ -115,3 +115,12 @@ double execution, and paste failures.
 - **Finding:** The native secondary Ghostty resize callback returned early when an interactive overlay was active. Burner PTYs could keep stale cols/rows if the split or popup layout changed while a menu or dialog was open.
 - **Fix:** Kept overlay gating on secondary input and focus callbacks, but let secondary resize callbacks continue when the owner window and secondary state are live. Added a regression test covering blocked input/focus with resize still forwarded to `resize_pty`.
 - **Commit:** same commit as this entry
+
+### 12. Terminal fallback attention was emitted for hook-covered agents
+
+- **Source:** github-claude | PR #772 round 1 | 2026-08-02
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Terminal BEL/OSC attention signals were promoted for all panes, including agents with semantic attention hooks. A hook-covered CLI could therefore produce both a semantic notification and a terminal fallback notification for one real event.
+- **Fix:** Gate terminal fallback promotion by pane agent type, ignoring fallback signals for Claude Code, Codex, and OpenCode panes. Added producer tests for generic panes and hook-covered panes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
