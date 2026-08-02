@@ -70,7 +70,9 @@ describe('NotificationPanel', () => {
     )
 
     await user.click(
-      screen.getByRole('button', { name: 'Dismiss Claude needs approval' })
+      screen.getByRole('button', {
+        name: 'Dismiss Claude needs approval in notifications',
+      })
     )
     await user.click(screen.getByRole('button', { name: 'Mark all read (1)' }))
     await user.click(screen.getByRole('button', { name: 'Clear all' }))

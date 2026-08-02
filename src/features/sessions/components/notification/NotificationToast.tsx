@@ -1,4 +1,4 @@
-import type { ReactElement, Ref } from 'react'
+import { useRef, type FocusEvent, type ReactElement, type Ref } from 'react'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { Button } from '@/components/Button'
 import { IconButton } from '@/components/IconButton'
@@ -33,8 +33,41 @@ export const NotificationToast = ({
   onStartDwell,
   ref = undefined,
 }: NotificationToastProps): ReactElement | null => {
+  const pointerInsideRef = useRef(false)
+  const focusInsideRef = useRef(false)
+
   if (display === null) {
     return null
+  }
+
+  const startDwellIfReleased = (): void => {
+    if (!pointerInsideRef.current && !focusInsideRef.current) {
+      onStartDwell()
+    }
+  }
+
+  const handlePointerEnter = (): void => {
+    pointerInsideRef.current = true
+    onHoldDwell()
+  }
+
+  const handlePointerLeave = (): void => {
+    pointerInsideRef.current = false
+    startDwellIfReleased()
+  }
+
+  const handleFocus = (event: FocusEvent<HTMLDivElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      focusInsideRef.current = true
+      onHoldDwell()
+    }
+  }
+
+  const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      focusInsideRef.current = false
+      startDwellIfReleased()
+    }
   }
 
   return (
@@ -43,8 +76,10 @@ export const NotificationToast = ({
       aria-hidden={visible ? undefined : 'true'}
       inert={visible ? undefined : true}
       className="vf-notification-toast absolute inset-x-[5px] top-[4px] flex h-[18px] items-center gap-2"
-      onPointerEnter={onHoldDwell}
-      onPointerLeave={onStartDwell}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
     >
       <button
         ref={ref}

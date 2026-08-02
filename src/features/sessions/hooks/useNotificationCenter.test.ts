@@ -112,12 +112,13 @@ describe('notification center domain', () => {
     ).toEqual([record('second'), record('first', { read: true })])
   })
 
-  test('dismisses one record and prunes an explicitly closed session', () => {
+  test('dismisses one record and prunes explicitly closed scopes', () => {
     const state = {
       records: [
         record('third', { sessionId: 'session-2', ptyId: 'pty-2' }),
         record('second'),
         record('first'),
+        record('pane-sibling', { ptyId: 'pty-sibling' }),
       ],
     }
 
@@ -126,7 +127,20 @@ describe('notification center domain', () => {
       id: 'second',
     })
 
-    expect(dismissed.records.map(({ id }) => id)).toEqual(['third', 'first'])
+    expect(dismissed.records.map(({ id }) => id)).toEqual([
+      'third',
+      'first',
+      'pane-sibling',
+    ])
+
+    expect(
+      notificationCenterReducer(state, {
+        type: 'prune-pane',
+        sessionId: 'session-1',
+        ptyId: 'pty-1',
+      }).records.map(({ id }) => id)
+    ).toEqual(['third', 'pane-sibling'])
+
     expect(
       notificationCenterReducer(dismissed, {
         type: 'prune-session',

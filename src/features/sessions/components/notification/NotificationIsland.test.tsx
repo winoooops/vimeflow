@@ -470,7 +470,9 @@ describe('NotificationIsland', () => {
     )
 
     await userEvent.click(
-      screen.getByRole('button', { name: 'Dismiss Claude finished' })
+      screen.getByRole('button', {
+        name: 'Dismiss Claude finished in Payments',
+      })
     )
     expect(handlers.onDismiss).toHaveBeenCalledWith('need')
 

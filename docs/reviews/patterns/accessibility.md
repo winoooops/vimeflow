@@ -2,7 +2,7 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-07-22
+last_updated: 2026-08-02
 ref_count: 91
 ---
 
@@ -945,3 +945,21 @@ handlers must not trap focus without implementing the promised behavior.
   changed-files and panel tests to assert the row name and decorative icon.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this
   line)
+
+### 102. Toast dwell timer did not hold keyboard focus
+
+- **Source:** github-claude | PR #772 round 1 | 2026-08-02
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/notification/NotificationToast.tsx`
+- **Finding:** The toast only paused its auto-dismiss dwell timer for pointer hover. Keyboard users could tab into the toast buttons, then the timer could hide the still-focused inert subtree and drop focus to the document body.
+- **Fix:** Added focus/blur dwell handling that only resumes the timer when focus leaves the toast subtree. Added a keyboard-focus regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 103. Repeated notification dismiss controls lacked row context
+
+- **Source:** github-claude | PR #772 round 1 | 2026-08-02
+- **Severity:** LOW
+- **File:** `src/features/sessions/components/notification/NotificationPanel.tsx`
+- **Finding:** Notification row dismiss buttons used only the notification title in their accessible name, so duplicate titles from different sessions were indistinguishable to assistive-technology users.
+- **Fix:** Included the session name in the dismiss button label to match the sibling Open action. Updated panel tests to assert the contextual label.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

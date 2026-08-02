@@ -8,24 +8,29 @@ import { useAgentNotificationProducers } from './useAgentNotificationProducers'
 
 // cspell:ignore Ghostty
 
-const session = (id: string, ptyId: string): Session => ({
+const session = (
+  id: string,
+  ptyId: string,
+  overrides: Partial<Session['panes'][number]> = {}
+): Session => ({
   id,
   projectId: `project-${id}`,
   name: id,
   open: true,
   status: 'running',
   workingDirectory: `/tmp/${id}`,
-  agentType: 'claude-code',
+  agentType: overrides.agentType ?? 'generic',
   layout: 'single',
   panes: [
     {
       id: 'p0',
       ptyId,
       cwd: `/tmp/${id}`,
-      agentType: 'claude-code',
+      agentType: 'generic',
       agentSessionId: `agent-${id}`,
       status: 'running',
       active: true,
+      ...overrides,
     },
   ],
   createdAt: '2026-07-31T00:00:00Z',
@@ -120,7 +125,7 @@ describe('useAgentNotificationProducers', () => {
         sessionId: 'background',
         ptyId: 'pty-background',
         reason: 'turn-complete',
-        title: 'Claude Code finished',
+        title: 'Shell finished',
       })
     )
   })
@@ -304,5 +309,28 @@ describe('useAgentNotificationProducers', () => {
         body: 'build done',
       })
     )
+  })
+
+  test('ignores terminal fallback attention for hook-covered agents', () => {
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', {
+            agentType: 'codex',
+          }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    act(() => {
+      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
+    })
+
+    expect(publish).not.toHaveBeenCalled()
   })
 })

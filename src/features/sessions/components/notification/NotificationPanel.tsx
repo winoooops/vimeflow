@@ -97,7 +97,7 @@ const NotificationRow = ({
           </Button>
           <IconButton
             icon="close"
-            label={`Dismiss ${item.title}`}
+            label={`Dismiss ${item.title} in ${item.sessionName}`}
             size="sm"
             tooltipPlacement="bottom"
             className="h-5 w-5 rounded-full border border-outline/45 text-[13px]"

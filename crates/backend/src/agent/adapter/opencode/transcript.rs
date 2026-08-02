@@ -285,6 +285,9 @@ impl OpencodeTranscriptDecoder {
         if !self.turn_active {
             return;
         }
+        let Some(agent_session_id) = opencode_session_id(dto) else {
+            return;
+        };
         let body = dto
             .data
             .get("error")
@@ -299,6 +302,8 @@ impl OpencodeTranscriptDecoder {
             "OpenCode failed",
             body,
         );
+        self.turn_active = false;
+        self.record_phase(agent_session_id, AgentPhase::Idle);
     }
 
     fn process_attention(

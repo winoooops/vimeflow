@@ -16,6 +16,7 @@ use crate::agent::types::{AgentAttentionEvent, AgentAttentionReason};
 use crate::runtime::EventSink;
 
 const MAX_BODY_LEN: usize = 500;
+const MAX_ATTENTION_DEDUPE_LEN: usize = 256;
 
 #[derive(Default, Deserialize)]
 struct ClaudeHookDto {
@@ -65,7 +66,10 @@ impl ClaudeHookDecoder {
                 title: title.to_string(),
                 body,
                 occurred_at: now_epoch_ms(),
-                dedupe_key: dto.tool_use_id.clone(),
+                dedupe_key: dto
+                    .tool_use_id
+                    .as_deref()
+                    .map(|id| truncate(id, MAX_ATTENTION_DEDUPE_LEN)),
             },
             self.replay_done,
         );
@@ -171,5 +175,29 @@ mod tests {
         assert_eq!(attention[1]["reason"], "question-requested");
         assert_eq!(attention[2]["reason"], "agent-error");
         assert_eq!(attention[2]["body"], "request failed");
+    }
+
+    #[test]
+    fn semantic_hook_dedupe_key_is_bounded() {
+        let sink = Arc::new(FakeEventSink::new());
+        let events: Arc<dyn EventSink> = sink.clone();
+        let mut decoder = ClaudeHookDecoder::new(events, "pty-1".to_string());
+        decoder.on_caught_up();
+
+        decoder.decode_line(&format!(
+            r#"{{"hook_event_name":"PermissionRequest","tool_use_id":"{}"}}"#,
+            "x".repeat(300)
+        ));
+
+        let attention = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-attention")
+            .expect("attention event")
+            .1;
+        assert_eq!(
+            attention["dedupeKey"].as_str().expect("dedupe key").len(),
+            MAX_ATTENTION_DEDUPE_LEN
+        );
     }
 }

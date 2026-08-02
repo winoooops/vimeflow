@@ -36,6 +36,11 @@ export type NotificationCenterAction =
   | { readonly type: 'mark-all-read' }
   | { readonly type: 'dismiss'; readonly id: string }
   | { readonly type: 'prune-session'; readonly sessionId: string }
+  | {
+      readonly type: 'prune-pane'
+      readonly sessionId: string
+      readonly ptyId: string
+    }
   | { readonly type: 'clear' }
 
 export interface NotificationCenter {
@@ -45,6 +50,7 @@ export interface NotificationCenter {
   readonly markAllRead: () => void
   readonly dismiss: (id: string) => void
   readonly pruneSession: (sessionId: string) => void
+  readonly prunePane: (sessionId: string, ptyId: string) => void
   readonly clear: () => void
 }
 
@@ -112,6 +118,14 @@ export const notificationCenterReducer = (
     case 'prune-session': {
       const records = state.records.filter(
         ({ sessionId }) => sessionId !== action.sessionId
+      )
+
+      return records.length === state.records.length ? state : { records }
+    }
+    case 'prune-pane': {
+      const records = state.records.filter(
+        ({ sessionId, ptyId }) =>
+          sessionId !== action.sessionId || ptyId !== action.ptyId
       )
 
       return records.length === state.records.length ? state : { records }
@@ -186,6 +200,10 @@ export const useNotificationCenter = (): NotificationCenter => {
     dispatch({ type: 'prune-session', sessionId })
   }, [])
 
+  const prunePane = useCallback((sessionId: string, ptyId: string): void => {
+    dispatch({ type: 'prune-pane', sessionId, ptyId })
+  }, [])
+
   const clear = useCallback((): void => {
     dispatch({ type: 'clear' })
   }, [])
@@ -197,6 +215,7 @@ export const useNotificationCenter = (): NotificationCenter => {
     markAllRead,
     dismiss,
     pruneSession,
+    prunePane,
     clear,
   }
 }

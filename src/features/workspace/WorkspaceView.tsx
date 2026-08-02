@@ -416,6 +416,28 @@ const WorkspaceViewContent = (): ReactElement => {
     publish: notificationCenter.publish,
   })
 
+  const liveNotificationPaneKeys = useMemo(
+    () =>
+      new Set(
+        sessions.flatMap((session) =>
+          session.panes.map((pane) => `${session.id}\0${pane.ptyId}`)
+        )
+      ),
+    [sessions]
+  )
+
+  useEffect(() => {
+    for (const record of notificationCenter.records) {
+      if (
+        liveNotificationPaneKeys.has(`${record.sessionId}\0${record.ptyId}`)
+      ) {
+        continue
+      }
+
+      notificationCenter.prunePane(record.sessionId, record.ptyId)
+    }
+  }, [liveNotificationPaneKeys, notificationCenter])
+
   // Detect which modifier the toolbar advertises on this platform so
   // the keyboard shortcut reserves EXACTLY that combo (and no other).
   // macOS shows ⌘ → reserve meta; everything else shows Ctrl →

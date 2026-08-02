@@ -21,6 +21,12 @@ interface TargetPane {
 
 const TURN_COMPLETE_SETTLE_DELAY_MS = 750
 
+const SEMANTIC_ATTENTION_AGENT_TYPES = new Set<Pane['agentType']>([
+  'claude-code',
+  'codex',
+  'opencode',
+])
+
 const findTarget = (
   sessions: readonly Session[],
   ptyId: string
@@ -112,6 +118,7 @@ export const useAgentNotificationProducers = ({
       const target = findTarget(sessionsRef.current, payload.ptyId)
       if (
         target === undefined ||
+        SEMANTIC_ATTENTION_AGENT_TYPES.has(target.pane.agentType) ||
         !isBackgroundTarget(target, activeSessionIdRef.current)
       ) {
         return

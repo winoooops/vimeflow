@@ -73,6 +73,40 @@ describe('NotificationToast', () => {
     )
   })
 
+  test('holds toast dwell while keyboard focus is inside', async () => {
+    const handlers = setupToast()
+    const user = userEvent.setup()
+
+    await user.tab()
+    expect(handlers.onHoldDwell).toHaveBeenCalledOnce()
+
+    await user.tab()
+    expect(handlers.onStartDwell).not.toHaveBeenCalled()
+
+    await user.tab()
+    await user.tab()
+    expect(handlers.onStartDwell).toHaveBeenCalledOnce()
+  })
+
+  test('keeps dwell held until pointer and keyboard focus both leave', async () => {
+    const handlers = setupToast()
+    const user = userEvent.setup()
+    const toast = screen.getByRole('status', { hidden: true })
+
+    await user.hover(toast)
+    await user.tab()
+    await user.unhover(toast)
+
+    expect(handlers.onHoldDwell).toHaveBeenCalledTimes(2)
+    expect(handlers.onStartDwell).not.toHaveBeenCalled()
+
+    await user.tab()
+    await user.tab()
+    await user.tab()
+
+    expect(handlers.onStartDwell).toHaveBeenCalledOnce()
+  })
+
   test('leaves the a11y tree when the island is not in the toast stage', () => {
     setupToast({ visible: false })
 

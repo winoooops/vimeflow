@@ -281,4 +281,56 @@ describe('Popover', () => {
       await screen.findByRole('dialog', { name: 'Notification center' })
     ).toHaveTextContent('Local notification center')
   })
+
+  test('suppresses the local popover when the native overlay is accepted', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const open = vi.fn(() => Promise.resolve({ accepted: true }))
+    const anchor = makeAnchor()
+
+    window.vimeflow = {
+      invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+      listen: vi.fn(() => Promise.resolve(vi.fn())),
+      nativeOverlay: {
+        open,
+        close: vi.fn(() => Promise.resolve()),
+        actionResult: vi.fn(() => Promise.resolve()),
+        resume: vi.fn(() => Promise.resolve()),
+        onAction: vi.fn(() => vi.fn()),
+        onClose: vi.fn(() => vi.fn()),
+      },
+    }
+
+    render(
+      <Popover
+        anchor={anchor}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Notification center"
+        nativeOverlay
+        nativeOverlayPayload={{
+          kind: 'dialog',
+          dialog: 'notification-center',
+          ariaLabel: 'Notification center',
+          items: [],
+          actions: {
+            markAllRead: 'mark-all',
+            clear: 'clear',
+            close: 'close',
+          },
+        }}
+      >
+        <p>Local notification center</p>
+      </Popover>
+    )
+
+    await waitFor(() => expect(open).toHaveBeenCalledOnce())
+    expect(
+      screen.queryByRole('dialog', { name: 'Notification center' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByText('Local notification center')
+    ).not.toBeInTheDocument()
+  })
 })
