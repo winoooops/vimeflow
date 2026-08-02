@@ -85,8 +85,7 @@ mod tests {
     }
 
     fn write_claude_status(app_data_dir: &Path, cwd: &std::path::Path, sid: &str) {
-        let dir =
-            crate::agent::adapter::claude_code::bridge::session_bridge_dir(app_data_dir, cwd, sid);
+        let dir = crate::terminal::bridge::session_bridge_dir(app_data_dir, cwd, sid);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("status.json"),
@@ -238,11 +237,7 @@ mod tests {
             .expect("locate happy path");
         assert_eq!(
             located.status_path,
-            crate::agent::adapter::claude_code::bridge::session_status_file(
-                app_data.path(),
-                tmp.path(),
-                &sid,
-            )
+            crate::terminal::bridge::session_status_file(app_data.path(), tmp.path(), &sid)
         );
         assert_eq!(located.trust_root, app_data.path());
     }
@@ -455,11 +450,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let app_data = TempDir::new().unwrap();
         let sid = "test-sess".to_string();
-        let status_path = crate::agent::adapter::claude_code::bridge::session_status_file(
-            app_data.path(),
-            tmp.path(),
-            &sid,
-        );
+        let status_path =
+            crate::terminal::bridge::session_status_file(app_data.path(), tmp.path(), &sid);
         std::fs::create_dir_all(status_path.parent().unwrap()).unwrap();
         std::fs::write(&status_path, r#"{"session_id":"sid","model":{}}"#).unwrap();
 

@@ -1,4 +1,4 @@
-// vimeflow-bridge-version: 4
+// vimeflow-bridge-version: 3
 //
 // Vimeflow opencode bridge plugin.
 //
@@ -36,18 +36,14 @@ const MAX_SESSION_ID = 128
 const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 // Whitelisted bus event types. Everything else (esp. high-volume
-// `message.part.delta`, `catalog.updated`, `plugin.added`) is dropped.
+// `message.part.delta`, `catalog.updated`, `plugin.added`) is dropped, and
+// permission events are out of scope for v1.
 const EVENT_WHITELIST = new Set([
   'session.created',
   'session.updated',
   'session.idle',
   'session.status',
   'session.error',
-  'permission.asked',
-  'permission.replied',
-  'question.asked',
-  'question.replied',
-  'question.rejected',
   'session.diff',
   'message.updated',
   'message.part.updated',
@@ -348,30 +344,10 @@ const sanitizeEventData = (type: string, properties: any): any => {
     return { info: sanitizeMessageInfo(properties.info) }
   }
 
-  if (type.startsWith('permission.') || type.startsWith('question.')) {
-    return {
-      id: clampString(properties.id),
-      requestID: clampString(properties.requestID),
-      sessionID: clampString(properties.sessionID),
-    }
-  }
-
-  if (type === 'session.error') {
-    const error = asObject(properties.error)
-    const data = asObject(error.data)
-
-    return {
-      sessionID: clampString(properties.sessionID),
-      error: {
-        name: clampString(error.name),
-        message: clampString(data.message),
-      },
-    }
-  }
-
   return {
     sessionID: clampString(properties.sessionID),
     status: sanitizeStatus(properties.status),
+    error: clampString(properties.error),
   }
 }
 

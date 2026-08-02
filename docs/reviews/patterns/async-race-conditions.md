@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-02
-ref_count: 98
+ref_count: 97
 ---
 
 # Async Race Conditions
@@ -1261,20 +1261,4 @@ prevent showing previous data.
   shader-enabled release commit used by the fork's published
   `shaders-1.3.2-1` artifact, keeping the native parent build on the intended
   custom-shader-capable distribution.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 111. Completion notification could overtake same-turn error attention
-
-- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
-- **Severity:** P2 / MEDIUM
-- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
-- **Finding:** Claude lifecycle and hook-tail attention events are emitted by
-  separate backend threads. A running-to-idle lifecycle edge could reach the
-  renderer before the same failed turn's `StopFailure` attention, causing a
-  background pane to publish both "Claude Code finished" and "Claude failed".
-- **Fix:** Deferred turn-complete notifications behind a short per-PTY
-  cancellable settle timer. A same-PTY `agent-error` cancels the pending
-  completion, and the timer rechecks the latest phase, active pane, and error
-  marker before publishing. Added regression coverage for the idle-then-error
-  ordering.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

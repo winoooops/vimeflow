@@ -184,18 +184,14 @@ pub(crate) async fn spawn_pty_inner(
         let app_data_dir = cache
             .app_data_dir()
             .ok_or_else(|| "session cache path has no app data parent".to_string())?;
-        let dir = crate::agent::adapter::claude_code::bridge::session_bridge_dir(
-            &app_data_dir,
-            &cwd,
-            &request.session_id,
-        );
+        let dir = super::bridge::session_bridge_dir(&app_data_dir, &cwd, &request.session_id);
         let cleanup_dir = (!dir.exists()).then_some(dir.clone());
         let shim_dir = dirs::cache_dir()
             .map(|c| c.join("vimeflow-shims"))
             .unwrap_or_else(|| std::env::temp_dir().join("vimeflow-shims"))
             .join(&request.session_id);
         let shim_cleanup = (!shim_dir.exists()).then_some(shim_dir.clone());
-        match crate::agent::adapter::claude_code::bridge::generate_bridge_files(
+        match super::bridge::generate_bridge_files(
             &dir.to_string_lossy(),
             &request.session_id,
             Some(&shim_dir.to_string_lossy()),
@@ -281,10 +277,6 @@ pub(crate) async fn spawn_pty_inner(
         cmd.env("VIMEFLOW_CLAUDE_SHIM_DIR", files.shim_dir_path.as_os_str());
         cmd.env("VIMEFLOW_CLAUDE_SETTINGS", files.settings_path.as_os_str());
         cmd.env("VIMEFLOW_STATUS_FILE", files.status_file_path.as_os_str());
-        cmd.env(
-            "VIMEFLOW_ATTENTION_FILE",
-            files.attention_file_path.as_os_str(),
-        );
 
         // For interactive bash, generate a combined rcfile that sources
         // both ~/.bashrc (user config) and our init script
@@ -619,16 +611,10 @@ pub(crate) fn kill_pty_inner(
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
         if let Some(bridge_dir) = session.bridge_dir.as_deref() {
-            let _ = crate::agent::adapter::claude_code::bridge::cleanup_bridge_files(
-                bridge_dir,
-                session.shim_dir.as_deref(),
-            );
+            let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
         }
     } else if let Some((bridge_dir, shim_dir)) = bridge_cleanup_paths {
-        let _ = crate::agent::adapter::claude_code::bridge::cleanup_bridge_files(
-            &bridge_dir,
-            shim_dir.as_deref(),
-        );
+        let _ = super::bridge::cleanup_bridge_files(&bridge_dir, shim_dir.as_deref());
     }
 
     // Clean up cache: remove from sessions map and session_order
@@ -1421,10 +1407,7 @@ async fn read_pty_output(
     // Clean up bridge files and shim directory for the session.
     if let Some(session) = removed {
         if let Some(bridge_dir) = session.bridge_dir.as_deref() {
-            let _ = crate::agent::adapter::claude_code::bridge::cleanup_bridge_files(
-                bridge_dir,
-                session.shim_dir.as_deref(),
-            );
+            let _ = super::bridge::cleanup_bridge_files(bridge_dir, session.shim_dir.as_deref());
         }
     }
 
@@ -1755,7 +1738,7 @@ mod tests {
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "burner-no-bridge".to_string();
         let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
-        let bridge_dir = crate::agent::adapter::claude_code::bridge::session_bridge_dir(
+        let bridge_dir = crate::terminal::bridge::session_bridge_dir(
             temp_dir.path(),
             &canonical_cwd,
             &session_id,
@@ -1950,7 +1933,7 @@ mod tests {
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "bridge-live-test".to_string();
         let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
-        let status_path = crate::agent::adapter::claude_code::bridge::session_status_file(
+        let status_path = crate::terminal::bridge::session_status_file(
             temp_dir.path(),
             &canonical_cwd,
             &session_id,
@@ -2027,7 +2010,7 @@ mod tests {
         std::fs::create_dir_all(&cwd).expect("create cwd");
         let session_id = "bridge-blocked".to_string();
         let canonical_cwd = std::fs::canonicalize(&cwd).expect("canonical cwd");
-        let bridge_dir = crate::agent::adapter::claude_code::bridge::session_bridge_dir(
+        let bridge_dir = crate::terminal::bridge::session_bridge_dir(
             temp_dir.path(),
             &canonical_cwd,
             &session_id,
@@ -2417,7 +2400,7 @@ mod tests {
             ephemeral: false,
         };
         let canonical_cwd = std::fs::canonicalize(cwd_temp_dir.path()).expect("canonical cwd");
-        let rejected_bridge_dir = crate::agent::adapter::claude_code::bridge::session_bridge_dir(
+        let rejected_bridge_dir = crate::terminal::bridge::session_bridge_dir(
             temp_dir.path(),
             &canonical_cwd,
             "session-65",

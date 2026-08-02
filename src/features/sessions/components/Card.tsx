@@ -12,7 +12,6 @@ import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   type PaneLayoutRegistry,
 } from '../../terminal/layout-registry'
-import type { NotificationCategory } from '../hooks/useNotificationCenter'
 
 export interface CardProps {
   session: Session
@@ -24,7 +23,6 @@ export interface CardProps {
   onReorderDragStart?: () => void
   onReorderDragEnd?: () => void
   layoutRegistry?: PaneLayoutRegistry
-  notificationCategory?: NotificationCategory | null
 }
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
@@ -74,7 +72,6 @@ const CardComponent = ({
   onReorderDragStart = undefined,
   onReorderDragEnd = undefined,
   layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
-  notificationCategory = null,
 }: CardProps): ReactElement => {
   const {
     isEditing,
@@ -232,21 +229,6 @@ const CardComponent = ({
             · {formatRelativeTime(session.lastActivityAt)}
           </span>
           <span className="flex-1" />
-          {notificationCategory !== null && (
-            <span
-              role="img"
-              aria-label={
-                notificationCategory === 'err'
-                  ? 'Agent error'
-                  : 'Needs your attention'
-              }
-              className={`material-symbols-outlined text-[14px] leading-none ${
-                notificationCategory === 'err' ? 'text-error' : 'text-tertiary'
-              }`}
-            >
-              {notificationCategory === 'err' ? 'error' : 'pan_tool'}
-            </span>
-          )}
           {showGlyph && (
             <Tooltip content={layout.name}>
               <span

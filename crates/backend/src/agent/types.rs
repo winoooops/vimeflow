@@ -572,28 +572,3 @@ pub struct AgentLifecycleEvent {
     pub agent_session_id: String,
     pub phase: AgentPhase,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(export))]
-#[serde(rename_all = "kebab-case")]
-pub enum AgentAttentionReason {
-    ApprovalRequested,
-    QuestionRequested,
-    AgentError,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(export))]
-#[serde(rename_all = "camelCase")]
-pub struct AgentAttentionEvent {
-    /// PTY session ID. The renderer resolves its owning workspace session.
-    pub pty_id: String,
-    pub reason: AgentAttentionReason,
-    pub title: String,
-    pub body: Option<String>,
-    /// Unix epoch milliseconds from the provider event when available.
-    pub occurred_at: u64,
-    pub dedupe_key: Option<String>,
-}

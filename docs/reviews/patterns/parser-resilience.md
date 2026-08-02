@@ -2,7 +2,7 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-08-02
+last_updated: 2026-08-01
 ref_count: 19
 ---
 
@@ -436,13 +436,4 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
 - **Finding:** Kimi's 32 KiB turn-text clamp cut only at a UTF-8 boundary. If it removed prose immediately before an inline protocol marker, that marker moved to byte zero and the standalone-line selector could misclassify the originally invalid block as actionable feedback.
 - **Fix:** Advance every mid-line clamp through the next newline, or clear the fragment when none exists, so truncation cannot create a new line boundary. Added a regression whose old cut promoted an inline reply marker.
-- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
-
-### 35. Codex interaction function names were not fully classified
-
-- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
-- **Severity:** P2 / MEDIUM
-- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
-- **Finding:** Codex response-item function calls only treated `request_user_input` as an interaction, so the sibling built-in `request_permissions` call produced no approval notification for background panes.
-- **Fix:** Detect `request_permissions` function calls and emit `ApprovalRequested` with the same bounded dedupe-key path as other semantic attention events. Extended the semantic attention regression.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
