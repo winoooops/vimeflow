@@ -168,7 +168,6 @@ const makeSession = (
   workingDirectory: '/tmp/fixture',
   agentType: 'generic',
   layout,
-  activityPanelCollapsed: false,
   panes: Array.from(
     { length: paneCount },
     (_, i): Pane => ({
@@ -228,7 +227,6 @@ const makeMockService = (): ITerminalService => ({
   setActiveSession: vi.fn(() => Promise.resolve(undefined)),
   reorderSessions: vi.fn(() => Promise.resolve(undefined)),
   updateSessionCwd: vi.fn(() => Promise.resolve(undefined)),
-  setSessionActivityPanelCollapsed: vi.fn(() => Promise.resolve(undefined)),
   killEphemeralPtys: vi.fn(),
   setWorkspaceSessions: vi.fn(() => Promise.resolve(undefined)),
 })

@@ -16,7 +16,6 @@ import {
   getAllPtySessionIds,
   registerPtySession,
 } from '../../terminal/ptySessionMap'
-import { readActivityPanelCollapsed } from '../utils/activityPanelCollapsedStore'
 import type {
   PersistedShellPaneShape,
   PersistedWorkspacePaneShape,
@@ -171,7 +170,6 @@ const createMockService = (): ITerminalService => ({
   setActiveSession: vi.fn().mockResolvedValue(undefined),
   reorderSessions: vi.fn().mockResolvedValue(undefined),
   updateSessionCwd: vi.fn().mockResolvedValue(undefined),
-  setSessionActivityPanelCollapsed: vi.fn().mockResolvedValue(undefined),
   killEphemeralPtys: vi.fn(),
   setWorkspaceSessions: vi.fn().mockResolvedValue(undefined),
 })
@@ -3183,87 +3181,6 @@ describe('useSessionManager', () => {
       expect(service.kill).toHaveBeenCalledWith({ sessionId: 's1' })
     )
     await waitFor(() => expect(result.current.sessions).toHaveLength(0))
-  })
-
-  // Replaces the implicit cleanup the Rust PTY cache used to do on session
-  // exit. Without this hook, every closed session leaked a localStorage
-  // entry forever — see PR #259 review (M1).
-  test('removeSession clears the session activityPanelCollapsed localStorage key', async () => {
-    const service = createMockService()
-    service.listSessions = vi.fn().mockResolvedValue({
-      activeSessionId: 's1',
-      sessions: [
-        {
-          id: 's1',
-          cwd: '/tmp',
-          status: {
-            kind: 'Alive',
-            pid: 1,
-            replay_data: '',
-            replay_end_offset: BigInt(0),
-          },
-        },
-      ],
-    })
-
-    const { result } = renderHook(() =>
-      useSessionManager(service, { autoCreateOnEmpty: false })
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    act(() => {
-      result.current.setSessionActivityPanelCollapsed('s1', true)
-    })
-    expect(readActivityPanelCollapsed('s1')).toBe(true)
-
-    act(() => result.current.removeSession('s1'))
-
-    await waitFor(() => expect(result.current.sessions).toHaveLength(0))
-    expect(readActivityPanelCollapsed('s1')).toBe(false)
-    expect(
-      window.localStorage.getItem('vimeflow:sessions:activityPanelCollapsed:s1')
-    ).toBeNull()
-  })
-
-  // Partial-kill bail: when ANY pane's kill IPC rejects, removeSession bails
-  // BEFORE dropping bookkeeping (and now BEFORE clearing the localStorage
-  // key). The session is still visible to the user; their preference must
-  // survive so a retry doesn't reset the bar to expanded.
-  test('removeSession preserves localStorage key when kill rejects', async () => {
-    const service = createMockService()
-    service.listSessions = vi.fn().mockResolvedValue({
-      activeSessionId: 's1',
-      sessions: [
-        {
-          id: 's1',
-          cwd: '/tmp',
-          status: {
-            kind: 'Alive',
-            pid: 1,
-            replay_data: '',
-            replay_end_offset: BigInt(0),
-          },
-        },
-      ],
-    })
-    service.kill = vi.fn().mockRejectedValue(new Error('kill failed'))
-
-    const { result } = renderHook(() =>
-      useSessionManager(service, { autoCreateOnEmpty: false })
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    act(() => {
-      result.current.setSessionActivityPanelCollapsed('s1', true)
-    })
-    expect(readActivityPanelCollapsed('s1')).toBe(true)
-
-    act(() => result.current.removeSession('s1'))
-
-    await waitFor(() => expect(service.kill).toHaveBeenCalled())
-    // Session stays; preference must NOT have been swept by the partial-kill bail.
-    expect(result.current.sessions).toHaveLength(1)
-    expect(readActivityPanelCollapsed('s1')).toBe(true)
   })
 
   // Round 9, Finding 6 (claude MEDIUM): React requires functional updaters to
@@ -6308,81 +6225,6 @@ describe('useSessionManager', () => {
     expect(updated.panes[0].cwd).toBe('/new/cwd')
     expect(updated.workingDirectory).toBe('/old')
     expect(service.updateSessionCwd).toHaveBeenCalledWith('pty-1', '/new/cwd')
-  })
-
-  test('setSessionActivityPanelCollapsed updates session state and persists to localStorage', async () => {
-    const service = createMockService()
-    service.spawn = vi.fn().mockResolvedValue({
-      sessionId: 'pty-1',
-      pid: 123,
-      cwd: '/home/user',
-    })
-
-    const { result } = renderHook(() =>
-      useSessionManager(service, { autoCreateOnEmpty: false })
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    act(() => result.current.createSession())
-    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
-
-    const sessionId = result.current.sessions[0].id
-    expect(result.current.sessions[0].activityPanelCollapsed).toBe(false)
-
-    act(() => {
-      result.current.setSessionActivityPanelCollapsed(sessionId, true)
-    })
-
-    expect(result.current.sessions[0].activityPanelCollapsed).toBe(true)
-    expect(readActivityPanelCollapsed(sessionId)).toBe(true)
-    // UI-only state — must NOT flow through the agent/PTY backend.
-    expect(service.setSessionActivityPanelCollapsed).not.toHaveBeenCalled()
-  })
-
-  test('setSessionActivityPanelCollapsed is a no-op when value is unchanged', async () => {
-    const service = createMockService()
-    service.spawn = vi.fn().mockResolvedValue({
-      sessionId: 'pty-1',
-      pid: 123,
-      cwd: '/home/user',
-    })
-
-    const { result } = renderHook(() =>
-      useSessionManager(service, { autoCreateOnEmpty: false })
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    act(() => result.current.createSession())
-    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
-
-    const sessionId = result.current.sessions[0].id
-    const snapshot = result.current.sessions[0]
-
-    act(() => {
-      result.current.setSessionActivityPanelCollapsed(sessionId, false)
-    })
-
-    // Same boolean → object identity preserved; no re-render churn.
-    expect(result.current.sessions[0]).toBe(snapshot)
-  })
-
-  test('setSessionActivityPanelCollapsed silently ignores unknown session ids', async () => {
-    const service = createMockService()
-    service.spawn = vi.fn().mockResolvedValue({
-      sessionId: 'pty-1',
-      pid: 123,
-      cwd: '/home/user',
-    })
-
-    const { result } = renderHook(() =>
-      useSessionManager(service, { autoCreateOnEmpty: false })
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    act(() => {
-      result.current.setSessionActivityPanelCollapsed('does-not-exist', true)
-    })
-    expect(result.current.sessions).toHaveLength(0)
   })
 
   describe('setSessionLayout', () => {

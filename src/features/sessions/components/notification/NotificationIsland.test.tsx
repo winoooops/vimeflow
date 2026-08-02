@@ -23,7 +23,6 @@ const session = (id: string, name: string): Session => ({
   workingDirectory: `/tmp/${id}`,
   agentType: id === 'session-2' ? 'codex' : 'claude-code',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

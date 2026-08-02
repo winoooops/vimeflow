@@ -1144,8 +1144,9 @@ describe('NativeOverlayHost', () => {
     expect(bridge.action).toHaveBeenCalledWith({
       surfaceId: 'surface-2',
       actionId: 'toggle-quad',
+      closeOnSelect: false,
     })
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 
   test('renders composite menu rows and dispatches trailing actions', async () => {

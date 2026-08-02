@@ -25,6 +25,7 @@ Vimeflow is an Electron desktop app backed by a Rust sidecar (`vimeflow-backend`
 - [Worktree integration](#worktree-integration)
 - [Command palette and settings](#command-palette-and-settings)
 - [Themes](#themes)
+- [Cursor effects](#cursor-effects)
 - [Linux](#linux)
 - [Current support](#current-support)
 - [Build and run from source](#build-and-run-from-source)
@@ -150,6 +151,29 @@ The Lens theme system ships several built-in themes — **Catppuccin** (dark def
 </div>
 
 <sub><i>Try it:<br>1. Press `⌘;` and run `:theme`.<br> 2. Move through the list — the workspace previews each theme live.<br> 3. Press `Enter` to apply, or `Esc` to discard the preview.</i></sub>
+
+## Cursor Effects
+
+Five animated cursor trails, off by default. On macOS they run as real GLSL shaders inside the Ghostty engine; on Linux an xterm.js addon draws the equivalent. Each effect keys off cursor movement, so the difference between them shows up in how they respond to a jump versus a continuous run.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><div><sub><b>Warp</b> — stretches between positions on a jump</sub></div><img src="docs/media/cursor-warp.gif" alt="The Warp cursor effect — the cursor stretches and snaps between positions as it jumps across the file" width="100%" /></td>
+    <td width="50%" valign="top"><div><sub><b>Sweep</b> — a band sweeps along the travelled path</sub></div><img src="docs/media/cursor-sweep.gif" alt="The Sweep cursor effect — a bright band sweeps along the path the cursor travels" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><div><sub><b>Tail</b> — a fading streak follows the cursor</sub></div><img src="docs/media/cursor-tail.gif" alt="The Tail cursor effect — a fading streak follows the cursor as it moves through the buffer" width="100%" /></td>
+    <td width="50%" valign="top"><div><sub><b>Ripple</b> — a ring expands from each landing point</sub></div><img src="docs/media/cursor-ripple.gif" alt="The Ripple cursor effect — a ring expands outward from each position the cursor lands on" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><div><sub><b>Sonic Boom</b> — a shockwave on fast, long jumps</sub></div><img src="docs/media/cursor-sonic-boom.gif" alt="The Sonic Boom cursor effect — a shockwave bursts from the cursor on fast, long-distance movement" width="100%" /></td>
+    <td width="50%" valign="top"></td>
+  </tr>
+</table>
+
+<sub><i>Try it:<br>1. Open **Settings** → **Terminal**.<br> 2. Set **Cursor Effect** to any of Warp, Sweep, Tail, Ripple, or Sonic Boom — it applies live, no restart.<br> 3. Set it back to **Off** to disable.</i></sub>
+
+<sub><i>On macOS these need a `libghostty` with the shader compiler kept in, which [upstream](https://github.com/Lakr233/libghostty-spm) trims out — packaged builds link an [alternate version](https://github.com/winoooops/libghostty-spm-shaders) that keeps it. Linux needs no fork. Shaders are MIT by Sahaj Bhatt ([`sahaj-b/ghostty-cursor-shaders`](https://github.com/sahaj-b/ghostty-cursor-shaders)).</i></sub>
 
 ## Linux
 

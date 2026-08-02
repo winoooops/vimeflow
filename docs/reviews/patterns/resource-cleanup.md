@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-07-30
+last_updated: 2026-08-01
 ref_count: 28
 ---
 
@@ -354,4 +354,18 @@ causes listener accumulation and duplicate event handling.
 - **Fix:** Added a test-local cleanup guard that removes the inserted PTY
   session, kills the child, and waits to reap it when the test exits, including
   assertion-failure paths.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Dispose cursor effect addons when settings disable them
+
+- **Source:** github-codex-connector | PR #769 round 1 | 2026-08-01
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/Body.tsx`
+- **Finding:** The xterm cursor effect addon was lazily created when a cursor
+  effect was enabled, but switching the setting back to Off only updated the
+  addon state. The high-DPI canvas and terminal subscriptions stayed attached
+  even though the feature was disabled.
+- **Fix:** Dispose the addon and clear the ref on the Off transition, while
+  preserving lazy creation for future non-Off effects. Added a Body regression
+  test that toggles from an enabled effect back to Off.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

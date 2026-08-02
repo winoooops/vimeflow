@@ -2,8 +2,8 @@
 id: string-protocol-coupling
 category: code-quality
 created: 2026-06-19
-last_updated: 2026-06-20
-ref_count: 1
+last_updated: 2026-08-02
+ref_count: 2
 ---
 
 # String Protocol Coupling
@@ -42,4 +42,19 @@ consumed in one place.
 - **Fix:** Promoted section, target, and subsection result ID helpers to
   `search.ts` next to the result-key helpers, then imported those shared helpers
   from both `SettingsSidebar` and `SettingsContent`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 3. SwiftPM artifact path kept the old package identity after fork rename
+
+- **Source:** github-codex-connector | PR #771 round 1 | 2026-08-02
+- **Severity:** P1 / HIGH
+- **File:** `native/ghostty-helper/Package.swift` L21
+- **Finding:** Renaming the SwiftPM dependency identity to
+  `libghostty-spm-shaders` changed SwiftPM's artifact directory, but the native
+  parent build still depended on the old `artifacts/libghostty-spm/...` path.
+  A clean macOS native build could finish SwiftPM resolution and then fail with
+  `ENOENT` while locating `GhosttyKit.xcframework`.
+- **Fix:** Kept the build script's artifact root tied to the active SwiftPM
+  package identity and used the renamed `libghostty-spm-shaders` segment before
+  recursively selecting the macOS `libghostty.a` slice.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

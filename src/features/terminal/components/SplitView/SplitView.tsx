@@ -121,6 +121,7 @@ export interface SplitViewProps {
   deferTerminalFit?: boolean
   showPaneFocusHighlight?: boolean
   terminalFontFamily?: string
+  terminalCursorEffect?: string
 }
 
 export interface SplitViewHandle {
@@ -254,6 +255,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
       deferTerminalFit = false,
       showPaneFocusHighlight = true,
       terminalFontFamily = undefined,
+      terminalCursorEffect = 'off',
     }: SplitViewProps,
     ref
   ): ReactElement {
@@ -879,6 +881,7 @@ export const SplitView = forwardRef<SplitViewHandle, SplitViewProps>(
                         deferFit={deferTerminalFit}
                         showFocusHighlight={showPaneFocusHighlight}
                         terminalFontFamily={terminalFontFamily}
+                        terminalCursorEffect={terminalCursorEffect}
                         paneDraggable={dndEnabled}
                         onHeaderDragStart={(event): void =>
                           handlePaneDragStart(pane.id, event)

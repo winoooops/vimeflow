@@ -3,6 +3,7 @@ export interface PaneCandidate {
   ptyId: string
   tabName: string
   agentLabel: string
+  supportsHunkReview: boolean
   cwd: string
   status: 'idle' | 'running' | 'exited' | 'error'
   isFocused: boolean
@@ -30,13 +31,6 @@ export type ResolveResult =
   | { kind: 'one'; pane: PaneCandidate }
   | { kind: 'many'; candidates: PaneCandidate[] }
 
-export type SupportedAgent = 'Claude Code' | 'Codex'
-
-const SUPPORTED_AGENTS: readonly SupportedAgent[] = ['Claude Code', 'Codex']
-
-const isSupportedAgent = (label: string): boolean =>
-  SUPPORTED_AGENTS.some((agent) => agent === label)
-
 const isMatchingCwd = (paneCwd: string, diffCwd: string): boolean =>
   paneCwd === diffCwd || paneCwd.startsWith(diffCwd + '/')
 
@@ -50,7 +44,7 @@ export const resolveCandidatePanes = (
   const candidates = args.allPanes.filter(
     (p) =>
       isMatchingCwd(p.cwd, args.diffCwd) &&
-      isSupportedAgent(p.agentLabel) &&
+      p.supportsHunkReview === true &&
       p.status === 'running'
   )
 

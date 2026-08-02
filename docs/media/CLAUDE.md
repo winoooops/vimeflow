@@ -20,6 +20,11 @@ Image and animation assets referenced by `README.md` and `README.zh-CN.md`. Capt
 | `worktree-chip.png`        | "Seamless Worktree Integration"    | The git chip's copy popover (Copy worktree / path / branch) over the worktree → branch status chip |
 | `command-palette.png`      | "Command Palette And Settings"     | Palette open (`⌘;`) with fuzzy-matched commands visible                                            |
 | `theme-tour.gif`           | "BYOT: Bring Your Own Theme"       | `:theme` live-previewing the built-in themes                                                       |
+| `cursor-warp.gif`          | "Cursor Effects"                   | Warp effect — the cursor stretches between positions on a large jump                               |
+| `cursor-sweep.gif`         | "Cursor Effects"                   | Sweep effect — a band sweeps along the path the cursor travels                                     |
+| `cursor-tail.gif`          | "Cursor Effects"                   | Tail effect — a fading streak follows the cursor through the buffer                                |
+| `cursor-ripple.gif`        | "Cursor Effects"                   | Ripple effect — a ring expands from each position the cursor lands on                              |
+| `cursor-sonic-boom.gif`    | "Cursor Effects"                   | Sonic Boom effect — a shockwave bursts on fast, long-distance movement                             |
 | `linux-workspace.png`      | "On Linux"                         | Vimeflow running the full workspace on Linux (xterm.js terminals)                                  |
 
 ## Capture pipeline (macOS)
@@ -37,11 +42,20 @@ Keep the window at a fixed size for every asset so crops and aspect ratios match
 MOV=$(ls -t ~/Desktop/Screen*.mov 2>/dev/null | head -1)
 [ -z "$MOV" ] && { echo "No screen recording found" >&2; exit 1; }
 
-ffmpeg -y -i "$MOV" \
-  -vf "setpts=PTS/1.5,fps=15,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=80[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
-  -loop 0 docs/media/<name>.gif
+NAME=<name>
+FRAMES=$(mktemp -d)
+
+# Trim here, not in gifski — it has no seek. Drop -ss/-t for the whole clip;
+# for the middle N seconds, start at (duration - N) / 2.
+ffmpeg -v error -ss <start> -t <seconds> -i "$MOV" \
+  -vf "scale=900:-2:flags=lanczos" -r 20 "$FRAMES/%04d.png"
+
+gifski --fps 20 --quality 90 -o "docs/media/$NAME.gif" "$FRAMES"/*.png
+rm -rf "$FRAMES"
 ```
 
-Adjust `setpts=PTS/N` for speed, `max_colors=N` for size. Target ≤ 6 MB per GIF for GitHub README embed performance. Delete the `.mov` source after the GIF is verified.
+Use 900 wide for near-square crops (a pane) and 1280 for full-window landscape captures — match the `width` the README embeds it at. Target ≤ 6 MB per GIF for GitHub README embed performance. Delete the `.mov` source after the GIF is verified.
+
+`gifski` (`brew install gifski`) quantizes per frame, so it holds up on smooth gradients — shader cursor trails, theme transitions — where a single 80-color global palette bands visibly. For flat UI chrome the older single-pass `ffmpeg` `palettegen`/`paletteuse` filter is still fine and faster.
 
 (The Linux pipeline recorded WebM with Kooha and used the same ffmpeg conversion.)

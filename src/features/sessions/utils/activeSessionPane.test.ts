@@ -97,7 +97,6 @@ const makeSession = (
   workingDirectory: panes.find((pane) => pane.active)?.cwd ?? panes[0].cwd,
   agentType: panes.find((pane) => pane.active)?.agentType ?? panes[0].agentType,
   layout,
-  activityPanelCollapsed: false,
   panes,
   createdAt: '2026-05-12T00:00:00Z',
   lastActivityAt: '2026-05-12T00:00:00Z',

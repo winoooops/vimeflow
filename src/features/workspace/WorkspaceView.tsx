@@ -40,7 +40,7 @@ import {
   type TerminalZoneHandle,
 } from './components/TerminalZone'
 import DockPanel, { type DockPanelHandle } from './components/DockPanel'
-import type { DockPosition } from './components/DockSwitcher'
+import type { DockTab } from './utils/dockStore'
 import {
   AgentStatusPanel,
   PANEL_WIDTH_PX,
@@ -107,6 +107,8 @@ import { useSessionCloseShortcut } from './hooks/useSessionCloseShortcut'
 import { useBurnerToggleShortcut } from './hooks/useBurnerToggleShortcut'
 import { useNewSessionDialog } from './hooks/useNewSessionDialog'
 import { useSidebarCollapsed } from './hooks/useSidebarCollapsed'
+import { useActivityPanelCollapsed } from './hooks/useActivityPanelCollapsed'
+import { useDockState } from './hooks/useDockState'
 import { useEditorBuffer } from '@/features/editor/hooks/useEditorBuffer'
 import { useAgentStatus } from '@/features/agent-status/hooks/useAgentStatus'
 import { useAgentReattach } from '@/features/agent-status/hooks/useAgentReattach'
@@ -141,6 +143,7 @@ import { orderSwitcherSessionIds } from './utils/orderSwitcherSessionIds'
 import {
   AGENTS,
   agentTypeToRegistryKey,
+  supportsHunkReview,
   type AgentDef,
 } from '@/agents/registry'
 import type {
@@ -347,8 +350,6 @@ const mainAutoCollapseThreshold = (workspaceWidth: number): number =>
     MAIN_AUTO_COLLAPSE_MAX
   )
 
-type DockTab = 'editor' | 'diff'
-
 const WorkspaceViewContent = (): ReactElement => {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const mainWorkspaceRef = useRef<HTMLDivElement>(null)
@@ -395,7 +396,6 @@ const WorkspaceViewContent = (): ReactElement => {
     recordPaneAgentLauncher,
     invalidatePaneAgentSession,
     updateBrowserPaneUrl,
-    setSessionActivityPanelCollapsed,
     setSessionActivePane,
     setSessionLayout,
     setSessionPlacements,
@@ -922,26 +922,17 @@ const WorkspaceViewContent = (): ReactElement => {
     ]
   )
 
-  const activityPanelCollapsed = activeSession?.activityPanelCollapsed ?? false
+  // Workspace-global activity-panel collapse flag — one flag for the app,
+  // shared across sessions (mirrors the left sidebar's global store).
+  const {
+    collapsed: activityPanelCollapsed,
+    toggle: handleToggleActivityPanel,
+  } = useActivityPanelCollapsed()
 
   const activityPanelAgent = useMemo(
     () => AGENTS[agentTypeToRegistryKey(agentStatus.agentType)],
     [agentStatus.agentType]
   )
-
-  const handleActivityPanelCollapsed = useCallback(
-    (collapsed: boolean): void => {
-      if (!activeSessionId) {
-        return
-      }
-      setSessionActivityPanelCollapsed(activeSessionId, collapsed)
-    },
-    [activeSessionId, setSessionActivityPanelCollapsed]
-  )
-
-  const handleToggleActivityPanel = useCallback((): void => {
-    handleActivityPanelCollapsed(!activityPanelCollapsed)
-  }, [activityPanelCollapsed, handleActivityPanelCollapsed])
 
   // Bridge: keep pane chrome in sync with agent detection for the active
   // pane. Live detections stamp the agent identity; an explicit
@@ -1272,11 +1263,17 @@ const WorkspaceViewContent = (): ReactElement => {
     setIsUnsavedDialogSaving(value)
   }, [])
 
-  // Dock panel controlled state.
+  // Dock panel controlled state — workspace-global, persisted (dockStore).
   const dockCanvasRef = useRef<HTMLDivElement>(null)
-  const [dockPosition, setDockPosition] = useState<DockPosition>('bottom')
-  const [isDockOpen, setIsDockOpen] = useState(false)
-  const [dockTab, setDockTab] = useState<DockTab>('diff')
+
+  const {
+    isDockOpen,
+    dockTab,
+    dockPosition,
+    setDockOpen: setIsDockOpen,
+    setDockTab,
+    setDockPosition,
+  } = useDockState()
 
   const [activeContainerId, setActiveContainerId] = useState<string>(
     TERMINAL_CONTAINER_ID
@@ -1575,7 +1572,7 @@ const WorkspaceViewContent = (): ReactElement => {
       setActiveContainerId(DOCK_CONTAINER_ID)
       requestFocus(nextTab)
     },
-    [dockTab, requestFocus]
+    [dockTab, requestFocus, setDockTab, setIsDockOpen]
   )
 
   const claimTerminal = useCallback((): void => {
@@ -1587,7 +1584,7 @@ const WorkspaceViewContent = (): ReactElement => {
   const closeDock = useCallback((): void => {
     setIsDockOpen(false)
     claimTerminal()
-  }, [claimTerminal])
+  }, [claimTerminal, setIsDockOpen])
 
   // Main-stage handoff J3/J6: the top chrome owns the layout pills; picks
   // forward to the same setSessionLayout the TerminalZone toolbar used, so
@@ -1903,7 +1900,7 @@ const WorkspaceViewContent = (): ReactElement => {
         setFileError(`Failed to open ${filePath}: ${message}`)
       }
     },
-    [editorBuffer]
+    [editorBuffer, setDockTab, setIsDockOpen]
   )
 
   // Guarded file-open request shared by click handlers and `:edit <path>`.
@@ -2924,6 +2921,8 @@ const WorkspaceViewContent = (): ReactElement => {
   }, [
     editorBuffer,
     removePendingSession,
+    setDockTab,
+    setIsDockOpen,
     setPendingFilePathSynced,
     setPendingSessionRemovalIdSynced,
     setPendingSessionRestoreIdRef,
@@ -2977,6 +2976,8 @@ const WorkspaceViewContent = (): ReactElement => {
   }, [
     editorBuffer,
     removePendingSession,
+    setDockTab,
+    setIsDockOpen,
     setPendingFilePathSynced,
     setPendingSessionRemovalIdSynced,
     setPendingSessionRestoreIdRef,
@@ -3049,15 +3050,11 @@ const WorkspaceViewContent = (): ReactElement => {
     // NOT the PTY-lifecycle `pane.status`: a pane whose agent exited can keep a
     // stale 'codex'/'claude-code' label while its shell PTY is still running,
     // and the live signal is the only way to avoid pasting feedback into a bare
-    // shell. `agentLabel` maps agentType directly to the picker's SupportedAgent
-    // literals (the registry display name diverges, e.g. AGENTS.codex.name ===
-    // 'Codex CLI', which would mis-filter Codex).
-    const agentLabel =
-      agentStatus.agentType === 'claude-code'
-        ? 'Claude Code'
-        : agentStatus.agentType === 'codex'
-          ? 'Codex'
-          : null
+    // shell. Capability comes from the registry; display names are presentation
+    // only and can change without altering feature routing.
+    const agentKey = agentTypeToRegistryKey(agentStatus.agentType)
+    const agent = AGENTS[agentKey] as AgentDef
+    const agentLabel = agent.name
 
     // Bind the candidate to the pty-backed pane (not the literal active pane),
     // matching the pane `agentStatus` is computed from: when a browser pane is
@@ -3069,7 +3066,7 @@ const WorkspaceViewContent = (): ReactElement => {
       agentStatus.sessionId === activePtyBackedPanePtyId &&
       agentStatus.isActive &&
       !agentStatus.agentExited &&
-      agentLabel !== null
+      supportsHunkReview(agentKey)
         ? [
             {
               paneId: activePtyBackedPane.id,
@@ -3080,6 +3077,7 @@ const WorkspaceViewContent = (): ReactElement => {
                 activeSession?.name ??
                 'Terminal',
               agentLabel,
+              supportsHunkReview: true,
               cwd: activePtyBackedPane.cwd,
               status: 'running',
               isFocused: true,
@@ -3544,6 +3542,7 @@ const WorkspaceViewContent = (): ReactElement => {
               openBurnerPaneKeys={openBurnerPaneKeys}
               runningBurnerPaneKeys={runningBurnerPaneKeys}
               terminalFontFamily={settings.terminalFontFamily}
+              terminalCursorEffect={settings.terminalCursorEffect}
               outOfSyncBurnerPaneKeys={outOfSyncBurnerPaneKeys}
             />
           </div>

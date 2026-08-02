@@ -42,14 +42,11 @@ export interface AgentDef extends PaneIdentity {
   } | null
   Icon?: AgentIcon
   /**
-   * Engine-side resize coalescing for this agent's native Ghostty surface,
-   * in milliseconds (0 = unthrottled). Content-dependent: an alt-screen TUI
-   * that fully repaints on every winsize needs ~96ms so the engine's reflow
-   * can keep up with a drag, while a primary-screen transcript that never
-   * re-emits its scrollback renders best unthrottled — throttled jumps read
-   * as blinking there. Values from a hands-on A/B across 0/32/48/64/96 on
-   * live panes. Rule for new agents: full-frame repaint per winsize → ~96;
-   * partial/in-place updates → 0.
+   * Main-process resize coalescing for the native Ghostty async PTY fallback.
+   * Native-owned PTYs bypass this path. Content-dependent: an alt-screen TUI
+   * that fully repaints on every winsize needs ~96ms so the engine's reflow can
+   * keep up with a drag, while primary-screen transcripts render best
+   * unthrottled.
    */
   resizeThrottleMs: number
   /**
@@ -59,6 +56,8 @@ export interface AgentDef extends PaneIdentity {
    * once opencode ships a usage endpoint.
    */
   quotaNotice?: QuotaNotice
+  /** Opt-in only after live + recovery support is complete. */
+  supportsHunkReview?: true
 }
 
 export const AGENTS = {
@@ -70,6 +69,7 @@ export const AGENTS = {
     Icon: ClaudeCode,
     model: 'sonnet-4',
     resizeThrottleMs: 96,
+    supportsHunkReview: true,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--resume',
@@ -87,6 +87,7 @@ export const AGENTS = {
     Icon: Codex,
     model: 'gpt-5-codex',
     resizeThrottleMs: 0,
+    supportsHunkReview: true,
     resumeCommands: {
       latest: 'resume --last',
       byIdPrefix: 'resume',
@@ -106,6 +107,7 @@ export const AGENTS = {
     // pi-tui's destructive full renders flicker at ANY throttle; tracked
     // upstream (MoonshotAI/kimi-code#2324). Re-evaluate when that lands.
     resizeThrottleMs: 0,
+    supportsHunkReview: true,
     resumeCommands: {
       latest: '--continue',
       byIdPrefix: '--session',
@@ -161,6 +163,9 @@ export const AGENTS = {
 export type AgentId = keyof typeof AGENTS
 
 export type Agent = (typeof AGENTS)[AgentId]
+
+export const supportsHunkReview = (agentId: AgentId): boolean =>
+  (AGENTS[agentId] as AgentDef).supportsHunkReview ?? false
 
 export const agentTypeToRegistryKey = (
   agentType: AgentStatus['agentType']

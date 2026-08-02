@@ -1615,6 +1615,7 @@ describe('DockPanel', () => {
           ptyId: 'pty-1',
           tabName: 'Agent',
           agentLabel: 'Claude Code',
+          supportsHunkReview: true,
           cwd: '/repo/subdir',
           status: 'running',
           isFocused: true,

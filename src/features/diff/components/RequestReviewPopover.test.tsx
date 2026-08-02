@@ -38,6 +38,7 @@ const makePane = (overrides: Partial<PaneCandidate> = {}): PaneCandidate => ({
   ptyId: 'pty-1',
   tabName: 'Tab 1',
   agentLabel: 'Claude Code',
+  supportsHunkReview: true,
   cwd: '/repo',
   status: 'running',
   isFocused: false,

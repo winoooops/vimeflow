@@ -1,6 +1,14 @@
-// cspell:ignore codesign ghostty Ghostty libghostty mmacosx otool swiftpm xcframework xcrun
-import { existsSync, mkdirSync, copyFileSync, rmSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+// cspell:ignore codesign ghostty Ghostty glslang libghostty mmacosx otool swiftpm xcframework xcrun
+import {
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+  cpSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -9,6 +17,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const smokeDir = join(repoRoot, 'native/ghostty-helper')
 const outputDir = join(repoRoot, 'dist-native/ghostty-parent')
+
 const scratchDir = join(tmpdir(), 'vimeflow-ghostty-electron-parent-swiftpm')
 
 const addonSource = join(
@@ -17,10 +26,12 @@ const addonSource = join(
 )
 const addonOutput = join(outputDir, 'ghostty_native_parent.node')
 const bridgeOutput = join(outputDir, 'libGhosttyElectronBridge.dylib')
+const shaderSourceDir = join(repoRoot, 'native/ghostty-parent/shaders')
+const ghosttyPackageIdentity = 'libghostty-spm-shaders'
 
 const ghosttyScratchXcframework = join(
   scratchDir,
-  'artifacts/libghostty-spm/libghostty/GhosttyKit.xcframework'
+  `artifacts/${ghosttyPackageIdentity}/libghostty/GhosttyKit.xcframework`
 )
 const ghosttyScratchPlist = join(ghosttyScratchXcframework, 'Info.plist')
 
@@ -32,6 +43,56 @@ const nodeIncludeDir = [
 
 if (!nodeIncludeDir) {
   throw new Error('node_api.h not found')
+}
+
+const listFiles = (dir) => {
+  const entries = readdirSync(dir, { withFileTypes: true })
+
+  return entries.flatMap((entry) => {
+    const path = join(dir, entry.name)
+
+    if (entry.isDirectory()) {
+      return listFiles(path)
+    }
+
+    return [path]
+  })
+}
+
+const findGhosttyScratchArchive = () => {
+  if (!existsSync(ghosttyScratchPlist)) {
+    throw new Error(
+      `GhosttyKit.xcframework was not resolved: ${ghosttyScratchPlist}`
+    )
+  }
+
+  const archives = listFiles(ghosttyScratchXcframework)
+    .filter((file) => basename(file) === 'libghostty.a')
+    .filter((file) => {
+      const relative = file.slice(ghosttyScratchXcframework.length + 1)
+
+      return relative.split('/')[0]?.startsWith('macos-')
+    })
+    .filter((file) => statSync(file).isFile())
+
+  const exactArm64Archive = archives.find((file) =>
+    file.includes('/macos-arm64/libghostty.a')
+  )
+
+  const universalArm64Archive = archives.find((file) =>
+    file.includes('/macos-arm64_')
+  )
+
+  const selectedArchive =
+    exactArm64Archive ?? universalArm64Archive ?? archives[0]
+
+  if (!selectedArchive) {
+    throw new Error(
+      `libghostty.a not found in macOS GhosttyKit.xcframework slices: ${ghosttyScratchXcframework}`
+    )
+  }
+
+  return selectedArchive
 }
 
 mkdirSync(outputDir, { recursive: true })
@@ -49,10 +110,22 @@ execFileSync(
   }
 )
 
+const ghosttyScratchArchive = findGhosttyScratchArchive()
+
+const ghosttySymbols = execFileSync('nm', ['-gU', ghosttyScratchArchive], {
+  encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
+})
+if (!ghosttySymbols.includes('_glslang_initialize_process')) {
+  throw new Error('libghostty was built without custom shader support')
+}
+
 copyFileSync(
   join(scratchDir, 'debug/libGhosttyElectronBridge.dylib'),
   bridgeOutput
 )
+rmSync(join(outputDir, 'shaders'), { recursive: true, force: true })
+cpSync(shaderSourceDir, join(outputDir, 'shaders'), { recursive: true })
 
 // Node native addons are Mach-O bundles; N-API symbols are resolved from Node at load time.
 execFileSync(

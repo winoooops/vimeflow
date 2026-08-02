@@ -201,7 +201,9 @@ const clickEnabledOverlayCheckbox = async (
         const result = (await overlay.executeJavaScript(`
           (() => {
             const item = Array.from(
-              document.querySelectorAll('[role="menuitemcheckbox"]')
+              document.querySelectorAll(
+                '[role="menu"][aria-label="Displayed layouts"] [role="menuitemcheckbox"]'
+              )
             ).find((element) =>
               element.getAttribute('aria-disabled') !== 'true' &&
               element instanceof HTMLElement
@@ -256,7 +258,7 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
     return overlay.executeJavaScript(`
       (() => {
         const rect = document
-          .querySelector('[role="menu"]')
+          .querySelector('[role="menu"][aria-label="Displayed layouts"]')
           ?.getBoundingClientRect()
         return rect
           ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
@@ -267,6 +269,8 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
 
 const getOverlayDialogRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
+    let fallbackRect: CssRect | null = null
+
     for (const overlay of electron.webContents.getAllWebContents()) {
       const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
 
@@ -288,7 +292,42 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
       `)) as CssRect | null
 
       if (rect !== null) {
-        return rect
+        const overlayWindow = electron.BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.id === overlay.id
+        )
+
+        if (
+          overlayWindow?.isVisible() === true &&
+          overlayWindow.isAlwaysOnTop()
+        ) {
+          return rect
+        }
+
+        fallbackRect ??= rect
+      }
+    }
+
+    return fallbackRect
+  })
+
+const getLayoutCreatorOverlayDraftGrid = async (): Promise<{
+  cols: number
+  rows: number
+} | null> =>
+  browser.electron.execute(async (electron: ElectronModule) => {
+    for (const contents of electron.webContents.getAllWebContents()) {
+      const mode = new URL(contents.getURL()).searchParams.get('nativeOverlay')
+
+      if (mode !== '1' && mode !== 'menu') {
+        continue
+      }
+
+      const grid = (await contents.executeJavaScript(`
+          window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid() ?? null
+        `)) as { cols: number; rows: number } | null
+
+      if (grid !== null) {
+        return grid
       }
     }
 
@@ -298,42 +337,45 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
 const getLayoutCreatorOverlayWindowState =
   async (): Promise<OverlayWindowState | null> =>
     browser.electron.execute(async (electron: ElectronModule) => {
-      const webContentsId = await (async (): Promise<number | null> => {
-        for (const contents of electron.webContents.getAllWebContents()) {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+      let fallbackState: OverlayWindowState | null = null
 
-          if (mode !== '1' && mode !== 'menu') {
-            continue
-          }
+      for (const contents of electron.webContents.getAllWebContents()) {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
 
-          const hasLayoutCreator = (await contents.executeJavaScript(`
-            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-          `)) as boolean
-
-          if (hasLayoutCreator) {
-            return contents.id
-          }
+        if (mode !== '1' && mode !== 'menu') {
+          continue
         }
 
-        return null
-      })()
+        const hasLayoutCreator = (await contents.executeJavaScript(`
+          Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+        `)) as boolean
 
-      if (webContentsId === null) {
-        return null
+        if (!hasLayoutCreator) {
+          continue
+        }
+
+        const overlay = electron.BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.id === contents.id
+        )
+        if (overlay === undefined) {
+          continue
+        }
+
+        const state = {
+          alwaysOnTop: overlay.isAlwaysOnTop(),
+          visible: overlay.isVisible(),
+        }
+
+        if (state.alwaysOnTop && state.visible) {
+          return state
+        }
+
+        fallbackState ??= state
       }
 
-      const overlay = electron.BrowserWindow.getAllWindows().find(
-        (window) => window.webContents.id === webContentsId
-      )
-
-      return overlay === undefined
-        ? null
-        : {
-            alwaysOnTop: overlay.isAlwaysOnTop(),
-            visible: overlay.isVisible(),
-          }
+      return fallbackState
     })
 
 const getParentLocalLayoutDialogState =
@@ -647,7 +689,9 @@ const waitForEnabledOverlayCheckbox = async (): Promise<void> => {
           }
 
           const hasEnabledCheckbox = (await overlay.executeJavaScript(`
-            Array.from(document.querySelectorAll('[role="menuitemcheckbox"]'))
+            Array.from(document.querySelectorAll(
+              '[role="menu"][aria-label="Displayed layouts"] [role="menuitemcheckbox"]'
+            ))
               .some((element) =>
                 element instanceof HTMLElement &&
                 element.getAttribute('aria-disabled') !== 'true'
@@ -817,7 +861,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
         return overlay.executeJavaScript(`
           (() => {
             const item = document.querySelector(
-              '[role="menuitem"][aria-label="Create custom layout"]'
+              '[role="menu"][aria-label="Displayed layouts"] [role="menuitem"][aria-label="Create custom layout"]'
             )
             if (!(item instanceof HTMLElement)) {
               return false
@@ -878,80 +922,57 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 
-    const beforeGrid = await browser.electron.execute(
-      async (electron: ElectronModule) => {
-        let overlay:
-          | ReturnType<
-              ElectronModule['webContents']['getAllWebContents']
-            >[number]
-          | undefined
-        for (const contents of electron.webContents.getAllWebContents()) {
-          const mode = new URL(contents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+    await browser.waitUntil(
+      async () => (await getLayoutCreatorOverlayDraftGrid()) !== null,
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg: 'Layout Creator overlay draft grid unavailable',
+      }
+    )
+    const readyGrid = await getLayoutCreatorOverlayDraftGrid()
+    if (readyGrid === null) {
+      throw new Error(
+        'Layout Creator overlay draft grid unavailable after wait'
+      )
+    }
 
-          if (mode !== '1' && mode !== 'menu') {
-            continue
-          }
+    await browser.electron.execute(async (electron: ElectronModule) => {
+      for (const contents of electron.webContents.getAllWebContents()) {
+        const mode = new URL(contents.getURL()).searchParams.get(
+          'nativeOverlay'
+        )
 
-          const hasLayoutCreator = (await contents.executeJavaScript(`
-            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-          `)) as boolean
-
-          if (hasLayoutCreator) {
-            overlay = contents
-            break
-          }
+        if (mode !== '1' && mode !== 'menu') {
+          continue
         }
 
-        if (!overlay) {
-          return null
-        }
-
-        return overlay.executeJavaScript(`
+        const clicked = (await contents.executeJavaScript(`
           (async () => {
-            const before = window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid()
+            if (window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid() === undefined) {
+              return false
+            }
+
             document.querySelector('button[aria-label="Add Cols"]')?.click()
             await new Promise((resolve) => setTimeout(resolve, 100))
             document.querySelector('button[aria-label="Add Rows"]')?.click()
-            return before ?? null
+            return true
           })()
-        `) as Promise<{ cols: number; rows: number } | null>
+        `)) as boolean
+
+        if (clicked) {
+          return
+        }
       }
-    )
-    if (beforeGrid === null) {
-      throw new Error('Layout Creator overlay draft grid unavailable')
-    }
+    })
 
     await browser.waitUntil(
       async () => {
-        const afterGrid = await browser.electron.execute(
-          async (electron: ElectronModule) => {
-            for (const contents of electron.webContents.getAllWebContents()) {
-              const mode = new URL(contents.getURL()).searchParams.get(
-                'nativeOverlay'
-              )
-
-              if (mode !== '1' && mode !== 'menu') {
-                continue
-              }
-
-              const grid = (await contents.executeJavaScript(`
-                window.__VIMEFLOW_E2E__?.getLayoutCreatorDraftGrid() ?? null
-              `)) as { cols: number; rows: number } | null
-
-              if (grid !== null) {
-                return grid
-              }
-            }
-
-            return null
-          }
-        )
+        const afterGrid = await getLayoutCreatorOverlayDraftGrid()
 
         return (
-          afterGrid?.cols === beforeGrid.cols + 1 &&
-          afterGrid.rows === beforeGrid.rows + 1
+          afterGrid?.cols === readyGrid.cols + 1 &&
+          afterGrid.rows === readyGrid.rows + 1
         )
       },
       {

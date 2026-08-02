@@ -1,9 +1,9 @@
 // UI-only persistence + subscription for the workspace sidebar collapse
 // preference. This is a WORKSPACE-GLOBAL choice (one flag for the app, not
 // per-session) so the sidebar stays collapsed/expanded as you switch sessions.
-// Mirrors the guards in features/editor/utils/readingStyleStore and
-// features/sessions/utils/activityPanelCollapsedStore (SSR / sandboxed
-// contexts / quota errors all fall back to the default, never throw).
+// Mirrors the guards in features/editor/utils/readingStyleStore (SSR /
+// sandboxed contexts / quota errors all fall back to the default, never
+// throw).
 //
 // A tiny pub/sub backs `useSyncExternalStore` so the in-card toggle, the icon
 // rail toggle, the ⌘B shortcut, and the `:toggle-sidebar` command all stay in

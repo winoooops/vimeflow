@@ -92,6 +92,7 @@ export interface TerminalZoneProps {
   outOfSyncBurnerPaneKeys?: ReadonlySet<string>
   showPaneFocusHighlight?: boolean
   terminalFontFamily?: string
+  terminalCursorEffect?: string
   layoutRegistry?: PaneLayoutRegistry
 }
 
@@ -128,6 +129,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
       outOfSyncBurnerPaneKeys = undefined,
       showPaneFocusHighlight = true,
       terminalFontFamily = undefined,
+      terminalCursorEffect = 'off',
       layoutRegistry = undefined,
     }: TerminalZoneProps,
     ref
@@ -255,6 +257,7 @@ export const TerminalZone = forwardRef<TerminalZoneHandle, TerminalZoneProps>(
                     deferTerminalFit={deferTerminalFit}
                     showPaneFocusHighlight={showPaneFocusHighlight}
                     terminalFontFamily={terminalFontFamily}
+                    terminalCursorEffect={terminalCursorEffect}
                   />
                 </div>
               )

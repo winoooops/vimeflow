@@ -43,6 +43,14 @@ impl KimiAdapter {
     fn locator(&self) -> &KimiLocator {
         &self.locator
     }
+
+    fn recovery_paths(&self, current: &Path) -> Vec<PathBuf> {
+        let mut paths = self.locator.recovery_paths();
+        if !paths.iter().any(|path| path == current) {
+            paths.insert(0, current.to_path_buf());
+        }
+        paths
+    }
 }
 
 impl TranscriptPathSource for KimiAdapter {
@@ -93,7 +101,7 @@ impl TranscriptPathValidator for KimiAdapter {
     fn validate(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
         // Validate against the SAME effective home the locator resolved
         // (per-process `KIMI_CODE_HOME`), not a recomputed default root.
-        transcript::validate_transcript_path_with_root(raw, &self.locator.effective_home())
+        transcript::validate_transcript_path_with_root(raw, self.locator.validator_root())
     }
 }
 
@@ -105,6 +113,7 @@ impl TranscriptStreamer for KimiAdapter {
         cwd: Option<PathBuf>,
         transcript_path: PathBuf,
     ) -> Result<TranscriptHandle, String> {
+        self.locator.remember_recovery_path(transcript_path.clone());
         // Prefer the locator's resolved process cwd over the watcher's stale
         // spawn cwd so the emitted `agent-cwd` points at the real project.
         let cwd = self.locator.resolved_cwd().or(cwd);
@@ -117,6 +126,26 @@ impl TranscriptStreamer for KimiAdapter {
             cwd,
             self.locator.clone(),
         )
+    }
+
+    fn recover_replies(
+        &self,
+        session_id: &str,
+        transcript_path: &Path,
+        nonces: &std::collections::HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReplyEvent>, String> {
+        let paths = self.recovery_paths(transcript_path);
+        transcript::recover_replies(&paths, self.locator.validator_root(), session_id, nonces)
+    }
+
+    fn recover_reviews(
+        &self,
+        session_id: &str,
+        transcript_path: &Path,
+        nonces: &std::collections::HashSet<String>,
+    ) -> Result<Vec<crate::agent::types::AgentReviewEvent>, String> {
+        let paths = self.recovery_paths(transcript_path);
+        transcript::recover_reviews(&paths, self.locator.validator_root(), session_id, nonces)
     }
 }
 
@@ -290,6 +319,8 @@ mod adapter_tests {
             std::time::SystemTime::UNIX_EPOCH,
             Some(proc_root.path().to_path_buf()),
         )));
+        std::fs::remove_file(proc_root.path().join(pid.to_string()).join("environ"))
+            .expect("remove process environ after attach");
 
         let validated = <KimiAdapter as AgentAdapter>::validate_transcript(
             &adapter,

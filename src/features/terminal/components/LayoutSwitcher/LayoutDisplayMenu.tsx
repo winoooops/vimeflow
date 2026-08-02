@@ -174,13 +174,7 @@ export const LayoutDisplayMenu = ({
       {onCreateCustomLayout !== undefined && (
         <Menu.Section>
           <div className="mx-1 my-1 h-px bg-outline-variant/25" />
-          <Menu.Item
-            icon="dashboard_customize"
-            onSelect={(): void => {
-              onCreateCustomLayout()
-              closeMenu()
-            }}
-          >
+          <Menu.Item icon="dashboard_customize" onSelect={onCreateCustomLayout}>
             Create custom layout
           </Menu.Item>
         </Menu.Section>

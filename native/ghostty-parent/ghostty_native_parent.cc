@@ -42,7 +42,7 @@ using SetKeybindingsFn = void (*)(void *, const char *);
 using SetBackgroundColorFn = void (*)(void *, const char *);
 using SetForegroundColorFn = void (*)(void *, const char *);
 using SetFontFamilyFn = void (*)(void *, const char *);
-using SetResizeThrottleMsFn = void (*)(void *, double);
+using SetCursorShaderFn = bool (*)(void *, const char *);
 using WriteFn = void (*)(void *, const unsigned char *, int);
 using FocusFn = void (*)(void *);
 using ReadGridFn = char *(*)(void *);
@@ -65,7 +65,7 @@ struct BridgeApi {
   SetBackgroundColorFn set_background_color = nullptr;
   SetForegroundColorFn set_foreground_color = nullptr;
   SetFontFamilyFn set_font_family = nullptr;
-  SetResizeThrottleMsFn set_resize_throttle_ms = nullptr;
+  SetCursorShaderFn set_cursor_shader = nullptr;
   WriteFn write = nullptr;
   FocusFn focus = nullptr;
   ReadGridFn read_grid = nullptr;
@@ -322,8 +322,8 @@ bool EnsureBridge(napi_env env, const std::string &path) {
                  reinterpret_cast<void **>(&bridge.set_foreground_color)) &&
       LoadSymbol(env, "vimeflow_ghostty_set_font_family",
                  reinterpret_cast<void **>(&bridge.set_font_family)) &&
-      LoadSymbol(env, "vimeflow_ghostty_set_resize_throttle_ms",
-                 reinterpret_cast<void **>(&bridge.set_resize_throttle_ms)) &&
+      LoadSymbol(env, "vimeflow_ghostty_set_cursor_shader",
+                 reinterpret_cast<void **>(&bridge.set_cursor_shader)) &&
       LoadSymbol(env, "vimeflow_ghostty_write",
                  reinterpret_cast<void **>(&bridge.write)) &&
       LoadSymbol(env, "vimeflow_ghostty_focus",
@@ -1769,12 +1769,12 @@ napi_value SetFontFamily(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
-napi_value SetResizeThrottleMs(napi_env env, napi_callback_info info) {
+napi_value SetCursorShader(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
   if (argc < 2) {
-    return Throw(env, "setResizeThrottleMs(surface, milliseconds) expected");
+    return Throw(env, "setCursorShader(surface, shaderPath) expected");
   }
 
   SurfaceHandle *surface = GetSurface(env, args[0]);
@@ -1782,14 +1782,18 @@ napi_value SetResizeThrottleMs(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  double milliseconds = 0;
-  napi_get_value_double(env, args[1], &milliseconds);
+  std::string shader_path;
+  if (!GetString(env, args[1], &shader_path)) {
+    return nullptr;
+  }
 
-  bridge.set_resize_throttle_ms(surface->swift_surface, milliseconds);
+  const bool applied =
+      bridge.set_cursor_shader(surface->swift_surface, shader_path.c_str());
+  napi_value result;
+  napi_get_boolean(env, applied, &result);
 
-  return nullptr;
+  return result;
 }
-
 napi_value Write(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
@@ -2187,8 +2191,8 @@ napi_value Init(napi_env env, napi_value exports) {
        nullptr, napi_default, nullptr},
       {"setFontFamily", nullptr, SetFontFamily, nullptr, nullptr, nullptr,
        napi_default, nullptr},
-      {"setResizeThrottleMs", nullptr, SetResizeThrottleMs, nullptr, nullptr,
-       nullptr, napi_default, nullptr},
+      {"setCursorShader", nullptr, SetCursorShader, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"write", nullptr, Write, nullptr, nullptr, nullptr, napi_default,
        nullptr},
       {"focus", nullptr, Focus, nullptr, nullptr, nullptr, napi_default,

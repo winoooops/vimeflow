@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-07-26
-ref_count: 15
+last_updated: 2026-08-01
+ref_count: 19
 ---
 
 # Parser Resilience
@@ -383,3 +383,57 @@ true` and drop the chunk.
 - **Finding:** The Codex code-mode JavaScript string decoder only handled a small escape table and treated all other escape introducers as literal characters after dropping the backslash. Valid `\xHH`, `\uHHHH`, and `\u{...}` string literals in `exec_command` args, workdirs, or `apply_patch` text were reconstructed incorrectly.
 - **Fix:** Added explicit hex, fixed-width Unicode, braced Unicode, and UTF-16 surrogate-pair decoding. Malformed hex/unicode forms now make the extractor abstain instead of returning corrupted text, with regression coverage for command extraction and patch-path extraction.
 - **Commit:** same commit as this entry
+
+### 29. Kimi completed turns could emit both structured protocols
+
+- **Source:** local-codex | Kimi hunk-review local review | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Live and recovered Kimi turns independently extracted reply and review sentinels, so one nonconforming turn containing both blocks could mutate unrelated pending feedback and delegated-review state. Recovery also consumed a reply nonce after its first match even though finding-thread follow-ups intentionally reuse that nonce.
+- **Fix:** Arbitrate both extractors once per completed turn and emit neither when both match; retain ordered same-nonce reply turns within the shared event cap while reviews remain one-shot. Added live arbitration and multi-turn recovery regressions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Bounded transcript tails could begin after the active turn prompt
+
+- **Source:** local-codex | Kimi hunk-review local review round 2 | 2026-08-01
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi recovery read only the newest transcript window and initialized its parser outside a user turn. When a long-running turn began before that window, its later structured reply or review and `end_turn` were ignored even though they were inside the bounded read.
+- **Fix:** Treat a nonzero recovery offset as an already-active leading turn while still discarding the first partial JSONL record. Added a regression where the prompt precedes the bounded tail but the completed reply remains recoverable.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Protocol arbitration treated marker text inside prose as a second block
+
+- **Source:** local-codex | Kimi hunk-review local review round 2 | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi rejected a completed turn whenever both shared extractors found their marker substrings. A valid review whose finding text merely mentioned `<<<VIMEFLOW_REPLY` therefore looked like two protocols and silently emitted neither event.
+- **Fix:** Arbitrate only standalone opening-marker lines, including Markdown-quoted markers, before invoking the matching shared extractor. Added a regression proving marker prose inside valid review JSON does not suppress the review.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Adapter-local marker gates could not correct substring-based shared extraction
+
+- **Source:** local-codex | Kimi hunk-review local review round 3 | 2026-08-01
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/reply.rs`, `crates/backend/src/agent/review.rs`
+- **Finding:** Kimi first verified that a standalone protocol opener existed but then passed the whole turn to shared substring-based extractors. An earlier marker mention or example could still be selected instead of the final standalone block, yielding a malformed or wrong-nonce event.
+- **Fix:** Centralized line-delimited block selection in the shared reply module and reused it for reviews. Both extractors now ignore inline marker text, select the last complete standalone block, and preserve malformed handling for a lone orphan; shared regressions cover inline mentions and repeated complete blocks.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Retained transcript order was not completed-turn order
+
+- **Source:** local-codex | Kimi hunk-review local review round 3 | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi recovery concatenated completed turns in retained-path order. After an A → B → A supervisor sequence, all B turns preceded all A turns, so same-nonce replies could be restored out of chronological order and one-shot review recovery could consume the wrong match.
+- **Fix:** Keep the newest 512 completed turns in a bounded heap keyed by `step.end` timestamp plus stable path/line ordinals, then sort that bounded set before shared extraction. Added a two-transcript regression whose retained-path order differs from completion order.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 34. Byte clamps could manufacture standalone protocol markers
+
+- **Source:** local-codex | Kimi hunk-review local review round 4 | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi's 32 KiB turn-text clamp cut only at a UTF-8 boundary. If it removed prose immediately before an inline protocol marker, that marker moved to byte zero and the standalone-line selector could misclassify the originally invalid block as actionable feedback.
+- **Fix:** Advance every mid-line clamp through the next newline, or clear the fragment when none exists, so truncation cannot create a new line boundary. Added a regression whose old cut promoted an inline reply marker.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

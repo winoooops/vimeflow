@@ -13,7 +13,6 @@ const buildSession = (id: string, status: SessionStatus): Session => ({
   workingDirectory: '~',
   agentType: 'claude-code',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

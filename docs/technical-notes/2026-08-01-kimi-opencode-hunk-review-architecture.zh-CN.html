@@ -1,0 +1,2361 @@
+<!doctype html>
+<!-- cspell:words Catppuccin changelist dto endturn opencode tailer Vimeflow worktree -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vimeflow hunk view 对 Kimi Code 与 OpenCode 的 comments、delegated review、transcript recovery 支持架构说明与双 PR 交付方案。"
+    />
+    <title>Vimeflow 技术说明：Kimi / OpenCode Hunk Review 架构</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0b12;
+        --surface: rgba(24, 24, 37, 0.92);
+        --surface-high: rgba(36, 36, 54, 0.96);
+        --surface-soft: rgba(49, 50, 68, 0.62);
+        --text: #cdd6f4;
+        --muted: #a6adc8;
+        --faint: #7f849c;
+        --mauve: #cba6f7;
+        --blue: #89b4fa;
+        --teal: #94e2d5;
+        --green: #a6e3a1;
+        --yellow: #f9e2af;
+        --peach: #fab387;
+        --red: #f38ba8;
+        --line: rgba(205, 214, 244, 0.12);
+        --shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
+        --sans:
+          Inter, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui,
+          sans-serif;
+        --mono:
+          'SFMono-Regular', 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
+          monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--sans);
+        background:
+          radial-gradient(
+            circle at 10% 0%,
+            rgba(203, 166, 247, 0.13),
+            transparent 32rem
+          ),
+          radial-gradient(
+            circle at 94% 12%,
+            rgba(137, 180, 250, 0.12),
+            transparent 30rem
+          ),
+          linear-gradient(180deg, #090910 0%, var(--bg) 100%);
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+      }
+
+      a:hover {
+        color: var(--teal);
+      }
+
+      code,
+      pre,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      code {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        padding: 0.12rem 0.34rem;
+        border: 1px solid var(--line);
+        border-radius: 0.38rem;
+        background: rgba(17, 17, 27, 0.82);
+        color: var(--teal);
+        font-size: 0.9em;
+      }
+
+      pre {
+        overflow-x: auto;
+        max-width: 100%;
+        margin: 0;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #11111b;
+        color: #bac2de;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 250px minmax(0, 1fr);
+        width: min(1480px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0 72px;
+      }
+
+      .toc {
+        position: sticky;
+        top: 24px;
+        align-self: start;
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        padding: 22px 20px;
+        border: 1px solid var(--line);
+        border-radius: 22px 0 0 22px;
+        background: rgba(17, 17, 27, 0.9);
+        backdrop-filter: blur(18px);
+      }
+
+      .toc-brand {
+        margin-bottom: 20px;
+        color: var(--mauve);
+        font: 800 12px/1.3 var(--mono);
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .toc nav {
+        display: grid;
+        gap: 4px;
+      }
+
+      .toc nav a {
+        padding: 8px 10px;
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        text-decoration: none;
+      }
+
+      .toc nav a:hover {
+        background: rgba(203, 166, 247, 0.09);
+        color: var(--text);
+      }
+
+      .toc-note {
+        margin: 22px 0 0;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--faint);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      main {
+        min-width: 0;
+      }
+
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 44px;
+        border-radius: 0 28px 28px 0;
+        background:
+          linear-gradient(135deg, rgba(203, 166, 247, 0.11), transparent 52%),
+          rgba(24, 24, 37, 0.94);
+      }
+
+      .hero::after {
+        position: absolute;
+        right: -70px;
+        bottom: -110px;
+        width: 340px;
+        height: 340px;
+        border: 1px solid rgba(137, 180, 250, 0.2);
+        border-radius: 50%;
+        content: '';
+      }
+
+      .eyebrow,
+      .label,
+      th {
+        color: var(--mauve);
+        font: 750 12px/1.35 var(--mono);
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow {
+        margin: 0 0 16px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 970px;
+        margin-bottom: 18px;
+        font-size: clamp(38px, 5.6vw, 70px);
+        line-height: 1.02;
+        letter-spacing: -0.045em;
+      }
+
+      h1 span {
+        display: block;
+        margin-top: 12px;
+        color: var(--blue);
+        font-size: 0.43em;
+        letter-spacing: -0.02em;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        font-size: clamp(26px, 3vw, 36px);
+        line-height: 1.12;
+        letter-spacing: -0.025em;
+      }
+
+      h3 {
+        margin-bottom: 9px;
+        font-size: 18px;
+        line-height: 1.3;
+      }
+
+      p,
+      li,
+      td,
+      summary {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.75;
+      }
+
+      strong {
+        color: var(--text);
+      }
+
+      .lede {
+        position: relative;
+        z-index: 1;
+        max-width: 940px;
+        margin-bottom: 0;
+        color: var(--text);
+        font-size: 18px;
+      }
+
+      .chip-row {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        margin-top: 26px;
+      }
+
+      .chip {
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(203, 166, 247, 0.07);
+        color: #d9c2f7;
+        font: 650 12px/1.2 var(--mono);
+      }
+
+      .section {
+        margin-top: 24px;
+        padding: 34px;
+        border-radius: 24px;
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(240px, 0.7fr);
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 24px;
+      }
+
+      .section-head p {
+        margin-bottom: 0;
+      }
+
+      .grid-2,
+      .grid-3,
+      .decision-grid,
+      .pr-grid,
+      .flow-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .grid-2,
+      .decision-grid,
+      .pr-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid-2 > *,
+      .grid-3 > *,
+      .decision-grid > *,
+      .pr-grid > *,
+      .flow-grid > * {
+        min-width: 0;
+      }
+
+      .card,
+      .callout,
+      .decision-card,
+      .pr-card,
+      .flow-card,
+      details {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface-soft);
+      }
+
+      .card,
+      .decision-card,
+      .pr-card,
+      .flow-card {
+        padding: 20px;
+      }
+
+      .card p:last-child,
+      .decision-card p:last-child,
+      .pr-card p:last-child,
+      .flow-card p:last-child,
+      .callout p:last-child {
+        margin-bottom: 0;
+      }
+
+      .decision-card.selected,
+      .pr-card.kimi {
+        border-top: 4px solid var(--green);
+        background: rgba(49, 50, 68, 0.84);
+      }
+
+      .decision-card.rejected {
+        border-top: 4px solid var(--red);
+      }
+
+      .pr-card.opencode {
+        border-top: 4px solid var(--blue);
+      }
+
+      .callout {
+        margin: 18px 0;
+        padding: 17px 19px;
+        border-left: 4px solid var(--yellow);
+      }
+
+      .callout.good {
+        border-left-color: var(--green);
+      }
+
+      .callout.danger {
+        border-left-color: var(--red);
+      }
+
+      .callout.info {
+        border-left-color: var(--blue);
+      }
+
+      ul,
+      ol {
+        margin: 10px 0 0 20px;
+        padding: 0;
+      }
+
+      li + li {
+        margin-top: 7px;
+      }
+
+      .status-table,
+      .file-table,
+      .test-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 13px 14px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: rgba(17, 17, 27, 0.52);
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+      }
+
+      .yes,
+      .partial,
+      .no {
+        white-space: nowrap;
+        font: 700 12px/1.3 var(--mono);
+      }
+
+      .yes {
+        color: var(--green);
+      }
+
+      .partial {
+        color: var(--yellow);
+      }
+
+      .no {
+        color: var(--red);
+      }
+
+      .architecture {
+        display: grid;
+        grid-template-columns:
+          minmax(0, 0.95fr) 36px minmax(0, 1.1fr)
+          36px minmax(0, 0.95fr);
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .arch-column {
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(49, 50, 68, 0.58);
+      }
+
+      .arch-column.center {
+        border-top: 4px solid var(--mauve);
+        background: rgba(49, 50, 68, 0.86);
+      }
+
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: var(--blue);
+        font-size: 24px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .stack-item {
+        padding: 11px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(17, 17, 27, 0.55);
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .flow-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .flow-card {
+        position: relative;
+        min-height: 174px;
+      }
+
+      .flow-card:not(:last-child)::after {
+        position: absolute;
+        top: 50%;
+        right: -20px;
+        z-index: 2;
+        color: var(--blue);
+        content: '→';
+      }
+
+      .number {
+        display: block;
+        margin-bottom: 18px;
+        color: var(--mauve);
+        font: 800 12px/1.2 var(--mono);
+        letter-spacing: 0.1em;
+      }
+
+      .contract {
+        display: grid;
+        grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .contract .card:first-child {
+        border-top: 4px solid var(--peach);
+      }
+
+      .contract .card:last-child {
+        border-top: 4px solid var(--teal);
+      }
+
+      .timeline {
+        display: grid;
+        gap: 0;
+      }
+
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 94px 22px minmax(0, 1fr);
+        min-height: 86px;
+      }
+
+      .timeline-label {
+        padding-top: 3px;
+        color: var(--mauve);
+        font: 700 12px/1.45 var(--mono);
+      }
+
+      .timeline-rail {
+        position: relative;
+      }
+
+      .timeline-rail::before {
+        position: absolute;
+        top: 7px;
+        bottom: -7px;
+        left: 9px;
+        width: 1px;
+        background: var(--line);
+        content: '';
+      }
+
+      .timeline-item:last-child .timeline-rail::before {
+        display: none;
+      }
+
+      .timeline-dot {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--blue);
+        box-shadow: 0 0 0 4px rgba(137, 180, 250, 0.12);
+      }
+
+      .timeline-copy {
+        padding-bottom: 22px;
+      }
+
+      .timeline-copy p {
+        margin-bottom: 0;
+      }
+
+      details {
+        margin-top: 12px;
+        padding: 16px 18px;
+      }
+
+      summary {
+        cursor: pointer;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      details > :last-child {
+        margin-bottom: 0;
+      }
+
+      .review-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .review-item {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(49, 50, 68, 0.5);
+      }
+
+      .check {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        place-items: center;
+        border: 1px solid rgba(166, 227, 161, 0.38);
+        border-radius: 8px;
+        color: var(--green);
+        font: 800 13px/1 var(--mono);
+      }
+
+      .review-item p {
+        margin-bottom: 0;
+      }
+
+      .footer {
+        margin-top: 24px;
+        padding: 24px 34px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        color: var(--faint);
+        background: rgba(17, 17, 27, 0.72);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      @media (max-width: 1120px) {
+        .shell {
+          display: block;
+          width: min(960px, calc(100vw - 28px));
+        }
+
+        .toc {
+          position: static;
+          max-height: none;
+          margin-bottom: 16px;
+          border-radius: 22px;
+        }
+
+        .toc nav {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .hero {
+          border-radius: 28px;
+        }
+
+        .flow-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .flow-card:not(:last-child)::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100% - 20px, 720px);
+          padding-top: 10px;
+        }
+
+        .grid-2,
+        .grid-3,
+        .decision-grid,
+        .pr-grid,
+        .flow-grid,
+        .section-head,
+        .contract {
+          grid-template-columns: 1fr;
+        }
+
+        .toc nav {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .hero,
+        .section {
+          padding: 24px;
+        }
+
+        .architecture {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          transform: rotate(90deg);
+        }
+
+        .timeline-item {
+          grid-template-columns: 72px 22px minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="toc" aria-label="文档目录">
+        <div class="toc-brand">Vimeflow · Architecture Review</div>
+        <nav>
+          <a href="#decision">00 · 结论</a>
+          <a href="#scope">01 · 功能范围</a>
+          <a href="#current-state">02 · 当前状态</a>
+          <a href="#architecture">03 · 现有架构</a>
+          <a href="#boundary">04 · 正确边界</a>
+          <a href="#frontend">05 · 前端能力模型</a>
+          <a href="#kimi">06 · Kimi 路径</a>
+          <a href="#opencode">07 · OpenCode 路径</a>
+          <a href="#recovery">08 · Recovery</a>
+          <a href="#prs">09 · 两个 PR</a>
+          <a href="#files">10 · 文件清单</a>
+          <a href="#tests">11 · 测试架构</a>
+          <a href="#risks">12 · 风险与约束</a>
+          <a href="#review">13 · Review 清单</a>
+        </nav>
+        <p class="toc-note">
+          状态基线：<span class="mono">main @ fcad2d39</span><br />
+          分析日期：2026-08-01<br />
+          文档性质：实施前架构评审
+        </p>
+      </aside>
+
+      <main>
+        <header class="hero">
+          <p class="eyebrow">Hunk Review · Multi-Agent Architecture</p>
+          <h1>
+            Kimi / OpenCode<br />Hunk Review 支持方案
+            <span>复用中心协议，保留 provider-specific completed turn</span>
+          </h1>
+          <p class="lede">
+            这份文档解释 Vimeflow 的 hunk view 如何把用户 comments、delegated
+            code review、agent structured reply 与 transcript recovery
+            串成同一条链路；并给出先 Kimi、后 OpenCode 的两个 PR
+            方案。重点不是再造一个
+            BaseAdapter，而是识别仓库里已经存在的中心接口。
+          </p>
+          <div class="chip-row" aria-label="文档标签">
+            <span class="chip">PR 1 · Kimi</span>
+            <span class="chip">PR 2 · OpenCode</span>
+            <span class="chip">No new dependency</span>
+            <span class="chip">No new IPC</span>
+            <span class="chip">Shared schema</span>
+            <span class="chip">Provider-local turn boundary</span>
+          </div>
+        </header>
+
+        <section id="decision" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">00 · Architecture Decision</p>
+              <h2>结论：选择中心接口，但不新建 BaseAdapter</h2>
+            </div>
+            <p>
+              共享的是协议和输出；各 agent 只负责把自己的 transcript
+              还原成“一个完整 assistant turn”。
+            </p>
+          </div>
+
+          <div class="decision-grid">
+            <article class="decision-card rejected">
+              <p class="label">Rejected</p>
+              <h3>每个 agent 复制完整流程</h3>
+              <ul>
+                <li>各自解析 nonce、sentinel、JSON schema。</li>
+                <li>各自定义 comments/review 输出类型。</li>
+                <li>实时捕获和 recovery 再各复制一次。</li>
+              </ul>
+              <p>
+                结果是四套协议实现。状态 literal、malformed degrade、last-block
+                选择任何一处修复都可能漏掉其他 adapter。
+              </p>
+            </article>
+
+            <article class="decision-card selected">
+              <p class="label">Selected</p>
+              <h3>复用现有窄接口</h3>
+              <ul>
+                <li>adapter 输出完整 assistant text。</li>
+                <li>共享模块完成 schema 校验与 event mapping。</li>
+                <li>同一个 adapter 实现 live 与 nonce-scoped recovery。</li>
+              </ul>
+              <p>
+                这是现有架构已经提供的路径：扩展
+                <code>TranscriptStreamer</code>，不向过渡期
+                <code>AgentAdapter</code> façade 增加新职责。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout good">
+            <p>
+              <strong>一句话规则：</strong>agent adapter
+              只回答“什么时候获得了一轮完整的 assistant
+              文本”；共享层回答“这段文本是不是 Vimeflow
+              reply/review，以及如何变成统一事件”。
+            </p>
+          </div>
+        </section>
+
+        <section id="scope" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">01 · Product Scope</p>
+              <h2>这里其实有两种用户流程</h2>
+            </div>
+            <p>
+              UI 都在 hunk view 里，但协议、pending store 和返回事件并不相同。
+            </p>
+          </div>
+
+          <div class="grid-2">
+            <article class="card">
+              <p class="label">Flow A · Comments</p>
+              <h3>用户对某个 hunk 留言，再派发给主 agent</h3>
+              <ol>
+                <li>用户创建 question / bug / change / suggestion。</li>
+                <li>
+                  Vimeflow 生成 nonce 和 <code>VIMEFLOW_REPLY</code> contract。
+                </li>
+                <li>主 agent 回答、修复、拒绝或要求澄清。</li>
+                <li><code>AgentReplyEvent</code> 回到原 thread。</li>
+              </ol>
+              <p>
+                这是 comments section 的 structured Q&amp;A / outcome 路径。
+              </p>
+            </article>
+
+            <article class="card">
+              <p class="label">Flow B · Delegated Review</p>
+              <h3>用户请求主 agent 对 file/changelist 做 code review</h3>
+              <ol>
+                <li>Vimeflow 固化 diff placement snapshot。</li>
+                <li>请求主 agent delegate review。</li>
+                <li>reviewer 返回 <code>VIMEFLOW_REVIEW</code> findings。</li>
+                <li><code>AgentReviewEvent</code> 把 findings 锚定到 hunk。</li>
+              </ol>
+              <p>这是 code review section 的 reviewer finding 路径。</p>
+            </article>
+          </div>
+
+          <div class="callout info">
+            <p>
+              两条流程的共同输入是“完整 assistant turn + correlation
+              nonce”，共同输出是稳定的 Vimeflow event；不同之处只在 reply/review
+              schema 和前端落点。
+            </p>
+          </div>
+        </section>
+
+        <section id="current-state" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">02 · Current State</p>
+              <h2>端到端支持矩阵</h2>
+            </div>
+            <p>
+              “后端有 parser”不等于“用户能在 UI 中使用”。必须同时满足
+              dispatch、live capture、recovery 和 ingestion。
+            </p>
+          </div>
+
+          <div class="table-wrap">
+            <table class="status-table">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>UI 可派发</th>
+                  <th>Comments live</th>
+                  <th>Comments recovery</th>
+                  <th>Review live</th>
+                  <th>Review recovery</th>
+                  <th>当前结论</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Claude Code</strong></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td>完整支持</td>
+                </tr>
+                <tr>
+                  <td><strong>Codex</strong></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td>完整支持</td>
+                </tr>
+                <tr>
+                  <td><strong>Kimi Code</strong></td>
+                  <td><span class="no">NO</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="no">NO</span></td>
+                  <td><span class="no">NO</span></td>
+                  <td><span class="no">NO</span></td>
+                  <td>后端 reply 半成品，UI 不可达</td>
+                </tr>
+                <tr>
+                  <td><strong>OpenCode</strong></td>
+                  <td><span class="no">NO</span></td>
+                  <td><span class="yes">YES</span></td>
+                  <td><span class="no">NO</span></td>
+                  <td><span class="no">NO</span></td>
+                  <td><span class="no">NO</span></td>
+                  <td>后端 reply 半成品，UI 不可达</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="grid-3" style="margin-top: 16px">
+            <article class="card">
+              <p class="label">Frontend Blocker</p>
+              <h3>用显示名称表达 capability</h3>
+              <p>
+                <a href="../../src/features/diff/services/activePanePicker.ts"
+                  ><code>activePanePicker.ts</code></a
+                >
+                只允许 <code>Claude Code | Codex</code>。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Backend Gap</p>
+              <h3>默认 recovery 返回空数组</h3>
+              <p>
+                Kimi/OpenCode 没有 override
+                <code>recover_replies</code> / <code>recover_reviews</code>。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Review Gap</p>
+              <h3>completed turn 只走 reply extractor</h3>
+              <p>
+                两个 adapter 都没有从同一段完整文本调用
+                <code>extract_agent_review</code>。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout danger">
+            <p>
+              <strong>文档与可达行为存在偏差：</strong>CHANGELOG 已描述
+              Kimi/OpenCode reply capture，但当前 Workspace candidate gate
+              仍把它们挡在 dispatch 外。实现 PR
+              时应同步修正文档措辞或让承诺真正可达。
+            </p>
+          </div>
+        </section>
+
+        <section id="architecture" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">03 · Existing Architecture</p>
+              <h2>中心接口已经存在</h2>
+            </div>
+            <p>
+              不需要先发明一套新 framework；现有 runtime、trait、event 和
+              frontend hooks 已经形成完整骨架。
+            </p>
+          </div>
+
+          <div class="architecture" aria-label="现有三层架构图">
+            <article class="arch-column">
+              <p class="label">Provider Layer</p>
+              <h3>Transcript Adapter</h3>
+              <div class="stack">
+                <div class="stack-item">Claude · assistant + stop_reason</div>
+                <div class="stack-item">Codex · task_complete</div>
+                <div class="stack-item">Kimi · content.part → end_turn</div>
+                <div class="stack-item">OpenCode · assistant.text</div>
+              </div>
+            </article>
+
+            <div class="arrow" aria-hidden="true">→</div>
+
+            <article class="arch-column center">
+              <p class="label">Shared Protocol Layer</p>
+              <h3>Stable Vimeflow Contract</h3>
+              <div class="stack">
+                <div class="stack-item">reply.rs · VIMEFLOW_REPLY</div>
+                <div class="stack-item">review.rs · VIMEFLOW_REVIEW</div>
+                <div class="stack-item">types.rs · normalized events</div>
+                <div class="stack-item">
+                  TranscriptStreamer · recovery hooks + recovery_paths()
+                </div>
+                <div class="stack-item">
+                  RecoveryDomain · provider + validator trust root
+                </div>
+                <div class="stack-item">
+                  base recovery collector · nonce filter/order
+                </div>
+              </div>
+            </article>
+
+            <div class="arrow" aria-hidden="true">→</div>
+
+            <article class="arch-column">
+              <p class="label">Product Layer</p>
+              <h3>Hunk Review UI</h3>
+              <div class="stack">
+                <div class="stack-item">useAgentReply · thread outcomes</div>
+                <div class="stack-item">useAgentReview · finding placement</div>
+                <div class="stack-item">pending stores · nonce routing</div>
+                <div class="stack-item">Panel · comments/review rendering</div>
+              </div>
+            </article>
+          </div>
+
+          <div class="contract">
+            <article class="card">
+              <p class="label">Shared Input</p>
+              <h3><code>&amp;str</code> completed assistant text</h3>
+              <p>
+                共享 parser 不需要知道 JSONL provider、TUI、tool event 或
+                session locator。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Shared Output</p>
+              <h3>
+                <code>AgentReplyEvent</code> / <code>AgentReviewEvent</code>
+              </h3>
+              <p>
+                frontend 不需要知道事件来自 Claude、Codex、Kimi 还是
+                OpenCode；它只按 session id、nonce 和 typed payload 路由。
+              </p>
+            </article>
+          </div>
+
+          <details>
+            <summary>为什么不应该扩展旧 AgentAdapter？</summary>
+            <p>
+              <a href="../../crates/backend/src/agent/adapter/mod.rs"
+                ><code>adapter/mod.rs</code></a
+              >
+              已明确说明 <code>AgentAdapter</code> 是 transitional
+              façade，production lifecycle 已迁移到 split traits。把新
+              reply/review API 加回旧 façade，会重新制造 runtime
+              对过渡层的依赖。
+            </p>
+            <p>
+              正确位置是
+              <a href="../../crates/backend/src/agent/adapter/traits.rs"
+                ><code>TranscriptStreamer</code></a
+              >：它已经拥有 <code>tail</code>、<code>recover_replies</code> 和
+              <code>recover_reviews</code>。
+            </p>
+          </details>
+        </section>
+
+        <section id="boundary" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">04 · Boundary Design</p>
+              <h2>什么统一，什么不统一</h2>
+            </div>
+            <p>
+              统一过多会把 provider 细节泄漏进 base；统一过少会复制协议和 bug。
+            </p>
+          </div>
+
+          <div class="grid-2">
+            <article class="card">
+              <p class="label">Centralize</p>
+              <h3>必须只有一个 owner</h3>
+              <ul>
+                <li>sentinel block 选择规则。</li>
+                <li>nonce 与 schema 校验。</li>
+                <li>reply outcome literal 映射。</li>
+                <li>review finding scope/category 校验。</li>
+                <li>malformed degrade 行为。</li>
+                <li>normalized event shape。</li>
+                <li>frontend capability 元数据。</li>
+              </ul>
+            </article>
+
+            <article class="card">
+              <p class="label">Keep Provider-Local</p>
+              <h3>每个 adapter 自己最了解</h3>
+              <ul>
+                <li>哪一种 transcript row 是 assistant text。</li>
+                <li>一轮回答何时结束。</li>
+                <li>streaming chunk 如何拼接和清理。</li>
+                <li>sub-agent output 是否属于主会话。</li>
+                <li>replay/live 分界。</li>
+                <li>如何有限扫描 provider 原生 transcript。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="callout">
+            <p>
+              <strong>不增加新的 completed-turn trait：</strong>目前没有跨
+              adapter 的 runtime caller 需要调用“给我完整 turn”。完整 turn
+              只是各 transcript decoder 内部通往共享 parser
+              的一个值。为了四个不同 wire format 造 trait，只会增加 pass-through
+              层。
+            </p>
+          </div>
+
+          <div class="callout info">
+            <p>
+              <strong>可以抽取一个很小的共享 helper：</strong
+              ><code>review.rs</code> 当前取第一个 review block，而
+              <code>reply.rs</code> 已采用“最后一个完整 block
+              胜出”。两者已经出现行为漂移，适合共享同一个 sentinel block
+              selector；这不是 speculative
+              abstraction，而是修复已存在的重复协议实现。超出 24 KiB 的 payload
+              不做 partial JSON parse，产生的 nonce-less diagnostic event
+              不能立即关联。 frontend 复用 pending record 的 dispatchedAt：30
+              分钟仍无合法结构化结果时， 在原 feedback handle 或 review-level
+              surface 写入可操作失败说明并清除持久化 pending， reload 不会无限
+              recovery。
+            </p>
+          </div>
+        </section>
+
+        <section id="frontend" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">05 · Frontend Capability</p>
+              <h2>能力不能藏在显示名称里</h2>
+            </div>
+            <p>
+              当前 <code>agentLabel</code> 同时承担展示和授权判断，导致 Codex
+              甚至不能直接复用 registry 的 “Codex CLI” 名称。
+            </p>
+          </div>
+
+          <div class="grid-2">
+            <article class="card">
+              <p class="label">Before</p>
+              <pre><span style="color: var(--red)">type SupportedAgent = 'Claude Code' | 'Codex'</span>
+
+isSupportedAgent(pane.agentLabel)</pre>
+              <p>
+                添加 Kimi 要改 union、array、Workspace ternary；添加 OpenCode
+                再改一次。
+              </p>
+            </article>
+
+            <article class="card">
+              <p class="label">After</p>
+              <pre>interface AgentDef {
+  // existing metadata...
+  <span style="color: var(--green)">supportsHunkReview?: true</span>
+}
+
+const agent: AgentDef = AGENTS[key]
+agent.supportsHunkReview ?? false</pre>
+              <p>
+                registry 是静态 agent metadata 的现有 SSoT。label
+                只负责显示，capability 只负责筛选；缺省为 false，新 agent
+                必须在完整实现后显式 opt in。
+              </p>
+            </article>
+          </div>
+
+          <div class="table-wrap" style="margin-top: 16px">
+            <table class="status-table">
+              <thead>
+                <tr>
+                  <th>PR 阶段</th>
+                  <th>Claude</th>
+                  <th>Codex</th>
+                  <th>Kimi</th>
+                  <th>OpenCode</th>
+                  <th>Shell</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>PR 1 合并后</td>
+                  <td class="yes">true</td>
+                  <td class="yes">true</td>
+                  <td class="yes">true</td>
+                  <td class="no">false</td>
+                  <td class="no">false</td>
+                </tr>
+                <tr>
+                  <td>PR 2 合并后</td>
+                  <td class="yes">true</td>
+                  <td class="yes">true</td>
+                  <td class="yes">true</td>
+                  <td class="yes">true</td>
+                  <td class="no">false</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="kimi" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">06 · Provider Path</p>
+              <h2>Kimi：streamed parts 组成 completed turn</h2>
+            </div>
+            <p>
+              Kimi 的差异集中在“如何得到完整文本”，一旦得到文本，reply/review
+              的解析不再是 Kimi-specific。
+            </p>
+          </div>
+
+          <div class="flow-grid">
+            <article class="flow-card">
+              <span class="number">01 · START</span>
+              <h3><code>turn.prompt</code></h3>
+              <p>
+                只接受 <code>origin.kind == user</code>；新用户 turn 清空旧
+                buffer。
+              </p>
+            </article>
+            <article class="flow-card">
+              <span class="number">02 · FILTER</span>
+              <h3>Main wire only</h3>
+              <p>
+                sub-agent wire 不参与主回复，避免把 delegated worker
+                文本误当结果。
+              </p>
+            </article>
+            <article class="flow-card">
+              <span class="number">03 · BUFFER</span>
+              <h3><code>content.part</code></h3>
+              <p>只拼接 <code>part.type == text</code>；think block 被排除。</p>
+            </article>
+            <article class="flow-card">
+              <span class="number">04 · BOUND</span>
+              <h3>Tail clamp 32 KiB</h3>
+              <p>
+                保留 turn 尾部；共享协议按原始 UTF-8 byte range 计数：从 open
+                marker 行的换行后开始，到 close marker 行首结束，payload
+                行自己的 LF/CRLF 计入，marker 行的缩进、blockquote prefix
+                与尾空格不计入；但每个原始 marker line 自身最多 256
+                bytes，超限不识别。payload 上限为 24 KiB，且每轮最多一个 reply
+                或 review block，确保完整 合规 block 留在 buffer 内。
+              </p>
+            </article>
+            <article class="flow-card">
+              <span class="number">05 · COMPLETE</span>
+              <h3><code>step.end/end_turn</code></h3>
+              <p>
+                take buffer，一次调用 reply parser 与 review parser，然后清空。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout good">
+            <p>
+              <strong>最小复用：</strong>把 buffer append、UTF-8-safe tail
+              clamp、fresh-user-turn clear、end_turn take 封装成 Kimi adapter
+              内部的小型纯状态对象。live decoder 和 recovery scanner
+              共用它，并保留 retained first byte 是否原始 line boundary 的
+              boolean； partial first line 中的 inline marker 不会因 clamp 变成
+              standalone marker。
+            </p>
+          </div>
+
+          <details>
+            <summary>Kimi 必须保持的行为不变量</summary>
+            <ul>
+              <li><code>finishReason == tool_use</code> 不能 flush。</li>
+              <li>只有 main wire 的 <code>end_turn</code> 能结束主回答。</li>
+              <li>think part 中即使包含 sentinel 也不能 emit。</li>
+              <li>被中断 turn 的 buffer 不能泄漏到下一轮。</li>
+              <li>
+                recovery 的每个 tail window 必须先看到真实 main-agent user
+                prompt；窗口开头残留的 content/end 记录一律忽略。
+              </li>
+              <li>
+                首次 replay 继续推进既有状态，但不能重复产生 live reply/review
+                event；其他 lifecycle/activity/summary 行为不变。
+              </li>
+              <li>recovery 可以扫描历史 turn，但只返回请求 nonce。</li>
+              <li>超过 32 KiB 的违规 block 只保证内存有界，不从残片 emit。</li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="opencode" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">07 · Provider Path</p>
+              <h2>OpenCode：已有 completed-turn record</h2>
+            </div>
+            <p>
+              bridge 在 <code>session.idle</code> 写入一条 bounded
+              <code>assistant.text</code>，Rust 不需要再次聚合 token snapshots；
+              PR 2 将安装版本升级到 v4，修复 UTF-16 clamp 可能切断 emoji
+              的问题。
+            </p>
+          </div>
+
+          <div class="architecture" aria-label="OpenCode 数据流">
+            <article class="arch-column">
+              <p class="label">OpenCode Plugin</p>
+              <h3>Assistant snapshots in memory</h3>
+              <p>
+                只聚合 assistant message；用户 prompt 不写入，避免 prompt
+                自带的示例 sentinel 被回读。更新过程中每 session 保持 32 KiB
+                UTF-8 尾部预算；最多 64 sessions、256 个 pending messages。 每个
+                message 只保存 committed tail、当前 part ID 与它的最新完整
+                snapshot；同 part 替换，新 part 才提交前一段，所以超过 256
+                个顺序 text parts 也不会消耗 256 个 map entries。committed
+                snapshots 按 message content
+                顺序无分隔符原样拼接，再对合并文本做 UTF-8 tail clamp。 每个
+                retained tail 同时保存真实 line-boundary provenance，part
+                boundary 本身不视为换行；若最终 tail 从已 clamp 的 active
+                segment 起步，必须使用 active 保存的 provenance，不能借用
+                committed 的最后一个换行。 这里依赖 OpenCode 原生的 同 part
+                snapshots 连续 contract，不为不可能的 A→B→A 保存 seen-ID set。
+                active snapshot 入库前先做 UTF-8 byte clamp。unknown-role
+                pending LRU 合计使用 64 KiB / 256 messages， pending accumulator
+                与 confirmed assistant 使用相同的 part-ID full-snapshot
+                replace、next-part commit 与 provenance 规则，promote
+                时直接移动不重复拼接。 超限淘汰最旧的完整 pending
+                accumulator，并把该 message ID 标为本 turn
+                ignored，禁止残缺或后续 promote；role=user
+                时丢弃，role=assistant 时 promote 成唯一 current
+                assistant，并替换旧 candidate。current assistant 保存 32 KiB
+                committed tail 与独立 32 KiB active snapshot；active snapshot
+                变短时直接替换，最终再合并 clamp，因此不需要找回已丢弃的
+                committed bytes。 它不会被 user/unresolved text 污染。role
+                先到时写入 bounded knownRoles，后续 parts 直接按 assistant/user
+                路由；同 role 重复更新幂等， role 冲突则该 message fail
+                closed。idle 只输出 current assistant。 如果因 pending/message
+                上限而 ignored 的 ID 后来确认是 assistant，必须先清掉 旧 current
+                candidate 并继续忽略新 ID，idle 不得误发已被 supersede
+                的旧回复。 text part 以 part.sessionID 为准；若 outer
+                properties.sessionID 同时存在，
+                两者必须相等，否则忽略事件。lastDirectory 只在完整 UTF-8 bytes
+                不超过 2 KiB 时保存；超限 transition 清除 routable
+                directory，并只写一条
+                <code>directory: ""</code> invalidation row；locator 必须先按
+                session 只保留 newest row， 并把空目录解析成
+                absent，不能继续用旧 cwd 或截断新值。session ID 先通过现有
+                128-char SAFE_SESSION_ID contract，message/part ID 最多 256
+                bytes；统一的 SessionState 同时拥有 lastDirectory、active flag
+                与 LRU ordinal。 只有 session.created 可分配 state；满 64
+                时淘汰最旧 inactive entry，全 active 时忽略新 creation 及其
+                unknown-ID suffix，避免重建 partial turn。idle/error 清 turn
+                buffer 并标 inactive，因此完成的 session 可以回收。带合法
+                session ID 的 session.error 只清对应 turn buffer； ID
+                缺失或非法时清全部最多 64 个 session 的 turn buffer，均保留
+                lastDirectory。
+              </p>
+            </article>
+            <div class="arrow" aria-hidden="true">→</div>
+            <article class="arch-column center">
+              <p class="label">Bridge JSONL</p>
+              <h3><code>assistant.text</code></h3>
+              <p>
+                在
+                <code>session.idle</code>
+                写一次，tail-clamped，已经是一轮完整文本；同时写入
+                <code>data.startsAtLineBoundary</code>，让 Rust 保留 clamp
+                前后的真实行边界。 旧 row 缺字段时按 false 解码并忽略首个
+                retained line。
+              </p>
+            </article>
+            <div class="arrow" aria-hidden="true">→</div>
+            <article class="arch-column">
+              <p class="label">Rust Adapter</p>
+              <h3>Call both shared parsers</h3>
+              <p>
+                live path emit；recovery path 扫描同类型 row 并按 nonce 过滤。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout good">
+            <p>
+              <strong>最小 plugin 修正：</strong>保持 JSONL schema version 1，给
+              <code>assistant.text</code> 增加向后兼容的可选 provenance
+              字段，并把 clamp 改为按 UTF-8 bytes、code-point boundary 保留 32
+              KiB，并将安装版本从 v3 升为 v4。backend 启动、PTY
+              可创建前先安装并记录本次运行的 ready 状态； 失败时仅让 OpenCode
+              binding fail closed、不给 live candidate，其他 agent 与 terminal
+              仍可用。本次运行不做 attach-time repair；下次 backend startup
+              重新执行同一安装流程。immutable bool 由 BackendState 持有并通过
+              AttachContext 传到 AgentBindings；installer 用完整 bytes 判断
+              up-to-date， 同 header 的损坏文件也重写，只有磁盘 bytes 与
+              embedded v4 完全一致 才为 true。Unix 使用 atomic rename；Windows
+              沿用 remove/rename best effort， crash 后由下次 startup
+              verification 修复。<code>#[doc(hidden)] pub</code> BackendState
+              test constructor 接受显式 plugins dir，crate-external integration
+              tests 与 <code>with_fake_sink</code> 都必须由 caller 持有
+              TempDir，不写真实目录。 无需新增 event type 或读取 OpenCode DB。
+            </p>
+          </div>
+
+          <details>
+            <summary>为什么 OpenCode 放在第二个 PR？</summary>
+            <p>
+              PR 1 先建立 frontend capability 与统一的 completed-text →
+              reply/review 使用方式。PR 2 只需验证 OpenCode 的现有 bridge
+              record，然后接入相同 contract。这样若 Kimi PR
+              的中心改动需要调整，OpenCode 不会同时扩大 review surface。
+            </p>
+          </details>
+        </section>
+
+        <section id="recovery" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">08 · Recovery Model</p>
+              <h2>为什么 live capture 还不够</h2>
+            </div>
+            <p>
+              用户切 pane、刷新 renderer、恢复 workspace 或在 watcher replay
+              窗口中错过事件时，pending comment/review 仍必须找回结果。
+            </p>
+          </div>
+
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-label">DISPATCH</div>
+              <div class="timeline-rail">
+                <span class="timeline-dot"></span>
+              </div>
+              <div class="timeline-copy">
+                <h3>Frontend 持久化 pending nonce</h3>
+                <p>
+                  comments 存在 pending review store；delegated review 存在
+                  pending request store，并记录 owner、PTY 与 diff snapshot。
+                </p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-label">PERSIST</div>
+              <div class="timeline-rail">
+                <span class="timeline-dot"></span>
+              </div>
+              <div class="timeline-copy">
+                <h3>Agent transcript 保存 completed turn</h3>
+                <p>
+                  Kimi 保存 wire events；OpenCode bridge 保存
+                  <code>assistant.text</code>。
+                </p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-label">REATTACH</div>
+              <div class="timeline-rail">
+                <span class="timeline-dot"></span>
+              </div>
+              <div class="timeline-copy">
+                <h3>UI 按 PTY 查询仍 pending 的 nonce</h3>
+                <p>
+                  调用现有 <code>recover_agent_replies</code> /
+                  <code>recover_agent_reviews</code> IPC，不需要新增 command。
+                </p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-label">SCAN</div>
+              <div class="timeline-rail">
+                <span class="timeline-dot"></span>
+              </div>
+              <div class="timeline-copy">
+                <h3>Provider adapter bounded scan</h3>
+                <p>
+                  复用 <code>for_each_bounded_line</code>，忽略
+                  malformed/oversized rows；provider 按 transcript 顺序交出完整
+                  turn，base recovery collector 负责 requested nonce
+                  与原始顺序； 每个 Kimi adapter 保存 newest 256 个成功 tail 的
+                  original main-wire paths；同一个 original path
+                  取最后一次，指向同一 canonical target 的不同 aliases
+                  继续保留；scan 前重新校验并按新的 canonical identity 分组， 对
+                  original path 做 no-follow open；每个 path 扫描 128 KiB
+                  尾部（总计最多 32 MiB），并只 保留 newest 512 completed
+                  turns，再按承载 step.end 的顶层 record.time 排序。 frontend
+                  负责内容相同的 reply 幂等，初始 review 每 nonce 只恢复首个。
+                </p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-label">INGEST</div>
+              <div class="timeline-rail">
+                <span class="timeline-dot"></span>
+              </div>
+              <div class="timeline-copy">
+                <h3>同一套 frontend handler 幂等消费</h3>
+                <p>
+                  recovered event 与 live event 使用同一条 nonce gate 和 thread
+                  placement 路径。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="callout">
+            <p>
+              <strong>安全/资源边界不变：</strong>IPC 已限制 nonce
+              数量与长度；transcript path 已由各 adapter 校验在 provider root
+              下；只有新旧 streamer 声明相同的 provider + canonical validator
+              trust root，base 才继承历史路径。跨 provider、root
+              变化或默认未声明 domain 都 fail closed，只保留新 adapter
+              已验证的路径。扫描使用共享 bounded-line reader。recovery IPC 在
+              clone source 前获取同一 session gate，确保新 tailer 的 replay
+              summary 不能抢在 source publication 前 扫描旧 source；clone
+              后立即释放 gate，不跨文件 I/O 持锁。scan 后再用 source
+              revision/generation/domain 检查，replacement/teardown 期间得到的旧
+              result 直接丢弃。永久删除 PTY 每次 PTY spawn 分配单调
+              generation。PtyState 用一个短生命周期 mutex 一次性 snapshot
+              generation/cwd/shell PID/start time，并串行化 session insert
+              与成功 remove 后的 agent-generation close/cache/event；remove 后先
+              close generation，再发布 cache/event， callback 在 lifecycle gate
+              内、sessions mutex 外 detach 并 signal watcher/transcript， A
+              完成关闭后才允许同 ID 的 B 插入；callback 返回 handles，gate 外再
+              drop/join。 BackendState 构造时给 PtyState 注册 唯一
+              generation-removal callback；reader/reaper 调用 remove primitive
+              时 带上捕获的 expected generation，仅匹配当前 entry
+              才实际删除并同步发 (session ID, generation) teardown，因此旧
+              generation 的延迟 EOF/read error 不能删掉同 ID 的新
+              PTY；只有实际移除匹配 generation 后才能更新 cache 或 emit
+              pty-exit/pty-error。它先在 PTY mutex 内 extract，再释放 mutex
+              后进入 agent gate，即使上层后续 cache update 失败也不遗漏。gate 内
+              close generation 并移除匹配 agent state；watcher 注册和 transcript
+              publication 也必须在同一 gate 下拒绝 closed
+              generation，因此没有有效 transcript hint 的旧 attach
+              也不能发布。每次 attach 分配独立 attach-instance identity：同一
+              attach 的重复 callback 可判定 AlreadyRunning， 同 PTY 内的新 agent
+              process 必须 replacement。gate 外 join。reader 的 generation
+              mismatch 是完整 no-op；用户 explicit close 即使 EOF 已移除 PTY，
+              仍在 lifecycle gate 下删除 exited cache entry，避免下次启动恢复旧
+              session。 explicit close 在 lifecycle gate 内锁定 expected
+              generation 后才 kill/remove； child.kill() 失败时则保留
+              PTY/cache/generation/agent state 供重试。 kill 成功后若 cache
+              mutation closure 失败，PTY/agent 仍保持已移除并返回错误； list
+              reconciliation 把旧 row 标为 exited，第二次 close 重试删除。disk
+              flush failure 沿用现有 best-effort：内存已删、记录日志并返回成功。
+              agent watcher/tailer 使用 attach-scoped GenerationEventSink；每次
+              emit 在同一 agent gate 下检查 captured (generation,
+              attach-instance ID)，A closed 或被同 PTY 新 attach 替代后的迟到
+              status/reply/review 会被丢弃，terminal event 仍走原 sink。这里的
+              agent gate 就是唯一的 TranscriptState session gate；replacement 在
+              gate 内只 detach/signal 并设置 token 与 one-shot installation
+              latch，所有 wait/join/provider I/O 都在 gate 外； recovery 和新
+              tail worker 等待 Installed/Aborted，再凭 token 安装或丢弃。 新
+              installation latch 只交给 recovery waiter 与 candidate
+              tailer；incumbent sink 看到 Replacing 后直接按旧 identity/revision
+              丢 event，绝不等待 candidate latch， 因而 replacement 可以先 join
+              incumbent 再决定 Installed/Aborted，不形成环形等待。 watcher
+              startup 改为 prepare → under-gate commit watcher + attach ID →
+              activate； 所有可失败 setup 在 commit 前完成，initial decode/tail
+              只在 commit 后运行。 同 generation 已有更大的 process-monotonic
+              attach ID 时，较旧或相等 ID 的 prepared watcher 在 gate
+              内直接丢弃，不能覆盖较新的 commit。 这里“丢弃”只表示 gate 内标
+              stale、关闭现有 owns_transcript cascade 并 detach；
+              watcher/transcript handle 必须返回 caller，在 gate 外
+              drop/join。旧 watcher 即使在新 same-session attach commit
+              后才析构，也不能再通过 Drop 调用按 session ID 的 stop 去移除新
+              transcript；被拒绝的 prepared watcher 同样在 gate 外清理。
+              Kimi/OpenCode tail() 的这项兼容改动都在 PR 1：先返回
+              handle，initial cwd 由 worker emit，避免同步等待自己的
+              latch；OpenCode review parsing 仍在 PR 2。 PR 1 也冻结 OpenCode
+              locator root 并返回 non-None RecoveryDomain，保证同 attach 的重复
+              callback 可走 AlreadyRunning；这不包含 OpenCode reply/review
+              parsing 或 capability。 watcher commit 对新的 attach-instance 一律
+              fail-closed：gate 内 detach/signal 旧 watcher/transcript、清空
+              recovery history，gate 外 join；只有同一 attach 内的 path
+              replacement 才能按相同 non-None domain 继承历史。
+            </p>
+          </div>
+        </section>
+
+        <section id="prs" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">09 · Delivery Plan</p>
+              <h2>两个 PR，职责清晰</h2>
+            </div>
+            <p>
+              不增加第三个 foundation PR；共享基础随第一个真正消费者 Kimi
+              一起交付。
+            </p>
+          </div>
+
+          <div class="pr-grid">
+            <article class="pr-card kimi">
+              <p class="label">PR 1 · Kimi</p>
+              <h3>建立 capability + 完成 Kimi end-to-end</h3>
+              <ol>
+                <li>registry 增加 <code>supportsHunkReview</code>。</li>
+                <li>删除按 <code>agentLabel</code> 判断支持范围。</li>
+                <li>Kimi completed turn 同时解析 reply/review。</li>
+                <li>Kimi 实现两种 nonce recovery。</li>
+                <li>live/recovery 共用 provider-local turn buffer。</li>
+                <li>统一 review/reply 的 last-complete-block 规则。</li>
+                <li>Kimi capability 打开，OpenCode 保持关闭。</li>
+              </ol>
+              <p>
+                <strong>用户结果：</strong>Kimi 可接收 hunk comment、返回 thread
+                reply、执行 delegated review，并在重连后恢复。
+              </p>
+            </article>
+
+            <article class="pr-card opencode">
+              <p class="label">PR 2 · OpenCode</p>
+              <h3>复用 PR 1 基础完成 OpenCode</h3>
+              <ol>
+                <li><code>assistant.text</code> 同时解析 reply/review。</li>
+                <li>实现两种 bounded recovery scan。</li>
+                <li>复用共享 event mapping 与 frontend ingestion。</li>
+                <li>OpenCode capability 从 false 翻为 true。</li>
+                <li>
+                  升级 plugin 安装版本至 v4，修复 Unicode clamp；schema 仍为
+                  v1。
+                </li>
+              </ol>
+              <p>
+                <strong>用户结果：</strong>OpenCode 获得与 Kimi/Claude/Codex
+                相同的 hunk review 交互能力。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout info">
+            <p>
+              <strong>依赖关系：</strong>PR 2 应从 PR 1 合并后的 main
+              开始。若必须并行开发，只共享代码思路，不复制 capability
+              foundation；最终 rebase 后保留一个 owner。
+            </p>
+          </div>
+        </section>
+
+        <section id="files" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">10 · Change Surface</p>
+              <h2>预计文件与职责</h2>
+            </div>
+            <p>
+              这是 review map，不是要求机械地修改每个文件；实现时以最小可用 diff
+              为准。
+            </p>
+          </div>
+
+          <div class="table-wrap">
+            <table class="file-table">
+              <thead>
+                <tr>
+                  <th>文件</th>
+                  <th>PR</th>
+                  <th>预期变化</th>
+                  <th>不应承担</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a href="../../src/agents/registry.ts"
+                      >src/agents/registry.ts</a
+                    >
+                  </td>
+                  <td>PR 1 / PR 2</td>
+                  <td>capability SSoT；PR 2 翻 OpenCode flag</td>
+                  <td>transcript/runtime 逻辑</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="../../src/features/workspace/WorkspaceView.tsx"
+                      >WorkspaceView.tsx</a
+                    >
+                  </td>
+                  <td>PR 1</td>
+                  <td>
+                    从 registry 取 label/capability，删除 ternary allowlist
+                  </td>
+                  <td>按 provider 解析回复</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../src/features/diff/services/activePanePicker.ts"
+                      >activePanePicker.ts</a
+                    >
+                  </td>
+                  <td>PR 1</td>
+                  <td>按 typed capability 筛选，不再比较 display label</td>
+                  <td>维护第二份 agent registry</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="../../crates/backend/src/agent/reply.rs"
+                      >agent/reply.rs</a
+                    >
+                  </td>
+                  <td>PR 1</td>
+                  <td>保留共享 reply schema；可承载小型 sentinel selector</td>
+                  <td>provider turn boundary</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="../../crates/backend/src/agent/review.rs"
+                      >agent/review.rs</a
+                    >
+                  </td>
+                  <td>PR 1</td>
+                  <td>复用 last-complete-block 规则</td>
+                  <td>Kimi/OpenCode DTO</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../crates/backend/src/agent/adapter/kimi/transcript.rs"
+                      >kimi/transcript.rs</a
+                    >
+                  </td>
+                  <td>PR 1</td>
+                  <td>live reply/review + provider-local recovery</td>
+                  <td>共享 schema 复制</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="../../crates/backend/src/agent/adapter/kimi/mod.rs"
+                      >kimi/mod.rs</a
+                    >
+                  </td>
+                  <td>PR 1</td>
+                  <td>override TranscriptStreamer recovery hooks</td>
+                  <td>新 AgentAdapter method</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../crates/backend/src/agent/adapter/opencode/transcript.rs"
+                      >opencode/transcript.rs</a
+                    >
+                  </td>
+                  <td>PR 2</td>
+                  <td>assistant.text live/recovery 双协议解析</td>
+                  <td>重新聚合 message snapshots</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../crates/backend/src/agent/adapter/opencode/mod.rs"
+                      >opencode/mod.rs</a
+                    >
+                  </td>
+                  <td>PR 2</td>
+                  <td>override TranscriptStreamer recovery hooks</td>
+                  <td>bridge install/schema 变化</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="tests" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">11 · Verification</p>
+              <h2>测试架构：共享基本面，provider 证明原生文本</h2>
+            </div>
+            <p>
+              测试边界与生产边界保持一致：共享层证明协议和 recovery
+              生命周期；每个 adapter 只证明自己的 transcript 如何产生完整
+              reviewer text。不要把同一套前端行为复制四遍。
+            </p>
+          </div>
+
+          <div class="flow-grid" aria-label="四层测试职责">
+            <article class="flow-card">
+              <span class="number">01 · PROTOCOL</span>
+              <h3>Shared parser</h3>
+              <p>
+                sentinel 选择、JSON schema、malformed 降级、finding 校验；与
+                provider 无关，只测一次。
+              </p>
+            </article>
+            <article class="flow-card">
+              <span class="number">02 · RUNTIME</span>
+              <h3>Base recovery</h3>
+              <p>
+                source 保存、stop 后可恢复、forget、error forwarding 与 bounded
+                line scan；同 provider/root 才继承 history，跨 provider/root
+                replacement 必须清空旧路径。
+              </p>
+            </article>
+            <article class="flow-card">
+              <span class="number">03 · PROVIDER</span>
+              <h3>Native transcript contract</h3>
+              <p>
+                Claude assistant、Codex task_complete、Kimi parts、OpenCode
+                assistant.text 各自还原 reviewer text。
+              </p>
+            </article>
+            <article class="flow-card">
+              <span class="number">04 · FRONTEND</span>
+              <h3>Normalized ingestion</h3>
+              <p>
+                provider 消失后只测 nonce、owner、thread/hunk 落点；agent
+                capability 另做薄测试。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout good">
+            <p>
+              <strong>最小中心接口：</strong>生产代码继续使用现有
+              <code>TranscriptStreamer::recover_replies/recover_reviews</code>
+              与共享
+              <code>extract_agent_reply/extract_agent_review</code
+              >。测试中不再造 “universal completed turn” trait 或四-provider
+              宏；各 transcript envelope 差异太大，provider-local builder +
+              一张一致性 checklist 更直接。
+            </p>
+          </div>
+
+          <h3 style="margin-top: 24px">Codebase grind：现有覆盖与真实缺口</h3>
+          <div class="table-wrap" style="margin-top: 12px">
+            <table class="test-table">
+              <thead>
+                <tr>
+                  <th>层 / 文件</th>
+                  <th>现在已经证明</th>
+                  <th>本次需要补的最小测试</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a href="../../crates/backend/src/agent/reply.rs"
+                      >agent/reply.rs</a
+                    >
+                  </td>
+                  <td>
+                    最后完整 block 胜出；trailing orphan 不遮挡；完整
+                    schema/status/target；malformed nonce 恢复。
+                  </td>
+                  <td>无需新增 provider case；它已经是 reply 协议 SSoT。</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="../../crates/backend/src/agent/review.rs"
+                      >agent/review.rs</a
+                    >
+                  </td>
+                  <td>
+                    finding scope/category/schema；非法 finding omission；clean
+                    review； malformed nonce/reviewer 恢复。
+                  </td>
+                  <td>
+                    reply/review 共用 standalone-line selector；补 block-quoted
+                    marker、JSON text 内 marker literal、24 KiB raw-byte limit。
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../crates/backend/src/agent/adapter/base/transcript_state.rs"
+                      >base/transcript_state.rs</a
+                    >
+                  </td>
+                  <td>
+                    目前只证明 stop 后 <code>recover_replies</code> 仍委托原
+                    streamer， 不会重启 tailer；forget 后返回空。
+                  </td>
+                  <td>
+                    把同一 test double 扩为 reply + review：验证 path/nonces
+                    原样传递、 两种 error 原样返回、forget
+                    后两者均为空。最多两个 focused tests。
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../crates/backend/src/agent/adapter/base/transcript_tail_service.rs"
+                      >base/transcript_tail_service.rs</a
+                    >
+                  </td>
+                  <td>
+                    partial line、EOF、CRLF、oversize skip/resume、read error
+                    已有完整 bounded scanner coverage。
+                  </td>
+                  <td>
+                    行为不改就不加测试；provider recovery 直接复用现有 reader。
+                  </td>
+                </tr>
+                <tr>
+                  <td>Frontend hooks / hunk thread</td>
+                  <td>
+                    nonce/session gate、recovery chunk、owner hydration、finding
+                    落点、clean review、late reply、multi-turn thread 已覆盖。
+                  </td>
+                  <td>
+                    不按 agent 复制 hook/integration tests；只补 registry
+                    capability 与 picker filtering。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 style="margin-top: 24px">Claude / Codex establishment 对照</h3>
+          <div class="table-wrap" style="margin-top: 12px">
+            <table class="status-table">
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>原生 reviewer text 来源</th>
+                  <th>Live 已覆盖</th>
+                  <th>Recovery 已覆盖</th>
+                  <th>需要加固</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Claude Code</strong></td>
+                  <td>
+                    <code>assistant</code> row 的 text blocks；仅
+                    <code>stop_reason=end_turn</code> 完成。
+                  </td>
+                  <td>
+                    reply/review 有 sentinel emit；无 sentinel 不 emit；reply
+                    replay gate。
+                  </td>
+                  <td>
+                    reply/review 仅 completed assistant turn；同 nonce 的不同
+                    normalized payload 按 transcript 顺序保留，内容相同则幂等。
+                  </td>
+                  <td>
+                    review replay gate；review recovery 加 unrelated
+                    nonce；最好用多个 text block 证明 joined text。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Codex</strong></td>
+                  <td>
+                    <code>event_msg/task_complete</code> 的
+                    <code>last_agent_message</code>。
+                  </td>
+                  <td>reply/review emit/no-emit；reply replay gate。</td>
+                  <td>
+                    现有 requested nonce coverage；需要改为保留同 nonce 的所有
+                    completed turns。
+                  </td>
+                  <td>
+                    review replay gate；review recovery 加 unrelated nonce，与
+                    reply test 对称。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Kimi Code</strong></td>
+                  <td>
+                    main wire 的连续 <code>content.part(type=text)</code>，在
+                    <code>step.end/end_turn</code> 合并完成。
+                  </td>
+                  <td>
+                    reply 已覆盖 split parts、think/sub-agent 排除、tool_use 不
+                    flush、abort reset、replay drain。
+                  </td>
+                  <td class="no">尚无 reply/review recovery。</td>
+                  <td>
+                    复用同一 turn accumulator 补 review live/replay/recovery。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>OpenCode</strong></td>
+                  <td>
+                    bridge 在 <code>session.idle</code> 写出的完整
+                    <code>assistant.text</code>。
+                  </td>
+                  <td>reply emit/no-emit/replay gate。</td>
+                  <td class="no">尚无 reply/review recovery。</td>
+                  <td>
+                    在同一 row 上补 review；recovery 只接受 assistant.text；v4
+                    修复 UTF-8 安全 tail clamp。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout info">
+            <p>
+              <strong>审计结论：</strong>Claude/Codex
+              已建立正确的三段式形状：native completion gate → shared parser →
+              normalized event，并在 recovery 中复制同一个 completion
+              gate。Kimi/OpenCode 应复制这个<strong>行为结构</strong>，不是复制
+              Claude/Codex 的 DTO 代码。现有 frontend hook 已经
+              provider-neutral。
+            </p>
+          </div>
+
+          <h3 style="margin-top: 24px">每个 provider 的最小一致性契约</h3>
+          <div class="table-wrap">
+            <table class="test-table">
+              <thead>
+                <tr>
+                  <th>契约</th>
+                  <th>共同断言</th>
+                  <th>Provider 自己决定的部分</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Live completed turn</td>
+                  <td>
+                    普通 reviewer prose +
+                    <code>VIMEFLOW_REVIEW</code> 只产生一个
+                    <code>AgentReviewEvent</code>；断言
+                    sessionId、nonce、reviewer、finding text/scope。
+                  </td>
+                  <td>什么 row/字段代表 assistant text 与 completion。</td>
+                </tr>
+                <tr>
+                  <td>Not completed / wrong source</td>
+                  <td>不产生 live review。</td>
+                  <td>
+                    Claude tool_use、Codex 非 task_complete、Kimi
+                    think/sub-agent/tool_use、 OpenCode 非 assistant.text。
+                  </td>
+                </tr>
+                <tr>
+                  <td>Replay</td>
+                  <td>历史 transcript 不重新 emit live review。</td>
+                  <td>各 decoder 自己的 caught-up / replay_done 边界。</td>
+                </tr>
+                <tr>
+                  <td>Recovery</td>
+                  <td>
+                    reply 保留全局最新 128 个 requested matches 并按原序返回；
+                    review 每 nonce 只返回首个 completed
+                    match；unrelated/incomplete 忽略；sessionId 使用调用方 PTY。
+                  </td>
+                  <td>如何从历史 rows 重建 completed reviewer text。</td>
+                </tr>
+                <tr>
+                  <td>No sentinel</td>
+                  <td>普通文本不产生 reply/review。</td>
+                  <td>只需 provider 的最小合法 native row。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 style="margin-top: 24px">两个 PR 的具体测试增量</h3>
+          <div class="grid-2" style="margin-top: 12px">
+            <article class="card">
+              <p class="label">PR 1 · Foundation + Kimi</p>
+              <ol>
+                <li>
+                  Shared parser：standalone/block-quoted marker、JSON text
+                  marker literal、last complete、trailing orphan 与 24 KiB
+                  limit。
+                </li>
+                <li>
+                  Base TranscriptState：reply + review
+                  delegation/lifecycle；两种 recovery error forwarding。
+                </li>
+                <li>
+                  Kimi live：split text review 在 main end_turn
+                  emit；think、sub-agent、tool_use 不 emit；replay 不 emit。
+                </li>
+                <li>
+                  Kimi recovery：A→B→C wire history 全扫；reply 断言 same-nonce
+                  顺序，review 断言每 nonce 首个；validator/NotFound skip 与
+                  fatal read error 分开测试。
+                </li>
+                <li>
+                  Frontend：picker 根据
+                  <code>supportsHunkReview</code>，不再根据 label；Kimi
+                  true、OpenCode false、Shell false。
+                </li>
+              </ol>
+            </article>
+            <article class="card">
+              <p class="label">PR 2 · OpenCode</p>
+              <ol>
+                <li>
+                  OpenCode live：assistant.text review emit/no-emit；replay
+                  review 不 emit。
+                </li>
+                <li>
+                  OpenCode recovery：同一 bridge JSONL 放 requested same-nonce
+                  turns、unrelated 与非 assistant.text row； reply
+                  保序返回，review 每 nonce 只取首个。
+                </li>
+                <li>
+                  同时锁住 reply recovery，防止实现 review 时只接半条协议。
+                </li>
+                <li>
+                  Registry/picker：只把 OpenCode capability 从 false 翻
+                  true；Shell 仍 false。
+                </li>
+                <li>
+                  增加 plugin v4 安装与 astral-character prefix 测试，证明 clamp
+                  不产生 unpaired surrogate 或无效 JSONL；超过 256 个顺序 text
+                  parts 拼出的完整 24 KiB block 仍被保留；同 part snapshot
+                  只替换不 重复；非连续旧 part 更新 fail closed；oversized
+                  active snapshot、 multi-message 与 message 257 在 idle 前遵守
+                  session-wide byte/message caps；session.error 不得把失败 turn
+                  泄漏到下一次 idle；backend 启动、 PTY 创建前安装
+                  v4，失败则本次运行无 OpenCode live candidate，attach retry
+                  只准备下一次 backend run；assistant.text 写入
+                  startsAtLineBoundary，旧 v1 row 缺字段按 false；record schema
+                  version 仍为 v1。
+                </li>
+              </ol>
+            </article>
+          </div>
+
+          <details>
+            <summary>刻意不复制哪些测试？</summary>
+            <ul>
+              <li>
+                不给四个 agent 各复制 finding schema、malformed JSON、last-block
+                tests；这些属于 shared parser。
+              </li>
+              <li>
+                不给四个 agent 各复制 frontend nonce/owner/hunk-placement
+                tests；normalized event 进入 UI 后 provider 已经不可见。
+              </li>
+              <li>
+                不建立一套 provider conformance macro；四个 native envelope
+                不同，宏只会隐藏测试 输入，降低 reviewer 可读性。
+              </li>
+              <li>
+                不为 OpenCode 做 breaking schema-version
+                变化或数据库迁移；只修复 producer 的 Unicode-safe byte
+                clamp，并给 assistant.text 增加向后兼容的可选 provenance 字段。
+              </li>
+            </ul>
+          </details>
+
+          <div class="grid-2" style="margin-top: 16px">
+            <article class="card">
+              <p class="label">Automated Gate</p>
+              <pre>
+cargo test -p vimeflow-backend agent::
+npx vitest run src/features/diff src/features/workspace src/agents
+npm run type-check
+npm run lint
+npm run format:check</pre
+              >
+            </article>
+            <article class="card">
+              <p class="label">Manual Smoke Per PR</p>
+              <ol>
+                <li>运行目标 agent，创建一个 hunk comment 并 Finish。</li>
+                <li>确认结构化 reply 回到原 thread。</li>
+                <li>Request review，确认 finding 锚定到正确 hunk。</li>
+                <li>切换 pane/重载后确认 pending result 可恢复。</li>
+                <li>确认 shell 与尚未启用的 agent 不出现在 picker。</li>
+              </ol>
+            </article>
+          </div>
+        </section>
+
+        <section id="risks" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">12 · Risks &amp; Invariants</p>
+              <h2>实现时不能简化掉的边界</h2>
+            </div>
+            <p>
+              这些不是未来扩展；它们直接防止错 thread、重复 finding、内存放大和
+              transcript 越界读取。
+            </p>
+          </div>
+
+          <div class="grid-3">
+            <article class="card">
+              <p class="label">Correlation</p>
+              <h3>Nonce 必须匹配 pending request</h3>
+              <p>
+                未请求或已 superseded 的 nonce 不能进入当前 hunk review state。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Completion</p>
+              <h3>只能解析完整 assistant turn</h3>
+              <p>
+                不能扫描用户 prompt，也不能在 streaming 中间看到半个 sentinel 就
+                emit。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Bounds</p>
+              <h3>内存与行长度必须有限</h3>
+              <p>Kimi 保持 32 KiB tail；recovery 使用 bounded-line reader。</p>
+            </article>
+            <article class="card">
+              <p class="label">Path Security</p>
+              <h3>只扫描已验证 transcript</h3>
+              <p>
+                session gate 内先 stop/join 旧 tailer，再 snapshot 默认空的
+                recovery_paths()；所有来源必须已经
+                validated/canonicalized，merge 只按 exact original path
+                去重并保留 newest 256，不能提前丢掉同一 canonical target 的不同
+                aliases。只有相同的非空 RecoveryDomain（agent type + canonical
+                validator trust root）才继承旧 history；跨 provider、root
+                变化或默认 None 都清空旧路径，且 domain 是 start_or_replace
+                identity 的一部分。recovery clone source 前获取同一 session
+                gate；每次 open registration 从 validator 起就同时传递 original
+                provider path 与 canonical identity；live tail 使用 canonical
+                path，恢复保留 original 做 revalidate + no-follow open，避免
+                start_or_replace 丢失任一语义。恢复时 validator 用 original path
+                校验 canonical containment；任何 validation error 都只跳过该
+                candidate。成功项按新 canonical identity 分组，不先丢
+                aliases；每组从 newest original path 开始调用 filesystem 的 leaf
+                open_nofollow，NotFound/Symlink 则试下一个 alias， 首个可读
+                alias 只扫描一次。group ordinal 固定取 newest member
+                的原始位置， fallback 不改变 timestamp tie order；其他 I/O 可
+                propagate。它拒绝删除、已有越界路径与 leaf symlink，但不
+                虚假宣称解决同用户反复替换 parent component 的竞态；后者需要全仓
+                fd-relative traversal。任何情况下都不能接受 renderer 任意路径。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Replay</p>
+              <h3>历史扫描不等于 live emit</h3>
+              <p>
+                live decoder 的 replay gate 与显式 recovery
+                是两条不同意图的路径。
+              </p>
+            </article>
+            <article class="card">
+              <p class="label">Capability</p>
+              <h3>只有完整链路才能标 true</h3>
+              <p>
+                只有 parser 而无 recovery 或 UI reachability 时，不能宣称支持
+                hunk review。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout danger">
+            <p>
+              <strong>不要做：</strong>新增 provider-specific event、把 provider
+              name 塞进 frontend routing、让 OpenCode PR 修改 bridge schema、把
+              recovery 路径改成 renderer 提供文件路径、或为了四个 adapter
+              新建一套 factory/interface 层。
+            </p>
+          </div>
+        </section>
+
+        <section id="review" class="section">
+          <div class="section-head">
+            <div>
+              <p class="label">13 · Human Review Checklist</p>
+              <h2>请确认这些架构决定</h2>
+            </div>
+            <p>
+              全部确认后即可按 PR 1 → PR 2 实施，无需再做 foundation design。
+            </p>
+          </div>
+
+          <div class="review-list">
+            <div class="review-item">
+              <span class="check">1</span>
+              <p>
+                <strong>共享边界：</strong>认可 completed assistant text 是
+                adapter 与统一 reply/review protocol 之间的边界。
+              </p>
+            </div>
+            <div class="review-item">
+              <span class="check">2</span>
+              <p>
+                <strong>不新增 BaseAdapter：</strong>继续使用
+                <code>TranscriptStreamer</code> 的 live/recovery
+                contract，不扩展 transitional façade。
+              </p>
+            </div>
+            <div class="review-item">
+              <span class="check">3</span>
+              <p>
+                <strong>前端 SSoT：</strong>在 agent registry 增加一个布尔
+                capability，删除 display-label allowlist。
+              </p>
+            </div>
+            <div class="review-item">
+              <span class="check">4</span>
+              <p>
+                <strong>交付顺序：</strong>PR 1 同时完成共享 foundation 与
+                Kimi；PR 2 基于合并后的 main 完成 OpenCode。
+              </p>
+            </div>
+            <div class="review-item">
+              <span class="check">5</span>
+              <p>
+                <strong>OpenCode bridge：</strong
+                ><code>assistant.text</code> schema version 保持
+                v1；安装版本升至 v4，以 UTF-8-safe clamp 取代 v3 的 UTF-16
+                slice，并携带 startsAtLineBoundary；旧 row 缺字段时 fail
+                closed。
+              </p>
+            </div>
+            <div class="review-item">
+              <span class="check">6</span>
+              <p>
+                <strong>Definition of done：</strong>每个 agent 都必须同时通过
+                dispatch、live reply、reply recovery、live review、review
+                recovery 和 hunk ingestion，才打开 capability。
+              </p>
+            </div>
+          </div>
+
+          <div class="callout good">
+            <p>
+              <strong>推荐批准结论：</strong>这是已有架构的自然补全，不是
+              adapter 重构。最小正确方案是复用共享 parser/event/IPC，在 Kimi 和
+              OpenCode 内分别补齐 completed-turn review 与 recovery。
+            </p>
+          </div>
+        </section>
+
+        <footer class="footer">
+          <strong>Evidence links:</strong>
+          <a href="../../crates/backend/src/agent/adapter/traits.rs"
+            >TranscriptStreamer</a
+          >
+          · <a href="../../crates/backend/src/agent/reply.rs">reply.rs</a> ·
+          <a href="../../crates/backend/src/agent/review.rs">review.rs</a> ·
+          <a href="../../crates/backend/src/agent/adapter/kimi/transcript.rs"
+            >Kimi transcript</a
+          >
+          ·
+          <a
+            href="../../crates/backend/src/agent/adapter/opencode/transcript.rs"
+            >OpenCode transcript</a
+          >
+          · <a href="../../src/agents/registry.ts">agent registry</a> ·
+          <a href="../../src/features/workspace/WorkspaceView.tsx"
+            >WorkspaceView</a
+          >
+          ·
+          <a href="../../src/features/diff/services/activePanePicker.ts"
+            >activePanePicker</a
+          >
+          <br />
+          Prepared for architecture review · 2026-08-01 · No runtime code
+          changed by this note.
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

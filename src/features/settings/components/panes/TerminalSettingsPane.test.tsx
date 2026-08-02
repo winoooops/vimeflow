@@ -1,10 +1,11 @@
+// cspell:ignore Ghostty
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
-import type { SystemFont } from '../../../../bindings/SystemFont'
-import { SettingsProvider } from '../../SettingsProvider'
-import { DEFAULT_SETTINGS } from '../../store/settingsDefaults'
+import type { SystemFont } from '@/bindings/SystemFont'
+import { SettingsProvider } from '@/features/settings/SettingsProvider'
+import { DEFAULT_SETTINGS } from '@/features/settings/store/settingsDefaults'
 import { TerminalSettingsPane } from './TerminalSettingsPane'
 
 interface TestWrapperProps {
@@ -54,7 +55,7 @@ describe('TerminalSettingsPane', () => {
     expect(
       screen.getByRole('heading', { name: 'Terminal' })
     ).toBeInTheDocument()
-    expect(screen.getByText('Shell · Typography')).toBeInTheDocument()
+    expect(screen.getByText('Shell · Typography · Cursor')).toBeInTheDocument()
     expect(screen.getByLabelText('Terminal font family')).toHaveValue(
       'JetBrains Mono'
     )
@@ -97,6 +98,23 @@ describe('TerminalSettingsPane', () => {
     await waitFor(() => {
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({ terminalFontFamily: 'Iosevka' })
+      )
+    })
+  })
+
+  test('persists a bundled cursor effect through the settings store', async () => {
+    const user = userEvent.setup()
+    const { save } = installBridge()
+
+    renderPane()
+
+    await user.selectOptions(screen.getByLabelText('Terminal cursor effect'), [
+      'warp',
+    ])
+
+    await waitFor(() => {
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ terminalCursorEffect: 'warp' })
       )
     })
   })

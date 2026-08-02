@@ -11,7 +11,6 @@ const buildSession = (name = 'auth'): Session => ({
   workingDirectory: '~',
   agentType: 'claude-code',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

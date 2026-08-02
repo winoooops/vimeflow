@@ -17,7 +17,6 @@ const session = (id: string, ptyId: string): Session => ({
   workingDirectory: `/tmp/${id}`,
   agentType: 'claude-code',
   layout: 'single',
-  activityPanelCollapsed: false,
   panes: [
     {
       id: 'p0',

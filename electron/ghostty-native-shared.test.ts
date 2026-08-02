@@ -1,4 +1,4 @@
-// cspell:ignore Ghostty ghostty GHOSTTY
+// cspell:ignore Ghostty ghostty GHOSTTY glsl
 import { describe, expect, test } from 'vitest'
 import {
   isBounds,
@@ -9,6 +9,7 @@ import {
   isSecondaryPlacement,
   isString,
 } from './ghostty-native-shared'
+import { isTerminalCursorEffect } from '@/features/terminal/cursorEffects'
 
 describe('ghostty native shared guards', () => {
   test('validates bounds records', () => {
@@ -45,5 +46,10 @@ describe('ghostty native shared guards', () => {
       true
     )
     expect(isSecondaryPlacement('diagonal')).toBe(false)
+  })
+
+  test('rejects arbitrary cursor shader paths', () => {
+    expect(isTerminalCursorEffect('ripple')).toBe(true)
+    expect(isTerminalCursorEffect('/tmp/custom.glsl')).toBe(false)
   })
 })

@@ -18,6 +18,7 @@ import {
 } from '../../nativeGhosttyClient'
 import { Body as XtermBody, type BodyHandle, type BodyMode } from './Body'
 import { GhosttyBody } from './GhosttyBody'
+import { isTerminalCursorEffect } from '../../cursorEffects'
 
 interface TerminalBodyProps {
   paneId: string
@@ -36,8 +37,8 @@ interface TerminalBodyProps {
   mode: BodyMode
   deferFit: boolean
   terminalFontFamily?: string
-  /** Engine-side resize coalescing for this pane's surface — computed from
-   *  the pane's agent type by TerminalPane; native Ghostty only. */
+  terminalCursorEffect?: string
+  /** Async native fallback PTY resize coalescing for this pane. */
   resizeThrottleMs?: number
 }
 
@@ -66,6 +67,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
       mode,
       deferFit,
       terminalFontFamily = undefined,
+      terminalCursorEffect = 'off',
       resizeThrottleMs = undefined,
     },
     ref
@@ -73,6 +75,10 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
     const xtermRef = useRef<BodyHandle>(null)
     const [nativeUnavailable, setNativeUnavailable] = useState(false)
     const useNativeGhostty = shouldUseNativeGhostty() && !nativeUnavailable
+
+    const cursorEffect = isTerminalCursorEffect(terminalCursorEffect)
+      ? terminalCursorEffect
+      : 'off'
 
     const handleNativeUnavailable = useCallback((): void => {
       setNativeUnavailable(true)
@@ -131,6 +137,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
           shortcutContext={shortcutContext}
           bottomCornerRadius={bottomCornerRadius}
           terminalFontFamily={terminalFontFamily}
+          terminalCursorEffect={cursorEffect}
           resizeThrottleMs={resizeThrottleMs}
           onUnavailable={handleNativeUnavailable}
         />
@@ -150,6 +157,7 @@ export const TerminalBody = forwardRef<TerminalBodyHandle, TerminalBodyProps>(
         mode={mode}
         deferFit={deferFit}
         terminalFontFamily={terminalFontFamily}
+        terminalCursorEffect={cursorEffect}
       />
     )
   }

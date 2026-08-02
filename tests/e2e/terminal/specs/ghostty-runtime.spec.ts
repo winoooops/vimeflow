@@ -1,4 +1,8 @@
 // cspell:ignore Ghostty ghostty
+const renderedFrameFingerprint = (
+  fingerprint: string | null | undefined
+): string | null => /^id=[^,]+,seed=[^,]+/.exec(fingerprint ?? '')?.[0] ?? null
+
 describe('Ghostty native terminal runtime', () => {
   before(async function () {
     if (
@@ -54,5 +58,51 @@ describe('Ghostty native terminal runtime', () => {
       hasNativePane: true,
       hasXtermTextarea: false,
     })
+  })
+
+  it('has Ghostty accept and present the selected cursor shader', async () => {
+    await (await $('[data-testid="sidebar-settings-footer"]')).click()
+    await (
+      await $('[role="dialog"][aria-label="Settings"]')
+    ).waitForDisplayed({ timeout: 8_000 })
+
+    await browser.execute(() => {
+      const terminalButton = Array.from(
+        document.querySelectorAll('[role="dialog"] nav button')
+      ).find((button) => (button.textContent ?? '').includes('Terminal'))
+      ;(terminalButton as HTMLElement | undefined)?.click()
+    })
+
+    const cursorEffect = await $('select[aria-label="Terminal cursor effect"]')
+    await cursorEffect.waitForEnabled({ timeout: 8_000 })
+    await cursorEffect.selectByAttribute('value', 'off')
+    const offFingerprint = await browser.execute(
+      async () => await window.__VIMEFLOW_E2E__?.readGhosttyPresentation()
+    )
+    const offFrameFingerprint = renderedFrameFingerprint(offFingerprint)
+    await cursorEffect.selectByAttribute('value', 'warp')
+
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(async (previousFrameFingerprint) => {
+          const fingerprint =
+            await window.__VIMEFLOW_E2E__?.readGhosttyPresentation()
+          const frameFingerprint =
+            /^id=[^,]+,seed=[^,]+/.exec(fingerprint ?? '')?.[0] ?? null
+
+          return (
+            frameFingerprint !== previousFrameFingerprint &&
+            (fingerprint?.endsWith('/cursor_warp.glsl') ?? false)
+          )
+        }, offFrameFingerprint),
+      {
+        timeout: 8_000,
+        interval: 250,
+        timeoutMsg:
+          'native Ghostty did not accept and present cursor_warp.glsl',
+      }
+    )
+
+    await (await $('[role="dialog"] button[aria-label="Close"]')).click()
   })
 })

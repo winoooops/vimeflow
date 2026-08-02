@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty
 import type {
   AgentAlias,
   KeymapGroup,
@@ -81,6 +82,7 @@ export const SETTINGS_TARGET_IDS = {
   versionDiffFileHeader: 'version-diff-file-header',
   versionDiffStickyHeader: 'version-diff-sticky-header',
   terminalFontFamily: 'terminal-font-family',
+  terminalCursorEffect: 'terminal-cursor-effect',
   keymapPreset: 'keymap-preset',
   agentsManageAliases: 'agents-manage-aliases',
   agentsShellAliases: 'agents-shell-aliases',
@@ -275,6 +277,13 @@ export const SETTINGS_TARGETS: SettingsTarget[] = [
     label: 'Terminal Font',
     hint: 'Font family used by terminal panes.',
     subsection: 'Typography',
+  },
+  {
+    id: SETTINGS_TARGET_IDS.terminalCursorEffect,
+    section: 'terminal',
+    label: 'Cursor Effect',
+    hint: 'Animated cursor shader used by native Ghostty on macOS.',
+    subsection: 'Cursor',
   },
   {
     id: SETTINGS_TARGET_IDS.keymapPreset,
