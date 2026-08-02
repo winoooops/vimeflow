@@ -27,10 +27,11 @@ const addonSource = join(
 const addonOutput = join(outputDir, 'ghostty_native_parent.node')
 const bridgeOutput = join(outputDir, 'libGhosttyElectronBridge.dylib')
 const shaderSourceDir = join(repoRoot, 'native/ghostty-parent/shaders')
+const ghosttyPackageIdentity = 'libghostty-spm-shaders'
 
 const ghosttyScratchXcframework = join(
   scratchDir,
-  'artifacts/libghostty-spm/libghostty/GhosttyKit.xcframework'
+  `artifacts/${ghosttyPackageIdentity}/libghostty/GhosttyKit.xcframework`
 )
 const ghosttyScratchPlist = join(ghosttyScratchXcframework, 'Info.plist')
 
