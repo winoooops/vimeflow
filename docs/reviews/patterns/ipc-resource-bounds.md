@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-08-02
-ref_count: 10
+ref_count: 11
 ---
 
 # IPC Resource Bounds
@@ -259,4 +259,19 @@ not become repeated unhandled main-process failures.
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`, `crates/backend/src/agent/adapter/claude_code/hooks.rs`
 - **Finding:** Codex and Claude attention events reused provider request/tool IDs as IPC dedupe keys without applying the length bound already used by the sibling OpenCode path.
 - **Fix:** Added 256-character dedupe-key truncation in both adapters and regression tests proving oversized IDs are bounded before event emission.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 20. Native notification-center action validators drifted from renderer payloads
+
+- **Source:** github-codex-connector | PR #772 round 2 | 2026-08-02
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** The notification-center native overlay validator rejected empty
+  item arrays and omitted the renderer-supplied `actions.close` field. A normal
+  live update after the last notification was dismissed could reject the native
+  render and leave a stale overlay behind the DOM fallback, while the close
+  action crossed IPC without the same length bound as sibling action IDs.
+- **Fix:** Allowed bounded empty notification item arrays, added `close` to the
+  main-process action type and validator, and covered both the empty-update and
+  oversized-close-action cases in native overlay tests.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

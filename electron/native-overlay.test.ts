@@ -418,6 +418,7 @@ const notificationCenterDialogRequest = {
     actions: {
       markAllRead: 'notification:mark-all-read',
       clear: 'notification:clear',
+      close: 'notification:close',
     },
   },
 } as const
@@ -2441,6 +2442,51 @@ describe('NativeOverlayController', () => {
         key: 'Escape',
       })
     )
+  })
+
+  test('accepts an empty notification center dialog payload', async () => {
+    const emptyRequest = {
+      ...notificationCenterDialogRequest,
+      payload: {
+        ...notificationCenterDialogRequest.payload,
+        items: [],
+      },
+    }
+
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      emptyRequest
+    )
+    const menuWindow = finishOverlayLoad()
+    finishOverlayLoad(1)
+
+    await acknowledgeOverlayReady(menuWindow, emptyRequest.surfaceId)
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+    expect(menuWindow.webContents.send).toHaveBeenCalledWith(
+      NATIVE_OVERLAY_RENDER,
+      emptyRequest
+    )
+  })
+
+  test('rejects an unbounded notification center close action id', async () => {
+    const oversizedCloseAction = {
+      ...notificationCenterDialogRequest,
+      payload: {
+        ...notificationCenterDialogRequest.payload,
+        actions: {
+          ...notificationCenterDialogRequest.payload.actions,
+          close: 'x'.repeat(257),
+        },
+      },
+    }
+
+    await expect(
+      handler(NATIVE_OVERLAY_OPEN)(
+        { sender: electronMock.owner.webContents },
+        oversizedCloseAction
+      )
+    ).resolves.toEqual({ accepted: false, reason: 'invalid-payload' })
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   test('rejects unbounded notification center items and strings', async () => {

@@ -282,6 +282,7 @@ interface NativeOverlayNotificationCenterItem {
 interface NativeOverlayNotificationCenterActions {
   markAllRead: string
   clear: string
+  close: string
 }
 
 interface NativeOverlayNotificationCenterDialogPayload {
@@ -913,7 +914,8 @@ const isNotificationCenterActions = (
 ): value is NativeOverlayNotificationCenterActions =>
   isRecord(value) &&
   isBoundedString(value.markAllRead, MAX_NOTIFICATION_ACTION_ID_LENGTH) &&
-  isBoundedString(value.clear, MAX_NOTIFICATION_ACTION_ID_LENGTH)
+  isBoundedString(value.clear, MAX_NOTIFICATION_ACTION_ID_LENGTH) &&
+  isBoundedString(value.close, MAX_NOTIFICATION_ACTION_ID_LENGTH)
 
 const isNotificationCenterDialogPayload = (
   value: unknown
@@ -921,7 +923,7 @@ const isNotificationCenterDialogPayload = (
   isRecord(value) &&
   value.dialog === 'notification-center' &&
   isBoundedString(value.ariaLabel, MAX_NOTIFICATION_TITLE_LENGTH) &&
-  isNonEmptyBoundedArray(
+  isBoundedArray(
     value.items,
     MAX_NOTIFICATION_CENTER_ITEMS,
     isNotificationCenterItem

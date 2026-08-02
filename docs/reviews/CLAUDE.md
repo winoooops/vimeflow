@@ -72,7 +72,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
-| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 19       | 10   | 2026-08-02   |
+| [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 20       | 11   | 2026-08-02   |
 | [Preflight Checks](patterns/preflight-checks.md)                                                     | error-handling     | 3        | 0    | 2026-05-31   |
 | [CSP Configuration](patterns/csp-configuration.md)                                                   | security           | 8        | 5    | 2026-05-16   |
 | [Network Request Hardening](patterns/network-request-hardening.md)                                   | security           | 1        | 1    | 2026-06-08   |
