@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'react'
-import type { FocusEvent, ReactElement, RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { FocusEvent, KeyboardEvent, ReactElement, RefObject } from 'react'
 import { IconButton } from '@/components/IconButton'
+import { ResizeHandle } from '@/components/ResizeHandle'
 import {
   chordToAriaShortcut,
   chordToShortcutInput,
 } from '@/features/keymap/displayKey'
 import type { Keybindings } from '@/features/keymap/useKeybindings'
+import { useResizable } from '@/hooks/useResizable'
 import type { ShortcutInput } from '@/lib/formatShortcut'
+import { DIFF_MIN_WIDTH_PX } from './toolbar'
 import { sumLines } from '../utils/sumLines'
 import type { ChangedFile } from '../types'
 
@@ -57,6 +60,11 @@ interface ChangedFileItemProps {
 }
 
 const hasNoReviewComments = (): boolean => false
+const PINNED_WIDTH_INITIAL = 256
+const PINNED_WIDTH_MIN = 192
+const PINNED_WIDTH_MAX = 480
+const RESIZE_STEP = 20
+const RESIZE_SHIFT_STEP = 100
 
 const getDisplayName = (path: string): string => {
   const trimmedPath = path.replace(/\/+$/u, '')
@@ -418,6 +426,21 @@ export const ChangedFilesListSurface = ({
   onAddFileComment,
   hasReviewComments = hasNoReviewComments,
 }: ChangedFilesListSurfaceProps): ReactElement => {
+  const paneRef = useRef<HTMLDivElement | null>(null)
+  const [pinnedWidthMax, setPinnedWidthMax] = useState(PINNED_WIDTH_MAX)
+
+  const {
+    size: pinnedWidth,
+    isDragging,
+    handleMouseDown,
+    adjustBy,
+    resetToSize,
+    sizeRef,
+  } = useResizable({
+    initial: PINNED_WIDTH_INITIAL,
+    min: PINNED_WIDTH_MIN,
+    max: pinnedWidthMax,
+  })
   const surfaceSelectionKey = getSelectionKey(selectedFile)
   const initialSelectionKeyRef = useRef<string | null>(surfaceSelectionKey)
   const hasObservedPostMountSelectionRef = useRef(selectedFile === null)
@@ -430,6 +453,46 @@ export const ChangedFilesListSurface = ({
     }
   }, [surfaceSelectionKey])
 
+  useEffect(() => {
+    const parent = paneRef.current?.parentElement
+
+    if (!pinned || parent === undefined || parent === null) {
+      return
+    }
+
+    const syncPinnedMax = (width: number): void => {
+      if (width <= 0) {
+        return
+      }
+
+      const nextMax = Math.max(
+        PINNED_WIDTH_MIN,
+        Math.min(PINNED_WIDTH_MAX, width - DIFF_MIN_WIDTH_PX)
+      )
+
+      setPinnedWidthMax(nextMax)
+      resetToSize(sizeRef.current, PINNED_WIDTH_MIN, nextMax)
+    }
+
+    syncPinnedMax(parent.getBoundingClientRect().width)
+
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      syncPinnedMax(
+        entries[0]?.contentRect.width ?? parent.getBoundingClientRect().width
+      )
+    })
+
+    observer.observe(parent)
+
+    return (): void => {
+      observer.disconnect()
+    }
+  }, [pinned, resetToSize, sizeRef])
+
   const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
     const nextTarget = event.relatedTarget
 
@@ -441,6 +504,24 @@ export const ChangedFilesListSurface = ({
     }
 
     onScheduleHide()
+  }
+
+  const handleResizeKeyDown = (event: KeyboardEvent): void => {
+    const step = event.shiftKey ? RESIZE_SHIFT_STEP : RESIZE_STEP
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      adjustBy(step)
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      adjustBy(-step)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      adjustBy(PINNED_WIDTH_MIN - pinnedWidth)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      adjustBy(pinnedWidthMax - pinnedWidth)
+    }
   }
 
   const list = (
@@ -463,10 +544,23 @@ export const ChangedFilesListSurface = ({
   if (pinned) {
     return (
       <div
+        ref={paneRef}
         data-testid="changed-files-pane"
-        className="h-full w-64 shrink-0 overflow-hidden border-r border-outline-variant/30 bg-surface-container-high/85"
+        style={{ width: pinnedWidth }}
+        className="relative h-full shrink-0 overflow-hidden border-r border-outline-variant/30 bg-surface-container-high/85"
       >
         {list}
+        <ResizeHandle
+          orientation="vertical"
+          isDragging={isDragging}
+          ariaValueNow={pinnedWidth}
+          ariaValueMin={PINNED_WIDTH_MIN}
+          ariaValueMax={pinnedWidthMax}
+          ariaLabel="Resize changed files"
+          onMouseDown={handleMouseDown}
+          onKeyDown={handleResizeKeyDown}
+          className="absolute bottom-0 right-0 top-0 z-10 w-1"
+        />
       </div>
     )
   }

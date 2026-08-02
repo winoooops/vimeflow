@@ -2,8 +2,8 @@
 id: resizable-layout-bounds
 category: correctness
 created: 2026-06-18
-last_updated: 2026-06-18
-ref_count: 3
+last_updated: 2026-08-02
+ref_count: 5
 ---
 
 # Resizable Layout Bounds
@@ -59,4 +59,34 @@ model and the rendered grid stay consistent and no pane becomes inaccessible.
   `useElasticContainer`, and made `useElasticContainer` recompute its pixel
   bounds when the configured percent limits change. The controller now clamps
   to the same range that `updateTrackBoundaryRatio` enforces.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. Clamp pinned changed-files width to its container
+
+- **Source:** github-codex-connector | PR #773 round 1 | 2026-08-02
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx` L436
+- **Finding:** The pinned changed-files pane used a fixed 480px maximum even
+  when the diff body was narrower than that. Dragging right or pressing End in
+  a narrow dock could make the sidebar consume the body region, collapse the
+  diff pane, and clip the resize handle so mouse users could not shrink it.
+- **Fix:** Derived the pinned maximum from the observed diff body width,
+  reserved a minimum width for the diff pane, and re-clamped the current
+  sidebar size when the container resizes. Added regression coverage for the
+  keyboard End path, mouse drag clamping, and container shrink re-clamping.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 5. Reserve the rendered diff pane's real minimum width
+
+- **Source:** github-claude | PR #773 round 2 | 2026-08-02
+- **Severity:** MEDIUM
+- **File:** `src/features/diff/components/ChangedFilesList.tsx` L63
+- **Finding:** The pinned changed-files clamp reserved a local 192px for the
+  diff pane even though the diff renderer treats widths below
+  `DIFF_MIN_WIDTH_PX` (360px) as too narrow and swaps to the narrow
+  placeholder. The sidebar could therefore remain within its own bounds while
+  still collapsing the usable diff view.
+- **Fix:** Reused `DIFF_MIN_WIDTH_PX` from the diff toolbar contract when
+  deriving the sidebar maximum, and updated clamp regression tests to assert
+  the shared 360px reserve.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
