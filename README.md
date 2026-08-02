@@ -173,7 +173,7 @@ Five animated cursor trails, off by default. On macOS they run as real GLSL shad
 
 <sub><i>Try it:<br>1. Open **Settings** → **Terminal**.<br> 2. Set **Cursor Effect** to any of Warp, Sweep, Tail, Ripple, or Sonic Boom — it applies live, no restart.<br> 3. Set it back to **Off** to disable.</i></sub>
 
-<sub><i>On macOS these need a `libghostty` with the shader compiler kept in, which [upstream](https://github.com/Lakr233/libghostty-spm) trims out — packaged builds link an [alternate version](https://github.com/winoooops/libghostty-spm) that keeps it. Linux needs no fork. Shaders are MIT by Sahaj Bhatt ([`sahaj-b/ghostty-cursor-shaders`](https://github.com/sahaj-b/ghostty-cursor-shaders)).</i></sub>
+<sub><i>On macOS these need a `libghostty` with the shader compiler kept in, which [upstream](https://github.com/Lakr233/libghostty-spm) trims out — packaged builds link an [alternate version](https://github.com/winoooops/libghostty-spm-shaders) that keeps it. Linux needs no fork. Shaders are MIT by Sahaj Bhatt ([`sahaj-b/ghostty-cursor-shaders`](https://github.com/sahaj-b/ghostty-cursor-shaders)).</i></sub>
 
 ## Linux
 

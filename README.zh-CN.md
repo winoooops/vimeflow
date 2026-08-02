@@ -173,7 +173,7 @@ The Lens 主题系统内置了多套主题 —— **Catppuccin**（默认深色�
 
 <sub><i>Try it:<br>1. 打开 **设置** → **终端**。<br> 2. 将 **Cursor Effect** 设为 Warp、Sweep、Tail、Ripple 或 Sonic Boom 之一 —— 实时生效，无需重启。<br> 3. 设回 **Off** 即可关闭。</i></sub>
 
-<sub><i>macOS 上这些特效需要保留着色器编译器的 `libghostty`，而[上游](https://github.com/Lakr233/libghostty-spm)将其裁掉了 —— 打包版本链接的是保留它的[替代版本](https://github.com/winoooops/libghostty-spm)。Linux 不需要。着色器为 MIT 协议，作者 Sahaj Bhatt（[`sahaj-b/ghostty-cursor-shaders`](https://github.com/sahaj-b/ghostty-cursor-shaders)）。</i></sub>
+<sub><i>macOS 上这些特效需要保留着色器编译器的 `libghostty`，而[上游](https://github.com/Lakr233/libghostty-spm)将其裁掉了 —— 打包版本链接的是保留它的[替代版本](https://github.com/winoooops/libghostty-spm-shaders)。Linux 不需要。着色器为 MIT 协议，作者 Sahaj Bhatt（[`sahaj-b/ghostty-cursor-shaders`](https://github.com/sahaj-b/ghostty-cursor-shaders)）。</i></sub>
 
 ## Linux
 
