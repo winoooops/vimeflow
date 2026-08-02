@@ -7,6 +7,7 @@ const makePane = (
   ptyId: `pty-${overrides.paneId}`,
   tabName: 'tab',
   agentLabel: 'Claude Code',
+  supportsHunkReview: true,
   cwd: '/repo',
   status: 'running',
   isFocused: false,
@@ -81,15 +82,20 @@ test('panes filtered out when status !== running', () => {
   expect(result).toEqual({ kind: 'none' })
 })
 
-test('panes filtered out when agentLabel not in { Claude Code, Codex }', () => {
-  const pane = makePane({ paneId: 'p1', agentLabel: 'Other Agent' })
+test('panes are filtered by capability, not display name', () => {
+  const unsupported = makePane({
+    paneId: 'p1',
+    agentLabel: 'Claude Code',
+    supportsHunkReview: false,
+  })
+  const renamed = makePane({ paneId: 'p2', agentLabel: 'Renamed Kimi' })
 
   const result = resolveCandidatePanes({
-    allPanes: [pane],
+    allPanes: [unsupported, renamed],
     diffCwd: '/repo',
   })
 
-  expect(result).toEqual({ kind: 'none' })
+  expect(result).toEqual({ kind: 'one', pane: renamed })
 })
 
 test('resolves focused pane correctly even when multiple panes share the same paneId', () => {

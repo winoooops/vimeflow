@@ -141,6 +141,7 @@ import { orderSwitcherSessionIds } from './utils/orderSwitcherSessionIds'
 import {
   AGENTS,
   agentTypeToRegistryKey,
+  supportsHunkReview,
   type AgentDef,
 } from '@/agents/registry'
 import type {
@@ -3008,15 +3009,11 @@ const WorkspaceViewContent = (): ReactElement => {
     // NOT the PTY-lifecycle `pane.status`: a pane whose agent exited can keep a
     // stale 'codex'/'claude-code' label while its shell PTY is still running,
     // and the live signal is the only way to avoid pasting feedback into a bare
-    // shell. `agentLabel` maps agentType directly to the picker's SupportedAgent
-    // literals (the registry display name diverges, e.g. AGENTS.codex.name ===
-    // 'Codex CLI', which would mis-filter Codex).
-    const agentLabel =
-      agentStatus.agentType === 'claude-code'
-        ? 'Claude Code'
-        : agentStatus.agentType === 'codex'
-          ? 'Codex'
-          : null
+    // shell. Capability comes from the registry; display names are presentation
+    // only and can change without altering feature routing.
+    const agentKey = agentTypeToRegistryKey(agentStatus.agentType)
+    const agent = AGENTS[agentKey] as AgentDef
+    const agentLabel = agent.name
 
     // Bind the candidate to the pty-backed pane (not the literal active pane),
     // matching the pane `agentStatus` is computed from: when a browser pane is
@@ -3028,7 +3025,7 @@ const WorkspaceViewContent = (): ReactElement => {
       agentStatus.sessionId === activePtyBackedPanePtyId &&
       agentStatus.isActive &&
       !agentStatus.agentExited &&
-      agentLabel !== null
+      supportsHunkReview(agentKey)
         ? [
             {
               paneId: activePtyBackedPane.id,
@@ -3039,6 +3036,7 @@ const WorkspaceViewContent = (): ReactElement => {
                 activeSession?.name ??
                 'Terminal',
               agentLabel,
+              supportsHunkReview: true,
               cwd: activePtyBackedPane.cwd,
               status: 'running',
               isFocused: true,

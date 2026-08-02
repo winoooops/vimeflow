@@ -5,6 +5,7 @@ import {
   AGENTS,
   agentStatusToSessionStatus,
   agentTypeToRegistryKey,
+  supportsHunkReview,
   type AgentId,
 } from './registry'
 
@@ -130,4 +131,12 @@ test('every supported agent carries a brand Icon', () => {
   expect(AGENTS.kimi.Icon).toBeDefined()
   expect(AGENTS.opencode.Icon).toBeDefined()
   expect(AGENTS.shell.Icon).toBeDefined()
+})
+
+test('hunk review support is explicit and fail-closed', () => {
+  expect(supportsHunkReview('claude')).toBe(true)
+  expect(supportsHunkReview('codex')).toBe(true)
+  expect(supportsHunkReview('kimi')).toBe(true)
+  expect(supportsHunkReview('opencode')).toBe(false)
+  expect(supportsHunkReview('shell')).toBe(false)
 })

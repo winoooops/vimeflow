@@ -17,16 +17,21 @@ use std::time::{Instant, SystemTime};
 
 use super::transcript_dto::{KimiLineDto, KimiLoopEventType, KimiRecordType};
 use super::KimiLocator;
-use crate::agent::adapter::base::{TranscriptDecoder, TranscriptHandle, TranscriptTailService};
+use crate::agent::adapter::base::{
+    for_each_bounded_line, TranscriptDecoder, TranscriptHandle, TranscriptTailService,
+};
 use crate::agent::adapter::claude_code::test_runners::timestamps::compute_duration_ms;
 use crate::agent::adapter::types::{stamp_snapshot, StatusSnapshot, ValidateTranscriptError};
 use crate::agent::events::{
-    emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_status,
-    emit_agent_tool_call, emit_agent_turn, record_lifecycle, record_tool_call, ReplayActivity,
+    emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_review,
+    emit_agent_status, emit_agent_tool_call, emit_agent_turn, record_lifecycle, record_tool_call,
+    ReplayActivity,
 };
-use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
+use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
+use crate::agent::review::{extract_agent_review, map_review_outcome};
 use crate::agent::types::{
-    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentReviewEvent, AgentToolCallEvent,
+    AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -281,6 +286,135 @@ pub(super) fn start_tailing(
         );
     });
     Ok(TranscriptHandle::new(stop_flag, join_handle))
+}
+
+fn recover_turn_texts(transcript_path: &Path) -> Result<Vec<String>, String> {
+    let file = File::open(transcript_path).map_err(|error| {
+        format!(
+            "Failed to open Kimi transcript for recovery: {}: {}",
+            transcript_path.display(),
+            error
+        )
+    })?;
+    let mut in_user_turn = false;
+    let mut turn_text = String::new();
+    let mut completed = Vec::new();
+
+    for_each_bounded_line(BufReader::new(file), "Kimi transcript recovery", |line| {
+        let Ok(dto) = serde_json::from_str::<KimiLineDto>(line) else {
+            return;
+        };
+        match dto.record_type() {
+            KimiRecordType::TurnPrompt => {
+                if dto
+                    .origin
+                    .as_ref()
+                    .and_then(|origin| origin.kind.as_deref())
+                    == Some("user")
+                {
+                    in_user_turn = true;
+                    turn_text.clear();
+                }
+            }
+            KimiRecordType::AppendLoopEvent if in_user_turn => {
+                let Some(event) = dto.event.as_ref() else {
+                    return;
+                };
+                match event.loop_event_type() {
+                    KimiLoopEventType::ContentPart => {
+                        let Some(text) = event
+                            .part
+                            .as_ref()
+                            .filter(|part| part.type_tag.as_deref() == Some("text"))
+                            .and_then(|part| part.text.as_deref())
+                            .filter(|text| !text.is_empty())
+                        else {
+                            return;
+                        };
+                        if !turn_text.is_empty() {
+                            turn_text.push('\n');
+                        }
+                        turn_text.push_str(text);
+                        clamp_turn_text(&mut turn_text);
+                    }
+                    KimiLoopEventType::StepEnd
+                        if event.finish_reason.as_deref() == Some("end_turn") =>
+                    {
+                        completed.push(std::mem::take(&mut turn_text));
+                        in_user_turn = false;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    })
+    .map_err(|error| {
+        format!(
+            "Failed to read Kimi transcript for recovery: {}: {}",
+            transcript_path.display(),
+            error
+        )
+    })?;
+
+    Ok(completed)
+}
+
+pub(super) fn recover_replies(
+    transcript_path: &Path,
+    session_id: &str,
+    nonces: &HashSet<String>,
+) -> Result<Vec<AgentReplyEvent>, String> {
+    let mut pending = nonces.clone();
+    let mut recovered = Vec::new();
+    for text in recover_turn_texts(transcript_path)? {
+        let Some(outcome) = extract_agent_reply(&text) else {
+            continue;
+        };
+        let event = map_agent_reply_outcome(session_id, outcome);
+        if event
+            .nonce
+            .as_ref()
+            .is_some_and(|nonce| pending.remove(nonce))
+        {
+            recovered.push(event);
+        }
+    }
+    Ok(recovered)
+}
+
+pub(super) fn recover_reviews(
+    transcript_path: &Path,
+    session_id: &str,
+    nonces: &HashSet<String>,
+) -> Result<Vec<AgentReviewEvent>, String> {
+    let mut pending = nonces.clone();
+    let mut recovered = Vec::new();
+    for text in recover_turn_texts(transcript_path)? {
+        let Some(outcome) = extract_agent_review(&text) else {
+            continue;
+        };
+        let event = map_review_outcome(session_id, outcome);
+        if event
+            .nonce
+            .as_ref()
+            .is_some_and(|nonce| pending.remove(nonce))
+        {
+            recovered.push(event);
+        }
+    }
+    Ok(recovered)
+}
+
+fn clamp_turn_text(text: &mut String) {
+    if text.len() <= MAX_TURN_TEXT_BYTES {
+        return;
+    }
+    let excess = text.len() - MAX_TURN_TEXT_BYTES;
+    let cut = (excess..text.len())
+        .find(|&index| text.is_char_boundary(index))
+        .unwrap_or(excess);
+    text.drain(..cut);
 }
 
 /// `wire.jsonl` path is `<session>/agents/<agent-id>/wire.jsonl`; three up is
@@ -887,19 +1021,13 @@ impl KimiTranscriptDecoder {
                 self.turn_text.push_str(text);
                 // Tail-clamp so a pathological turn stays bounded — the reply
                 // contract puts the sentinel block at the END of the turn.
-                if self.turn_text.len() > MAX_TURN_TEXT_BYTES {
-                    let excess = self.turn_text.len() - MAX_TURN_TEXT_BYTES;
-                    let cut = (excess..self.turn_text.len())
-                        .find(|&i| self.turn_text.is_char_boundary(i))
-                        .unwrap_or(excess);
-                    self.turn_text.drain(..cut);
-                }
+                clamp_turn_text(&mut self.turn_text);
             }
             KimiLoopEventType::StepEnd => {
                 // Only the main wire's `end_turn` settles the pane idle; a
                 // sub-agent finishing a step must not, while main runs on.
                 if self.is_main() && event.finish_reason.as_deref() == Some("end_turn") {
-                    self.flush_turn_reply();
+                    self.flush_turn_outputs();
                     self.record_phase(AgentPhase::Idle);
                 }
             }
@@ -907,36 +1035,27 @@ impl KimiTranscriptDecoder {
         }
     }
 
-    /// The main wire's turn ended: extract a `VIMEFLOW_REPLY` block from the
-    /// accumulated text parts and emit it (VIM-293). The buffer drains per
+    /// The main wire's turn ended: extract either shared structured protocol
+    /// from the accumulated text. The buffer drains per
     /// turn regardless — replayed turns are drained without emitting,
     /// mirroring codex/claude_code's `replay_done` gate.
-    fn flush_turn_reply(&mut self) {
+    fn flush_turn_outputs(&mut self) {
         let reply_text = std::mem::take(&mut self.turn_text);
         if !self.replay_done {
             return;
         }
-        let Some(outcome) = extract_agent_reply(&reply_text) else {
-            return;
-        };
+        if let Some(reply) = extract_agent_reply(&reply_text) {
+            let event = map_agent_reply_outcome(&self.session_id, reply);
+            if let Err(e) = emit_agent_reply(self.events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-reply event: {}", e);
+            }
+        }
 
-        let (raw_text, nonce, replies) = match outcome {
-            AgentReplyOutcome::Structured {
-                raw,
-                nonce,
-                replies,
-            } => (raw, Some(nonce), Some(replies)),
-            AgentReplyOutcome::Malformed { raw, nonce } => (raw, nonce, None),
-        };
-
-        let event = AgentReplyEvent {
-            session_id: self.session_id.clone(),
-            nonce,
-            raw_text,
-            replies,
-        };
-        if let Err(e) = emit_agent_reply(self.events.as_ref(), &event) {
-            log::warn!("Failed to emit agent-reply event: {}", e);
+        if let Some(review) = extract_agent_review(&reply_text) {
+            let event = map_review_outcome(&self.session_id, review);
+            if let Err(e) = emit_agent_review(self.events.as_ref(), &event) {
+                log::warn!("Failed to emit agent-review event: {}", e);
+            }
         }
     }
 
@@ -1857,6 +1976,14 @@ mod tests {
             .collect()
     }
 
+    fn agent_review_events(sink: &FakeEventSink) -> Vec<Value> {
+        sink.recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-review")
+            .map(|(_, payload)| payload)
+            .collect()
+    }
+
     fn content_part_line(part_type: &str, key: &str, body: &str) -> String {
         json!({
             "type": "context.append_loop_event",
@@ -1870,6 +1997,7 @@ mod tests {
     }
 
     const KIMI_SENTINEL_REPLY: &str = "<<<VIMEFLOW_REPLY\n{\"v\":1,\"nonce\":\"abc123\",\"replies\":[{\"id\":1,\"status\":\"reply\",\"text\":\"done\"}]}\nVIMEFLOW_REPLY>>>";
+    const KIMI_SENTINEL_REVIEW: &str = "<<<VIMEFLOW_REVIEW\n{\"v\":1,\"nonce\":\"review123\",\"reviewer\":\"Kimi\",\"findings\":[]}\nVIMEFLOW_REVIEW>>>";
     const END_TURN: &str = r#"{"type":"context.append_loop_event","event":{"type":"step.end","finishReason":"end_turn"}}"#;
 
     #[test]
@@ -1907,6 +2035,50 @@ mod tests {
             1,
             "no sentinel, no second emit — turn-1 text must not leak"
         );
+    }
+
+    #[test]
+    fn text_parts_flush_one_review_at_main_end_turn() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("text", "text", KIMI_SENTINEL_REVIEW));
+        decoder.decode_line(END_TURN);
+
+        let reviews = agent_review_events(&sink);
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0]["nonce"], "review123");
+        assert_eq!(reviews[0]["reviewer"], "Kimi");
+        assert_eq!(reviews[0]["findings"], json!([]));
+    }
+
+    #[test]
+    fn recovery_reconstructs_requested_reply_and_review_turns() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let wire = tmp.path().join("wire.jsonl");
+        let raw = [
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#.to_string(),
+            content_part_line("text", "text", KIMI_SENTINEL_REPLY),
+            END_TURN.to_string(),
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#.to_string(),
+            content_part_line("text", "text", KIMI_SENTINEL_REVIEW),
+            END_TURN.to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&wire, format!("{raw}\n")).expect("write wire");
+
+        let reply_nonces = HashSet::from(["abc123".to_string()]);
+        let replies = recover_replies(&wire, "sid", &reply_nonces).expect("recover replies");
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].nonce.as_deref(), Some("abc123"));
+
+        let review_nonces = HashSet::from(["review123".to_string()]);
+        let reviews = recover_reviews(&wire, "sid", &review_nonces).expect("recover reviews");
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0].nonce.as_deref(), Some("review123"));
     }
 
     #[test]
