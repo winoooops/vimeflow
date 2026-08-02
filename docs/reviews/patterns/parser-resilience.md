@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-08-01
-ref_count: 16
+ref_count: 17
 ---
 
 # Parser Resilience
@@ -391,4 +391,22 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
 - **Finding:** Live and recovered Kimi turns independently extracted reply and review sentinels, so one nonconforming turn containing both blocks could mutate unrelated pending feedback and delegated-review state. Recovery also consumed a reply nonce after its first match even though finding-thread follow-ups intentionally reuse that nonce.
 - **Fix:** Arbitrate both extractors once per completed turn and emit neither when both match; retain ordered same-nonce reply turns within the shared event cap while reviews remain one-shot. Added live arbitration and multi-turn recovery regressions.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 30. Bounded transcript tails could begin after the active turn prompt
+
+- **Source:** local-codex | Kimi hunk-review local review round 2 | 2026-08-01
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi recovery read only the newest transcript window and initialized its parser outside a user turn. When a long-running turn began before that window, its later structured reply or review and `end_turn` were ignored even though they were inside the bounded read.
+- **Fix:** Treat a nonzero recovery offset as an already-active leading turn while still discarding the first partial JSONL record. Added a regression where the prompt precedes the bounded tail but the completed reply remains recoverable.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 31. Protocol arbitration treated marker text inside prose as a second block
+
+- **Source:** local-codex | Kimi hunk-review local review round 2 | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi rejected a completed turn whenever both shared extractors found their marker substrings. A valid review whose finding text merely mentioned `<<<VIMEFLOW_REPLY` therefore looked like two protocols and silently emitted neither event.
+- **Fix:** Arbitrate only standalone opening-marker lines, including Markdown-quoted markers, before invoking the matching shared extractor. Added a regression proving marker prose inside valid review JSON does not suppress the review.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

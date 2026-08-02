@@ -344,7 +344,9 @@ fn recover_path_turn_texts(mut file: File) -> Result<VecDeque<String>, String> {
             .read_until(b'\n', &mut partial)
             .map_err(|error| format!("Failed to align Kimi transcript recovery window: {error}"))?;
     }
-    let mut in_user_turn = false;
+    // A bounded tail can begin after this turn's prompt. Treat that leading
+    // fragment as an active turn so a sentinel near EOF remains recoverable.
+    let mut in_user_turn = start > 0;
     let mut turn_text = String::new();
     let mut completed = VecDeque::new();
 
@@ -426,12 +428,24 @@ fn recover_turn_texts(paths: &[PathBuf], kimi_root: &Path) -> Result<VecDeque<St
 }
 
 fn extract_turn_protocols(text: &str) -> (Option<AgentReplyOutcome>, Option<AgentReviewOutcome>) {
-    let reply = extract_agent_reply(text);
-    let review = extract_agent_review(text);
-    if reply.is_some() && review.is_some() {
-        return (None, None);
+    fn has_standalone_open(text: &str, marker: &str) -> bool {
+        text.lines().any(|line| {
+            let line = line.trim();
+            line == marker
+                || line
+                    .strip_prefix('>')
+                    .is_some_and(|quoted| quoted.trim() == marker)
+        })
     }
-    (reply, review)
+
+    match (
+        has_standalone_open(text, "<<<VIMEFLOW_REPLY"),
+        has_standalone_open(text, "<<<VIMEFLOW_REVIEW"),
+    ) {
+        (true, false) => (extract_agent_reply(text), None),
+        (false, true) => (None, extract_agent_review(text)),
+        _ => (None, None),
+    }
 }
 
 pub(super) fn recover_replies(
@@ -2171,6 +2185,25 @@ mod tests {
     }
 
     #[test]
+    fn review_text_can_mention_the_reply_marker() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+        let review = KIMI_SENTINEL_REVIEW.replace(
+            "\"findings\":[]",
+            "\"findings\":[{\"path\":\"src/reply.rs\",\"scope\":\"file\",\"category\":\"bug\",\"text\":\"The literal <<<VIMEFLOW_REPLY appears in prose\"}]",
+        );
+
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(&content_part_line("text", "text", &review));
+        decoder.decode_line(END_TURN);
+
+        assert!(agent_reply_events(&sink).is_empty());
+        assert_eq!(agent_review_events(&sink).len(), 1);
+    }
+
+    #[test]
     fn recovery_reconstructs_requested_reply_and_review_turns() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let wire = tmp.path().join("wire.jsonl");
@@ -2256,6 +2289,35 @@ mod tests {
 
         assert_eq!(replies.len(), 1);
         assert_eq!(replies[0].nonce.as_deref(), Some("new123"));
+    }
+
+    #[test]
+    fn recovery_keeps_a_turn_whose_prompt_precedes_the_tail_window() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let wire = tmp.path().join("wire.jsonl");
+        let raw = [
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#.to_string(),
+            content_part_line(
+                "text",
+                "text",
+                &"x".repeat(MAX_RECOVERY_BYTES_PER_PATH as usize),
+            ),
+            content_part_line("text", "text", KIMI_SENTINEL_REPLY),
+            END_TURN.to_string(),
+        ]
+        .join("\n");
+        std::fs::write(&wire, format!("{raw}\n")).expect("write wire");
+
+        let replies = recover_replies(
+            &[wire],
+            tmp.path(),
+            "sid",
+            &HashSet::from(["abc123".to_string()]),
+        )
+        .expect("recover replies");
+
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].nonce.as_deref(), Some("abc123"));
     }
 
     #[cfg(unix)]
