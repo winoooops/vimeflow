@@ -114,6 +114,7 @@ const ghosttyScratchArchive = findGhosttyScratchArchive()
 
 const ghosttySymbols = execFileSync('nm', ['-gU', ghosttyScratchArchive], {
   encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
 })
 if (!ghosttySymbols.includes('_glslang_initialize_process')) {
   throw new Error('libghostty was built without custom shader support')
