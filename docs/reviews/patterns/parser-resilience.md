@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-08-01
-ref_count: 17
+ref_count: 18
 ---
 
 # Parser Resilience
@@ -409,4 +409,22 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
 - **Finding:** Kimi rejected a completed turn whenever both shared extractors found their marker substrings. A valid review whose finding text merely mentioned `<<<VIMEFLOW_REPLY` therefore looked like two protocols and silently emitted neither event.
 - **Fix:** Arbitrate only standalone opening-marker lines, including Markdown-quoted markers, before invoking the matching shared extractor. Added a regression proving marker prose inside valid review JSON does not suppress the review.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 32. Adapter-local marker gates could not correct substring-based shared extraction
+
+- **Source:** local-codex | Kimi hunk-review local review round 3 | 2026-08-01
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/reply.rs`, `crates/backend/src/agent/review.rs`
+- **Finding:** Kimi first verified that a standalone protocol opener existed but then passed the whole turn to shared substring-based extractors. An earlier marker mention or example could still be selected instead of the final standalone block, yielding a malformed or wrong-nonce event.
+- **Fix:** Centralized line-delimited block selection in the shared reply module and reused it for reviews. Both extractors now ignore inline marker text, select the last complete standalone block, and preserve malformed handling for a lone orphan; shared regressions cover inline mentions and repeated complete blocks.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 33. Retained transcript order was not completed-turn order
+
+- **Source:** local-codex | Kimi hunk-review local review round 3 | 2026-08-01
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/adapter/kimi/transcript.rs`
+- **Finding:** Kimi recovery concatenated completed turns in retained-path order. After an A → B → A supervisor sequence, all B turns preceded all A turns, so same-nonce replies could be restored out of chronological order and one-shot review recovery could consume the wrong match.
+- **Fix:** Keep the newest 512 completed turns in a bounded heap keyed by `step.end` timestamp plus stable path/line ordinals, then sort that bounded set before shared extraction. Added a two-transcript regression whose retained-path order differs from completion order.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -6,7 +6,8 @@
 //! per-session [`KimiTranscriptDecoder`]) without the codex test-runner
 //! machinery (deferred per the kimi state spec).
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::cmp::{Ordering as CmpOrdering, Reverse};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -317,7 +318,39 @@ fn open_recovery_file(path: &Path, kimi_root: &Path) -> Result<Option<(PathBuf, 
     crate::filesystem::scope::open_nofollow(path, options).map(|file| Some((canonical, file)))
 }
 
-fn recover_path_turn_texts(mut file: File) -> Result<VecDeque<String>, String> {
+struct RecoveredTurn {
+    key: (u64, usize, usize),
+    text: String,
+}
+
+impl PartialEq for RecoveredTurn {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for RecoveredTurn {}
+
+impl PartialOrd for RecoveredTurn {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RecoveredTurn {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.key.cmp(&other.key)
+    }
+}
+
+fn retain_recovered_turn(turns: &mut BinaryHeap<Reverse<RecoveredTurn>>, turn: RecoveredTurn) {
+    turns.push(Reverse(turn));
+    if turns.len() > MAX_RECOVERY_COMPLETED_TURNS {
+        turns.pop();
+    }
+}
+
+fn recover_path_turns(mut file: File, path_ordinal: usize) -> Result<Vec<RecoveredTurn>, String> {
     let file_len = file
         .metadata()
         .map_err(|error| format!("Failed to inspect Kimi transcript recovery window: {error}"))?
@@ -348,9 +381,12 @@ fn recover_path_turn_texts(mut file: File) -> Result<VecDeque<String>, String> {
     // fragment as an active turn so a sentinel near EOF remains recoverable.
     let mut in_user_turn = start > 0;
     let mut turn_text = String::new();
-    let mut completed = VecDeque::new();
+    let mut completed = BinaryHeap::new();
+    let mut line_ordinal = 0;
 
     for_each_bounded_line(reader, "Kimi transcript recovery", |line| {
+        let current_line = line_ordinal;
+        line_ordinal += 1;
         let Ok(dto) = serde_json::from_str::<KimiLineDto>(line) else {
             return;
         };
@@ -390,10 +426,13 @@ fn recover_path_turn_texts(mut file: File) -> Result<VecDeque<String>, String> {
                     KimiLoopEventType::StepEnd
                         if event.finish_reason.as_deref() == Some("end_turn") =>
                     {
-                        completed.push_back(std::mem::take(&mut turn_text));
-                        if completed.len() > MAX_RECOVERY_COMPLETED_TURNS {
-                            completed.pop_front();
-                        }
+                        retain_recovered_turn(
+                            &mut completed,
+                            RecoveredTurn {
+                                key: (dto.time.unwrap_or(0), path_ordinal, current_line),
+                                text: std::mem::take(&mut turn_text),
+                            },
+                        );
                         in_user_turn = false;
                     }
                     _ => {}
@@ -404,48 +443,35 @@ fn recover_path_turn_texts(mut file: File) -> Result<VecDeque<String>, String> {
     })
     .map_err(|error| format!("Failed to read Kimi transcript recovery window: {}", error))?;
 
-    Ok(completed)
+    Ok(completed.into_iter().map(|Reverse(turn)| turn).collect())
 }
 
 fn recover_turn_texts(paths: &[PathBuf], kimi_root: &Path) -> Result<VecDeque<String>, String> {
     let mut seen = HashSet::new();
-    let mut completed = VecDeque::new();
-    for path in paths {
+    let mut completed = BinaryHeap::new();
+    for (path_ordinal, path) in paths.iter().enumerate() {
         let Some((canonical, file)) = open_recovery_file(path, kimi_root)? else {
             continue;
         };
         if !seen.insert(canonical) {
             continue;
         }
-        for text in recover_path_turn_texts(file)? {
-            completed.push_back(text);
-            if completed.len() > MAX_RECOVERY_COMPLETED_TURNS {
-                completed.pop_front();
-            }
+        for turn in recover_path_turns(file, path_ordinal)? {
+            retain_recovered_turn(&mut completed, turn);
         }
     }
-    Ok(completed)
+    let mut completed: Vec<_> = completed.into_iter().map(|Reverse(turn)| turn).collect();
+    completed.sort_by_key(|turn| turn.key);
+    Ok(completed.into_iter().map(|turn| turn.text).collect())
 }
 
 fn extract_turn_protocols(text: &str) -> (Option<AgentReplyOutcome>, Option<AgentReviewOutcome>) {
-    fn has_standalone_open(text: &str, marker: &str) -> bool {
-        text.lines().any(|line| {
-            let line = line.trim();
-            line == marker
-                || line
-                    .strip_prefix('>')
-                    .is_some_and(|quoted| quoted.trim() == marker)
-        })
+    let reply = extract_agent_reply(text);
+    let review = extract_agent_review(text);
+    if reply.is_some() && review.is_some() {
+        return (None, None);
     }
-
-    match (
-        has_standalone_open(text, "<<<VIMEFLOW_REPLY"),
-        has_standalone_open(text, "<<<VIMEFLOW_REVIEW"),
-    ) {
-        (true, false) => (extract_agent_reply(text), None),
-        (false, true) => (None, extract_agent_review(text)),
-        _ => (None, None),
-    }
+    (reply, review)
 }
 
 pub(super) fn recover_replies(
@@ -2260,6 +2286,47 @@ mod tests {
         assert_eq!(replies.len(), 2);
         assert_eq!(replies[0].replies.as_ref().unwrap()[0].text, "first");
         assert_eq!(replies[1].replies.as_ref().unwrap()[0].text, "second");
+    }
+
+    #[test]
+    fn recovery_orders_turns_across_revisited_transcripts_by_completion_time() {
+        fn timed_end(time: u64) -> String {
+            format!(
+                r#"{{"type":"context.append_loop_event","time":{time},"event":{{"type":"step.end","finishReason":"end_turn"}}}}"#
+            )
+        }
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let wire_a = tmp.path().join("a.jsonl");
+        let wire_b = tmp.path().join("b.jsonl");
+        let turn = |text: &str, time| {
+            [
+                r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#.to_string(),
+                content_part_line("text", "text", &KIMI_SENTINEL_REPLY.replace("done", text)),
+                timed_end(time),
+            ]
+            .join("\n")
+        };
+        std::fs::write(
+            &wire_a,
+            format!("{}\n{}\n", turn("first-a", 100), turn("last-a", 300)),
+        )
+        .expect("write wire a");
+        std::fs::write(&wire_b, format!("{}\n", turn("middle-b", 200))).expect("write wire b");
+
+        let replies = recover_replies(
+            &[wire_b, wire_a],
+            tmp.path(),
+            "sid",
+            &HashSet::from(["abc123".to_string()]),
+        )
+        .expect("recover replies");
+        let texts: Vec<_> = replies
+            .iter()
+            .map(|reply| reply.replies.as_ref().unwrap()[0].text.as_str())
+            .collect();
+
+        assert_eq!(texts, ["first-a", "middle-b", "last-a"]);
     }
 
     #[test]
