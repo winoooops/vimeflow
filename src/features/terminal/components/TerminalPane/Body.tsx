@@ -25,6 +25,7 @@ import {
 import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
+import { emitTerminalAttention } from '@/features/terminal/notifications'
 import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
   type AgentCwdSource,
@@ -784,6 +785,22 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
         return true
       })
+
+      newTerminal.onBell(() => {
+        if (!isRestoringOutputRef.current) {
+          emitTerminalAttention({ ptyId: sessionId })
+        }
+      })
+
+      for (const identifier of [9, 777]) {
+        newTerminal.parser.registerOscHandler(identifier, (data) => {
+          if (!isRestoringOutputRef.current) {
+            emitTerminalAttention({ ptyId: sessionId, body: data })
+          }
+
+          return true
+        })
+      }
 
       // Cache the terminal instance for this session
       terminalCache.set(sessionId, { terminal: newTerminal, fitAddon })

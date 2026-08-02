@@ -20,6 +20,7 @@ import {
   NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
   NATIVE_OVERLAY_OPEN,
+  NATIVE_OVERLAY_PRELOAD,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
   NATIVE_OVERLAY_RESUME,
@@ -265,11 +266,38 @@ interface NativeOverlaySessionSwitcherDialogPayload {
   actions: NativeOverlaySessionSwitcherActions
 }
 
+interface NativeOverlayNotificationCenterItem {
+  id: string
+  kind: 'need' | 'err'
+  title: string
+  body?: string
+  sessionName: string
+  agentId: 'claude' | 'codex' | 'kimi' | 'opencode' | 'shell'
+  occurredAt: number
+  read: boolean
+  openActionId: string
+  dismissActionId: string
+}
+
+interface NativeOverlayNotificationCenterActions {
+  markAllRead: string
+  clear: string
+}
+
+interface NativeOverlayNotificationCenterDialogPayload {
+  kind: 'dialog'
+  dialog: 'notification-center'
+  ariaLabel: string
+  items: NativeOverlayNotificationCenterItem[]
+  actions: NativeOverlayNotificationCenterActions
+}
+
 type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
   | NativeOverlayLayoutCreatorDialogPayload
   | NativeOverlaySessionSwitcherDialogPayload
+  | NativeOverlayNotificationCenterDialogPayload
 
 type SerializableOverlayPayload =
   | NativeOverlayMenuPayload
@@ -397,6 +425,12 @@ const MAX_LAYOUT_CREATOR_SLOTS = 16
 const MAX_LAYOUT_CREATOR_ACCEPTS = 8
 const MAX_THEME_VARIABLES = 512
 const MAX_SESSION_SWITCHER_ITEMS = 500
+const MAX_NOTIFICATION_CENTER_ITEMS = 50
+const MAX_NOTIFICATION_ID_LENGTH = 128
+const MAX_NOTIFICATION_TITLE_LENGTH = 160
+const MAX_NOTIFICATION_BODY_LENGTH = 500
+const MAX_NOTIFICATION_SESSION_NAME_LENGTH = 160
+const MAX_NOTIFICATION_ACTION_ID_LENGTH = 256
 
 const OVERLAY_CURSOR_RESET_SCRIPT = `
 (() => {
@@ -461,13 +495,20 @@ const resetOverlayCursor = (overlayWindow: BrowserWindow): void => {
 const isString = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0
 
+const isBoundedString = (value: unknown, maxLength: number): value is string =>
+  isString(value) && value.length <= maxLength
+
 const isFocusOwnedDialogSurface = (
   surface: NativeOverlaySurface | undefined
-): boolean => surface?.kind === 'dialog' && surface.dialog === 'layout-creator'
+): boolean =>
+  surface?.kind === 'dialog' &&
+  (surface.dialog === 'layout-creator' ||
+    surface.dialog === 'notification-center')
 
 const requestNeedsKeyboardFocus = (payload: NativeOverlayRequest): boolean =>
   payload.payload.kind === 'dialog' &&
-  payload.payload.dialog === 'layout-creator'
+  (payload.payload.dialog === 'layout-creator' ||
+    payload.payload.dialog === 'notification-center')
 
 const isInternalFocusHandoff = (): boolean => app.isActive()
 
@@ -847,13 +888,55 @@ const isSessionSwitcherDialogPayload = (
   ) &&
   isSessionSwitcherActions(value.actions)
 
+const isNotificationCenterItem = (
+  value: unknown
+): value is NativeOverlayNotificationCenterItem =>
+  isRecord(value) &&
+  isBoundedString(value.id, MAX_NOTIFICATION_ID_LENGTH) &&
+  (value.kind === 'need' || value.kind === 'err') &&
+  isBoundedString(value.title, MAX_NOTIFICATION_TITLE_LENGTH) &&
+  (value.body === undefined ||
+    isBoundedString(value.body, MAX_NOTIFICATION_BODY_LENGTH)) &&
+  isBoundedString(value.sessionName, MAX_NOTIFICATION_SESSION_NAME_LENGTH) &&
+  (value.agentId === 'claude' ||
+    value.agentId === 'codex' ||
+    value.agentId === 'kimi' ||
+    value.agentId === 'opencode' ||
+    value.agentId === 'shell') &&
+  isFiniteNumber(value.occurredAt) &&
+  value.occurredAt >= 0 &&
+  typeof value.read === 'boolean' &&
+  isBoundedString(value.openActionId, MAX_NOTIFICATION_ACTION_ID_LENGTH) &&
+  isBoundedString(value.dismissActionId, MAX_NOTIFICATION_ACTION_ID_LENGTH)
+
+const isNotificationCenterActions = (
+  value: unknown
+): value is NativeOverlayNotificationCenterActions =>
+  isRecord(value) &&
+  isBoundedString(value.markAllRead, MAX_NOTIFICATION_ACTION_ID_LENGTH) &&
+  isBoundedString(value.clear, MAX_NOTIFICATION_ACTION_ID_LENGTH)
+
+const isNotificationCenterDialogPayload = (
+  value: unknown
+): value is NativeOverlayNotificationCenterDialogPayload =>
+  isRecord(value) &&
+  value.dialog === 'notification-center' &&
+  isBoundedString(value.ariaLabel, MAX_NOTIFICATION_TITLE_LENGTH) &&
+  isNonEmptyBoundedArray(
+    value.items,
+    MAX_NOTIFICATION_CENTER_ITEMS,
+    isNotificationCenterItem
+  ) &&
+  isNotificationCenterActions(value.actions)
+
 const isDialogPayload = (value: unknown): value is NativeOverlayDialogPayload =>
   isRecord(value) &&
   value.kind === 'dialog' &&
   (isCommandPaletteDialogPayload(value) ||
     isNewSessionDialogPayload(value) ||
     isLayoutCreatorDialogPayload(value) ||
-    isSessionSwitcherDialogPayload(value))
+    isSessionSwitcherDialogPayload(value) ||
+    isNotificationCenterDialogPayload(value))
 
 const isThemeSnapshot = (value: unknown): value is NativeOverlayThemeSnapshot =>
   isRecord(value) &&
@@ -1017,6 +1100,7 @@ export class NativeOverlayController {
 
     ipc.handle(NATIVE_OVERLAY_OPEN, this.handleOpen)
     ipc.handle(NATIVE_OVERLAY_CLOSE, this.handleClose)
+    ipc.handle(NATIVE_OVERLAY_PRELOAD, this.handlePreload)
     ipc.handle(NATIVE_OVERLAY_READY, this.handleReady)
     ipc.handle(NATIVE_OVERLAY_MOUSE_PASSTHROUGH, this.handleMousePassthrough)
     ipc.handle(NATIVE_OVERLAY_ACTION, this.handleAction)
@@ -1029,6 +1113,7 @@ export class NativeOverlayController {
     if (this.registeredIpc !== null) {
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_OPEN)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_CLOSE)
+      this.registeredIpc.removeHandler(NATIVE_OVERLAY_PRELOAD)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_READY)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_MOUSE_PASSTHROUGH)
       this.registeredIpc.removeHandler(NATIVE_OVERLAY_ACTION)
@@ -1067,6 +1152,26 @@ export class NativeOverlayController {
     }
 
     return this.surfaces.get(activeSurfaceId)?.kind !== 'popover'
+  }
+
+  // Creates the overlay layer windows and starts their URL load ahead of the
+  // first real surface, so a first-time open doesn't pay window creation +
+  // layer load. Fire-and-forget; the layer's ready promise gates opens.
+  private readonly handlePreload = (
+    event: IpcMainInvokeEvent
+  ): NativeOverlayOpenResult => {
+    if (this.platform !== 'darwin') {
+      return { accepted: false, reason: 'unsupported-platform' }
+    }
+
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    if (parent === null || parent.isDestroyed()) {
+      return { accepted: false, reason: 'missing-parent-window' }
+    }
+
+    this.getOrCreateOverlayRecord(parent)
+
+    return { accepted: true }
   }
 
   private readonly handleOpen = async (
@@ -1409,6 +1514,7 @@ export class NativeOverlayController {
     })
 
     overlayWindow.setIgnoreMouseEvents(true)
+
     installNavigationGuard(overlayWindow, (externalUrl) => {
       void shell.openExternal(externalUrl)
     })
@@ -1530,7 +1636,9 @@ export class NativeOverlayController {
       }
 
       const isKeyboardDialog =
-        surface?.kind === 'dialog' && surface.dialog === 'command-palette'
+        surface?.kind === 'dialog' &&
+        (surface.dialog === 'command-palette' ||
+          surface.dialog === 'notification-center')
       const isActivityPopover = surface?.kind === 'popover'
       if (surface?.kind !== 'menu' && !isActivityPopover && !isKeyboardDialog) {
         return

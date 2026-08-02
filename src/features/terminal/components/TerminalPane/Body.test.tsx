@@ -90,6 +90,7 @@ describe('Body', () => {
     dispose: ReturnType<typeof vi.fn>
     focus: ReturnType<typeof vi.fn>
     onResize: ReturnType<typeof vi.fn>
+    onBell: ReturnType<typeof vi.fn>
     parser: { registerOscHandler: ReturnType<typeof vi.fn> }
     refresh: ReturnType<typeof vi.fn>
     cols: number
@@ -117,6 +118,7 @@ describe('Body', () => {
       dispose: vi.fn(),
       focus: vi.fn(),
       onResize: vi.fn(() => ({ dispose: vi.fn() })),
+      onBell: vi.fn(() => ({ dispose: vi.fn() })),
       parser: {
         registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
       },
@@ -1762,6 +1764,7 @@ describe('Body', () => {
         cols: 80,
         rows: 24,
         onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        onBell: vi.fn(() => ({ dispose: vi.fn() })),
         parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       }
 
@@ -1807,6 +1810,7 @@ describe('Body', () => {
         cols: 80,
         rows: 24,
         onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        onBell: vi.fn(() => ({ dispose: vi.fn() })),
         parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       }
 

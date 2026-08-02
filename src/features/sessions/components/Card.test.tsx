@@ -80,6 +80,29 @@ describe('Card — active variant', () => {
     expect(screen.getByText('Running')).toBeInTheDocument()
   })
 
+  test('shows the unread notification category beside active session status', () => {
+    const { rerender } = renderActiveCard(session(), {
+      notificationCategory: 'need',
+    })
+
+    expect(screen.getByLabelText('Needs your attention')).toHaveTextContent(
+      'pan_tool'
+    )
+
+    rerender(
+      <Reorder.Group axis="y" values={[session()]} onReorder={vi.fn()}>
+        <Card
+          session={session()}
+          variant="active"
+          notificationCategory="err"
+          onClick={vi.fn()}
+        />
+      </Reorder.Group>
+    )
+
+    expect(screen.getByLabelText('Agent error')).toHaveTextContent('error')
+  })
+
   test('renders subtitle (row 2)', () => {
     renderActiveCard(session({ workingDirectory: '/a/b/projects/X' }))
     expect(screen.getByText('projects/X')).toBeInTheDocument()

@@ -6,6 +6,7 @@ import {
   createGridTemplate,
 } from '@/features/terminal/layout-registry'
 import { mockSessions } from '../data/mockSessions'
+import type { NotificationRecord } from '@/features/sessions/hooks/useNotificationCenter'
 import { SessionsView } from './SessionsView'
 
 const noop = (): void => undefined
@@ -26,6 +27,26 @@ describe('SessionsView', () => {
 
     expect(screen.getByTestId('sessions-view')).toBeInTheDocument()
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
+  })
+
+  test('passes notification records to the active session list', () => {
+    const notificationRecords: readonly NotificationRecord[] = [
+      {
+        id: 'notice-1',
+        sessionId: 'sess-1',
+        ptyId: 'sess-1',
+        reason: 'approval-requested',
+        title: 'Approval requested',
+        occurredAt: 1,
+        read: false,
+      },
+    ]
+
+    render(
+      <SessionsView {...baseProps} notificationRecords={notificationRecords} />
+    )
+
+    expect(screen.getByLabelText('Needs your attention')).toBeInTheDocument()
   })
 
   test('hidden=true applies the `hidden` Tailwind utility class on the testid root', () => {

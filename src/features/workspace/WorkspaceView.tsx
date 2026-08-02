@@ -68,6 +68,8 @@ import { listen, renameAgentSession } from '@/lib/backend'
 import { registerCommandPaletteShortcutOpenerForE2e } from '@/lib/e2e-bridge'
 import { formatShortcut } from '@/lib/formatShortcut'
 import { useSessionManager } from '@/features/sessions/hooks/useSessionManager'
+import { useNotificationCenter } from '@/features/sessions/hooks/useNotificationCenter'
+import { useAgentNotificationProducers } from '@/features/sessions/hooks/useAgentNotificationProducers'
 import { cycleSession } from '@/features/sessions/utils/cycleSession'
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog'
 import { SessionIsland } from '@/features/sessions/components/SessionIsland'
@@ -297,9 +299,6 @@ const MACOS_WINDOW_CONTROL_SAFE_AREA_PX = 82
 const SESSION_ISLAND_LAYOUT_COMPACT_WIDTH_PX = 700
 const SESSION_ISLAND_COMPACT_BATCH_SIZE = 5
 
-const SESSION_ISLAND_NOTIFICATIONS_ENABLED =
-  import.meta.env.VITE_SESSION_ISLAND_NOTIFICATIONS === '1'
-
 const SIDEBAR_INITIAL = clampSize(SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX)
 const COMPACT_WORKSPACE_QUERY = '(max-width: 899px)'
 
@@ -409,6 +408,12 @@ const WorkspaceViewContent = (): ReactElement => {
   } = useSessionManager(terminalService, {
     onTerminalSpawnError: setFileError,
     onActivationRolledBack: () => activationRollbackFocusRef.current(),
+  })
+  const notificationCenter = useNotificationCenter()
+  useAgentNotificationProducers({
+    sessions,
+    activeSessionId,
+    publish: notificationCenter.publish,
   })
 
   // Detect which modifier the toolbar advertises on this platform so
@@ -1749,6 +1754,38 @@ const WorkspaceViewContent = (): ReactElement => {
     [claimTerminal, setActiveSessionId]
   )
 
+  const handleOpenNotification = useCallback(
+    (id: string): void => {
+      const record = notificationCenter.records.find(
+        (candidate) => candidate.id === id
+      )
+
+      const session = sessions.find(
+        (candidate) => candidate.id === record?.sessionId
+      )
+
+      const pane = session?.panes.find(
+        (candidate) => candidate.ptyId === record?.ptyId
+      )
+
+      if (record === undefined || session === undefined || pane === undefined) {
+        return
+      }
+
+      notificationCenter.markRead(id)
+      setActiveSessionId(session.id)
+      setSessionActivePane(session.id, pane.id)
+      claimTerminal()
+    },
+    [
+      claimTerminal,
+      notificationCenter,
+      sessions,
+      setActiveSessionId,
+      setSessionActivePane,
+    ]
+  )
+
   const handleOpenNewSession = useCallback((): void => {
     const sessionCwd = sessions.find(
       (s) => s.id === activeSessionId
@@ -1776,6 +1813,7 @@ const WorkspaceViewContent = (): ReactElement => {
       }
 
       const wasActive = sessionId === activeSessionId
+      notificationCenter.pruneSession(sessionId)
       removeSession(sessionId)
       if (wasActive) {
         claimTerminal()
@@ -1787,6 +1825,7 @@ const WorkspaceViewContent = (): ReactElement => {
       activeSessionId,
       claimTerminal,
       hasUnsavedChanges,
+      notificationCenter,
       removeSession,
       setActiveSessionId,
       setPendingFilePathSynced,
@@ -1830,6 +1869,7 @@ const WorkspaceViewContent = (): ReactElement => {
       }
 
       removeSession(sessionId)
+      notificationCenter.pruneSession(sessionId)
 
       if (sessionId === activeSessionId || nextId !== undefined) {
         claimTerminal()
@@ -1838,6 +1878,7 @@ const WorkspaceViewContent = (): ReactElement => {
     [
       activeSessionId,
       claimTerminal,
+      notificationCenter,
       removeSession,
       sessions,
       setActiveSessionId,
@@ -3317,6 +3358,7 @@ const WorkspaceViewContent = (): ReactElement => {
                     onRenameSession={renameSession}
                     onReorderSessions={reorderSessions}
                     layoutRegistry={layoutRegistry}
+                    notificationRecords={notificationCenter.records}
                   />
                   <FilesView
                     hidden={activeTab !== 'files'}
@@ -3417,7 +3459,13 @@ const WorkspaceViewContent = (): ReactElement => {
                 ? SESSION_ISLAND_COMPACT_BATCH_SIZE
                 : undefined
             }
-            showNotifications={SESSION_ISLAND_NOTIFICATIONS_ENABLED}
+            notifications={{
+              records: notificationCenter.records,
+              onOpen: handleOpenNotification,
+              onDismiss: notificationCenter.dismiss,
+              onMarkAllRead: notificationCenter.markAllRead,
+              onClear: notificationCenter.clear,
+            }}
           />
           <span className="min-w-[10px] flex-1" />
 
