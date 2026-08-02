@@ -9,6 +9,7 @@ import {
 import type { Keybindings } from '@/features/keymap/useKeybindings'
 import { useResizable } from '@/hooks/useResizable'
 import type { ShortcutInput } from '@/lib/formatShortcut'
+import { DIFF_MIN_WIDTH_PX } from './toolbar'
 import { sumLines } from '../utils/sumLines'
 import type { ChangedFile } from '../types'
 
@@ -62,7 +63,6 @@ const hasNoReviewComments = (): boolean => false
 const PINNED_WIDTH_INITIAL = 256
 const PINNED_WIDTH_MIN = 192
 const PINNED_WIDTH_MAX = 480
-const DIFF_RIGHT_PANE_MIN_WIDTH = 192
 const RESIZE_STEP = 20
 const RESIZE_SHIFT_STEP = 100
 
@@ -467,7 +467,7 @@ export const ChangedFilesListSurface = ({
 
       const nextMax = Math.max(
         PINNED_WIDTH_MIN,
-        Math.min(PINNED_WIDTH_MAX, width - DIFF_RIGHT_PANE_MIN_WIDTH)
+        Math.min(PINNED_WIDTH_MAX, width - DIFF_MIN_WIDTH_PX)
       )
 
       setPinnedWidthMax(nextMax)

@@ -186,6 +186,9 @@ interface OverlayCheckboxClickResult {
 
 type LayoutValidationMode = 'compact-selection' | 'display-toggle'
 
+const layoutDisplayTriggerSelector =
+  '[data-testid="layout-switcher"] button[aria-label="Configure displayed layouts"]'
+
 const clickEnabledOverlayCheckbox = async (
   validationMode: LayoutValidationMode
 ): Promise<OverlayCheckboxClickResult | null> => {
@@ -602,13 +605,11 @@ const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
 }
 
 const waitForLayoutDisplayAnchor = async (): Promise<CssRect> => {
-  const trigger = await $('button[aria-label="Configure displayed layouts"]')
+  const trigger = await $(layoutDisplayTriggerSelector)
   await trigger.waitForDisplayed({ timeout: 20_000 })
 
-  const runtime = await browser.execute(() => {
-    const button = document.querySelector<HTMLElement>(
-      'button[aria-label="Configure displayed layouts"]'
-    )
+  const runtime = await browser.execute((selector) => {
+    const button = document.querySelector<HTMLElement>(selector)
     const rect = button?.getBoundingClientRect()
 
     if (!button || !rect) {
@@ -616,7 +617,7 @@ const waitForLayoutDisplayAnchor = async (): Promise<CssRect> => {
     }
 
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-  })
+  }, layoutDisplayTriggerSelector)
 
   if (runtime === null) {
     throw new Error('layout display trigger rect unavailable')
@@ -770,14 +771,12 @@ describe('NativeOverlay BrowserWindow layering', () => {
       }
     )
 
-    const clicked = await browser.execute(() => {
-      const button = document.querySelector<HTMLElement>(
-        'button[aria-label="Configure displayed layouts"]'
-      )
+    const clicked = await browser.execute((selector) => {
+      const button = document.querySelector<HTMLElement>(selector)
       button?.click()
 
       return button !== null
-    })
+    }, layoutDisplayTriggerSelector)
     if (!clicked) {
       throw new Error('layout display trigger unavailable')
     }
@@ -785,6 +784,7 @@ describe('NativeOverlay BrowserWindow layering', () => {
     await waitForEnabledOverlayCheckbox()
 
     await waitForOverlayPaint(before, paneRect, 'menu')
+    await waitForEnabledOverlayCheckbox()
 
     const checkbox = await clickEnabledOverlayCheckbox(validationMode)
     if (checkbox === null) {

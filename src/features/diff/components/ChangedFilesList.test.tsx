@@ -711,18 +711,18 @@ describe('ChangedFilesListSurface', () => {
     })
     const pane = screen.getByTestId('changed-files-pane')
 
-    await waitFor(() => expect(handle).toHaveAttribute('aria-valuemax', '288'))
+    await waitFor(() => expect(handle).toHaveAttribute('aria-valuemax', '192'))
 
     handle.focus()
     await user.keyboard('{End}')
 
-    expect(pane).toHaveStyle({ width: '288px' })
-    expect(handle).toHaveAttribute('aria-valuenow', '288')
+    expect(pane).toHaveStyle({ width: '192px' })
+    expect(handle).toHaveAttribute('aria-valuenow', '192')
 
-    fireEvent.mouseDown(handle, { clientX: 288 })
+    fireEvent.mouseDown(handle, { clientX: 192 })
     fireEvent.mouseMove(document, { clientX: 640 })
 
-    await waitFor(() => expect(pane).toHaveStyle({ width: '288px' }))
+    await waitFor(() => expect(pane).toHaveStyle({ width: '192px' }))
 
     fireEvent.mouseUp(document)
 
@@ -769,12 +769,12 @@ describe('ChangedFilesListSurface', () => {
     })
     const pane = screen.getByTestId('changed-files-pane')
 
-    await waitFor(() => expect(handle).toHaveAttribute('aria-valuemax', '480'))
+    await waitFor(() => expect(handle).toHaveAttribute('aria-valuemax', '440'))
 
     handle.focus()
     await user.keyboard('{End}')
 
-    expect(pane).toHaveStyle({ width: '480px' })
+    expect(pane).toHaveStyle({ width: '440px' })
 
     const observer = MockResizeObserver.instances.find((instance) =>
       instance.observe.mock.calls.some(([element]) => element === body)
@@ -790,8 +790,8 @@ describe('ChangedFilesListSurface', () => {
     })
 
     await waitFor(() => {
-      expect(handle).toHaveAttribute('aria-valuemax', '208')
-      expect(pane).toHaveStyle({ width: '208px' })
+      expect(handle).toHaveAttribute('aria-valuemax', '192')
+      expect(pane).toHaveStyle({ width: '192px' })
     })
 
     rectSpy.mockRestore()
