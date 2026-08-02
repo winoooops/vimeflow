@@ -1125,10 +1125,11 @@
               胜出”。两者已经出现行为漂移，适合共享同一个 sentinel block
               selector；这不是 speculative
               abstraction，而是修复已存在的重复协议实现。超出 24 KiB 的 payload
-              不做 partial JSON parse，产生的 nonce-less diagnostic event 不能立即关联。
-              frontend 复用 pending record 的 dispatchedAt：30 分钟仍无合法结构化结果时，
-              在原 feedback handle 或 review-level surface 写入可操作失败说明并清除持久化 pending，
-              reload 不会无限 recovery。
+              不做 partial JSON parse，产生的 nonce-less diagnostic event
+              不能立即关联。 frontend 复用 pending record 的 dispatchedAt：30
+              分钟仍无合法结构化结果时， 在原 feedback handle 或 review-level
+              surface 写入可操作失败说明并清除持久化 pending， reload 不会无限
+              recovery。
             </p>
           </div>
         </section>
@@ -1246,12 +1247,12 @@ agent.supportsHunkReview ?? false</pre>
               <span class="number">04 · BOUND</span>
               <h3>Tail clamp 32 KiB</h3>
               <p>
-                保留 turn 尾部；共享协议按原始 UTF-8 byte range 计数：从 open marker
-                行的换行后开始，到 close marker 行首结束，payload 行自己的 LF/CRLF
-                计入，marker 行的缩进、blockquote prefix 与尾空格不计入；但每个原始
-                marker line 自身最多 256 bytes，超限不识别。payload 上限为
-                24 KiB，且每轮最多一个 reply 或 review block，确保完整
-                合规 block 留在 buffer 内。
+                保留 turn 尾部；共享协议按原始 UTF-8 byte range 计数：从 open
+                marker 行的换行后开始，到 close marker 行首结束，payload
+                行自己的 LF/CRLF 计入，marker 行的缩进、blockquote prefix
+                与尾空格不计入；但每个原始 marker line 自身最多 256
+                bytes，超限不识别。payload 上限为 24 KiB，且每轮最多一个 reply
+                或 review block，确保完整 合规 block 留在 buffer 内。
               </p>
             </article>
             <article class="flow-card">
@@ -1268,8 +1269,9 @@ agent.supportsHunkReview ?? false</pre>
               <strong>最小复用：</strong>把 buffer append、UTF-8-safe tail
               clamp、fresh-user-turn clear、end_turn take 封装成 Kimi adapter
               内部的小型纯状态对象。live decoder 和 recovery scanner
-              共用它，并保留 retained first byte 是否原始 line boundary 的 boolean；
-              partial first line 中的 inline marker 不会因 clamp 变成 standalone marker。
+              共用它，并保留 retained first byte 是否原始 line boundary 的
+              boolean； partial first line 中的 inline marker 不会因 clamp 变成
+              standalone marker。
             </p>
           </div>
 
@@ -1280,8 +1282,14 @@ agent.supportsHunkReview ?? false</pre>
               <li>只有 main wire 的 <code>end_turn</code> 能结束主回答。</li>
               <li>think part 中即使包含 sentinel 也不能 emit。</li>
               <li>被中断 turn 的 buffer 不能泄漏到下一轮。</li>
-              <li>recovery 的每个 tail window 必须先看到真实 main-agent user prompt；窗口开头残留的 content/end 记录一律忽略。</li>
-              <li>首次 replay 继续推进既有状态，但不能重复产生 live reply/review event；其他 lifecycle/activity/summary 行为不变。</li>
+              <li>
+                recovery 的每个 tail window 必须先看到真实 main-agent user
+                prompt；窗口开头残留的 content/end 记录一律忽略。
+              </li>
+              <li>
+                首次 replay 继续推进既有状态，但不能重复产生 live reply/review
+                event；其他 lifecycle/activity/summary 行为不变。
+              </li>
               <li>recovery 可以扫描历史 turn，但只返回请求 nonce。</li>
               <li>超过 32 KiB 的违规 block 只保证内存有界，不从残片 emit。</li>
             </ul>
@@ -1297,7 +1305,8 @@ agent.supportsHunkReview ?? false</pre>
             <p>
               bridge 在 <code>session.idle</code> 写入一条 bounded
               <code>assistant.text</code>，Rust 不需要再次聚合 token snapshots；
-              PR 2 将安装版本升级到 v4，修复 UTF-16 clamp 可能切断 emoji 的问题。
+              PR 2 将安装版本升级到 v4，修复 UTF-16 clamp 可能切断 emoji
+              的问题。
             </p>
           </div>
 
@@ -1308,41 +1317,51 @@ agent.supportsHunkReview ?? false</pre>
               <p>
                 只聚合 assistant message；用户 prompt 不写入，避免 prompt
                 自带的示例 sentinel 被回读。更新过程中每 session 保持 32 KiB
-                UTF-8 尾部预算；最多 64 sessions、256 个 pending messages。
-                每个 message 只保存 committed tail、当前 part ID 与它的最新完整
-                snapshot；同 part 替换，新 part 才提交前一段，所以超过 256 个顺序
-                text parts 也不会消耗 256 个 map entries。committed snapshots 按
-                message content 顺序无分隔符原样拼接，再对合并文本做 UTF-8 tail clamp。
-                每个 retained tail 同时保存真实 line-boundary provenance，part boundary
-                本身不视为换行；若最终 tail 从已 clamp 的 active segment 起步，必须使用
-                active 保存的 provenance，不能借用 committed 的最后一个换行。
-                这里依赖 OpenCode 原生的
-                同 part snapshots 连续 contract，不为不可能的 A→B→A 保存 seen-ID set。
-                active snapshot 入库前先做 UTF-8
-                byte clamp。unknown-role pending LRU 合计使用 64 KiB / 256 messages，
-                pending accumulator 与 confirmed assistant 使用相同的 part-ID full-snapshot
-                replace、next-part commit 与 provenance 规则，promote 时直接移动不重复拼接。
-                超限淘汰最旧的完整 pending accumulator，并把该 message ID 标为本 turn
-                ignored，禁止残缺或后续 promote；role=user 时丢弃，role=assistant 时 promote
-                成唯一 current assistant，并替换旧 candidate。current assistant 保存
-                32 KiB committed tail 与独立 32 KiB active snapshot；active snapshot
-                变短时直接替换，最终再合并 clamp，因此不需要找回已丢弃的 committed bytes。
-                它不会被 user/unresolved text 污染。role 先到时写入 bounded
-                knownRoles，后续 parts 直接按 assistant/user 路由；同 role 重复更新幂等，
-                role 冲突则该 message fail closed。idle 只输出 current assistant。
-                如果因 pending/message 上限而 ignored 的 ID 后来确认是 assistant，必须先清掉
-                旧 current candidate 并继续忽略新 ID，idle 不得误发已被 supersede 的旧回复。
-                text part 以 part.sessionID 为准；若 outer properties.sessionID 同时存在，
-                两者必须相等，否则忽略事件。lastDirectory 只在完整 UTF-8 bytes 不超过
-                2 KiB 时保存；超限 transition 清除 routable directory，并只写一条
-                <code>directory: ""</code> invalidation row；locator 必须先按 session 只保留 newest row，
-                并把空目录解析成 absent，不能继续用旧 cwd 或截断新值。session ID
-                先通过现有 128-char SAFE_SESSION_ID contract，message/part ID 最多
-                256 bytes；统一的 SessionState 同时拥有 lastDirectory、active flag 与 LRU ordinal。
-                只有 session.created 可分配 state；满 64 时淘汰最旧 inactive entry，全 active
-                时忽略新 creation 及其 unknown-ID suffix，避免重建 partial turn。idle/error
-                清 turn buffer 并标 inactive，因此完成的 session 可以回收。带合法 session ID 的 session.error 只清对应 turn buffer；
-                ID 缺失或非法时清全部最多 64 个 session 的 turn buffer，均保留 lastDirectory。
+                UTF-8 尾部预算；最多 64 sessions、256 个 pending messages。 每个
+                message 只保存 committed tail、当前 part ID 与它的最新完整
+                snapshot；同 part 替换，新 part 才提交前一段，所以超过 256
+                个顺序 text parts 也不会消耗 256 个 map entries。committed
+                snapshots 按 message content
+                顺序无分隔符原样拼接，再对合并文本做 UTF-8 tail clamp。 每个
+                retained tail 同时保存真实 line-boundary provenance，part
+                boundary 本身不视为换行；若最终 tail 从已 clamp 的 active
+                segment 起步，必须使用 active 保存的 provenance，不能借用
+                committed 的最后一个换行。 这里依赖 OpenCode 原生的 同 part
+                snapshots 连续 contract，不为不可能的 A→B→A 保存 seen-ID set。
+                active snapshot 入库前先做 UTF-8 byte clamp。unknown-role
+                pending LRU 合计使用 64 KiB / 256 messages， pending accumulator
+                与 confirmed assistant 使用相同的 part-ID full-snapshot
+                replace、next-part commit 与 provenance 规则，promote
+                时直接移动不重复拼接。 超限淘汰最旧的完整 pending
+                accumulator，并把该 message ID 标为本 turn
+                ignored，禁止残缺或后续 promote；role=user
+                时丢弃，role=assistant 时 promote 成唯一 current
+                assistant，并替换旧 candidate。current assistant 保存 32 KiB
+                committed tail 与独立 32 KiB active snapshot；active snapshot
+                变短时直接替换，最终再合并 clamp，因此不需要找回已丢弃的
+                committed bytes。 它不会被 user/unresolved text 污染。role
+                先到时写入 bounded knownRoles，后续 parts 直接按 assistant/user
+                路由；同 role 重复更新幂等， role 冲突则该 message fail
+                closed。idle 只输出 current assistant。 如果因 pending/message
+                上限而 ignored 的 ID 后来确认是 assistant，必须先清掉 旧 current
+                candidate 并继续忽略新 ID，idle 不得误发已被 supersede
+                的旧回复。 text part 以 part.sessionID 为准；若 outer
+                properties.sessionID 同时存在，
+                两者必须相等，否则忽略事件。lastDirectory 只在完整 UTF-8 bytes
+                不超过 2 KiB 时保存；超限 transition 清除 routable
+                directory，并只写一条
+                <code>directory: ""</code> invalidation row；locator 必须先按
+                session 只保留 newest row， 并把空目录解析成
+                absent，不能继续用旧 cwd 或截断新值。session ID 先通过现有
+                128-char SAFE_SESSION_ID contract，message/part ID 最多 256
+                bytes；统一的 SessionState 同时拥有 lastDirectory、active flag
+                与 LRU ordinal。 只有 session.created 可分配 state；满 64
+                时淘汰最旧 inactive entry，全 active 时忽略新 creation 及其
+                unknown-ID suffix，避免重建 partial turn。idle/error 清 turn
+                buffer 并标 inactive，因此完成的 session 可以回收。带合法
+                session ID 的 session.error 只清对应 turn buffer； ID
+                缺失或非法时清全部最多 64 个 session 的 turn buffer，均保留
+                lastDirectory。
               </p>
             </article>
             <div class="arrow" aria-hidden="true">→</div>
@@ -1353,8 +1372,9 @@ agent.supportsHunkReview ?? false</pre>
                 在
                 <code>session.idle</code>
                 写一次，tail-clamped，已经是一轮完整文本；同时写入
-                <code>data.startsAtLineBoundary</code>，让 Rust 保留 clamp 前后的真实行边界。
-                旧 row 缺字段时按 false 解码并忽略首个 retained line。
+                <code>data.startsAtLineBoundary</code>，让 Rust 保留 clamp
+                前后的真实行边界。 旧 row 缺字段时按 false 解码并忽略首个
+                retained line。
               </p>
             </article>
             <div class="arrow" aria-hidden="true">→</div>
@@ -1370,19 +1390,21 @@ agent.supportsHunkReview ?? false</pre>
           <div class="callout good">
             <p>
               <strong>最小 plugin 修正：</strong>保持 JSONL schema version 1，给
-              <code>assistant.text</code> 增加向后兼容的可选 provenance 字段，并把 clamp 改为按 UTF-8
-              bytes、code-point boundary 保留 32 KiB，并将安装版本从 v3 升为
-              v4。backend 启动、PTY 可创建前先安装并记录本次运行的 ready 状态；
-              失败时仅让 OpenCode binding fail closed、不给 live candidate，其他
-              agent 与 terminal 仍可用。本次运行不做 attach-time repair；下次 backend
-              startup 重新执行同一安装流程。immutable bool 由 BackendState 持有并通过
-              AttachContext 传到 AgentBindings；installer 用完整 bytes 判断 up-to-date，
-              同 header 的损坏文件也重写，只有磁盘 bytes 与 embedded v4 完全一致
-              才为 true。Unix 使用 atomic rename；Windows 沿用 remove/rename best effort，
-              crash 后由下次 startup verification 修复。<code>#[doc(hidden)] pub</code>
-              BackendState test constructor 接受显式 plugins dir，crate-external integration
-              tests 与 <code>with_fake_sink</code> 都必须由 caller 持有 TempDir，不写真实目录。
-              无需新增 event type 或读取 OpenCode DB。
+              <code>assistant.text</code> 增加向后兼容的可选 provenance
+              字段，并把 clamp 改为按 UTF-8 bytes、code-point boundary 保留 32
+              KiB，并将安装版本从 v3 升为 v4。backend 启动、PTY
+              可创建前先安装并记录本次运行的 ready 状态； 失败时仅让 OpenCode
+              binding fail closed、不给 live candidate，其他 agent 与 terminal
+              仍可用。本次运行不做 attach-time repair；下次 backend startup
+              重新执行同一安装流程。immutable bool 由 BackendState 持有并通过
+              AttachContext 传到 AgentBindings；installer 用完整 bytes 判断
+              up-to-date， 同 header 的损坏文件也重写，只有磁盘 bytes 与
+              embedded v4 完全一致 才为 true。Unix 使用 atomic rename；Windows
+              沿用 remove/rename best effort， crash 后由下次 startup
+              verification 修复。<code>#[doc(hidden)] pub</code> BackendState
+              test constructor 接受显式 plugins dir，crate-external integration
+              tests 与 <code>with_fake_sink</code> 都必须由 caller 持有
+              TempDir，不写真实目录。 无需新增 event type 或读取 OpenCode DB。
             </p>
           </div>
 
@@ -1459,14 +1481,15 @@ agent.supportsHunkReview ?? false</pre>
                 <p>
                   复用 <code>for_each_bounded_line</code>，忽略
                   malformed/oversized rows；provider 按 transcript 顺序交出完整
-                  turn，base recovery collector 负责 requested nonce 与原始顺序；
-                  每个 Kimi adapter 保存 newest 256 个成功 tail 的 original
-                  main-wire paths；同一个 original path 取最后一次，指向同一 canonical
-                  target 的不同 aliases 继续保留；scan 前重新校验并按新的 canonical identity 分组，
-                  对 original path 做 no-follow open；每个 path 扫描 128 KiB 尾部（总计最多 32 MiB），并只
-                  保留 newest 512 completed turns，再按承载 step.end 的顶层
-                  record.time 排序。
-                  frontend 负责内容相同的 reply 幂等，初始 review 每 nonce 只恢复首个。
+                  turn，base recovery collector 负责 requested nonce
+                  与原始顺序； 每个 Kimi adapter 保存 newest 256 个成功 tail 的
+                  original main-wire paths；同一个 original path
+                  取最后一次，指向同一 canonical target 的不同 aliases
+                  继续保留；scan 前重新校验并按新的 canonical identity 分组， 对
+                  original path 做 no-follow open；每个 path 扫描 128 KiB
+                  尾部（总计最多 32 MiB），并只 保留 newest 512 completed
+                  turns，再按承载 step.end 的顶层 record.time 排序。 frontend
+                  负责内容相同的 reply 幂等，初始 review 每 nonce 只恢复首个。
                 </p>
               </div>
             </div>
@@ -1490,63 +1513,73 @@ agent.supportsHunkReview ?? false</pre>
               <strong>安全/资源边界不变：</strong>IPC 已限制 nonce
               数量与长度；transcript path 已由各 adapter 校验在 provider root
               下；只有新旧 streamer 声明相同的 provider + canonical validator
-              trust root，base 才继承历史路径。跨 provider、root 变化或默认未声明
-              domain 都 fail closed，只保留新 adapter 已验证的路径。扫描使用共享
-              bounded-line reader。recovery IPC 在 clone source 前获取同一 session
-              gate，确保新 tailer 的 replay summary 不能抢在 source publication 前
-              扫描旧 source；clone 后立即释放 gate，不跨文件 I/O 持锁。scan 后再用
-              source revision/generation/domain 检查，replacement/teardown 期间得到的旧
-              result 直接丢弃。永久删除 PTY
-              每次 PTY spawn 分配单调 generation。PtyState 用一个短生命周期 mutex
-              一次性 snapshot generation/cwd/shell PID/start time，并串行化 session insert
-              与成功 remove 后的 agent-generation close/cache/event；remove 后先 close
-              generation，再发布 cache/event，
-              callback 在 lifecycle gate 内、sessions mutex 外 detach 并 signal watcher/transcript，
-              A 完成关闭后才允许同 ID 的 B 插入；callback 返回 handles，gate 外再 drop/join。
-              BackendState 构造时给 PtyState 注册
-              唯一 generation-removal callback；reader/reaper 调用 remove primitive 时
-              带上捕获的 expected generation，仅匹配当前 entry 才实际删除并同步发
-              (session ID, generation) teardown，因此旧 generation 的延迟 EOF/read error
-              不能删掉同 ID 的新 PTY；只有实际移除匹配 generation 后才能更新 cache 或
-              emit pty-exit/pty-error。它先在 PTY mutex 内 extract，再释放 mutex 后进入
-              agent gate，即使上层后续 cache update 失败也不遗漏。gate 内
+              trust root，base 才继承历史路径。跨 provider、root
+              变化或默认未声明 domain 都 fail closed，只保留新 adapter
+              已验证的路径。扫描使用共享 bounded-line reader。recovery IPC 在
+              clone source 前获取同一 session gate，确保新 tailer 的 replay
+              summary 不能抢在 source publication 前 扫描旧 source；clone
+              后立即释放 gate，不跨文件 I/O 持锁。scan 后再用 source
+              revision/generation/domain 检查，replacement/teardown 期间得到的旧
+              result 直接丢弃。永久删除 PTY 每次 PTY spawn 分配单调
+              generation。PtyState 用一个短生命周期 mutex 一次性 snapshot
+              generation/cwd/shell PID/start time，并串行化 session insert
+              与成功 remove 后的 agent-generation close/cache/event；remove 后先
+              close generation，再发布 cache/event， callback 在 lifecycle gate
+              内、sessions mutex 外 detach 并 signal watcher/transcript， A
+              完成关闭后才允许同 ID 的 B 插入；callback 返回 handles，gate 外再
+              drop/join。 BackendState 构造时给 PtyState 注册 唯一
+              generation-removal callback；reader/reaper 调用 remove primitive
+              时 带上捕获的 expected generation，仅匹配当前 entry
+              才实际删除并同步发 (session ID, generation) teardown，因此旧
+              generation 的延迟 EOF/read error 不能删掉同 ID 的新
+              PTY；只有实际移除匹配 generation 后才能更新 cache 或 emit
+              pty-exit/pty-error。它先在 PTY mutex 内 extract，再释放 mutex
+              后进入 agent gate，即使上层后续 cache update 失败也不遗漏。gate 内
               close generation 并移除匹配 agent state；watcher 注册和 transcript
-              publication 也必须在同一 gate 下拒绝 closed generation，因此没有有效
-              transcript hint 的旧 attach 也不能发布。每次 attach 分配独立
-              attach-instance identity：同一 attach 的重复 callback 可判定 AlreadyRunning，
-              同 PTY 内的新 agent process 必须 replacement。gate 外 join。reader 的
-              generation mismatch 是完整 no-op；用户 explicit close 即使 EOF 已移除 PTY，
-              仍在 lifecycle gate 下删除 exited cache entry，避免下次启动恢复旧 session。
-              explicit close 在 lifecycle gate 内锁定 expected generation 后才 kill/remove；
-              child.kill() 失败时则保留 PTY/cache/generation/agent state 供重试。
-              kill 成功后若 cache mutation closure 失败，PTY/agent 仍保持已移除并返回错误；
-              list reconciliation 把旧 row 标为 exited，第二次 close 重试删除。disk flush
-              failure 沿用现有 best-effort：内存已删、记录日志并返回成功。
-              agent watcher/tailer 使用 attach-scoped GenerationEventSink；每次 emit 在同一
-              agent gate 下检查 captured (generation, attach-instance ID)，A closed 或被同 PTY
-              新 attach 替代后的迟到 status/reply/review
-              会被丢弃，terminal event 仍走原 sink。这里的 agent gate 就是唯一的
-              TranscriptState session gate；replacement 在 gate 内只 detach/signal 并设置
-              token 与 one-shot installation latch，所有 wait/join/provider I/O 都在 gate 外；
-              recovery 和新 tail worker 等待 Installed/Aborted，再凭 token 安装或丢弃。
-              新 installation latch 只交给 recovery waiter 与 candidate tailer；incumbent sink
-              看到 Replacing 后直接按旧 identity/revision 丢 event，绝不等待 candidate latch，
-              因而 replacement 可以先 join incumbent 再决定 Installed/Aborted，不形成环形等待。
-              watcher startup 改为 prepare → under-gate commit watcher + attach ID → activate；
-              所有可失败 setup 在 commit 前完成，initial decode/tail 只在 commit 后运行。
-              同 generation 已有更大的 process-monotonic attach ID 时，较旧或相等 ID 的
-              prepared watcher 在 gate 内直接丢弃，不能覆盖较新的 commit。
-              这里“丢弃”只表示 gate 内标 stale、关闭现有 owns_transcript cascade 并 detach；
-              watcher/transcript handle 必须返回 caller，在 gate 外 drop/join。旧 watcher
-              即使在新 same-session attach commit 后才析构，也不能再通过 Drop 调用按 session ID
-              的 stop 去移除新 transcript；被拒绝的 prepared watcher 同样在 gate 外清理。
-              Kimi/OpenCode tail() 的这项兼容改动都在 PR 1：先返回 handle，initial cwd
-              由 worker emit，避免同步等待自己的 latch；OpenCode review parsing 仍在 PR 2。
-              PR 1 也冻结 OpenCode locator root 并返回 non-None RecoveryDomain，保证同 attach
-              的重复 callback 可走 AlreadyRunning；这不包含 OpenCode reply/review parsing 或 capability。
-              watcher commit 对新的 attach-instance 一律 fail-closed：gate 内 detach/signal 旧
-              watcher/transcript、清空 recovery history，gate 外 join；只有同一 attach 内的
-              path replacement 才能按相同 non-None domain 继承历史。
+              publication 也必须在同一 gate 下拒绝 closed
+              generation，因此没有有效 transcript hint 的旧 attach
+              也不能发布。每次 attach 分配独立 attach-instance identity：同一
+              attach 的重复 callback 可判定 AlreadyRunning， 同 PTY 内的新 agent
+              process 必须 replacement。gate 外 join。reader 的 generation
+              mismatch 是完整 no-op；用户 explicit close 即使 EOF 已移除 PTY，
+              仍在 lifecycle gate 下删除 exited cache entry，避免下次启动恢复旧
+              session。 explicit close 在 lifecycle gate 内锁定 expected
+              generation 后才 kill/remove； child.kill() 失败时则保留
+              PTY/cache/generation/agent state 供重试。 kill 成功后若 cache
+              mutation closure 失败，PTY/agent 仍保持已移除并返回错误； list
+              reconciliation 把旧 row 标为 exited，第二次 close 重试删除。disk
+              flush failure 沿用现有 best-effort：内存已删、记录日志并返回成功。
+              agent watcher/tailer 使用 attach-scoped GenerationEventSink；每次
+              emit 在同一 agent gate 下检查 captured (generation,
+              attach-instance ID)，A closed 或被同 PTY 新 attach 替代后的迟到
+              status/reply/review 会被丢弃，terminal event 仍走原 sink。这里的
+              agent gate 就是唯一的 TranscriptState session gate；replacement 在
+              gate 内只 detach/signal 并设置 token 与 one-shot installation
+              latch，所有 wait/join/provider I/O 都在 gate 外； recovery 和新
+              tail worker 等待 Installed/Aborted，再凭 token 安装或丢弃。 新
+              installation latch 只交给 recovery waiter 与 candidate
+              tailer；incumbent sink 看到 Replacing 后直接按旧 identity/revision
+              丢 event，绝不等待 candidate latch， 因而 replacement 可以先 join
+              incumbent 再决定 Installed/Aborted，不形成环形等待。 watcher
+              startup 改为 prepare → under-gate commit watcher + attach ID →
+              activate； 所有可失败 setup 在 commit 前完成，initial decode/tail
+              只在 commit 后运行。 同 generation 已有更大的 process-monotonic
+              attach ID 时，较旧或相等 ID 的 prepared watcher 在 gate
+              内直接丢弃，不能覆盖较新的 commit。 这里“丢弃”只表示 gate 内标
+              stale、关闭现有 owns_transcript cascade 并 detach；
+              watcher/transcript handle 必须返回 caller，在 gate 外
+              drop/join。旧 watcher 即使在新 same-session attach commit
+              后才析构，也不能再通过 Drop 调用按 session ID 的 stop 去移除新
+              transcript；被拒绝的 prepared watcher 同样在 gate 外清理。
+              Kimi/OpenCode tail() 的这项兼容改动都在 PR 1：先返回
+              handle，initial cwd 由 worker emit，避免同步等待自己的
+              latch；OpenCode review parsing 仍在 PR 2。 PR 1 也冻结 OpenCode
+              locator root 并返回 non-None RecoveryDomain，保证同 attach 的重复
+              callback 可走 AlreadyRunning；这不包含 OpenCode reply/review
+              parsing 或 capability。 watcher commit 对新的 attach-instance 一律
+              fail-closed：gate 内 detach/signal 旧 watcher/transcript、清空
+              recovery history，gate 外 join；只有同一 attach 内的 path
+              replacement 才能按相同 non-None domain 继承历史。
             </p>
           </div>
         </section>
@@ -1590,7 +1623,10 @@ agent.supportsHunkReview ?? false</pre>
                 <li>实现两种 bounded recovery scan。</li>
                 <li>复用共享 event mapping 与 frontend ingestion。</li>
                 <li>OpenCode capability 从 false 翻为 true。</li>
-                <li>升级 plugin 安装版本至 v4，修复 Unicode clamp；schema 仍为 v1。</li>
+                <li>
+                  升级 plugin 安装版本至 v4，修复 Unicode clamp；schema 仍为
+                  v1。
+                </li>
               </ol>
               <p>
                 <strong>用户结果：</strong>OpenCode 获得与 Kimi/Claude/Codex
@@ -2007,8 +2043,8 @@ agent.supportsHunkReview ?? false</pre>
                   <td>Recovery</td>
                   <td>
                     reply 保留全局最新 128 个 requested matches 并按原序返回；
-                    review 每 nonce 只返回首个 completed match；unrelated/incomplete
-                    忽略；sessionId 使用调用方 PTY。
+                    review 每 nonce 只返回首个 completed
+                    match；unrelated/incomplete 忽略；sessionId 使用调用方 PTY。
                   </td>
                   <td>如何从历史 rows 重建 completed reviewer text。</td>
                 </tr>
@@ -2027,8 +2063,9 @@ agent.supportsHunkReview ?? false</pre>
               <p class="label">PR 1 · Foundation + Kimi</p>
               <ol>
                 <li>
-                  Shared parser：standalone/block-quoted marker、JSON text marker
-                  literal、last complete、trailing orphan 与 24 KiB limit。
+                  Shared parser：standalone/block-quoted marker、JSON text
+                  marker literal、last complete、trailing orphan 与 24 KiB
+                  limit。
                 </li>
                 <li>
                   Base TranscriptState：reply + review
@@ -2040,8 +2077,8 @@ agent.supportsHunkReview ?? false</pre>
                 </li>
                 <li>
                   Kimi recovery：A→B→C wire history 全扫；reply 断言 same-nonce
-                  顺序，review 断言每 nonce 首个；validator/NotFound skip 与 fatal
-                  read error 分开测试。
+                  顺序，review 断言每 nonce 首个；validator/NotFound skip 与
+                  fatal read error 分开测试。
                 </li>
                 <li>
                   Frontend：picker 根据
@@ -2058,9 +2095,9 @@ agent.supportsHunkReview ?? false</pre>
                   review 不 emit。
                 </li>
                 <li>
-                  OpenCode recovery：同一 bridge JSONL 放
-                  requested same-nonce turns、unrelated 与非 assistant.text row；
-                  reply 保序返回，review 每 nonce 只取首个。
+                  OpenCode recovery：同一 bridge JSONL 放 requested same-nonce
+                  turns、unrelated 与非 assistant.text row； reply
+                  保序返回，review 每 nonce 只取首个。
                 </li>
                 <li>
                   同时锁住 reply recovery，防止实现 review 时只接半条协议。
@@ -2072,13 +2109,15 @@ agent.supportsHunkReview ?? false</pre>
                 <li>
                   增加 plugin v4 安装与 astral-character prefix 测试，证明 clamp
                   不产生 unpaired surrogate 或无效 JSONL；超过 256 个顺序 text
-                  parts 拼出的完整 24 KiB block 仍被保留；同 part snapshot 只替换不
-                  重复；非连续旧 part 更新 fail closed；oversized active snapshot、
-                  multi-message 与 message 257 在 idle 前遵守 session-wide byte/message
-                  caps；session.error 不得把失败 turn 泄漏到下一次 idle；backend 启动、
-                  PTY 创建前安装 v4，失败则本次运行无 OpenCode live candidate，attach
-                  retry 只准备下一次 backend run；assistant.text 写入
-                  startsAtLineBoundary，旧 v1 row 缺字段按 false；record schema version 仍为 v1。
+                  parts 拼出的完整 24 KiB block 仍被保留；同 part snapshot
+                  只替换不 重复；非连续旧 part 更新 fail closed；oversized
+                  active snapshot、 multi-message 与 message 257 在 idle 前遵守
+                  session-wide byte/message caps；session.error 不得把失败 turn
+                  泄漏到下一次 idle；backend 启动、 PTY 创建前安装
+                  v4，失败则本次运行无 OpenCode live candidate，attach retry
+                  只准备下一次 backend run；assistant.text 写入
+                  startsAtLineBoundary，旧 v1 row 缺字段按 false；record schema
+                  version 仍为 v1。
                 </li>
               </ol>
             </article>
@@ -2100,8 +2139,9 @@ agent.supportsHunkReview ?? false</pre>
                 不同，宏只会隐藏测试 输入，降低 reviewer 可读性。
               </li>
               <li>
-                不为 OpenCode 做 breaking schema-version 变化或数据库迁移；只修复 producer 的 Unicode-safe
-                byte clamp，并给 assistant.text 增加向后兼容的可选 provenance 字段。
+                不为 OpenCode 做 breaking schema-version
+                变化或数据库迁移；只修复 producer 的 Unicode-safe byte
+                clamp，并给 assistant.text 增加向后兼容的可选 provenance 字段。
               </li>
             </ul>
           </details>
@@ -2168,22 +2208,24 @@ npm run format:check</pre
               <h3>只扫描已验证 transcript</h3>
               <p>
                 session gate 内先 stop/join 旧 tailer，再 snapshot 默认空的
-                recovery_paths()；所有来源必须已经 validated/canonicalized，merge
-                只按 exact original path 去重并保留 newest 256，不能提前丢掉同一 canonical
-                target 的不同 aliases。只有相同的非空 RecoveryDomain（agent type +
-                canonical validator trust root）才继承旧 history；跨 provider、root
-                变化或默认 None 都清空旧路径，且 domain 是 start_or_replace identity
-                的一部分。recovery clone source 前获取同一 session gate；每次 open
-                registration 从 validator 起就同时传递 original provider path 与 canonical
-                identity；live tail 使用 canonical path，恢复保留 original 做 revalidate +
-                no-follow open，避免 start_or_replace 丢失任一语义。恢复时
-                validator 用 original path 校验 canonical containment；任何 validation
-                error 都只跳过该 candidate。成功项按新 canonical
-                identity 分组，不先丢 aliases；每组从 newest original path 开始调用
-                filesystem 的 leaf open_nofollow，NotFound/Symlink 则试下一个 alias，
-                首个可读 alias 只扫描一次。group ordinal 固定取 newest member 的原始位置，
-                fallback 不改变 timestamp tie order；其他 I/O
-                可 propagate。它拒绝删除、已有越界路径与 leaf symlink，但不
+                recovery_paths()；所有来源必须已经
+                validated/canonicalized，merge 只按 exact original path
+                去重并保留 newest 256，不能提前丢掉同一 canonical target 的不同
+                aliases。只有相同的非空 RecoveryDomain（agent type + canonical
+                validator trust root）才继承旧 history；跨 provider、root
+                变化或默认 None 都清空旧路径，且 domain 是 start_or_replace
+                identity 的一部分。recovery clone source 前获取同一 session
+                gate；每次 open registration 从 validator 起就同时传递 original
+                provider path 与 canonical identity；live tail 使用 canonical
+                path，恢复保留 original 做 revalidate + no-follow open，避免
+                start_or_replace 丢失任一语义。恢复时 validator 用 original path
+                校验 canonical containment；任何 validation error 都只跳过该
+                candidate。成功项按新 canonical identity 分组，不先丢
+                aliases；每组从 newest original path 开始调用 filesystem 的 leaf
+                open_nofollow，NotFound/Symlink 则试下一个 alias， 首个可读
+                alias 只扫描一次。group ordinal 固定取 newest member
+                的原始位置， fallback 不改变 timestamp tie order；其他 I/O 可
+                propagate。它拒绝删除、已有越界路径与 leaf symlink，但不
                 虚假宣称解决同用户反复替换 parent component 的竞态；后者需要全仓
                 fd-relative traversal。任何情况下都不能接受 renderer 任意路径。
               </p>
@@ -2260,9 +2302,11 @@ npm run format:check</pre
             <div class="review-item">
               <span class="check">5</span>
               <p>
-                <strong>OpenCode bridge：</strong><code>assistant.text</code> schema
-                version 保持 v1；安装版本升至 v4，以 UTF-8-safe clamp 取代 v3 的 UTF-16
-                slice，并携带 startsAtLineBoundary；旧 row 缺字段时 fail closed。
+                <strong>OpenCode bridge：</strong
+                ><code>assistant.text</code> schema version 保持
+                v1；安装版本升至 v4，以 UTF-8-safe clamp 取代 v3 的 UTF-16
+                slice，并携带 startsAtLineBoundary；旧 row 缺字段时 fail
+                closed。
               </p>
             </div>
             <div class="review-item">
