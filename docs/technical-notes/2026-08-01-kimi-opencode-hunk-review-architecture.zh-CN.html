@@ -1125,8 +1125,10 @@
               胜出”。两者已经出现行为漂移，适合共享同一个 sentinel block
               selector；这不是 speculative
               abstraction，而是修复已存在的重复协议实现。超出 24 KiB 的 payload
-              不做 partial JSON parse，产生的 nonce-less diagnostic event 会被现有
-              frontend fail-closed 忽略，不显示到 thread，也不解除 pending request。
+              不做 partial JSON parse，产生的 nonce-less diagnostic event 不能立即关联。
+              frontend 复用 pending record 的 dispatchedAt：30 分钟仍无合法结构化结果时，
+              在原 feedback handle 或 review-level surface 写入可操作失败说明并清除持久化 pending，
+              reload 不会无限 recovery。
             </p>
           </div>
         </section>
@@ -1336,9 +1338,10 @@ agent.supportsHunkReview ?? false</pre>
                 <code>directory: ""</code> invalidation row；locator 必须先按 session 只保留 newest row，
                 并把空目录解析成 absent，不能继续用旧 cwd 或截断新值。session ID
                 先通过现有 128-char SAFE_SESSION_ID contract，message/part ID 最多
-                256 bytes；统一的 SessionState 同时拥有 lastDirectory。map 固定最多 64 个
-                session 且不 eviction；满额后的新 session 在本次 backend run 持续忽略，避免
-                从丢失前缀的 suffix events 重建 partial turn。带合法 session ID 的 session.error 只清对应 turn buffer；
+                256 bytes；统一的 SessionState 同时拥有 lastDirectory、active flag 与 LRU ordinal。
+                只有 session.created 可分配 state；满 64 时淘汰最旧 inactive entry，全 active
+                时忽略新 creation 及其 unknown-ID suffix，避免重建 partial turn。idle/error
+                清 turn buffer 并标 inactive，因此完成的 session 可以回收。带合法 session ID 的 session.error 只清对应 turn buffer；
                 ID 缺失或非法时清全部最多 64 个 session 的 turn buffer，均保留 lastDirectory。
               </p>
             </article>
