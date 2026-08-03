@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { AgentAlias } from '@/bindings'
 import {
+  agentIdentityFromCommand,
   agentLauncherFromCommand,
   buildAgentResumeCommand,
   buildAgentStartCommand,
@@ -129,6 +130,17 @@ describe('buildAgentResumeCommand', () => {
   test('recognizes submitted canonical and configured alias launchers', () => {
     const aliases = enabledAliases(alias('CC', 'claude'))
 
+    expect(agentIdentityFromCommand('  CC --verbose', aliases)).toEqual({
+      launcher: 'CC',
+      agentId: 'claude',
+      agentType: 'claude-code',
+    })
+
+    expect(agentIdentityFromCommand('codex --search', aliases)).toEqual({
+      launcher: 'codex',
+      agentId: 'codex',
+      agentType: 'codex',
+    })
     expect(agentLauncherFromCommand('  CC --verbose', aliases)).toBe('CC')
     expect(agentLauncherFromCommand('codex --search', aliases)).toBe('codex')
     expect(agentLauncherFromCommand('printf CC', aliases)).toBeNull()

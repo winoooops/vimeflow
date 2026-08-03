@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import type { AgentAttentionEvent, AgentLifecycleEvent } from '@/bindings'
+import type {
+  AgentAttentionEvent,
+  AgentLifecycleEvent,
+  AgentNotificationEvent,
+} from '@/bindings'
 import { __resetBackendEventSubscriptions } from '@/lib/backend'
 import { emitTerminalAttention } from '@/features/terminal/notifications'
 import type { Session } from '../types'
@@ -77,6 +81,152 @@ const emit = <T>(event: string, payload: T): void => {
 }
 
 describe('useAgentNotificationProducers', () => {
+  test('publishes a notification-only completion without a lifecycle watcher', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'codex' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith({
+      sessionId: 'background',
+      ptyId: 'pty-background',
+      reason: 'turn-complete',
+      title: 'Codex finished',
+      occurredAt: 42,
+      dedupeKey: 'turn:42',
+    })
+  })
+
+  test('does not duplicate a normalized completion from the full watcher', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'codex' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => {
+      expect(listeners.has('agent-lifecycle')).toBe(true)
+      expect(listeners.has('agent-notification')).toBe(true)
+    })
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-background',
+        phase: 'running',
+      })
+
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-background',
+        phase: 'idle',
+      })
+      vi.advanceTimersByTime(750)
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Codex finished' })
+    )
+  })
+
+  test('does not suppress the next normalized completion after an error', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', {
+            agentType: 'opencode',
+          }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'agent-error',
+        title: 'OpenCode failed',
+        body: null,
+        occurredAt: BigInt(41),
+        dedupeKey: 'error:41',
+      })
+
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'turn-complete',
+        title: 'OpenCode finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledTimes(2)
+    expect(publish).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reason: 'turn-complete',
+        title: 'OpenCode finished',
+      })
+    )
+  })
+
   test('publishes only a live running-to-idle transition in a background pane', async () => {
     installBridge()
     const publish = vi.fn()
@@ -332,5 +482,75 @@ describe('useAgentNotificationProducers', () => {
     })
 
     expect(publish).not.toHaveBeenCalled()
+  })
+
+  test('keeps terminal fallback attention for Kimi', () => {
+    vi.useFakeTimers()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'kimi' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    act(() => {
+      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'terminal-attention',
+        body: 'approval',
+      })
+    )
+  })
+
+  test('coalesces Kimi completion over its terminal attention fallback', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'kimi' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emitTerminalAttention({ ptyId: 'pty-background', body: 'attention' })
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'kimi-background',
+        reason: 'turn-complete',
+        title: 'Kimi finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'turn-complete',
+        title: 'Kimi finished',
+      })
+    )
   })
 })

@@ -75,7 +75,7 @@ import { useSessionMru } from './useSessionMru'
 import { usePushWorkspaceGrouping } from './usePushWorkspaceGrouping'
 import { useSessionRestore } from './useSessionRestore'
 import {
-  agentLauncherFromCommand,
+  agentIdentityFromCommand,
   buildAgentResumeCommand,
   buildAgentStartCommand,
   loadAgentAliasConfig,
@@ -1221,8 +1221,12 @@ export const useSessionManager = (
     }
   }, [releaseAutoStartedAgentWatcher, sessions])
 
-  const attachResumedAgentWatcher = useCallback(
-    async (ptyId: string, agentType: Pane['agentType']): Promise<void> => {
+  const attachAgentWatcher = useCallback(
+    async (
+      ptyId: string,
+      agentType: Pane['agentType'],
+      launcher?: string
+    ): Promise<void> => {
       if (!isDesktop()) {
         return
       }
@@ -1249,7 +1253,11 @@ export const useSessionManager = (
           pane === undefined ||
           isTerminalStatus(pane.status) ||
           pane.agentSessionId !== undefined ||
-          pane.agentType !== agentType
+          (pane.agentType !== agentType &&
+            (launcher === undefined ||
+              pane.agentType !== 'generic' ||
+              (pane.agentLauncher !== undefined &&
+                pane.agentLauncher !== launcher)))
         ) {
           return
         }
@@ -1266,7 +1274,11 @@ export const useSessionManager = (
             !isRestartMounted() ||
             currentPane === undefined ||
             isTerminalStatus(currentPane.status) ||
-            currentPane.agentType !== agentType
+            (currentPane.agentType !== agentType &&
+              (launcher === undefined ||
+                currentPane.agentType !== 'generic' ||
+                (currentPane.agentLauncher !== undefined &&
+                  currentPane.agentLauncher !== launcher)))
           ) {
             void stopAgentWatcher(ptyId)
 
@@ -1299,7 +1311,7 @@ export const useSessionManager = (
         }
       }
 
-      log.warn(`agent watcher did not attach after resume for PTY ${ptyId}`)
+      log.warn(`agent watcher did not attach for PTY ${ptyId}`)
       agentSessionIdsRef.current.delete(ptyId)
       invalidatedAgentSessionsRef.current.delete(ptyId)
       setSessions((prev) =>
@@ -2601,7 +2613,7 @@ export const useSessionManager = (
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
         if (resumeCommand !== null && oldPane.agentSessionId === undefined) {
-          void attachResumedAgentWatcher(result.sessionId, oldPane.agentType)
+          void attachAgentWatcher(result.sessionId, oldPane.agentType)
         }
 
         // Cache ordering is persisted by usePushWorkspaceGrouping after the
@@ -2627,7 +2639,7 @@ export const useSessionManager = (
     },
     [
       activeSessionIdRef,
-      attachResumedAgentWatcher,
+      attachAgentWatcher,
       claimLatestAgentResumeKey,
       disposeRestartPty,
       dropAllForPty,
@@ -2986,8 +2998,8 @@ export const useSessionManager = (
           return
         }
 
-        const canonicalLauncher = agentLauncherFromCommand(command, undefined)
-        if (canonicalLauncher !== null) {
+        const canonicalIdentity = agentIdentityFromCommand(command, undefined)
+        if (canonicalIdentity !== null) {
           agentAliasMissExpiresByLauncherRef.current.delete(submittedLauncher)
         }
 
@@ -2996,7 +3008,7 @@ export const useSessionManager = (
         const aliasMissExpiresAt =
           agentAliasMissExpiresByLauncherRef.current.get(submittedLauncher)
         if (
-          canonicalLauncher === null &&
+          canonicalIdentity === null &&
           aliasMissExpiresAt !== undefined &&
           aliasMissExpiresAt > now
         ) {
@@ -3007,11 +3019,11 @@ export const useSessionManager = (
         }
 
         const aliasConfig =
-          canonicalLauncher === null ? await readAgentAliasConfig() : undefined
+          canonicalIdentity === null ? await readAgentAliasConfig() : undefined
 
-        const launcher =
-          canonicalLauncher ?? agentLauncherFromCommand(command, aliasConfig)
-        if (launcher === null) {
+        const identity =
+          canonicalIdentity ?? agentIdentityFromCommand(command, aliasConfig)
+        if (identity === null) {
           agentAliasMissExpiresByLauncherRef.current.set(
             submittedLauncher,
             now + AGENT_ALIAS_MISS_TTL_MS
@@ -3020,6 +3032,8 @@ export const useSessionManager = (
           return
         }
         agentAliasMissExpiresByLauncherRef.current.delete(submittedLauncher)
+
+        const { launcher, agentType } = identity
 
         if (!restartMountedRef.current) {
           return
@@ -3031,25 +3045,38 @@ export const useSessionManager = (
               (pane) =>
                 isShellPane(pane) &&
                 pane.ptyId === ptyId &&
-                pane.agentLauncher !== launcher
+                (pane.agentLauncher !== launcher ||
+                  pane.agentType !== agentType)
             )
           )
           if (!paneExists) {
             return prev
           }
 
-          return prev.map((session) => ({
-            ...session,
-            panes: session.panes.map((pane) =>
+          return prev.map((session) => {
+            const panes = session.panes.map((pane) =>
               isShellPane(pane) && pane.ptyId === ptyId
-                ? { ...pane, agentLauncher: launcher }
+                ? {
+                    ...pane,
+                    agentLauncher: launcher,
+                    agentType,
+                  }
                 : pane
-            ),
-          }))
+            )
+            const activePane = panes.find((pane) => pane.active)
+
+            return {
+              ...session,
+              panes,
+              agentType: activePane?.agentType ?? session.agentType,
+            }
+          })
         })
+
+        void attachAgentWatcher(ptyId, agentType, launcher)
       })()
     },
-    [readAgentAliasConfig]
+    [attachAgentWatcher, readAgentAliasConfig]
   )
 
   const updateBrowserPaneUrl = useCallback(

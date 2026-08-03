@@ -1003,7 +1003,7 @@ fn is_non_empty_user_block(item: &Value) -> bool {
     true
 }
 
-fn is_user_prompt(content: &Value) -> bool {
+pub(crate) fn is_user_prompt(content: &Value) -> bool {
     if let Some(text) = content.as_str() {
         return !text.trim().is_empty();
     }
@@ -1228,7 +1228,7 @@ mod tests {
             &transcript_path,
             format!("{incomplete}\n{complete}\n{complete}\n"),
         )
-            .expect("write transcript");
+        .expect("write transcript");
 
         let recovered = recover_replies(
             &transcript_path,
@@ -1264,7 +1264,7 @@ mod tests {
             &transcript_path,
             format!("{incomplete}\n{complete}\n{complete}\n"),
         )
-            .expect("write transcript");
+        .expect("write transcript");
 
         let recovered = recover_reviews(
             &transcript_path,

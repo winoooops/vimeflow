@@ -23,6 +23,7 @@ describe('isAllowedBackendMethod', () => {
     'detect_agent_in_session',
     'start_agent_watcher',
     'stop_agent_watcher',
+    'get_agent_notification_diagnostics',
     'recover_agent_replies',
     'recover_agent_reviews',
     'list_dir',
@@ -51,6 +52,14 @@ describe('isAllowedBackendMethod', () => {
     expect(isAllowedBackendMethod('list_active_pty_sessions')).toBe(false)
     expect(isAllowedBackendMethod('e2e_agent_bridge_info')).toBe(false)
     expect(isAllowedBackendMethod('e2e_seed_live_agent')).toBe(false)
+    expect(
+      isAllowedBackendMethod('e2e_register_agent_notification_source')
+    ).toBe(false)
+
+    expect(
+      isAllowedBackendMethod('e2e_reconcile_agent_notification_watchers')
+    ).toBe(false)
+    expect(isAllowedBackendMethod('e2e_full_agent_watcher_active')).toBe(false)
     expect(isAllowedBackendMethod('e2e_start_codex_watcher')).toBe(false)
     expect(isAllowedBackendMethod('e2e_start_kimi_watcher')).toBe(false)
     expect(isAllowedBackendMethod('e2e_emit_agent_status')).toBe(false)
@@ -60,6 +69,9 @@ describe('isAllowedBackendMethod', () => {
     'list_active_pty_sessions',
     'e2e_agent_bridge_info',
     'e2e_seed_live_agent',
+    'e2e_register_agent_notification_source',
+    'e2e_reconcile_agent_notification_watchers',
+    'e2e_full_agent_watcher_active',
     'e2e_start_codex_watcher',
     'e2e_start_kimi_watcher',
     'e2e_emit_agent_status',

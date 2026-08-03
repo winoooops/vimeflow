@@ -45,7 +45,8 @@
     "test:e2e:terminal": "npm run test:e2e:build && npm run test:e2e:terminal:run",
     "test:e2e:terminal:ghostty": "npm run generate:bindings && npm run test:e2e:build:generated:ghostty && npm run test:e2e:terminal:ghostty:run",
     "test:e2e:agent": "npm run test:e2e:build && npm run test:e2e:agent:run",
-    "test:e2e:all": "npm run test:e2e:build && npm run test:e2e:core:run && npm run test:e2e:terminal:run && npm run test:e2e:agent:run"
+    "test:e2e:all": "npm run test:e2e:build && npm run test:e2e:core:run && npm run test:e2e:terminal:run && npm run test:e2e:agent:run",
+    "benchmark:agent-notifications": "cargo build --manifest-path crates/backend/Cargo.toml --bin vimeflow-backend --features e2e-test && tsx scripts/benchmark-agent-notification-watcher.mjs"
   },
   "keywords": [
     "electron",
