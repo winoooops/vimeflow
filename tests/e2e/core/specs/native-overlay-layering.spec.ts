@@ -985,27 +985,55 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
     const editorState = await browser.electron.execute(
       async (electron: ElectronModule) => {
-        let overlay:
-          | ReturnType<ElectronModule['BrowserWindow']['getAllWindows']>[number]
-          | undefined
-        for (const window of electron.BrowserWindow.getAllWindows()) {
-          const mode = new URL(window.webContents.getURL()).searchParams.get(
-            'nativeOverlay'
-          )
+        type BrowserWindow = ReturnType<
+          ElectronModule['BrowserWindow']['getAllWindows']
+        >[number]
 
-          if (mode !== '1' && mode !== 'menu') {
-            continue
-          }
-
-          const hasLayoutCreator = (await window.webContents.executeJavaScript(`
-            Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-          `)) as boolean
-
-          if (hasLayoutCreator) {
-            overlay = window
-            break
-          }
+        const delay = async (milliseconds: number): Promise<void> => {
+          await new Promise((resolve) => setTimeout(resolve, milliseconds))
         }
+
+        const findLayoutCreatorOverlay =
+          async (): Promise<BrowserWindow | null> => {
+            for (const window of electron.BrowserWindow.getAllWindows()) {
+              const mode = new URL(
+                window.webContents.getURL()
+              ).searchParams.get('nativeOverlay')
+
+              if (mode !== '1' && mode !== 'menu') {
+                continue
+              }
+
+              const hasLayoutCreator = (await window.webContents
+                .executeJavaScript(`
+                  Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
+                `)) as boolean
+
+              if (hasLayoutCreator) {
+                return window
+              }
+            }
+
+            return null
+          }
+
+        const waitForLayoutCreatorOverlay =
+          async (): Promise<BrowserWindow | null> => {
+            const deadline = Date.now() + 5_000
+
+            while (Date.now() < deadline) {
+              const overlay = await findLayoutCreatorOverlay()
+              if (overlay !== null) {
+                return overlay
+              }
+
+              await delay(100)
+            }
+
+            return null
+          }
+
+        const overlay = await waitForLayoutCreatorOverlay()
 
         const parent = overlay?.getParentWindow()
         if (!overlay || !parent) {
@@ -1020,51 +1048,84 @@ describe('NativeOverlay BrowserWindow layering', () => {
           })()
         `)) as string
         overlay.webContents.sendInputEvent({ type: 'char', keyCode: 'Z' })
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const afterName = (await overlay.webContents.executeJavaScript(`
-          document.querySelector('input[aria-label="Layout name"]')?.value ?? ''
-        `)) as string
+        let afterName = beforeName
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await delay(50)
+          afterName = (await overlay.webContents.executeJavaScript(`
+            document.querySelector('input[aria-label="Layout name"]')?.value ?? ''
+          `)) as string
+          if (afterName === `${beforeName}Z`) {
+            break
+          }
+        }
 
         await overlay.webContents.executeJavaScript(`
           Array.from(document.querySelectorAll('button'))
             .find((button) => button.textContent?.includes('Code · JSON/YAML'))
             ?.click()
         `)
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const beforeCode = (await overlay.webContents.executeJavaScript(`
-          (() => {
-            const textarea = document.querySelector('textarea')
-            textarea?.focus()
-            textarea?.setSelectionRange(textarea.value.length, textarea.value.length)
-            return textarea?.value ?? ''
-          })()
-        `)) as string
+        let beforeCode: string | null = null
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          beforeCode = (await overlay.webContents.executeJavaScript(`
+            (() => {
+              const textarea = document.querySelector('textarea')
+              if (!(textarea instanceof HTMLTextAreaElement)) {
+                return null
+              }
+              textarea.focus()
+              textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+              return textarea.value
+            })()
+          `)) as string | null
+          if (beforeCode !== null) {
+            break
+          }
+
+          await delay(100)
+        }
+        beforeCode ??= ''
         overlay.webContents.sendInputEvent({ type: 'char', keyCode: ' ' })
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        const afterCode = (await overlay.webContents.executeJavaScript(`
-          document.querySelector('textarea')?.value ?? ''
-        `)) as string
+        let afterCode = beforeCode
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await delay(50)
+          afterCode = (await overlay.webContents.executeJavaScript(`
+            document.querySelector('textarea')?.value ?? ''
+          `)) as string
+          if (afterCode === `${beforeCode} `) {
+            break
+          }
+        }
 
         parent.setBounds({ ...parent.getBounds(), height: 600 })
-        await new Promise((resolve) => setTimeout(resolve, 200))
-        const scroll = (await overlay.webContents.executeJavaScript(`
-          (() => {
-            const region = document.querySelector('[role="dialog"] .overflow-y-auto')
-            if (!(region instanceof HTMLElement)) {
-              return null
-            }
-            region.scrollTop = region.scrollHeight
-            return {
-              overflowY: getComputedStyle(region).overflowY,
-              scrollable: region.scrollHeight > region.clientHeight,
-              scrolled: region.scrollTop > 0,
-            }
-          })()
-        `)) as {
+        let scroll: {
           overflowY: string
           scrollable: boolean
           scrolled: boolean
-        } | null
+        } | null = null
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await delay(100)
+          scroll = (await overlay.webContents.executeJavaScript(`
+            (() => {
+              const region = document.querySelector('[role="dialog"] .overflow-y-auto')
+              if (!(region instanceof HTMLElement)) {
+                return null
+              }
+              region.scrollTop = region.scrollHeight
+              return {
+                overflowY: getComputedStyle(region).overflowY,
+                scrollable: region.scrollHeight > region.clientHeight,
+                scrolled: region.scrollTop > 0,
+              }
+            })()
+          `)) as {
+            overflowY: string
+            scrollable: boolean
+            scrolled: boolean
+          } | null
+          if (scroll?.scrolled === true) {
+            break
+          }
+        }
 
         return { beforeName, afterName, beforeCode, afterCode, scroll }
       }
