@@ -15,7 +15,7 @@ Every task below starts with the smallest failing test, implements only enough t
 **Files:**
 
 - Create `crates/backend/src/terminal/progress.rs` with the parser types, a compiling stub, and its `#[cfg(test)]` module.
-- Later register it from `crates/backend/src/terminal/mod.rs`.
+- Modify `crates/backend/src/terminal/mod.rs` immediately so the red test command compiles and runs the new module's tests.
 
 Write failing tests for:
 
@@ -39,7 +39,6 @@ cargo test --manifest-path crates/backend/Cargo.toml terminal::progress
 **Files:**
 
 - Modify `crates/backend/src/terminal/progress.rs`.
-- Modify `crates/backend/src/terminal/mod.rs`.
 
 Implement one ASCII state machine with:
 
@@ -129,6 +128,7 @@ cargo test --manifest-path crates/backend/Cargo.toml
 **Files:**
 
 - Regenerate `src/bindings/` through the repository script.
+- Modify the hand-maintained `src/bindings/index.ts` barrel to export the generated progress event and state; binding generation intentionally preserves this file.
 - Modify `src/features/terminal/types/index.ts` only to re-export the generated progress types needed by the service.
 
 Run:
@@ -271,7 +271,8 @@ Tests first:
 - Missing/remove progress renders no bar and does not change header geometry.
 - Normal with a value uses agent accent, determinate width, `aria-valuenow`, and a short width transition.
 - Normal without a value and indeterminate use a full-width low-opacity pulse without `aria-valuenow`.
-- Error uses error tone; paused uses warning tone and a static full bar when value is absent.
+- Error with a value uses error tone, determinate width, percentage ARIA, and no pulse; error without a value uses error tone, no `aria-valuenow`, and pulses.
+- Paused with a value uses warning tone, determinate width, percentage ARIA, and no pulse; paused without a value uses a static full warning bar and no `aria-valuenow`.
 - `role="progressbar"`, label/min/max and state-specific value text are present; `aria-live`, percentage text, tooltip, and click handlers are absent.
 - Reduced-motion classes disable pulse and width transition.
 
@@ -311,12 +312,14 @@ npm run test:e2e:terminal:run -- --spec tests/e2e/terminal/specs/pty-progress.sp
 - Extend `tests/e2e/terminal/specs/ghostty-runtime.spec.ts`.
 - Extend `tests/e2e/terminal/specs/pane-environment.spec.ts`.
 
-Add coverage that the same shell-emitted reports update renderer header DOM while the native surface remains usable. Assert native transport exposes `TERM_PROGRAM=ghostty` and version `1.3.2`; ordinary xterm runs remove inherited values. Keep the indicator in header DOM, never over the native `NSView`.
+Add coverage that the same shell-emitted reports update renderer header DOM while the native surface remains usable. Refactor `pane-environment.spec.ts` so its environment probe can read either the ordinary xterm buffer or the native Ghostty grid instead of skipping ordinary runs. Supply inherited sentinel values in both modes: ordinary xterm must report them absent, while native transport must replace them with `ghostty` and `1.3.2`. Keep the indicator in header DOM, never over the native `NSView`.
 
-Run:
+Run the environment assertion once in each mode, with explicit inherited values so removal/override is observable:
 
 ```bash
-npm run test:e2e:terminal:ghostty
+npm run test:e2e:build
+npx cross-env TERM_PROGRAM=outer-terminal TERM_PROGRAM_VERSION=999 npm run test:e2e:terminal:run -- --spec tests/e2e/terminal/specs/pane-environment.spec.ts
+npx cross-env TERM_PROGRAM=outer-terminal TERM_PROGRAM_VERSION=999 npm run test:e2e:terminal:ghostty
 ```
 
 ### Task 15 — Manual installed-agent pilot
