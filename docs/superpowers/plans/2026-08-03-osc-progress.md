@@ -344,3 +344,5 @@ npm run test:e2e:terminal:ghostty
 ```
 
 The configured 80% coverage floor is mandatory. Commits must be atomic, use the repository's Conventional Commit format, and include `Co-Authored-By: codex <codex@openai.com>` exactly once. Any need to touch `WorkspaceView`, `TerminalZone`, `SplitView`, session models, agent adapters, the libghostty Swift/C bridge, dependencies, or persistence means the design contract has changed; update the design before continuing.
+
+<!-- codex-reviewed: 2026-08-03T18:05:58Z -->
