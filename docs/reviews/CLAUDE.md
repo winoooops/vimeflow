@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 35       | 28   | 2026-08-01   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 17       | 14   | 2026-07-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 37       | 27   | 2026-07-31   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 37       | 28   | 2026-07-31   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 8        | 2    | 2026-06-19   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 13       | 6    | 2026-07-26   |
@@ -111,7 +111,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
 | [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 9        | 5    | 2026-07-21   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
-| [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 5        | 5    | 2026-08-02   |
+| [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 5        | 6    | 2026-08-02   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
 | [Shared Controller Segmentation](patterns/shared-controller-segmentation.md)                         | react-patterns     | 2        | 0    | 2026-06-18   |
 | [Vite HMR Static Dependencies](patterns/vite-hmr-static-deps.md)                                     | code-quality       | 3        | 2    | 2026-06-18   |
@@ -120,3 +120,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 21       | 10   | 2026-07-22   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 6        | 3    | 2026-07-30   |
+| [Surface Configuration Propagation](patterns/surface-configuration-propagation.md)                   | correctness        | 2        | 1    | 2026-08-03   |
