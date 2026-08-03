@@ -13,6 +13,7 @@ import type {
   NativeOverlayNotificationCenterItem,
 } from '@/components/Popover'
 import { preloadNativeOverlay } from '@/components/Popover'
+import { agentForPane } from '@/features/sessions/utils/agentForSession'
 import type { NotificationRecord } from '../../hooks/useNotificationCenter'
 import {
   hasUnreadAlert,
@@ -20,7 +21,6 @@ import {
   unreadNotificationCount,
 } from '../../hooks/useNotificationCenter'
 import type { Session } from '../../types'
-import { agentForSession } from '../../utils/agentForSession'
 
 const TOAST_DWELL_MS = 4000
 const TOAST_WIDTH_PX = 380
@@ -150,7 +150,8 @@ export const useNotificationIslandStage = ({
     () =>
       visibleRecords.flatMap((record) => {
         const session = sessionsById.get(record.sessionId)
-        if (session === undefined) {
+        const pane = session?.panes.find(({ ptyId }) => ptyId === record.ptyId)
+        if (session === undefined || pane === undefined) {
           return []
         }
 
@@ -161,7 +162,7 @@ export const useNotificationIslandStage = ({
             title: record.title,
             ...(record.body === undefined ? {} : { body: record.body }),
             sessionName: session.name,
-            agentId: agentForSession(session).id,
+            agentId: agentForPane(pane).id,
             occurredAt: record.occurredAt,
             read: record.read,
             openActionId: `notification:open:${record.id}`,
@@ -528,8 +529,12 @@ export const useNotificationIslandStage = ({
       ? undefined
       : sessionsById.get(toastRecord.sessionId)
 
+  const toastPane = toastSession?.panes.find(
+    ({ ptyId }) => ptyId === toastRecord?.ptyId
+  )
+
   const toastAgent =
-    toastSession === undefined ? undefined : agentForSession(toastSession)
+    toastPane === undefined ? undefined : agentForPane(toastPane)
 
   useEffect(() => {
     if (

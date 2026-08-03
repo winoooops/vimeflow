@@ -607,6 +607,9 @@ mod router {
                 state.stop_agent_watcher(p.session_id).await?;
                 Ok(Value::Null)
             }
+            "get_agent_notification_diagnostics" => {
+                encode_result(state.get_agent_notification_diagnostics())
+            }
             "recover_agent_replies" => {
                 let (session_id, nonces) = decode_recovery_params(params)?;
                 let res = state.recover_agent_replies(session_id, nonces).await?;
@@ -887,6 +890,40 @@ mod router {
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
                 state.e2e_seed_live_agent(p.session_id, p.agent_type)?;
                 Ok(Value::Null)
+            }
+            #[cfg(feature = "e2e-test")]
+            "e2e_register_agent_notification_source" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                    provider: crate::agent::notification::NotificationProvider,
+                    source_path: std::path::PathBuf,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                state.e2e_register_agent_notification_source(
+                    p.session_id,
+                    p.provider,
+                    p.source_path,
+                )?;
+                Ok(Value::Null)
+            }
+            #[cfg(feature = "e2e-test")]
+            "e2e_reconcile_agent_notification_watchers" => {
+                state.e2e_reconcile_agent_notification_watchers();
+                Ok(Value::Null)
+            }
+            #[cfg(feature = "e2e-test")]
+            "e2e_full_agent_watcher_active" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct P {
+                    session_id: String,
+                }
+
+                let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
+                encode_result(state.e2e_full_agent_watcher_active(&p.session_id))
             }
             #[cfg(feature = "e2e-test")]
             "e2e_emit_agent_status" => {
@@ -2319,10 +2356,7 @@ mod tests {
             .status()
             .expect("git init");
         assert!(git_status.success(), "git init should succeed");
-        let cwd = temp_dir
-            .path()
-            .to_string_lossy()
-            .into_owned();
+        let cwd = temp_dir.path().to_string_lossy().into_owned();
 
         super::router::dispatch(
             state.clone(),

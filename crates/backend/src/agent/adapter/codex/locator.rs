@@ -1165,6 +1165,10 @@ const CODEX_BIND_RETRY_INTERVAL_MS: u64 = 100;
 const CODEX_BIND_RETRY_MAX_ATTEMPTS: u32 = 5;
 
 impl CompositeLocator {
+    pub(super) fn codex_home(&self) -> &Path {
+        &self.codex_home
+    }
+
     /// `proc_root` lets `AttachContext` inject the platform's proc
     /// directory (`Some("/proc")` on Linux), a tempdir-based fake proc
     /// for tests, or `None` on macOS / Windows where the `/proc`

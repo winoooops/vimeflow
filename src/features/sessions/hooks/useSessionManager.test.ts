@@ -5048,6 +5048,16 @@ describe('useSessionManager', () => {
             replay_end_offset: BigInt(0),
           },
         },
+        {
+          id: 's2',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
       ],
     })
 
@@ -5061,12 +5071,45 @@ describe('useSessionManager', () => {
       expect(result.current.sessions[0].panes[0].agentLauncher).toBe('OLD_CC')
     )
 
-    act(() => result.current.recordPaneAgentLauncher('s1', 'NEW_CC --fast'))
+    act(() => result.current.recordPaneAgentLauncher('s2', 'NEW_CC --fast'))
     await waitFor(() =>
-      expect(result.current.sessions[0].panes[0].agentLauncher).toBe('NEW_CC')
+      expect(result.current.sessions[1].panes[0].agentLauncher).toBe('NEW_CC')
     )
 
     expect(aliasLoad).toHaveBeenCalledTimes(2)
+  })
+
+  test('attaches a watcher as soon as an agent launcher is submitted', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'codex'))
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 's1',
+      })
+    )
+    expect(result.current.sessions[0].panes[0].agentType).toBe('codex')
   })
 
   test('recordPaneAgentLauncher caches repeated non-agent alias misses', async () => {

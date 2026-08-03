@@ -517,15 +517,14 @@ fn extract_custom_exec_command_args(input: &str) -> Option<String> {
         if is_exec_call {
             let opening = index + 4;
             if let Some(closing) = find_object_end(&tokens, opening) {
-                if let Some(candidate) =
-                    extract_object_string_property(
-                        &tokens,
-                        opening,
-                        closing,
-                        &bindings,
-                        &["cmd", "command"],
-                    )
-                    .filter(|candidate| !candidate.is_empty())
+                if let Some(candidate) = extract_object_string_property(
+                    &tokens,
+                    opening,
+                    closing,
+                    &bindings,
+                    &["cmd", "command"],
+                )
+                .filter(|candidate| !candidate.is_empty())
                 {
                     command = Some(candidate);
                 }
@@ -594,6 +593,7 @@ fn extract_codex_cwd(record_type: CodexRecordType, payload: &CodexPayloadDto) ->
 
 pub(super) fn validate_transcript_path(
     transcript_path: &str,
+    codex_root: &Path,
 ) -> Result<PathBuf, ValidateTranscriptError> {
     if transcript_path.bytes().any(|b| b == 0) {
         return Err(ValidateTranscriptError::InvalidPath(
@@ -601,11 +601,7 @@ pub(super) fn validate_transcript_path(
         ));
     }
 
-    let codex_root = dirs::home_dir()
-        .map(|home| home.join(".codex"))
-        .ok_or_else(|| ValidateTranscriptError::Other("cannot determine home directory".into()))?;
-
-    validate_transcript_path_under_root(transcript_path, &codex_root)
+    validate_transcript_path_under_root(transcript_path, codex_root)
 }
 
 fn validate_transcript_path_under_root(
@@ -1679,7 +1675,11 @@ fn summarize_custom_tool_args(
     patch_paths: &[String],
 ) -> String {
     if payload.name.as_deref() == Some("exec") && tool == "exec_command" {
-        if let Some(cmd) = payload.input.as_deref().and_then(extract_custom_exec_command_args) {
+        if let Some(cmd) = payload
+            .input
+            .as_deref()
+            .and_then(extract_custom_exec_command_args)
+        {
             return truncate_string(&cmd, MAX_ARGS_LEN);
         }
     }

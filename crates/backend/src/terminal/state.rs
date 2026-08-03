@@ -301,7 +301,10 @@ impl PtyState {
             return None;
         }
 
-        Some((unsafe { std::os::fd::OwnedFd::from_raw_fd(dup) }, session.generation))
+        Some((
+            unsafe { std::os::fd::OwnedFd::from_raw_fd(dup) },
+            session.generation,
+        ))
     }
 
     /// Allocate the next generation number
@@ -398,7 +401,6 @@ impl PtyState {
     }
 
     /// Current generation for a live PTY session.
-    #[cfg(unix)]
     pub fn generation(&self, session_id: &SessionId) -> Option<u64> {
         let sessions = self.sessions.lock().expect("failed to lock sessions");
         sessions.get(session_id).map(|session| session.generation)

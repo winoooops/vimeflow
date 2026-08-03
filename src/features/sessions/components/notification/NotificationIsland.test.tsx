@@ -3,6 +3,7 @@ import {
   act,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -10,6 +11,7 @@ import {
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { NativeOverlayRequest } from '@/components/Popover'
+import { useNotificationIslandStage } from '@/features/sessions/components/notification/useNotificationIslandStage'
 import type { NotificationRecord } from '../../hooks/useNotificationCenter'
 import type { Session } from '../../types'
 import { NotificationIsland } from './NotificationIsland'
@@ -218,6 +220,60 @@ describe('NotificationIsland', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.getByText('Indicators')).toBeInTheDocument()
     expect(island).toHaveAttribute('data-state', 'badge')
+  })
+
+  test('resolves notification icons from the target pane', () => {
+    const multiPaneSession: Session = {
+      ...session('session-1', 'Payments'),
+      agentType: 'claude-code',
+      panes: [
+        {
+          id: 'claude-pane',
+          ptyId: 'pty-claude',
+          cwd: '/tmp/session-1',
+          agentType: 'claude-code',
+          status: 'running',
+          active: true,
+        },
+        {
+          id: 'codex-pane',
+          ptyId: 'pty-codex',
+          cwd: '/tmp/session-1',
+          agentType: 'codex',
+          status: 'running',
+          active: false,
+        },
+      ],
+    }
+
+    const callbacks = {
+      onOpen: vi.fn(),
+      onDismiss: vi.fn(),
+      onMarkAllRead: vi.fn(),
+      onClear: vi.fn(),
+    }
+
+    const { result, rerender } = renderHook(
+      ({ records }: { records: readonly NotificationRecord[] }) =>
+        useNotificationIslandStage({
+          records,
+          sessions: [multiPaneSession],
+          ...callbacks,
+        }),
+      { initialProps: { records: [] as readonly NotificationRecord[] } }
+    )
+
+    rerender({
+      records: [
+        notification('codex-finished', {
+          ptyId: 'pty-codex',
+          title: 'Codex finished',
+        }),
+      ],
+    })
+
+    expect(result.current.displayToast?.agent.id).toBe('codex')
+    expect(result.current.panelItems[0]?.agentId).toBe('codex')
   })
 
   test('pauses the toast dwell while the pointer is inside', () => {

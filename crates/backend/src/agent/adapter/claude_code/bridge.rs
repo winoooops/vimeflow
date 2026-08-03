@@ -341,6 +341,18 @@ pub fn generate_bridge_files(
             }]
         })
     };
+    let signal_hook = |event_name: &str| {
+        let record = serde_json::json!({ "hook_event_name": event_name }).to_string();
+        serde_json::json!({
+            "hooks": [{
+                "type": "command",
+                "command": format!(
+                    "printf '%s\\n' {} >> \"$VIMEFLOW_ATTENTION_FILE\"",
+                    shell_quote_path(&record),
+                )
+            }]
+        })
+    };
     let settings = serde_json::json!({
         "statusLine": {
             "type": "command",
@@ -348,6 +360,8 @@ pub fn generate_bridge_files(
             "refreshInterval": 5
         },
         "hooks": {
+            "UserPromptSubmit": [signal_hook("UserPromptSubmit")],
+            "Stop": [signal_hook("Stop")],
             "PermissionRequest": [hook()],
             "PreToolUse": [{
                 "matcher": "AskUserQuestion",
@@ -604,8 +618,18 @@ mod tests {
         assert!(settings.contains("refreshInterval"));
         assert!(settings.contains("PermissionRequest"));
         assert!(settings.contains("AskUserQuestion"));
+        assert!(settings.contains("UserPromptSubmit"));
+        assert!(settings.contains("\"Stop\""));
         assert!(settings.contains("StopFailure"));
         assert!(settings.contains("attention.sh"));
+        let settings_json: serde_json::Value =
+            serde_json::from_str(&settings).expect("settings JSON");
+        for event_name in ["UserPromptSubmit", "Stop"] {
+            let command = settings_json["hooks"][event_name][0]["hooks"][0]["command"]
+                .as_str()
+                .expect("signal hook command");
+            assert!(command.contains(&format!("{{\"hook_event_name\":\"{event_name}\"}}")));
+        }
     }
 
     #[cfg(unix)]

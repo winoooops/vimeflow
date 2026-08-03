@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react'
-import type { AgentAttentionEvent, AgentLifecycleEvent } from '@/bindings'
+import type {
+  AgentAttentionEvent,
+  AgentLifecycleEvent,
+  AgentNotificationEvent,
+} from '@/bindings'
 import { listen, type UnlistenFn } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import { subscribeTerminalAttention } from '@/features/terminal/notifications'
@@ -20,6 +24,13 @@ interface TargetPane {
 }
 
 const TURN_COMPLETE_SETTLE_DELAY_MS = 750
+
+const NOTIFICATION_ONLY_AGENT_TYPES = new Set<Pane['agentType']>([
+  'claude-code',
+  'codex',
+  'kimi',
+  'opencode',
+])
 
 const SEMANTIC_ATTENTION_AGENT_TYPES = new Set<Pane['agentType']>([
   'claude-code',
@@ -69,7 +80,17 @@ export const useAgentNotificationProducers = ({
   useEffect(() => {
     let cancelled = false
     const unlisten: UnlistenFn[] = []
+
+    // Per-PTY settle timers for confirmed turn-complete events from normalized
+    // agent notifications or the legacy lifecycle fallback.
     const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+    // Kimi-only grace timers for ambiguous terminal BEL signals. A normalized
+    // Kimi notification cancels the fallback before it publishes attention.
+    const terminalAttentionTimers = new Map<
+      string,
+      ReturnType<typeof setTimeout>
+    >()
 
     const cancelTurnComplete = (ptyId: string): void => {
       const timer = completionTimers.get(ptyId)
@@ -81,9 +102,25 @@ export const useAgentNotificationProducers = ({
       completionTimers.delete(ptyId)
     }
 
+    const cancelTerminalAttention = (ptyId: string): void => {
+      const timer = terminalAttentionTimers.get(ptyId)
+      if (timer === undefined) {
+        return
+      }
+
+      clearTimeout(timer)
+      terminalAttentionTimers.delete(ptyId)
+    }
+
     const scheduleTurnComplete = (
       ptyId: string,
-      agentSessionId: string
+      candidate: {
+        readonly agentSessionId: string | null
+        readonly title: string
+        readonly occurredAt: number
+        readonly dedupeKey?: string
+        readonly requireLifecycle: boolean
+      }
     ): void => {
       cancelTurnComplete(ptyId)
 
@@ -93,10 +130,11 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, ptyId)
 
         if (
-          phase?.phase !== 'idle' ||
-          phase.agentSessionId !== agentSessionId ||
+          (candidate.requireLifecycle &&
+            (phase?.phase !== 'idle' ||
+              phase.agentSessionId !== candidate.agentSessionId ||
+              erroredPtyIdsRef.current.delete(ptyId))) ||
           target === undefined ||
-          erroredPtyIdsRef.current.delete(ptyId) ||
           !isBackgroundTarget(target, activeSessionIdRef.current)
         ) {
           return
@@ -106,8 +144,11 @@ export const useAgentNotificationProducers = ({
           sessionId: target.session.id,
           ptyId: target.pane.ptyId,
           reason: 'turn-complete',
-          title: `${agentForPane(target.pane).name} finished`,
-          occurredAt: Date.now(),
+          title: candidate.title,
+          occurredAt: candidate.occurredAt,
+          ...(candidate.dedupeKey === undefined
+            ? {}
+            : { dedupeKey: candidate.dedupeKey }),
         })
       }, TURN_COMPLETE_SETTLE_DELAY_MS)
 
@@ -124,16 +165,39 @@ export const useAgentNotificationProducers = ({
         return
       }
 
-      publishRef.current({
-        sessionId: target.session.id,
-        ptyId: target.pane.ptyId,
-        reason: 'terminal-attention',
-        title: 'Terminal requested attention',
-        ...(payload.body === undefined || payload.body.length === 0
-          ? {}
-          : { body: payload.body }),
-        occurredAt: Date.now(),
-      })
+      const publishTerminalAttention = (): void => {
+        terminalAttentionTimers.delete(payload.ptyId)
+        const currentTarget = findTarget(sessionsRef.current, payload.ptyId)
+        if (
+          currentTarget === undefined ||
+          !isBackgroundTarget(currentTarget, activeSessionIdRef.current)
+        ) {
+          return
+        }
+
+        publishRef.current({
+          sessionId: currentTarget.session.id,
+          ptyId: currentTarget.pane.ptyId,
+          reason: 'terminal-attention',
+          title: 'Terminal requested attention',
+          ...(payload.body === undefined || payload.body.length === 0
+            ? {}
+            : { body: payload.body }),
+          occurredAt: Date.now(),
+        })
+      }
+
+      if (target.pane.agentType !== 'kimi') {
+        publishTerminalAttention()
+
+        return
+      }
+
+      cancelTerminalAttention(payload.ptyId)
+      terminalAttentionTimers.set(
+        payload.ptyId,
+        setTimeout(publishTerminalAttention, TURN_COMPLETE_SETTLE_DELAY_MS)
+      )
     })
 
     if (!isDesktop()) {
@@ -146,6 +210,7 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.sessionId)
         if (
           target === undefined ||
+          NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType) ||
           (target.pane.agentSessionId !== undefined &&
             target.pane.agentSessionId !== payload.agentSessionId)
         ) {
@@ -171,7 +236,54 @@ export const useAgentNotificationProducers = ({
           return
         }
 
-        scheduleTurnComplete(payload.sessionId, payload.agentSessionId)
+        scheduleTurnComplete(payload.sessionId, {
+          agentSessionId: payload.agentSessionId,
+          title: `${agentForPane(target.pane).name} finished`,
+          occurredAt: Date.now(),
+          requireLifecycle: true,
+        })
+      }
+    )
+
+    const notification = listen<AgentNotificationEvent>(
+      'agent-notification',
+      (payload) => {
+        const target = findTarget(sessionsRef.current, payload.ptyId)
+        if (target === undefined) {
+          return
+        }
+
+        cancelTerminalAttention(payload.ptyId)
+
+        if (payload.reason === 'turn-complete') {
+          scheduleTurnComplete(payload.ptyId, {
+            agentSessionId: payload.agentSessionId,
+            title: payload.title,
+            occurredAt: Number(payload.occurredAt),
+            ...(payload.dedupeKey === null
+              ? {}
+              : { dedupeKey: payload.dedupeKey }),
+            requireLifecycle: false,
+          })
+
+          return
+        }
+
+        if (!isBackgroundTarget(target, activeSessionIdRef.current)) {
+          return
+        }
+
+        publishRef.current({
+          sessionId: target.session.id,
+          ptyId: target.pane.ptyId,
+          reason: payload.reason,
+          title: payload.title,
+          ...(payload.body === null ? {} : { body: payload.body }),
+          occurredAt: Number(payload.occurredAt),
+          ...(payload.dedupeKey === null
+            ? {}
+            : { dedupeKey: payload.dedupeKey }),
+        })
       }
     )
 
@@ -179,7 +291,10 @@ export const useAgentNotificationProducers = ({
       'agent-attention',
       (payload) => {
         const target = findTarget(sessionsRef.current, payload.ptyId)
-        if (target === undefined) {
+        if (
+          target === undefined ||
+          NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType)
+        ) {
           return
         }
 
@@ -207,7 +322,11 @@ export const useAgentNotificationProducers = ({
     )
 
     const registerListeners = async (): Promise<void> => {
-      const results = await Promise.allSettled([lifecycle, attention])
+      const results = await Promise.allSettled([
+        lifecycle,
+        attention,
+        notification,
+      ])
 
       for (const result of results) {
         if (result.status !== 'fulfilled') {
@@ -230,6 +349,8 @@ export const useAgentNotificationProducers = ({
       unlisten.forEach((stop) => stop())
       completionTimers.forEach((timer) => clearTimeout(timer))
       completionTimers.clear()
+      terminalAttentionTimers.forEach((timer) => clearTimeout(timer))
+      terminalAttentionTimers.clear()
     }
   }, [])
 }
