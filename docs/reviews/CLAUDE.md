@@ -120,4 +120,4 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Transient UI Side Effects](patterns/transient-ui-side-effects.md)                                   | react-patterns     | 21       | 10   | 2026-07-22   |
 | [Async Global State Mutation](patterns/async-global-state-mutation.md)                               | backend            | 1        | 0    | 2026-06-19   |
 | [Boolean Sentinel Consistency](patterns/boolean-sentinel-consistency.md)                             | code-quality       | 6        | 3    | 2026-07-30   |
-| [Surface Configuration Propagation](patterns/surface-configuration-propagation.md)                   | correctness        | 1        | 0    | 2026-08-03   |
+| [Surface Configuration Propagation](patterns/surface-configuration-propagation.md)                   | correctness        | 2        | 1    | 2026-08-03   |
