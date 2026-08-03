@@ -391,6 +391,10 @@ private final class EmbeddedGhosttyChild {
         applyTheme()
     }
 
+    func setResizeThrottle(milliseconds: Double) {
+        terminalView.setResizeThrottle(milliseconds: milliseconds)
+    }
+
     @discardableResult
     func setCursorShader(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -538,6 +542,7 @@ private final class EmbeddedGhosttySurface: NSObject {
     private var foregroundHexColor = "ffffff"
     private var fontFamily: String?
     private var cursorShaderPath: String?
+    private var resizeThrottleMilliseconds: Double?
     private var secondaryChild: EmbeddedGhosttyChild?
     private var dividerView: EmbeddedGhosttyDividerView?
     private var secondarySplitRatio: CGFloat = 0.34
@@ -743,7 +748,9 @@ private final class EmbeddedGhosttySurface: NSObject {
     }
 
     func setResizeThrottle(milliseconds: Double) {
+        resizeThrottleMilliseconds = milliseconds
         terminalView.setResizeThrottle(milliseconds: milliseconds)
+        secondaryChild?.setResizeThrottle(milliseconds: milliseconds)
     }
 
     @discardableResult
@@ -855,6 +862,9 @@ private final class EmbeddedGhosttySurface: NSObject {
         }
         if let cursorShaderPath {
             child.setCursorShader(cursorShaderPath)
+        }
+        if let resizeThrottleMilliseconds {
+            child.setResizeThrottle(milliseconds: resizeThrottleMilliseconds)
         }
         container.addSubview(child.terminalView)
         secondaryChild = child
