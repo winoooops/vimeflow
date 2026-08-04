@@ -317,7 +317,13 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
-    const progress = usePtyProgress(service, pane.ptyId, !isAwaitingRestart)
+
+    const progress = usePtyProgress(
+      service,
+      pane.ptyId,
+      isSessionVisible && !isAwaitingRestart
+    )
+
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 

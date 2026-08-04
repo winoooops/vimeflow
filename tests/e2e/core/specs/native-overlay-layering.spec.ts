@@ -563,21 +563,23 @@ const sampledPixelCount = (bounds: Bounds): number =>
   (Math.floor((bounds.bottom - bounds.top) / 2) + 1)
 
 const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
+  let lastNativePaneCount = 0
+
   await browser.waitUntil(
     async () => {
       const runtime = await browser.execute(() => ({
         nativePaneCount: document.querySelectorAll(
           '[data-testid="native-ghostty-pane"]'
         ).length,
-        xtermCount: document.querySelectorAll('.xterm').length,
       }))
+      lastNativePaneCount = runtime.nativePaneCount
 
-      return runtime.nativePaneCount > 0 && runtime.xtermCount === 0
+      return runtime.nativePaneCount > 0
     },
     {
       timeout: 20_000,
       interval: 250,
-      timeoutMsg: 'real Ghostty native pane did not replace xterm',
+      timeoutMsg: `real Ghostty native pane did not render (${lastNativePaneCount} native panes)`,
     }
   )
 

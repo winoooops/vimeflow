@@ -494,11 +494,34 @@ describe('TerminalPane index', () => {
       enabled: true,
     })
 
+    expect(usePtyProgressSpy).toHaveBeenCalledWith(
+      baseProps.service,
+      'pty-s1',
+      true
+    )
+
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
       opacity: '0.78',
     })
 
     expect(focusTerminalSpy).not.toHaveBeenCalled()
+  })
+
+  test('hidden session panes skip progress subscriptions', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, active: true }}
+        isActive={inactive}
+        isSessionVisible={inactive}
+      />
+    )
+
+    expect(usePtyProgressSpy).toHaveBeenCalledWith(
+      baseProps.service,
+      'pty-s1',
+      false
+    )
   })
 
   test('the pane wrapper is a size container for responsive chrome', () => {
