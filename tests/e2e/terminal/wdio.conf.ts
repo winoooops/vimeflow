@@ -17,6 +17,13 @@ const cacheDir = path.resolve(
   process.env.RUNNER_TEMP ?? path.resolve(__dirname, '..', '.wdio-cache'),
   'terminal'
 )
+const nativeGhosttyEnabled =
+  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+const nativeGhosttyOnlySpecs = [
+  path.resolve(__dirname, 'specs/ghostty-altscreen-remount.spec.ts'),
+  path.resolve(__dirname, 'specs/ghostty-runtime.spec.ts'),
+  path.resolve(__dirname, 'specs/handoff.spec.ts'),
+]
 const originalFixtureEnv = {
   path: process.env.PATH,
   shell: process.env.SHELL,
@@ -42,6 +49,7 @@ export const config: WebdriverIO.Config = {
   cacheDir,
 
   specs: [path.resolve(__dirname, 'specs/**/*.spec.ts')],
+  exclude: nativeGhosttyEnabled ? [] : nativeGhosttyOnlySpecs,
   maxInstances: 1,
   maxInstancesPerCapability: 1,
 
