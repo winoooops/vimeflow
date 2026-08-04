@@ -1613,6 +1613,7 @@ export class NativeOverlayController {
 
       if (
         activeSurfaceId !== null &&
+        this.internalFocusHandoffSurfaceIds.has(activeSurfaceId) &&
         isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId))
       ) {
         return
@@ -1631,6 +1632,7 @@ export class NativeOverlayController {
 
       if (
         activeSurfaceId !== null &&
+        this.internalFocusHandoffSurfaceIds.has(activeSurfaceId) &&
         isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId))
       ) {
         return

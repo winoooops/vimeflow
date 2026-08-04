@@ -1274,7 +1274,7 @@ describe('NativeOverlayController', () => {
     expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
   })
 
-  test('keeps a layout creator dialog open on owner blur after focus handoff', async () => {
+  test('dismisses a layout creator dialog on owner blur after focus handoff', async () => {
     vi.useFakeTimers()
     try {
       const openPromise = handler(NATIVE_OVERLAY_OPEN)(
@@ -1296,20 +1296,21 @@ describe('NativeOverlayController', () => {
       overlayWindow.setAlwaysOnTop.mockClear()
       electronMock.owner.emit('blur')
 
-      expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
         NATIVE_OVERLAY_CLOSED,
-        expect.objectContaining({
+        {
           surfaceId: layoutCreatorDialogRequest.surfaceId,
-        })
+          reason: 'outside',
+        }
       )
-      expect(overlayWindow.hide).not.toHaveBeenCalled()
-      expect(overlayWindow.setAlwaysOnTop).not.toHaveBeenCalledWith(false)
+      expect(overlayWindow.hide).toHaveBeenCalled()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenCalledWith(false)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  test('keeps a layout creator dialog open on overlay blur after focus handoff', async () => {
+  test('dismisses a layout creator dialog on overlay blur after focus handoff', async () => {
     vi.useFakeTimers()
     try {
       const openPromise = handler(NATIVE_OVERLAY_OPEN)(
@@ -1331,14 +1332,15 @@ describe('NativeOverlayController', () => {
       overlayWindow.setAlwaysOnTop.mockClear()
       overlayWindow.emit('blur')
 
-      expect(electronMock.owner.webContents.send).not.toHaveBeenCalledWith(
+      expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
         NATIVE_OVERLAY_CLOSED,
-        expect.objectContaining({
+        {
           surfaceId: layoutCreatorDialogRequest.surfaceId,
-        })
+          reason: 'outside',
+        }
       )
-      expect(overlayWindow.hide).not.toHaveBeenCalled()
-      expect(overlayWindow.setAlwaysOnTop).not.toHaveBeenCalledWith(false)
+      expect(overlayWindow.hide).toHaveBeenCalled()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenCalledWith(false)
     } finally {
       vi.useRealTimers()
     }
