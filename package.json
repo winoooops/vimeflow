@@ -56,7 +56,12 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {
+  "overrides": {
+    "@xterm/addon-canvas": {
+      "@xterm/xterm": "$@xterm/xterm"
+    }
+  },
+  "devDependencies": {
     "@azurity/pure-nerd-font": "^3.0.5",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
@@ -89,14 +94,7 @@
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.2.2"
-  },
-  "overrides": {
-    "@xterm/addon-canvas": {
-      "@xterm/xterm": "$@xterm/xterm"
-    }
-  },
-  "devDependencies": {
+    "tailwind-variants": "^3.2.2",
     "@commitlint/cli": "^19",
     "@commitlint/config-conventional": "^19",
     "@cspell/eslint-plugin": "^8",
