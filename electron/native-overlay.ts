@@ -1,5 +1,4 @@
 import {
-  app,
   BrowserWindow,
   ipcMain,
   shell,
@@ -1614,8 +1613,7 @@ export class NativeOverlayController {
 
       if (
         activeSurfaceId !== null &&
-        isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId)) &&
-        this.isInternalFocusHandoff(activeSurfaceId)
+        isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId))
       ) {
         return
       }
@@ -1633,8 +1631,7 @@ export class NativeOverlayController {
 
       if (
         activeSurfaceId !== null &&
-        isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId)) &&
-        this.isInternalFocusHandoff(activeSurfaceId)
+        isFocusOwnedDialogSurface(this.surfaces.get(activeSurfaceId))
       ) {
         return
       }
@@ -1801,10 +1798,6 @@ export class NativeOverlayController {
 
     this.pendingReady.delete(surfaceId)
     resolve(ready)
-  }
-
-  private isInternalFocusHandoff(surfaceId: string): boolean {
-    return app.isActive() || this.internalFocusHandoffSurfaceIds.has(surfaceId)
   }
 
   private clearInternalFocusHandoff(surfaceId: string): void {
