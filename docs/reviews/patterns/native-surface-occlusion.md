@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-08-01
-ref_count: 8
+last_updated: 2026-08-04
+ref_count: 10
 ---
 
 # Native Surface Occlusion
@@ -282,4 +282,17 @@ React overlays that drive Electron native WebContentsView visibility must regist
 - **Fix:** Prefer the Layout Creator overlay host whose BrowserWindow is both
   visible and always-on-top, keeping a fallback only for diagnostics while the
   wait loop is still converging.
+- **Commit:** same commit as this entry
+
+### 22. Focus-owned native dialogs must only suppress transient handoff blur
+
+- **Source:** github-codex-connector | PR #778 round 1 | 2026-08-04
+- **Severity:** HIGH
+- **File:** `electron/native-overlay.ts`
+- **Finding:** Layout Creator and notification center dialogs skipped every
+  owner or overlay blur after becoming focus-owned. Switching to another app
+  could leave the always-on-top native overlay visible instead of dismissing it.
+- **Fix:** Restored the bounded handoff guard so focus-owned dialogs only
+  ignore blur while their `internalFocusHandoffSurfaceIds` grace window is
+  active, then close normally on later owner or overlay blur.
 - **Commit:** same commit as this entry

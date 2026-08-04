@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use crate::debug::debug_log;
 use crate::runtime::EventSink;
 
-use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit};
+use super::events::{emit_pty_data, emit_pty_error, emit_pty_exit, emit_pty_progress};
+use super::progress::OscProgressParser;
 use super::state::{ManagedSession, PtyState, RingBuffer, ALT_SCREEN_ENTER};
 use super::types::*;
 use super::utf8::Utf8ChunkDecoder;
@@ -28,6 +29,7 @@ const DEFAULT_UTF8_CTYPE: &str = "en_US.UTF-8";
 #[cfg(not(target_os = "macos"))]
 const DEFAULT_UTF8_CTYPE: &str = "C.UTF-8";
 const MAX_SESSION_ID_LEN: usize = 128;
+const GHOSTTY_COMPATIBILITY_VERSION: &str = "1.3.2";
 
 fn is_valid_session_id(session_id: &str) -> bool {
     !session_id.is_empty()
@@ -89,6 +91,28 @@ fn locale_env_plan(
     LocaleEnvPlan {
         ctype,
         clear_lc_all,
+    }
+}
+
+#[cfg(unix)]
+fn has_native_terminal_transport(state: &PtyState) -> bool {
+    state.fd_broker().is_some()
+}
+
+#[cfg(not(unix))]
+fn has_native_terminal_transport(_state: &PtyState) -> bool {
+    false
+}
+
+fn configure_terminal_environment(command: &mut CommandBuilder, native_transport: bool) {
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    if native_transport {
+        command.env("TERM_PROGRAM", "ghostty");
+        command.env("TERM_PROGRAM_VERSION", GHOSTTY_COMPATIBILITY_VERSION);
+    } else {
+        command.env_remove("TERM_PROGRAM");
+        command.env_remove("TERM_PROGRAM_VERSION");
     }
 }
 
@@ -232,8 +256,7 @@ pub(crate) async fn spawn_pty_inner(
     // GUI launches (desktop/AppImage) often do not inherit a terminal-capable
     // environment. xterm.js supports 256-color + truecolor, so advertise that
     // contract to child TUIs without accepting arbitrary env from IPC.
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
+    configure_terminal_environment(&mut cmd, has_native_terminal_transport(&state));
     // The app's terminal is unconditionally truecolor, so color-disabling
     // variables inherited from however the app itself was launched (a CI
     // runner, an automation harness piping stdout — wdio injects
@@ -1257,6 +1280,28 @@ fn publish_pty_chunk(
     .ok();
 }
 
+fn publish_live_pty_chunk(
+    events: &dyn EventSink,
+    session_id: &SessionId,
+    ring: &Mutex<RingBuffer>,
+    decoder: &mut Utf8ChunkDecoder,
+    parser: &mut OscProgressParser,
+    chunk: &[u8],
+) {
+    for progress in parser.push(chunk) {
+        emit_pty_progress(
+            events,
+            &PtyProgressEvent {
+                session_id: session_id.clone(),
+                state: progress.state,
+                value: progress.value,
+            },
+        )
+        .ok();
+    }
+    publish_pty_chunk(events, session_id, ring, decoder, chunk);
+}
+
 /// Emit a final replacement character when the stream ends (EOF or read
 /// error) while the decoder is still holding a half-finished character.
 ///
@@ -1313,6 +1358,7 @@ async fn read_pty_output(
     // reads slice at arbitrary byte boundaries, so a multi-byte scalar
     // can straddle two chunks.
     let mut decoder = Utf8ChunkDecoder::new();
+    let mut progress_parser = OscProgressParser::new();
     loop {
         match reader.read(&mut buf) {
             Ok(0) => {
@@ -1369,7 +1415,14 @@ async fn read_pty_output(
                 // Append raw bytes to the ring + publish the decoded text.
                 // Any incomplete trailing UTF-8 sequence is carried into
                 // the next read instead of being lossily replaced.
-                publish_pty_chunk(events.as_ref(), &session_id, &ring, &mut decoder, &buf[..n]);
+                publish_live_pty_chunk(
+                    events.as_ref(),
+                    &session_id,
+                    &ring,
+                    &mut decoder,
+                    &mut progress_parser,
+                    &buf[..n],
+                );
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
                 // Interrupted - retry
@@ -1568,6 +1621,53 @@ mod tests {
         let plan = locale_env_plan(Some(""), None, Some("C"));
         assert_eq!(plan.ctype, Some(DEFAULT_UTF8_CTYPE));
         assert!(!plan.clear_lc_all);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_environment_advertises_ghostty_for_an_installed_fd_broker() {
+        use crate::fd_transport;
+        use crate::terminal::fd_broker::FdBroker;
+        use std::ffi::OsStr;
+        use std::os::fd::AsRawFd;
+
+        let state = PtyState::new();
+        let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
+        let broker = FdBroker::start(rust_end.as_raw_fd(), state.clone())
+            .expect("broker should start");
+        state.set_fd_broker(broker);
+        std::mem::forget(rust_end);
+
+        let mut command = CommandBuilder::new("/bin/sh");
+        configure_terminal_environment(&mut command, has_native_terminal_transport(&state));
+
+        assert_eq!(command.get_env("TERM"), Some(OsStr::new("xterm-256color")));
+        assert_eq!(command.get_env("COLORTERM"), Some(OsStr::new("truecolor")));
+        assert_eq!(command.get_env("TERM_PROGRAM"), Some(OsStr::new("ghostty")));
+        assert_eq!(
+            command.get_env("TERM_PROGRAM_VERSION"),
+            Some(OsStr::new("1.3.2"))
+        );
+
+        drop(addon_end);
+    }
+
+    #[test]
+    fn terminal_environment_removes_inherited_identity_without_a_broker() {
+        let state = PtyState::new();
+        let mut command = CommandBuilder::new("test-shell");
+        command.env("TERM_PROGRAM", "outer-terminal");
+        command.env("TERM_PROGRAM_VERSION", "999");
+        command.env("VIMEFLOW_PTY_FD_TRANSPORT", "1");
+
+        configure_terminal_environment(&mut command, has_native_terminal_transport(&state));
+
+        assert!(command.get_env("TERM_PROGRAM").is_none());
+        assert!(command.get_env("TERM_PROGRAM_VERSION").is_none());
+        assert_eq!(
+            command.get_env("VIMEFLOW_PTY_FD_TRANSPORT"),
+            Some(std::ffi::OsStr::new("1"))
+        );
     }
 
     #[tokio::test]
@@ -1871,8 +1971,8 @@ mod tests {
 
         let (state, cache, events, _temp_dir) = create_test_state_with_cache();
         let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
-        let broker = FdBroker::start(rust_end.as_raw_fd(), state.clone())
-            .expect("broker should start");
+        let broker =
+            FdBroker::start(rust_end.as_raw_fd(), state.clone()).expect("broker should start");
         state.set_fd_broker(Arc::clone(&broker));
         std::mem::forget(rust_end);
 
@@ -3198,6 +3298,93 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn live_progress_precedes_data_without_changing_raw_output_or_replay() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring = Mutex::new(RingBuffer::new(128));
+        let mut decoder = Utf8ChunkDecoder::new();
+        let mut parser = crate::terminal::progress::OscProgressParser::new();
+        let session_id = "progress-live".to_string();
+        let chunk = b"before\x1b]9;4;1;42\x07after";
+
+        publish_live_pty_chunk(
+            &events,
+            &session_id,
+            &ring,
+            &mut decoder,
+            &mut parser,
+            chunk,
+        );
+
+        let recorded = events.recorded();
+        assert_eq!(
+            recorded
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["pty-progress", "pty-data"]
+        );
+        assert_eq!(recorded[0].1["sessionId"], session_id);
+        assert_eq!(recorded[0].1["state"], "normal");
+        assert_eq!(recorded[0].1["value"], 42);
+        assert_eq!(
+            recorded[1].1["data"].as_str(),
+            Some(String::from_utf8_lossy(chunk).as_ref())
+        );
+        assert_eq!(recorded[1].1["offsetStart"], 0);
+        assert_eq!(recorded[1].1["byteLen"], chunk.len() as u64);
+        assert_eq!(ring.lock().expect("ring poisoned").bytes_snapshot(), chunk);
+
+        let event_count = recorded.len();
+        let (replay, end_offset) = replay_snapshot(&ring);
+        assert_eq!(replay.as_bytes(), chunk);
+        assert_eq!(end_offset, chunk.len() as u64);
+        assert_eq!(events.recorded().len(), event_count);
+    }
+
+    #[test]
+    fn live_progress_keeps_repeated_reports_scoped_to_each_pty() {
+        let events = crate::runtime::FakeEventSink::new();
+        let ring_a = Mutex::new(RingBuffer::new(128));
+        let ring_b = Mutex::new(RingBuffer::new(128));
+        let mut decoder_a = Utf8ChunkDecoder::new();
+        let mut decoder_b = Utf8ChunkDecoder::new();
+        let mut parser_a = crate::terminal::progress::OscProgressParser::new();
+        let mut parser_b = crate::terminal::progress::OscProgressParser::new();
+
+        for _ in 0..2 {
+            publish_live_pty_chunk(
+                &events,
+                &"pty-a".to_string(),
+                &ring_a,
+                &mut decoder_a,
+                &mut parser_a,
+                b"\x1b]9;4;3\x07",
+            );
+        }
+        publish_live_pty_chunk(
+            &events,
+            &"pty-b".to_string(),
+            &ring_b,
+            &mut decoder_b,
+            &mut parser_b,
+            b"\x1b]9;4;2;85\x07",
+        );
+
+        let progress: Vec<_> = events
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "pty-progress")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(progress.len(), 3);
+        assert_eq!(progress[0]["sessionId"], "pty-a");
+        assert_eq!(progress[1]["sessionId"], "pty-a");
+        assert_eq!(progress[2]["sessionId"], "pty-b");
+        assert_eq!(progress[2]["state"], "error");
+        assert_eq!(progress[2]["value"], 85);
     }
 
     /// Assert the events tile the raw byte stream contiguously starting at

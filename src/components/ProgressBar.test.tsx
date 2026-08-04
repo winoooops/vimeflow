@@ -62,3 +62,20 @@ test('renders gradient fills for production-used tones', () => {
 
   expect(screen.getByTestId('fill')).toHaveClass('bg-gradient-to-r')
 })
+
+test('renders a square two-pixel hairline', () => {
+  render(
+    <ProgressBar
+      label="Terminal progress"
+      value={42}
+      height="hairline"
+      radius="none"
+      trackTestId="track"
+      fillTestId="fill"
+    />
+  )
+
+  expect(screen.getByTestId('track')).toHaveClass('h-0.5')
+  expect(screen.getByTestId('track')).not.toHaveClass('rounded-full')
+  expect(screen.getByTestId('fill')).not.toHaveClass('rounded-full')
+})

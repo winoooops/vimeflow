@@ -429,6 +429,8 @@ describe('WorkspaceView - Command Palette Integration', () => {
       onExit: vi.fn().mockReturnValue(vi.fn()),
       onError: vi.fn().mockReturnValue(vi.fn()),
       onBurnerForeground: vi.fn().mockReturnValue(vi.fn()),
+      getProgress: vi.fn(() => undefined),
+      onProgress: vi.fn().mockResolvedValue(vi.fn()),
       getPtyReplay: vi.fn().mockResolvedValue(null),
       listSessions: vi.fn().mockResolvedValue({
         activeSessionId: null,

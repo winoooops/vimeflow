@@ -25,7 +25,10 @@ import {
 import { useTerminalClipboard } from '../../hooks/useTerminalClipboard'
 import { type ITerminalService } from '../../services/terminalService'
 import { registerPtySession, unregisterPtySession } from '../../ptySessionMap'
-import { emitTerminalAttention } from '@/features/terminal/notifications'
+import {
+  emitTerminalAttention,
+  isProgressOsc9Payload,
+} from '@/features/terminal/notifications'
 import { TerminalContextMenu } from '../TerminalContextMenu'
 import {
   type AgentCwdSource,
@@ -801,6 +804,9 @@ export const Body = forwardRef<BodyHandle, BodyProps>(function Body(
 
       for (const identifier of [9, 777]) {
         newTerminal.parser.registerOscHandler(identifier, (data) => {
+          if (identifier === 9 && isProgressOsc9Payload(data)) {
+            return true
+          }
           if (!isRestoringOutputRef.current) {
             emitTerminalAttention({ ptyId: sessionId, body: data })
           }

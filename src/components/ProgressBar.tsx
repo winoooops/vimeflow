@@ -1,7 +1,7 @@
 import type { CSSProperties, HTMLAttributes, ReactElement } from 'react'
 
-type ProgressBarHeight = 'thin' | 'sm' | 'md'
-type ProgressBarRadius = 'chip' | 'pill'
+type ProgressBarHeight = 'hairline' | 'thin' | 'sm' | 'md'
+type ProgressBarRadius = 'none' | 'chip' | 'pill'
 
 export type ProgressBarTone =
   | 'neutral'
@@ -22,12 +22,14 @@ export interface ProgressBarVariantProps {
 const TRACK_BASE_CLASS = 'flex w-full overflow-hidden'
 
 const HEIGHT_CLASS: Record<ProgressBarHeight, string> = {
+  hairline: 'h-0.5',
   thin: 'h-[3px]',
   sm: 'h-1.5',
   md: 'h-2',
 }
 
 const RADIUS_CLASS: Record<ProgressBarRadius, string> = {
+  none: '',
   chip: 'rounded-chip',
   pill: 'rounded-full',
 }

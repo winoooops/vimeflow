@@ -527,6 +527,31 @@
   }
 }
 
+/* Terminal pane working progress: a 32% bright blue segment slides across the
+   header-bottom hairline (approved prototype contract). Width stays inline at
+   the call site so the same fill element also serves determinate/error states. */
+@keyframes vfPaneProgressIndeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(330%);
+  }
+}
+
+.vf-pane-progress-indeterminate {
+  animation: vfPaneProgressIndeterminate 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vf-pane-progress-indeterminate {
+    /* !important overrides the inline 32% width set for the sliding segment. */
+    width: 100% !important;
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* Tool Calls jar (packed treemap). Keyframes + motion classes live here so the
    section never injects a runtime <style>; all motion is reduced-motion gated. */
 @keyframes tjEnter {

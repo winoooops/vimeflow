@@ -23,6 +23,7 @@ import type {
   BurnerPlacement,
   BurnerTarget,
 } from '@/features/terminal/hooks/useBurnerTerminals'
+import { usePtyProgress } from '@/features/terminal/hooks/usePtyProgress'
 import type { NativeGhosttyShortcutContext } from '@/features/terminal/nativeGhosttyClient'
 import type { ITerminalService } from '@/features/terminal/services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
@@ -316,6 +317,13 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
+
+    const progress = usePtyProgress(
+      service,
+      pane.ptyId,
+      isSessionVisible && !isAwaitingRestart
+    )
+
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
@@ -358,6 +366,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           autoCollapsed={autoCollapsed}
           hideCollapseToggle={hideCollapseToggle}
           ptyId={pane.ptyId}
+          progress={progress}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
           shortcutHint={shortcutHint}

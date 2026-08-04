@@ -11,6 +11,7 @@ pub mod fd_broker;
 #[cfg(unix)]
 pub mod fd_transport;
 pub(crate) mod foreground;
+pub(crate) mod progress;
 pub mod state;
 #[cfg(feature = "e2e-test")]
 pub mod test_commands;

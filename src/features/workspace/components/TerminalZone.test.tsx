@@ -49,6 +49,8 @@ const mockService: ITerminalService = {
   onBurnerForeground: vi.fn(
     (): Promise<() => void> => Promise.resolve((): void => undefined)
   ),
+  getProgress: vi.fn(() => undefined),
+  onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
   getPtyReplay: vi.fn().mockResolvedValue(null),
   listSessions: vi.fn().mockResolvedValue({
     activeSessionId: null,

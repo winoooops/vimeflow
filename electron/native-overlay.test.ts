@@ -1087,6 +1087,36 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test('re-promotes layout creator dialogs when the renderer is ready', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await Promise.resolve()
+    overlayWindow.show.mockClear()
+    overlayWindow.focus.mockClear()
+    overlayWindow.webContents.focus.mockClear()
+    overlayWindow.setAlwaysOnTop.mockClear()
+    overlayWindow.moveTop.mockClear()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    expect(overlayWindow.setAlwaysOnTop).toHaveBeenCalledWith(
+      true,
+      'screen-saver'
+    )
+    expect(overlayWindow.show).toHaveBeenCalledOnce()
+    expect(overlayWindow.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.moveTop).toHaveBeenCalledOnce()
+  })
+
   test('keeps a layout creator dialog open through its initial focus handoff', async () => {
     electronMock.app.isActive.mockReturnValue(false)
     electronMock.owner.webContents.send.mockClear()
@@ -1244,7 +1274,7 @@ describe('NativeOverlayController', () => {
     expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
   })
 
-  test('dismisses a layout creator dialog on owner blur when the app deactivates', async () => {
+  test('dismisses a layout creator dialog on owner blur after focus handoff', async () => {
     vi.useFakeTimers()
     try {
       const openPromise = handler(NATIVE_OVERLAY_OPEN)(
@@ -1262,6 +1292,8 @@ describe('NativeOverlayController', () => {
 
       electronMock.app.isActive.mockReturnValue(false)
       electronMock.owner.webContents.send.mockClear()
+      overlayWindow.hide.mockClear()
+      overlayWindow.setAlwaysOnTop.mockClear()
       electronMock.owner.emit('blur')
 
       expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
@@ -1271,12 +1303,14 @@ describe('NativeOverlayController', () => {
           reason: 'outside',
         }
       )
+      expect(overlayWindow.hide).toHaveBeenCalled()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenCalledWith(false)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  test('dismisses a layout creator dialog on overlay blur when the app deactivates', async () => {
+  test('dismisses a layout creator dialog on overlay blur after focus handoff', async () => {
     vi.useFakeTimers()
     try {
       const openPromise = handler(NATIVE_OVERLAY_OPEN)(
@@ -1294,6 +1328,8 @@ describe('NativeOverlayController', () => {
 
       electronMock.app.isActive.mockReturnValue(false)
       electronMock.owner.webContents.send.mockClear()
+      overlayWindow.hide.mockClear()
+      overlayWindow.setAlwaysOnTop.mockClear()
       overlayWindow.emit('blur')
 
       expect(electronMock.owner.webContents.send).toHaveBeenCalledWith(
@@ -1303,6 +1339,8 @@ describe('NativeOverlayController', () => {
           reason: 'outside',
         }
       )
+      expect(overlayWindow.hide).toHaveBeenCalled()
+      expect(overlayWindow.setAlwaysOnTop).toHaveBeenCalledWith(false)
     } finally {
       vi.useRealTimers()
     }

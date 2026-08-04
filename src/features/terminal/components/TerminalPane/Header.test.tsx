@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { AGENTS } from '../../../../agents/registry'
 import type { Session } from '../../../sessions/types'
+import type { PtyProgress } from '../../types'
 import { Header } from './Header'
 
 const session: Session = {
@@ -48,6 +49,10 @@ const baseProps = {
   onToggleCollapse: vi.fn(),
 }
 
+const renderProgress = (progress: PtyProgress): void => {
+  render(<Header {...baseProps} progress={progress} />)
+}
+
 describe('Header', () => {
   test('renders compact glyph-only agent chip', () => {
     render(<Header {...baseProps} />)
@@ -72,6 +77,108 @@ describe('Header', () => {
     expect(header).toHaveClass('gap-1.5')
     expect(header).toHaveClass('px-2')
     expect(header).toHaveClass('py-1')
+  })
+
+  test('renders no progress geometry when progress is missing', () => {
+    render(<Header {...baseProps} />)
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.getByTestId('terminal-pane-header')).toHaveClass('relative')
+  })
+
+  test('renders determinate normal progress in bright blue', () => {
+    renderProgress({ state: 'normal', value: 42 })
+
+    const bar = screen.getByRole('progressbar', {
+      name: 'Terminal progress',
+    })
+    const fill = screen.getByTestId('terminal-pane-progress-fill')
+
+    expect(bar).toHaveAttribute('aria-valuenow', '42')
+    expect(bar).toHaveAttribute('aria-valuemin', '0')
+    expect(bar).toHaveAttribute('aria-valuemax', '100')
+    expect(bar).toHaveAttribute('aria-valuetext', '42% complete')
+    expect(bar).not.toHaveAttribute('aria-live')
+    expect(fill).toHaveStyle({ width: '42%' })
+    expect(fill).toHaveClass('bg-secondary')
+    expect(fill).toHaveClass('transition-[width]')
+    expect(fill).toHaveClass('motion-reduce:transition-none')
+    expect(fill).not.toHaveClass('animate-pulse')
+  })
+
+  test.each([
+    ['normal', 'In progress'],
+    ['indeterminate', 'In progress'],
+  ] as const)(
+    'renders %s progress as a sliding bright blue segment',
+    (state, valueText) => {
+      renderProgress({ state, value: null })
+
+      const bar = screen.getByRole('progressbar', {
+        name: 'Terminal progress',
+      })
+      const fill = screen.getByTestId('terminal-pane-progress-fill')
+
+      expect(bar).not.toHaveAttribute('aria-valuenow')
+      expect(bar).toHaveAttribute('aria-valuetext', valueText)
+      expect(fill).toHaveStyle({ width: '32%' })
+      expect(fill).toHaveClass('bg-secondary')
+      expect(fill).toHaveClass('vf-pane-progress-indeterminate')
+      expect(fill).not.toHaveClass('animate-pulse')
+      expect(fill).not.toHaveClass('opacity-50')
+    }
+  )
+
+  test('renders error progress as determinate or pulsing when unknown', () => {
+    const { rerender } = render(
+      <Header {...baseProps} progress={{ state: 'error', value: 85 }} />
+    )
+
+    let bar = screen.getByRole('progressbar', { name: 'Terminal progress' })
+    let fill = screen.getByTestId('terminal-pane-progress-fill')
+
+    expect(bar).toHaveAttribute('aria-valuenow', '85')
+    expect(bar).toHaveAttribute('aria-valuetext', 'Error, 85%')
+    expect(fill).toHaveClass('bg-error')
+    expect(fill).not.toHaveClass('animate-pulse')
+
+    rerender(
+      <Header {...baseProps} progress={{ state: 'error', value: null }} />
+    )
+    bar = screen.getByRole('progressbar', { name: 'Terminal progress' })
+    fill = screen.getByTestId('terminal-pane-progress-fill')
+
+    expect(bar).not.toHaveAttribute('aria-valuenow')
+    expect(bar).toHaveAttribute('aria-valuetext', 'Error')
+    expect(fill).toHaveStyle({ width: '100%' })
+    expect(fill).toHaveClass('bg-error')
+    expect(fill).toHaveClass('animate-pulse')
+  })
+
+  test('renders paused progress as determinate or static when unknown', () => {
+    const { rerender } = render(
+      <Header {...baseProps} progress={{ state: 'paused', value: 70 }} />
+    )
+
+    let bar = screen.getByRole('progressbar', { name: 'Terminal progress' })
+    let fill = screen.getByTestId('terminal-pane-progress-fill')
+
+    expect(bar).toHaveAttribute('aria-valuenow', '70')
+    expect(bar).toHaveAttribute('aria-valuetext', 'Paused, 70%')
+    expect(fill).toHaveClass('bg-warning')
+    expect(fill).not.toHaveClass('animate-pulse')
+
+    rerender(
+      <Header {...baseProps} progress={{ state: 'paused', value: null }} />
+    )
+    bar = screen.getByRole('progressbar', { name: 'Terminal progress' })
+    fill = screen.getByTestId('terminal-pane-progress-fill')
+
+    expect(bar).not.toHaveAttribute('aria-valuenow')
+    expect(bar).toHaveAttribute('aria-valuetext', 'Paused')
+    expect(fill).toHaveStyle({ width: '100%' })
+    expect(fill).toHaveClass('bg-warning')
+    expect(fill).not.toHaveClass('animate-pulse')
   })
 
   test('collapsed status does not change the compact header', () => {

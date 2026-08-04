@@ -377,6 +377,25 @@ describe('MockTerminalService', () => {
 
       unsubscribe()
     })
+
+    test('progress uses the same get, subscribe, remove, and exit lifecycle', async () => {
+      const callback = vi.fn()
+      await service.onProgress(callback)
+
+      service.emitProgress('pty-a', { state: 'normal', value: 42 })
+      expect(service.getProgress('pty-a')).toEqual({
+        state: 'normal',
+        value: 42,
+      })
+
+      service.emitProgress('pty-a', undefined)
+      expect(service.getProgress('pty-a')).toBeUndefined()
+
+      service.emitProgress('pty-a', { state: 'paused', value: null })
+      service.emitExit('pty-a', 0)
+      expect(service.getProgress('pty-a')).toBeUndefined()
+      expect(callback).toHaveBeenLastCalledWith('pty-a', undefined)
+    })
   })
 
   describe('getActiveSessions', () => {
