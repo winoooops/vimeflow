@@ -86,7 +86,7 @@ describe('Header', () => {
     expect(screen.getByTestId('terminal-pane-header')).toHaveClass('relative')
   })
 
-  test('renders determinate normal progress in the agent accent', () => {
+  test('renders determinate normal progress in bright blue', () => {
     renderProgress({ state: 'normal', value: 42 })
 
     const bar = screen.getByRole('progressbar', {
@@ -99,10 +99,8 @@ describe('Header', () => {
     expect(bar).toHaveAttribute('aria-valuemax', '100')
     expect(bar).toHaveAttribute('aria-valuetext', '42% complete')
     expect(bar).not.toHaveAttribute('aria-live')
-    expect(fill).toHaveStyle({
-      width: '42%',
-      background: AGENTS.claude.accent,
-    })
+    expect(fill).toHaveStyle({ width: '42%' })
+    expect(fill).toHaveClass('bg-secondary')
     expect(fill).toHaveClass('transition-[width]')
     expect(fill).toHaveClass('motion-reduce:transition-none')
     expect(fill).not.toHaveClass('animate-pulse')
@@ -112,7 +110,7 @@ describe('Header', () => {
     ['normal', 'In progress'],
     ['indeterminate', 'In progress'],
   ] as const)(
-    'renders %s progress as a full-width low-opacity pulse',
+    'renders %s progress as a sliding bright blue segment',
     (state, valueText) => {
       renderProgress({ state, value: null })
 
@@ -123,13 +121,11 @@ describe('Header', () => {
 
       expect(bar).not.toHaveAttribute('aria-valuenow')
       expect(bar).toHaveAttribute('aria-valuetext', valueText)
-      expect(fill).toHaveStyle({
-        width: '100%',
-        background: AGENTS.claude.accent,
-      })
-      expect(fill).toHaveClass('opacity-50')
-      expect(fill).toHaveClass('animate-pulse')
-      expect(fill).toHaveClass('motion-reduce:animate-none')
+      expect(fill).toHaveStyle({ width: '32%' })
+      expect(fill).toHaveClass('bg-secondary')
+      expect(fill).toHaveClass('vf-pane-progress-indeterminate')
+      expect(fill).not.toHaveClass('animate-pulse')
+      expect(fill).not.toHaveClass('opacity-50')
     }
   )
 

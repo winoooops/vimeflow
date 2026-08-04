@@ -78,6 +78,10 @@ export const Header = ({
   const shouldPulse =
     progress !== undefined && !isDeterminate && progress.state !== 'paused'
 
+  // Working with unknown duration: bright blue segment sliding across the
+  // header-bottom track (prototype contract), not a full-width pulse.
+  const isSliding = shouldPulse && progress.state !== 'error'
+
   const progressValueText =
     progress === undefined
       ? undefined
@@ -195,7 +199,7 @@ export const Header = ({
               ? 'error'
               : progress.state === 'paused'
                 ? 'warning'
-                : 'custom'
+                : 'secondary'
           }
           height="hairline"
           radius="none"
@@ -205,15 +209,13 @@ export const Header = ({
             isDeterminate
               ? 'transition-[width] duration-200 motion-reduce:transition-none'
               : ''
-          } ${shouldPulse ? 'animate-pulse motion-reduce:animate-none' : ''} ${
-            shouldPulse && progress.state !== 'error' ? 'opacity-50' : ''
+          } ${isSliding ? 'vf-pane-progress-indeterminate' : ''} ${
+            shouldPulse && progress.state === 'error'
+              ? 'animate-pulse motion-reduce:animate-none'
+              : ''
           }`}
           fillStyle={{
-            ...(isDeterminate ? {} : { width: '100%' }),
-            ...(progress.state === 'normal' ||
-            progress.state === 'indeterminate'
-              ? { background: agent.accent }
-              : {}),
+            ...(isDeterminate ? {} : { width: isSliding ? '32%' : '100%' }),
           }}
           fillTestId="terminal-pane-progress-fill"
           trackTestId="terminal-pane-progress"
