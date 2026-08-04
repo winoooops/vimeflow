@@ -3,6 +3,32 @@ const renderedFrameFingerprint = (
   fingerprint: string | null | undefined
 ): string | null => /^id=[^,]+,seed=[^,]+/.exec(fingerprint ?? '')?.[0] ?? null
 
+const nativePtyId = async (): Promise<string> => {
+  const ptyId = await browser.execute(() =>
+    document
+      .querySelector('[data-testid="native-ghostty-pane"]')
+      ?.getAttribute('data-pty-id')
+  )
+
+  if (!ptyId) {
+    throw new Error('native Ghostty pane has no PTY id')
+  }
+
+  return ptyId
+}
+
+const writePty = async (ptyId: string, data: string): Promise<void> => {
+  await browser.execute(
+    async (id: string, input: string) => {
+      await window.__VIMEFLOW_E2E__?.invokeBackend('write_pty', {
+        request: { sessionId: id, data: input },
+      })
+    },
+    ptyId,
+    data
+  )
+}
+
 describe('Ghostty native terminal runtime', () => {
   before(async function () {
     if (
@@ -58,6 +84,80 @@ describe('Ghostty native terminal runtime', () => {
       hasNativePane: true,
       hasXtermTextarea: false,
     })
+  })
+
+  it('drives renderer header progress from the native Ghostty PTY', async () => {
+    const ptyId = await nativePtyId()
+
+    await writePty(ptyId, "printf '\\033]9;4;3\\007'\r")
+    await browser.waitUntil(
+      async () =>
+        await browser.execute((id: string) => {
+          const pane = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[data-testid="split-view-slot"]'
+            )
+          ).find((candidate) => candidate.dataset.ptyId === id)
+          const bar = pane?.querySelector(
+            '[data-testid="terminal-pane-progress"]'
+          )
+
+          return (
+            bar !== null &&
+            bar !== undefined &&
+            !bar.hasAttribute('aria-valuenow')
+          )
+        }, ptyId),
+      { timeoutMsg: 'native indeterminate progress did not render' }
+    )
+
+    await writePty(ptyId, "printf '\\033]9;4;1;42\\007'\r")
+    await browser.waitUntil(
+      async () =>
+        await browser.execute((id: string) => {
+          const pane = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[data-testid="split-view-slot"]'
+            )
+          ).find((candidate) => candidate.dataset.ptyId === id)
+          const bar = pane?.querySelector(
+            '[data-testid="terminal-pane-progress"]'
+          )
+          const fill = pane?.querySelector<HTMLElement>(
+            '[data-testid="terminal-pane-progress-fill"]'
+          )
+
+          return (
+            bar?.getAttribute('aria-valuenow') === '42' &&
+            fill?.style.width === '42%'
+          )
+        }, ptyId),
+      { timeoutMsg: 'native determinate progress did not render' }
+    )
+
+    await writePty(ptyId, 'echo E2E-NATIVE-PROGRESS-OK\r')
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          async (id: string) =>
+            (
+              (await window.__VIMEFLOW_E2E__?.readGhosttyGrid(id)) ?? ''
+            ).includes('E2E-NATIVE-PROGRESS-OK'),
+          ptyId
+        ),
+      { timeoutMsg: 'native Ghostty surface stopped presenting PTY output' }
+    )
+
+    await writePty(ptyId, "printf '\\033]9;4;0\\007'\r")
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          () =>
+            document.querySelector('[data-testid="terminal-pane-progress"]') ===
+            null
+        ),
+      { timeoutMsg: 'native progress did not clear' }
+    )
   })
 
   it('has Ghostty accept and present the selected cursor shader', async () => {

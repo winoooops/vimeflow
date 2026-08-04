@@ -205,6 +205,9 @@ jobs:
 
       - name: Run Ghostty terminal smoke
         run: npm run test:e2e:terminal:ghostty:run
+        env:
+          TERM_PROGRAM: outer-terminal
+          TERM_PROGRAM_VERSION: '999'
 
       - name: Upload Ghostty E2E diagnostics on failure
         if: failure()
