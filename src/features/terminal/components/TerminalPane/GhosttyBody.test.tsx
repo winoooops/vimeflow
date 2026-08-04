@@ -1181,7 +1181,9 @@ describe('GhosttyBody', () => {
       outputListener?.('pty-1', '\x07', 0, 1)
       outputListener?.('pty-1', '\x1b]9;build ', 1, 10)
       outputListener?.('pty-1', 'done\x07', 11, 5)
-      outputListener?.('pty-1', '\x1b]7;file:///tmp/next\x07', 16, 21)
+      outputListener?.('pty-1', '\x1b]9;4;', 16, 6)
+      outputListener?.('pty-1', '3\x07', 22, 2)
+      outputListener?.('pty-1', '\x1b]7;file:///tmp/next\x07', 24, 21)
     })
     unsubscribe()
 

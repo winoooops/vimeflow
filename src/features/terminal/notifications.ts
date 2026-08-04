@@ -49,6 +49,10 @@ export const subscribeTerminalAttention = (
 
 const MAX_PENDING_BYTES = 4096
 
+/** OSC 9 payloads beginning with `4;` belong exclusively to progress. */
+export const isProgressOsc9Payload = (payload: string): boolean =>
+  payload.startsWith('4;')
+
 /**
  * Stateful scanner for one PTY output stream. `push` keeps incomplete escape
  * sequences between chunks because a terminal may split an OSC message across
@@ -56,9 +60,19 @@ const MAX_PENDING_BYTES = 4096
  */
 export class TerminalAttentionScanner {
   private pending = ''
+  private discardingOsc = false
+  private discardEscape = false
 
   /** Return each complete BEL or OSC 9/777 attention payload in input order. */
   push(data: string): readonly string[] {
+    if (this.discardingOsc) {
+      const remainder = this.discardThroughTerminator(data)
+      if (remainder === undefined) {
+        return []
+      }
+      data = remainder
+    }
+
     this.pending += data
     const attention: string[] = []
 
@@ -81,6 +95,10 @@ export class TerminalAttentionScanner {
       const terminator = findOscTerminator(this.pending)
       if (terminator === undefined) {
         if (this.pending.length > MAX_PENDING_BYTES) {
+          if (this.pending.startsWith('\x1b]9;4;')) {
+            this.discardingOsc = true
+            this.discardEscape = this.pending.endsWith('\x1b')
+          }
           this.pending = ''
         }
 
@@ -93,14 +111,41 @@ export class TerminalAttentionScanner {
       const identifier =
         separator === -1 ? payload : payload.slice(0, separator)
 
-      if (identifier === '9' || identifier === '777') {
-        attention.push(separator === -1 ? '' : payload.slice(separator + 1))
+      const body = separator === -1 ? '' : payload.slice(separator + 1)
+      if (
+        identifier === '777' ||
+        (identifier === '9' && !isProgressOsc9Payload(body))
+      ) {
+        attention.push(body)
       }
 
       this.pending = this.pending.slice(terminator.index + terminator.length)
     }
 
     return attention
+  }
+
+  private discardThroughTerminator(data: string): string | undefined {
+    for (let index = 0; index < data.length; index += 1) {
+      const character = data[index]
+      if (this.discardEscape) {
+        if (character === '\\') {
+          this.discardingOsc = false
+          this.discardEscape = false
+
+          return data.slice(index + 1)
+        }
+        this.discardEscape = character === '\x1b'
+      } else if (character === '\x07') {
+        this.discardingOsc = false
+
+        return data.slice(index + 1)
+      } else if (character === '\x1b') {
+        this.discardEscape = true
+      }
+    }
+
+    return undefined
   }
 }
 

@@ -167,6 +167,8 @@ const createService = (): ControlledTerminalService => {
     onBurnerForeground: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    getProgress: vi.fn(() => undefined),
+    onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
     getPtyReplay: vi.fn().mockResolvedValue(null),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
@@ -1474,6 +1476,7 @@ describe('Body agent-emitted OSC 7', () => {
     act(() => {
       getLatestTerminal().emitBell()
       service.emitData('pty-agent', '\x1b]9;build done\x07')
+      service.emitData('pty-agent', '\x1b]9;4;3\x07')
       service.emitData('pty-agent', '\x1b]7;file:///tmp/next\x07')
     })
     unsubscribe()
