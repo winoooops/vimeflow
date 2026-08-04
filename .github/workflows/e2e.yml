@@ -22,6 +22,7 @@ on:
     branches:
       - main
       - feature/ghostty-native-macos-runtime
+      - feature/vim-411-notification-watcher
     paths:
       - 'crates/**'
       - 'Cargo.toml'
