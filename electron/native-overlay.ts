@@ -1269,14 +1269,8 @@ export class NativeOverlayController {
 
     if (
       !this.suspendedSurfaceIds.has(payload.surfaceId) &&
-      needsKeyboardFocus
+      !needsKeyboardFocus
     ) {
-      this.promoteInteractiveLayer(
-        record,
-        payload.surfaceId,
-        needsKeyboardFocus
-      )
-    } else if (!this.suspendedSurfaceIds.has(payload.surfaceId)) {
       record.menu.window.moveTop()
     }
 
@@ -1365,8 +1359,21 @@ export class NativeOverlayController {
       return
     }
 
-    if (!this.surfaceFromOverlaySender(payload.surfaceId, event.sender)) {
+    const surface = this.surfaceFromOverlaySender(
+      payload.surfaceId,
+      event.sender
+    )
+    if (!surface) {
       return
+    }
+
+    const record = this.overlays.get(surface.parentId)
+    if (
+      record?.activeSurfaceId === payload.surfaceId &&
+      !this.suspendedSurfaceIds.has(payload.surfaceId) &&
+      isFocusOwnedDialogSurface(surface)
+    ) {
+      this.promoteInteractiveLayer(record, payload.surfaceId, true)
     }
 
     this.resolvePendingReady(payload.surfaceId, true)

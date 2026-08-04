@@ -1087,6 +1087,36 @@ describe('NativeOverlayController', () => {
     )
   })
 
+  test('re-promotes layout creator dialogs when the renderer is ready', async () => {
+    const openPromise = handler(NATIVE_OVERLAY_OPEN)(
+      { sender: electronMock.owner.webContents },
+      layoutCreatorDialogRequest
+    )
+    const overlayWindow = finishOverlayLoad()
+
+    await Promise.resolve()
+    overlayWindow.show.mockClear()
+    overlayWindow.focus.mockClear()
+    overlayWindow.webContents.focus.mockClear()
+    overlayWindow.setAlwaysOnTop.mockClear()
+    overlayWindow.moveTop.mockClear()
+
+    await acknowledgeOverlayReady(
+      overlayWindow,
+      layoutCreatorDialogRequest.surfaceId
+    )
+    await expect(openPromise).resolves.toEqual({ accepted: true })
+
+    expect(overlayWindow.setAlwaysOnTop).toHaveBeenCalledWith(
+      true,
+      'screen-saver'
+    )
+    expect(overlayWindow.show).toHaveBeenCalledOnce()
+    expect(overlayWindow.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.webContents.focus).toHaveBeenCalledOnce()
+    expect(overlayWindow.moveTop).toHaveBeenCalledOnce()
+  })
+
   test('keeps a layout creator dialog open through its initial focus handoff', async () => {
     electronMock.app.isActive.mockReturnValue(false)
     electronMock.owner.webContents.send.mockClear()
