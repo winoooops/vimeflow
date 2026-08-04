@@ -199,6 +199,12 @@ Gate: one PTY's exit/timeout cannot clear or refresh another PTY, no timer or ca
 
 Gate: the shared header bar behaves identically for xterm fallback and native Ghostty, progress never overlays the native `NSView`, reduced motion is static, and exiting one session leaves no orphan timer or state capable of changing another pane.
 
+### macOS CI prerequisite and PR readiness
+
+The native Ghostty runtime cannot be exercised on the current development machine. Before opening VIM-281's implementation PR, the epic base branch `feature/vim-411-notification-watcher` must contain an `.github/workflows/e2e.yml` `pull_request.branches` entry for itself. The current workflow accepts only PRs targeting `main` or `feature/ghostty-native-macos-runtime`; changing that filter inside VIM-281 would not bootstrap its own `pull_request` event because the base branch supplies the workflow definition. Land this as a separate CI-only prerequisite on the epic base.
+
+Open VIM-281 as a Draft PR targeting the epic base. Draft status does not suppress the repository's `pull_request` workflows. Keep it draft while the macOS runner executes `E2E Ghostty terminal smoke (macOS)` and `Native Ghostty macOS Smoke`; fix failures and push again while still draft. Convert the PR to Ready for review only after those macOS jobs and the ordinary Linux/code-quality gates are green. The automated native case emits real OSC sequences through a native Ghostty pane; it does not claim to authenticate or run Claude/Kimi on the GitHub-hosted runner.
+
 ### Files expected to change
 
 The implementation should stay near these existing owners; exact generated binding filenames follow `ts-rs` output:
@@ -211,12 +217,13 @@ The implementation should stay near these existing owners; exact generated bindi
 - `src/components/ProgressBar.tsx` and `.test.tsx`.
 - `src/features/terminal/components/TerminalPane/{index.tsx,Header.tsx}` and their existing tests.
 - `tests/e2e/terminal/specs/{pty-progress.spec.ts,pane-environment.spec.ts}`.
+- `.github/workflows/e2e.yml` to inject inherited identity sentinels into the existing macOS Ghostty E2E step; the separate epic-base prerequisite owns only the PR branch filter.
 
 No `WorkspaceView`, `TerminalZone`, `SplitView`, session model, agent adapter, libghostty Swift/C bridge, dependency manifest, or persistence file should change unless implementation discovers a demonstrated contract mismatch and updates this design first.
 
 ### Full verification
 
-Before PR review, run:
+Before opening the Draft PR, run the platform-independent/local gate:
 
 ```bash
 cargo test --manifest-path crates/backend/Cargo.toml
@@ -226,10 +233,9 @@ npm run lint
 npm run type-check
 npm run build
 npm run test:e2e:terminal
-npm run test:e2e:terminal:ghostty
 ```
 
-The configured 80% coverage floor remains mandatory. The PR records the targeted xterm and packaged/native macOS evidence separately because capability advertisement intentionally differs between them.
+The configured 80% coverage floor remains mandatory. The Draft PR's macOS runner then runs `npm run test:e2e:build:generated:ghostty` and `npm run test:e2e:terminal:ghostty:run` through `.github/workflows/e2e.yml`. The PR records xterm and native macOS evidence separately because capability advertisement intentionally differs between them.
 
 ### Acceptance criteria
 
@@ -240,6 +246,7 @@ The configured 80% coverage floor remains mandatory. The PR records the targeted
 - Valid, malformed, split, and oversized `OSC 9;4;...` frames never become terminal-attention notifications; ordinary `BEL`, OSC 9, and OSC 777 still do.
 - Header presentation covers all protocol states, honors reduced motion and progressbar semantics, and adds no percentage text or interactive surface.
 - xterm fallback and native Ghostty pass the same application-state behavior tests; only native transport advertises Ghostty identity.
+- The implementation PR remains Draft until the existing macOS Ghostty E2E and native smoke jobs pass, then becomes Ready for review.
 
 ### Deferred work
 
