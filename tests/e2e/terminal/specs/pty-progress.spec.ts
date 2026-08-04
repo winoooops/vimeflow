@@ -79,7 +79,7 @@ describe('PTY progress reports', () => {
           progress.exists &&
           progress.value === null &&
           progress.valueText === 'In progress' &&
-          progress.width === '100%'
+          progress.width === '32%'
         )
       },
       { timeoutMsg: 'indeterminate progress did not render' }
