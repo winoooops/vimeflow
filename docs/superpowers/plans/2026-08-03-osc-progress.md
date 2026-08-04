@@ -8,6 +8,12 @@
 
 Every task below starts with the smallest failing test, implements only enough to pass it, and runs the listed targeted command before the next task. Do not add text-output parsers, a generic OSC framework, `Pane.status` changes, libghostty delegate wiring, percentage text, persistence, or new dependencies. If implementation proves one of those necessary, stop and update the design first.
 
+## CI prerequisite — land before implementation PR
+
+The implementation PR targets `feature/vim-411-notification-watcher`, but `.github/workflows/e2e.yml` currently runs `pull_request` jobs only for base branches `main` and `feature/ghostty-native-macos-runtime`. A workflow change inside VIM-281 cannot enable its own opening event because the base branch supplies the PR workflow definition.
+
+Before opening the VIM-281 Draft PR, land a separate CI-only change on `feature/vim-411-notification-watcher` adding that branch to `.github/workflows/e2e.yml` under `on.pull_request.branches`. Confirm the base branch now exposes the existing `E2E Ghostty terminal smoke (macOS)` job to child PRs. Do not fold this bootstrap change into VIM-281 or change the implementation PR's base to `main`.
+
 ## Phase 1 — Rust parser, event, and capability
 
 ### Task 1 — Specify the streaming parser in tests
@@ -311,26 +317,43 @@ npm run test:e2e:terminal:run -- --spec tests/e2e/terminal/specs/pty-progress.sp
 
 - Extend `tests/e2e/terminal/specs/ghostty-runtime.spec.ts`.
 - Extend `tests/e2e/terminal/specs/pane-environment.spec.ts`.
+- Modify `.github/workflows/e2e.yml` so the existing macOS Ghostty E2E run step inherits `TERM_PROGRAM=outer-terminal` and `TERM_PROGRAM_VERSION=999`; do not add another macOS job.
 
 Add coverage that the same shell-emitted reports update renderer header DOM while the native surface remains usable. Refactor `pane-environment.spec.ts` so its environment probe can read either the ordinary xterm buffer or the native Ghostty grid instead of skipping ordinary runs. Supply inherited sentinel values in both modes: ordinary xterm must report them absent, while native transport must replace them with `ghostty` and `1.3.2`. Keep the indicator in header DOM, never over the native `NSView`.
 
-Run the environment assertion once in each mode, with explicit inherited values so removal/override is observable:
+Run only the ordinary-mode assertion on the current machine, with explicit inherited values so removal is observable. The native assertion is delegated to the Draft PR's macOS runner.
 
 ```bash
 npm run test:e2e:build
 npx cross-env TERM_PROGRAM=outer-terminal TERM_PROGRAM_VERSION=999 npm run test:e2e:terminal:run -- --spec tests/e2e/terminal/specs/pane-environment.spec.ts
-npx cross-env TERM_PROGRAM=outer-terminal TERM_PROGRAM_VERSION=999 npm run test:e2e:terminal:ghostty
 ```
 
-### Task 15 — Manual installed-agent pilot
+### Task 15 — Open Draft PR and require macOS Ghostty E2E
 
-In packaged native Ghostty, repeat the August pilot with installed Claude Code 2.1.220 and Kimi Code 0.31.1. Record active/clear indicator behavior and verify progress keepalives and OSC-terminating `BEL` never enter the notification island. Attach xterm and native evidence separately to the PR.
+Push `feature/vim-281` and open a Draft PR targeting `feature/vim-411-notification-watcher`. Keep it draft while GitHub runs:
+
+- `E2E Ghostty terminal smoke (macOS)`, including the native progress and environment cases from Task 14;
+- `Native Ghostty macOS Smoke`;
+- the Linux E2E and ordinary code-quality/test jobs.
+
+The macOS environment test supplies inherited `TERM_PROGRAM=outer-terminal` and `TERM_PROGRAM_VERSION=999` in its workflow step, then asserts the native PTY sees `ghostty`/`1.3.2`. If either native job fails, download its diagnostics, fix on the same branch, and push while the PR remains draft. Mark the PR Ready for review only after all required jobs are green:
+
+```bash
+gh pr checks --watch
+gh pr ready
+```
+
+Do not make readiness depend on running authenticated Claude/Kimi inside a GitHub-hosted runner; the automated native test validates their real OSC protocol frames through the production Ghostty runtime.
+
+### Task 16 — Manual installed-agent pilot when a development Mac is available
+
+On a development Mac with the installed agents and credentials, repeat the August pilot in packaged native Ghostty with Claude Code 2.1.220 and Kimi Code 0.31.1. Record active/clear indicator behavior and verify progress keepalives and OSC-terminating `BEL` never enter the notification island. This strengthens release evidence but does not block Draft-to-Ready when that machine is unavailable; the macOS CI runtime case is the required automated gate.
 
 Phase 3 gate: xterm and native Ghostty share application-state behavior; reduced motion is static; session exit leaves no timer or cross-pane state orphan.
 
 ## Final verification
 
-Run the complete gate before requesting PR review:
+Run the complete local/platform-independent gate before opening the Draft PR:
 
 ```bash
 cargo test --manifest-path crates/backend/Cargo.toml
@@ -340,9 +363,6 @@ npm run lint
 npm run type-check
 npm run build
 npm run test:e2e:terminal
-npm run test:e2e:terminal:ghostty
 ```
 
-The configured 80% coverage floor is mandatory. Commits must be atomic, use the repository's Conventional Commit format, and include `Co-Authored-By: codex <codex@openai.com>` exactly once. Any need to touch `WorkspaceView`, `TerminalZone`, `SplitView`, session models, agent adapters, the libghostty Swift/C bridge, dependencies, or persistence means the design contract has changed; update the design before continuing.
-
-<!-- codex-reviewed: 2026-08-03T18:05:58Z -->
+The configured 80% coverage floor is mandatory. The macOS commands run in the Draft PR through `.github/workflows/e2e.yml`; do not attempt them on the current non-macOS machine. Commits must be atomic, use the repository's Conventional Commit format, and include `Co-Authored-By: codex <codex@openai.com>` exactly once. Any need to touch `WorkspaceView`, `TerminalZone`, `SplitView`, session models, agent adapters, the libghostty Swift/C bridge, dependencies, or persistence means the design contract has changed; update the design before continuing.
