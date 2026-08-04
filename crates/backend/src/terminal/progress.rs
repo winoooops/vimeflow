@@ -79,11 +79,8 @@ impl OscProgressParser {
                 return self.finish_osc(osc.kind);
             }
 
-            osc.escape = false;
-            osc.kind = match osc.kind {
-                OscKind::Ignore => OscKind::Ignore,
-                _ => OscKind::Discard,
-            };
+            self.state = ParserState::Escape;
+            return self.push_byte(byte);
         }
 
         match byte {
@@ -288,6 +285,22 @@ mod tests {
         ] {
             assert!(parse(frame).is_empty(), "accepted {frame:?}");
         }
+    }
+
+    #[test]
+    fn test_parser_recovers_from_unterminated_progress_before_later_escape_sequences() {
+        let mut parser = OscProgressParser::new();
+
+        assert!(parser.push(b"\x1b]9;4;1;42\x1b[31mred\x1b[0m").is_empty());
+        assert_eq!(
+            parser.push(b"\x1b]9;4;4;70\x07"),
+            vec![progress(PtyProgressState::Paused, Some(70))]
+        );
+
+        assert_eq!(
+            parse(b"\x1b]9;4;1;42\x1b]9;4;3\x07"),
+            vec![progress(PtyProgressState::Indeterminate, None)]
+        );
     }
 
     #[test]
