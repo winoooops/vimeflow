@@ -6,13 +6,20 @@ type ProgressSource = Pick<ITerminalService, 'getProgress' | 'onProgress'>
 
 export const usePtyProgress = (
   service: ProgressSource,
-  ptyId: string
+  ptyId: string,
+  enabled = true
 ): PtyProgress | undefined => {
   const [progress, setProgress] = useState<PtyProgress | undefined>(() =>
-    service.getProgress(ptyId)
+    enabled ? service.getProgress(ptyId) : undefined
   )
 
   useEffect(() => {
+    if (!enabled) {
+      setProgress(undefined)
+
+      return
+    }
+
     let cancelled = false
     let unsubscribe: (() => void) | undefined
 
@@ -48,7 +55,7 @@ export const usePtyProgress = (
       cancelled = true
       unsubscribe?.()
     }
-  }, [ptyId, service])
+  }, [enabled, ptyId, service])
 
   return progress
 }

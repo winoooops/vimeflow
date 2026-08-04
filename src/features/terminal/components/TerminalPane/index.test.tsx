@@ -369,6 +369,13 @@ describe('TerminalPane index', () => {
 
     expect(screen.queryByTestId('body-mock')).not.toBeInTheDocument()
     expect(screen.getByText('Session exited.')).toBeInTheDocument()
+
+    expect(usePtyProgressSpy).toHaveBeenCalledWith(
+      baseProps.service,
+      'pty-s1',
+      false
+    )
+
     expect(
       screen.queryByTestId('terminal-pane-status-bar')
     ).not.toBeInTheDocument()
@@ -421,7 +428,11 @@ describe('TerminalPane index', () => {
 
     render(<TerminalPane {...baseProps} />)
 
-    expect(usePtyProgressSpy).toHaveBeenCalledWith(baseProps.service, 'pty-s1')
+    expect(usePtyProgressSpy).toHaveBeenCalledWith(
+      baseProps.service,
+      'pty-s1',
+      true
+    )
 
     expect(
       screen.getByRole('progressbar', { name: 'Terminal progress' })

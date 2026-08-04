@@ -54,6 +54,20 @@ describe('usePtyProgress', () => {
     expect(result.current).toEqual({ state: 'normal', value: 42 })
   })
 
+  test('stays unsubscribed while disabled', () => {
+    const source = new ProgressSource()
+    source.values.set('pty-a', { state: 'normal', value: 42 })
+
+    const { result } = renderHook(() => usePtyProgress(source, 'pty-a', false))
+
+    expect(result.current).toBeUndefined()
+    expect(source.pending).toHaveLength(0)
+
+    act(() => source.publish('pty-a', { state: 'normal', value: 80 }))
+
+    expect(result.current).toBeUndefined()
+  })
+
   test('re-reads state after asynchronous subscription setup', async () => {
     const source = new ProgressSource()
     const { result } = renderHook(() => usePtyProgress(source, 'pty-a'))

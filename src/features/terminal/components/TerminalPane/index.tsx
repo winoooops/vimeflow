@@ -150,7 +150,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     ref
   ): ReactElement {
     const agent = agentForPane(pane)
-    const progress = usePtyProgress(service, pane.ptyId)
     const bodyRef = useRef<TerminalBodyHandle>(null)
     // Seeded `undefined` so the first effect run can detect
     // initial mount distinctly from a stable `true → true` re-render. A pane
@@ -318,6 +317,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     )
 
     const isAwaitingRestart = mode === 'awaiting-restart'
+    const progress = usePtyProgress(service, pane.ptyId, !isAwaitingRestart)
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
