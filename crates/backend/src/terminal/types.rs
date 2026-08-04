@@ -6,6 +6,19 @@ use std::collections::HashMap;
 /// PTY session identifier (UUID string)
 pub type SessionId = String;
 
+/// Normalized OSC 9;4 progress state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum PtyProgressState {
+    Remove,
+    Normal,
+    Error,
+    Indeterminate,
+    Paused,
+}
+
 /// PTY session metadata returned after spawning
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -101,6 +114,20 @@ pub struct PtyDataEvent {
     /// decoding can replace invalid bytes with U+FFFD (3 bytes when re-encoded)
     /// and shift the cursor away from the producer's offset stream.
     pub byte_len: u64,
+}
+
+/// PTY-scoped progress parsed from a live OSC 9;4 report.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PtyProgressEvent {
+    /// Session ID
+    pub session_id: SessionId,
+    /// Normalized progress state
+    pub state: PtyProgressState,
+    /// Optional percentage from 0 through 100
+    pub value: Option<u8>,
 }
 
 /// PTY exit event payload (emitted when process exits)
@@ -325,4 +352,27 @@ pub struct WorkspaceSessionSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SetWorkspaceSessionsRequest {
     pub sessions: Vec<WorkspaceSessionSnapshot>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_pty_progress_event_serializes_camel_case_and_null_value() {
+        assert_eq!(
+            serde_json::to_value(PtyProgressEvent {
+                session_id: "pty-1".to_string(),
+                state: PtyProgressState::Indeterminate,
+                value: None,
+            })
+            .expect("serialize progress"),
+            json!({
+                "sessionId": "pty-1",
+                "state": "indeterminate",
+                "value": null,
+            })
+        );
+    }
 }

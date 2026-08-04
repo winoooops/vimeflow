@@ -129,6 +129,11 @@ export interface PTYKillParams {
  */
 export type { PtyDataEvent as PTYDataEvent } from '../../../bindings'
 
+export type {
+  PtyProgressEvent as PTYProgressEvent,
+  PtyProgressState as PTYProgressState,
+} from '../../../bindings'
+
 export type { PtyExitEvent as PTYExitEvent } from '../../../bindings'
 
 export type { PtyErrorEvent as PTYErrorEvent } from '../../../bindings'
