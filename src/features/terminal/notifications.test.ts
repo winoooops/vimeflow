@@ -89,4 +89,13 @@ describe('terminal notifications', () => {
     expect(bellScanner.push('\x07')).toEqual([])
     expect(bellScanner.push('\x07')).toEqual([''])
   })
+
+  test('recovers when oversized reserved progress ends ESC then BEL', () => {
+    const scanner = new TerminalAttentionScanner()
+
+    expect(scanner.push(`\x1b]9;4;1;${'7'.repeat(5000)}\x1b`)).toEqual([])
+    expect(scanner.push('\x07')).toEqual([])
+    expect(scanner.push('\x1b]9;build done\x07')).toEqual(['build done'])
+    expect(scanner.push('\x1b]777;notify\x1b\\')).toEqual(['notify'])
+  })
 })

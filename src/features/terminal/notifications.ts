@@ -135,6 +135,12 @@ export class TerminalAttentionScanner {
 
           return data.slice(index + 1)
         }
+        if (character === '\x07') {
+          this.discardingOsc = false
+          this.discardEscape = false
+
+          return data.slice(index + 1)
+        }
         this.discardEscape = character === '\x1b'
       } else if (character === '\x07') {
         this.discardingOsc = false

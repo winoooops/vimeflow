@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-08-02
-ref_count: 19
+last_updated: 2026-08-04
+ref_count: 20
 ---
 
 # Parser Resilience
@@ -445,4 +445,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** Codex response-item function calls only treated `request_user_input` as an interaction, so the sibling built-in `request_permissions` call produced no approval notification for background panes.
 - **Fix:** Detect `request_permissions` function calls and emit `ApprovalRequested` with the same bounded dedupe-key path as other semantic attention events. Extended the semantic attention regression.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Oversized OSC discard missed BEL after a pending ESC
+
+- **Source:** github-codex-connector | PR #778 round 1 | 2026-08-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/notifications.ts`
+- **Finding:** `TerminalAttentionScanner` entered `discardingOsc` for oversized reserved OSC 9;4 progress frames, but when one chunk ended with `ESC` and the next began with `BEL`, the pending-escape branch treated BEL only as a failed ST terminator. The scanner stayed in discard mode and swallowed later ordinary OSC 9/777 notifications.
+- **Fix:** Treat BEL as a valid discard terminator even while resolving a pending ESC, clearing both discard flags before returning the remaining data. Added a regression that reproduces the split oversized-progress frame and verifies subsequent OSC 9 and OSC 777 notifications are emitted.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
