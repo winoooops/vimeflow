@@ -6,6 +6,7 @@ import type { UseGitBranchReturn } from '@/features/diff/hooks/useGitBranch'
 import type { UseGitStatusReturn } from '@/features/diff/hooks/useGitStatus'
 import type { UseGitWorktreeReturn } from '@/features/diff/hooks/useGitWorktree'
 import type { Session } from '@/features/sessions/types'
+import type { PtyProgress } from '@/features/terminal/types'
 import type { BodyHandle, BodyProps } from './Body'
 import { TerminalPane, type TerminalPaneHandle } from './index'
 import { usePaneWidth } from './usePaneWidth'
@@ -14,6 +15,10 @@ vi.mock('./usePaneWidth', () => ({ usePaneWidth: vi.fn(() => null) }))
 
 const bodyPropsSpy = vi.hoisted(() => vi.fn())
 const focusTerminalSpy = vi.hoisted(() => vi.fn())
+
+const usePtyProgressSpy = vi.hoisted(() =>
+  vi.fn<(_: unknown, __: string) => PtyProgress | undefined>(() => undefined)
+)
 
 const useGitBranchSpy = vi.hoisted(() =>
   vi.fn(
@@ -95,6 +100,10 @@ vi.mock('@/features/diff/hooks/useGitWorktree', () => ({
   useGitWorktree: useGitWorktreeSpy,
 }))
 
+vi.mock('@/features/terminal/hooks/usePtyProgress', () => ({
+  usePtyProgress: usePtyProgressSpy,
+}))
+
 const session: Session = {
   id: 's1',
   projectId: 'p1',
@@ -145,6 +154,8 @@ describe('TerminalPane index', () => {
     useGitBranchSpy.mockClear()
     useGitStatusSpy.mockClear()
     useGitWorktreeSpy.mockClear()
+    usePtyProgressSpy.mockReset()
+    usePtyProgressSpy.mockReturnValue(undefined)
     vi.mocked(usePaneWidth).mockReturnValue(null)
   })
 
@@ -403,6 +414,18 @@ describe('TerminalPane index', () => {
 
     expect(screen.getByTestId('agent-glyph-label')).toHaveTextContent('CLAUDE')
     expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
+  })
+
+  test('passes this PTY progress to its header', () => {
+    usePtyProgressSpy.mockReturnValue({ state: 'normal', value: 35 })
+
+    render(<TerminalPane {...baseProps} />)
+
+    expect(usePtyProgressSpy).toHaveBeenCalledWith(baseProps.service, 'pty-s1')
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuenow', '35')
   })
 
   test('chrome reflects pane.agentType directly (no override prop)', () => {

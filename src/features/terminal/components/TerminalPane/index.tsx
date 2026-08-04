@@ -23,6 +23,7 @@ import type {
   BurnerPlacement,
   BurnerTarget,
 } from '@/features/terminal/hooks/useBurnerTerminals'
+import { usePtyProgress } from '@/features/terminal/hooks/usePtyProgress'
 import type { NativeGhosttyShortcutContext } from '@/features/terminal/nativeGhosttyClient'
 import type { ITerminalService } from '@/features/terminal/services/terminalService'
 import { aggregateLineDelta } from './aggregateLineDelta'
@@ -149,6 +150,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     ref
   ): ReactElement {
     const agent = agentForPane(pane)
+    const progress = usePtyProgress(service, pane.ptyId)
     const bodyRef = useRef<TerminalBodyHandle>(null)
     // Seeded `undefined` so the first effect run can detect
     // initial mount distinctly from a stable `true → true` re-render. A pane
@@ -358,6 +360,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           autoCollapsed={autoCollapsed}
           hideCollapseToggle={hideCollapseToggle}
           ptyId={pane.ptyId}
+          progress={progress}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
           shortcutHint={shortcutHint}
