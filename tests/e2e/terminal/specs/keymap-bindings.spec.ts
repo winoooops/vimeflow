@@ -453,9 +453,18 @@ const activePtySessionIds = async (): Promise<string[]> =>
 
 const isSplitViewDisplayed = async (): Promise<boolean> =>
   browser.execute(() => {
-    const element = document.querySelector<HTMLElement>(
-      '[data-testid="split-view"]'
-    )
+    const visibleSessionId = window.__VIMEFLOW_E2E__?.getVisibleSessionId()
+    const session =
+      visibleSessionId === undefined || visibleSessionId === null
+        ? null
+        : document.querySelector<HTMLElement>(
+            `[data-testid="terminal-pane"][data-session-id="${CSS.escape(
+              visibleSessionId
+            )}"]`
+          )
+    const element =
+      session?.querySelector<HTMLElement>('[data-testid="split-view"]') ??
+      document.querySelector<HTMLElement>('[data-testid="split-view"]')
     if (element === null) {
       return false
     }

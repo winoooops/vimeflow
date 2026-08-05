@@ -1,4 +1,70 @@
-import { typeInActiveTerminal } from '../../shared/terminal.js'
+import { clickBySelector } from '../../shared/actions.js'
+type ElectronModule = typeof import('electron')
+
+const hasElement = async (selector: string): Promise<boolean> =>
+  await browser.execute(
+    (s: string) => document.querySelector<HTMLElement>(s) !== null,
+    selector
+  )
+
+const openSettings = async (): Promise<void> => {
+  if (!(await hasElement('[data-testid="sidebar-settings-footer"]'))) {
+    await clickBySelector('[data-testid="sidebar-toggle-fixed"]')
+    await (
+      await $('[data-testid="sidebar-settings-footer"]')
+    ).waitForExist({ timeout: 5_000 })
+  }
+
+  await clickBySelector('[data-testid="sidebar-settings-footer"]')
+  await (
+    await $('[role="dialog"][aria-label="Settings"]')
+  ).waitForDisplayed({ timeout: 8_000 })
+}
+
+const focusTerminalZone = async (): Promise<void> => {
+  await browser.electron.execute((electron: ElectronModule) => {
+    const win = electron.BrowserWindow.getAllWindows()[0]
+    win?.focus()
+    win?.webContents.focus()
+  })
+  await browser.execute(() => {
+    const zone = document.querySelector<HTMLElement>(
+      '[data-testid="terminal-zone"]'
+    )
+    zone?.focus()
+    zone?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+  })
+  if (
+    await hasElement('[data-testid="split-view-slot"][data-pane-active="true"]')
+  ) {
+    await clickBySelector(
+      '[data-testid="split-view-slot"][data-pane-active="true"]'
+    )
+  }
+  await browser.pause(100)
+}
+
+const writeToVisiblePty = async (data: string): Promise<void> => {
+  const written = await browser.execute(async (input: string) => {
+    const bridge = window.__VIMEFLOW_E2E__
+    const sessionId = bridge?.getVisiblePtyId()
+    if (!bridge || !sessionId) {
+      return false
+    }
+
+    await bridge.invokeBackend('write_pty', {
+      request: {
+        sessionId,
+        data: input,
+      },
+    })
+
+    return true
+  }, data)
+  if (!written) {
+    throw new Error('visible PTY was not available for cursor-effect input')
+  }
+}
 
 describe('xterm cursor effects', () => {
   before(async function () {
@@ -19,10 +85,7 @@ describe('xterm cursor effects', () => {
   })
 
   it('presents the selected Tail effect after terminal input', async () => {
-    await (await $('[data-testid="sidebar-settings-footer"]')).click()
-    await (
-      await $('[role="dialog"][aria-label="Settings"]')
-    ).waitForDisplayed({ timeout: 8_000 })
+    await openSettings()
 
     await browser.execute(() => {
       const terminalButton = Array.from(
@@ -50,7 +113,11 @@ describe('xterm cursor effects', () => {
       }
     )
 
-    await (await $('[role="dialog"] button[aria-label="Close"]')).click()
+    await clickBySelector('[role="dialog"] button[aria-label="Close"]')
+    await (
+      await $('[role="dialog"][aria-label="Settings"]')
+    ).waitForDisplayed({ reverse: true, timeout: 5_000 })
+    await focusTerminalZone()
 
     const blankFrame = await browser.execute(() =>
       document
@@ -60,7 +127,7 @@ describe('xterm cursor effects', () => {
         ?.toDataURL()
     )
 
-    await typeInActiveTerminal('x')
+    await writeToVisiblePty('x')
 
     await browser.waitUntil(
       async () =>

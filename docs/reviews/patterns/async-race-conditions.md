@@ -1294,3 +1294,12 @@ prevent showing previous data.
   guaranteeing the completion event is emitted. Added regression coverage for
   the idle-then-busy batch.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 113. OpenCode idle flush raced assistant text writes
+
+- **Source:** github-codex-connector | PR #785 round 1 | 2026-08-05
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** OpenCode `session.status: idle` was flushed at the end of the scan that first saw it. When the bridge wrote `assistant.text` or `session.idle` shortly afterward, the pending idle had already cleared, producing a body-less completion and suppressing the enriched completion that should have followed.
+- **Fix:** Keep status-idle pending through a short grace window and flush it when assistant text, explicit `session.idle`, the next busy event, or a stale no-change scan resolves it. OpenCode completion dedupe now uses the session-turn key and clears that key on the next busy edge, preventing status-idle plus session-idle double emission.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

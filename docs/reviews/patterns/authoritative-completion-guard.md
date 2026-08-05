@@ -172,3 +172,21 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Finding:** The notification classifier ignored OpenCode `session.status` records with `status.type == "idle"`, even though the bridge treats that as a real idle transition and some streams may not append a separate `session.idle` line.
 - **Fix:** Added a status-idle completion signal that emits when assistant text is already buffered, while preserving the existing later `session.idle` path for streams where idle status arrives before final text.
 - **Commit:** same commit as this entry
+
+### 12. Mid-turn notification registration dropped live completions
+
+- **Source:** github-claude | PR #785 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Claude, Kimi, and OpenCode completion records required an observed active turn, but notification registrations start at EOF and can attach after the matching start record has already been written. A live completion appended after registration was therefore suppressed as replay for three providers.
+- **Fix:** Treat live completion records as authoritative even when their start edge was before the registration cursor, while keeping turn-id mismatch suppression for genuinely stale mismatches. Added regression coverage for Claude, Kimi, and OpenCode mid-turn registration.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Live EOF completions required a pre-registration start line
+
+- **Source:** github-codex-connector | PR #785 round 1 | 2026-08-05
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** The shared notification apply guard dropped provider completions with `requires_active_turn` when the watcher attached after the start record but before the completion record. The appended completion was live relative to the EOF cursor, so the active-turn requirement incorrectly treated it as replay.
+- **Fix:** Mark provider completion classifiers as not requiring a locally observed active turn and keep the existing mismatch guard for turn IDs that were actually seen. The regression test seeds a start before the cursor, appends only the completion, and asserts one notification is emitted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

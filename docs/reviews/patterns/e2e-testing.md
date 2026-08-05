@@ -612,3 +612,21 @@ already exists` before the spec could assert agent status rendering.
 - **Finding:** The macOS Ghostty native-overlay smoke waited for the layout-creator overlay window to report both `isVisible()` and `isAlwaysOnTop()` before running the screenshot proof. CI timed out on that native-state probe even after the dialog DOM rendered in the overlay host, preventing the test from reaching the pixel assertion that actually proves the overlay paints above Ghostty's NSView.
 - **Fix:** Removed the redundant BrowserWindow state gate from the dialog path and kept the screenshot-based overlay paint assertion plus direct layout-creator control checks as the stable behavioral proof.
 - **Commit:** same commit as this entry
+
+### 51. Split-view visibility helper selected hidden retained sessions
+
+- **Source:** deterministic CI failure | PR #785 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/keymap-bindings.spec.ts`
+- **Finding:** The keymap smoke helper queried the first `[data-testid="split-view"]` in the document, but the workspace retains hidden inactive sessions. After settings and session interactions, the first split-view could belong to a hidden session, making the helper time out even though the visible active session was rendered.
+- **Fix:** Scope the visibility probe through the E2E bridge's visible session id before falling back to the first split-view. The Linux keymap WDIO spec now passes with the same `xvfb-run` wrapper used by CI.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 52. Settings-dependent terminal specs assumed the sidebar was open
+
+- **Source:** deterministic CI verification | PR #785 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/terminal/specs/xterm-cursor-effects.spec.ts`
+- **Finding:** The cursor-effect smoke clicked the settings footer directly, assuming the sidebar was visible, and then relied on WebDriver key focus after closing Settings. In retained workspace states the spec could fail before the cursor-effect assertion or fail because xterm's hidden textarea focus did not stick.
+- **Fix:** Reused the same settings-opening flow as the keymap spec, waited for Settings to close, and triggered terminal input through the E2E backend PTY bridge so the smoke still exercises real terminal output without depending on OS focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
