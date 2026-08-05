@@ -14,6 +14,7 @@ import type {
 } from '../types'
 import type {
   AgentLifecycleEvent,
+  AgentNotificationEvent,
   AgentPhase,
   AgentSessionTitleEvent,
 } from '../../../bindings'
@@ -290,7 +291,7 @@ const phaseToStatus: Record<AgentPhase, SessionStatus> = {
 
 const bindAgentSessionId = (pane: Pane, agentSessionId: string | null): Pane =>
   agentSessionId && pane.agentSessionId !== agentSessionId
-    ? { ...pane, agentSessionId }
+    ? { ...pane, agentSessionId, agentPhase: undefined }
     : pane
 
 const log = createLogger('sessions')
@@ -567,8 +568,13 @@ export const useSessionManager = (
                 ...session,
                 panes: session.panes.map((candidate) =>
                   candidate.id === paneId &&
-                  candidate.agentSessionId !== undefined
-                    ? { ...candidate, agentSessionId: undefined }
+                  (candidate.agentSessionId !== undefined ||
+                    candidate.agentPhase !== undefined)
+                    ? {
+                        ...candidate,
+                        agentSessionId: undefined,
+                        agentPhase: undefined,
+                      }
                     : candidate
                 ),
               }
@@ -697,6 +703,7 @@ export const useSessionManager = (
             ? {
                 ...p,
                 status,
+                agentPhase: undefined,
                 agentType: 'generic' as const,
               }
             : p
@@ -731,6 +738,7 @@ export const useSessionManager = (
             ? {
                 ...p,
                 status: 'errored' as const,
+                agentPhase: undefined,
                 agentType: 'generic' as const,
               }
             : p
@@ -982,6 +990,85 @@ export const useSessionManager = (
     }
   }, [acceptAgentSessionEvent, releaseAutoStartedAgentWatcher])
 
+  // The notification-only watcher stays live when the full transcript watcher
+  // is stopped for a background pane, so its terminal event closes that turn.
+  useEffect(() => {
+    if (!isDesktop()) {
+      return
+    }
+
+    let cancelled = false
+    let unlistenFn: UnlistenFn | undefined
+
+    void (async (): Promise<void> => {
+      let fn: UnlistenFn
+      try {
+        fn = await listen<AgentNotificationEvent>(
+          'agent-notification',
+          (payload) => {
+            if (
+              payload.reason !== 'turn-complete' &&
+              payload.reason !== 'agent-error'
+            ) {
+              return
+            }
+
+            setSessions((prev) =>
+              prev.map((session) => {
+                const idx = session.panes.findIndex(
+                  (pane) => pane.ptyId === payload.ptyId
+                )
+                if (idx === -1) {
+                  return session
+                }
+
+                const pane = session.panes[idx]
+                if (
+                  pane.status !== 'running' ||
+                  pane.agentSessionId === undefined ||
+                  (payload.agentSessionId !== null &&
+                    payload.agentSessionId !== pane.agentSessionId)
+                ) {
+                  return session
+                }
+
+                const newPanes = session.panes.map((candidate, i) =>
+                  i === idx
+                    ? {
+                        ...candidate,
+                        status: 'idle' as const,
+                        agentPhase: 'idle' as const,
+                      }
+                    : candidate
+                )
+
+                return {
+                  ...session,
+                  status: deriveShellSessionStatus(newPanes),
+                  panes: newPanes,
+                }
+              })
+            )
+          }
+        )
+      } catch {
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [])
+
   // Bridge: write the agent's derived lifecycle phase into pane.status.
   useEffect(() => {
     if (!isDesktop()) {
@@ -1037,6 +1124,7 @@ export const useSessionManager = (
                   ? {
                       ...pane,
                       agentSessionId: payload.agentSessionId,
+                      agentPhase: payload.phase,
                       status: phaseToStatus[payload.phase],
                     }
                   : pane
@@ -2547,6 +2635,7 @@ export const useSessionManager = (
               cwd: result.cwd,
               shell: result.shell,
               status: 'running',
+              agentPhase: undefined,
               agentType: replacementAgentType,
               agentSessionId: replacementAgentSessionId,
               agentLauncher: replacementAgentLauncher,

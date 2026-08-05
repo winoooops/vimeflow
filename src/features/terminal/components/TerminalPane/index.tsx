@@ -38,6 +38,11 @@ import { usePaneWidth } from './usePaneWidth'
 const AUTO_COLLAPSE_PANE_WIDTH_PX = 220
 const TERMINAL_PANE_CORNER_RADIUS = 10
 
+const AGENT_LIFECYCLE_PROGRESS = {
+  state: 'indeterminate',
+  value: null,
+} as const
+
 const INTERACTIVE_TARGET_SELECTOR = [
   'button',
   'a[href]',
@@ -324,6 +329,42 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       isSessionVisible && !isAwaitingRestart
     )
 
+    // Once native OSC progress appears, it owns the rest of this agent turn;
+    // its remove event must not uncover the lifecycle fallback.
+    const progressOwnerRef = useRef<{
+      agentSessionId: string | undefined
+      running: boolean
+      native: boolean
+    }>({ agentSessionId: undefined, running: false, native: false })
+
+    const lifecycleProgressActive =
+      pane.agentSessionId !== undefined &&
+      pane.agentType !== 'generic' &&
+      pane.agentPhase === 'running' &&
+      pane.status === 'running'
+
+    const sameAgentTurn =
+      lifecycleProgressActive &&
+      progressOwnerRef.current.running &&
+      progressOwnerRef.current.agentSessionId === pane.agentSessionId
+
+    const nativeOwnsTurn =
+      lifecycleProgressActive &&
+      (progress !== undefined ||
+        (sameAgentTurn && progressOwnerRef.current.native))
+
+    progressOwnerRef.current = {
+      agentSessionId: pane.agentSessionId,
+      running: lifecycleProgressActive,
+      native: nativeOwnsTurn,
+    }
+
+    const effectiveProgress =
+      progress ??
+      (lifecycleProgressActive && !nativeOwnsTurn
+        ? AGENT_LIFECYCLE_PROGRESS
+        : undefined)
+
     const hideCollapseToggle = isAwaitingRestart || autoCollapsed
     const bodyMode: BodyMode = mode === 'attach' ? 'attach' : 'spawn'
 
@@ -366,7 +407,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           autoCollapsed={autoCollapsed}
           hideCollapseToggle={hideCollapseToggle}
           ptyId={pane.ptyId}
-          progress={progress}
+          progress={effectiveProgress}
           paneAgentTitle={pane.agentTitle}
           paneUserLabel={pane.userLabel}
           shortcutHint={shortcutHint}

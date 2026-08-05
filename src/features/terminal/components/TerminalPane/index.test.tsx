@@ -426,7 +426,16 @@ describe('TerminalPane index', () => {
   test('passes this PTY progress to its header', () => {
     usePtyProgressSpy.mockReturnValue({ state: 'normal', value: 35 })
 
-    render(<TerminalPane {...baseProps} />)
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-1',
+          status: 'idle',
+        }}
+      />
+    )
 
     expect(usePtyProgressSpy).toHaveBeenCalledWith(
       baseProps.service,
@@ -437,6 +446,156 @@ describe('TerminalPane index', () => {
     expect(
       screen.getByRole('progressbar', { name: 'Terminal progress' })
     ).toHaveAttribute('aria-valuenow', '35')
+  })
+
+  test('does not treat a live PTY as an active agent turn', () => {
+    render(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...baseProps.pane, agentSessionId: 'agent-1' }}
+      />
+    )
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  test('shows indeterminate fallback for an explicit running agent phase', () => {
+    const { rerender } = render(<TerminalPane {...baseProps} />)
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-1',
+          agentPhase: 'running',
+        }}
+      />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuetext', 'In progress')
+  })
+
+  test('native progress owns its turn and remove does not reveal fallback', () => {
+    let nativeProgress: PtyProgress | undefined
+
+    usePtyProgressSpy.mockImplementation(() => nativeProgress)
+
+    const runningPane = {
+      ...baseProps.pane,
+      agentSessionId: 'agent-1',
+      agentPhase: 'running' as const,
+      status: 'running' as const,
+    }
+
+    const { rerender } = render(
+      <TerminalPane {...baseProps} pane={runningPane} />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuetext', 'In progress')
+
+    nativeProgress = { state: 'paused', value: 70 }
+    rerender(<TerminalPane {...baseProps} pane={runningPane} />)
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuetext', 'Paused, 70%')
+
+    nativeProgress = undefined
+    rerender(<TerminalPane {...baseProps} pane={runningPane} />)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...runningPane, agentPhase: 'awaiting', status: 'awaiting' }}
+      />
+    )
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(<TerminalPane {...baseProps} pane={runningPane} />)
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuetext', 'In progress')
+  })
+
+  test('agent identity change and teardown reset lifecycle fallback ownership', () => {
+    let nativeProgress: PtyProgress | undefined = {
+      state: 'indeterminate',
+      value: null,
+    }
+
+    usePtyProgressSpy.mockImplementation(() => nativeProgress)
+
+    const { rerender } = render(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-old',
+          agentPhase: 'running',
+        }}
+      />
+    )
+
+    nativeProgress = undefined
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-old',
+          agentPhase: 'running',
+        }}
+      />
+    )
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-new',
+          agentPhase: 'running',
+        }}
+      />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toBeInTheDocument()
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-new',
+          agentPhase: 'running',
+          agentType: 'generic',
+        }}
+      />
+    )
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{
+          ...baseProps.pane,
+          agentSessionId: 'agent-new',
+          agentPhase: 'running',
+          status: 'completed',
+        }}
+      />
+    )
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
   test('chrome reflects pane.agentType directly (no override prop)', () => {
