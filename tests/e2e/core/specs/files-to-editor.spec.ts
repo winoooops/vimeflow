@@ -77,11 +77,15 @@ describe('File explorer → editor flow', () => {
         document.querySelectorAll<HTMLElement>(
           '[role="treeitem"][data-file-type="file"]'
         )
-      ).find((el) => el.dataset.fileName === fileName)
+      ).find(
+        (el) => el.dataset.fileName === fileName && el.offsetParent !== null
+      )
+
       if (!fixture) return null
       const target =
         fixture.querySelector<HTMLElement>('.cursor-pointer') ?? fixture
       target.click()
+
       return fixture.dataset.filePath ?? ''
     }, FIXTURE_NAME)
 
