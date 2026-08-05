@@ -1328,13 +1328,13 @@ fn apply_signal(
             turn_id,
             agent_session_id,
         } => {
+            flush_pending_opencode_idle(registration, diagnostics, events);
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
             }
             registration.turn_active = true;
             registration.turn_id = turn_id;
             registration.notification_body = None;
-            registration.pending_opencode_idle = None;
         }
         ClassifiedSignal::Notification {
             reason,
@@ -2128,6 +2128,40 @@ mod tests {
         for line in [
             r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
             r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+        ] {
+            writeln!(file, "{line}").expect("append bridge line");
+        }
+        file.flush().expect("flush bridge stream");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan bridge stream");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+        assert_eq!(sink.recorded()[0].1["body"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn opencode_next_busy_flushes_previous_pending_idle() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("session.jsonl");
+        std::fs::write(&source, "").expect("create bridge stream");
+        let mut registration = Registration::new(
+            "pty-opencode".to_string(),
+            1,
+            NotificationProvider::OpenCode,
+            source.clone(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open bridge stream");
+        for line in [
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
         ] {
             writeln!(file, "{line}").expect("append bridge line");
         }
