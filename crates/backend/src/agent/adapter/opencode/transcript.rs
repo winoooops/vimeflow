@@ -23,9 +23,8 @@
 //!   `result.output` + `result.metadata.exit` into the shared
 //!   `claude_code::test_runners` (cwd = the session cwd, NOT a per-command
 //!   workdir). Only submit when `maybe_build_snapshot` returns `Some`.
-//! - `kind=event`, `type=session.idle`/`session.status`/`step-finish` part ⇒
-//!   status/phase refresh (v1 has no lifecycle phase emission for opencode, so
-//!   these are observed but do not emit; reserved for a later milestone).
+//! - `kind=event`, `type=session.status` busy/retry ⇒ lifecycle running;
+//!   `session.idle` or `session.status` idle ⇒ lifecycle idle.
 //! - assistant `data.info.path.cwd` change ⇒ [`AgentCwdEvent`] when it differs
 //!   from `last_cwd`. (The v1 bridge sanitizer drops `info.path`, so this is a
 //!   defensive read that only fires if a future bridge re-adds the field; the
@@ -234,6 +233,7 @@ impl OpencodeTranscriptDecoder {
                 self.process_session_event(dto);
             }
             OpencodeEventType::SessionStatus => self.process_session_status(dto),
+            OpencodeEventType::SessionIdle => self.process_session_idle(dto),
             OpencodeEventType::SessionError => self.process_session_error(dto),
             OpencodeEventType::PermissionAsked => self.process_attention(
                 dto,
@@ -273,12 +273,23 @@ impl OpencodeTranscriptDecoder {
                 self.turn_active = true;
                 self.record_phase(agent_session_id, AgentPhase::Running);
             }
-            "idle" if self.turn_active => {
-                self.turn_active = false;
-                self.record_phase(agent_session_id, AgentPhase::Idle);
-            }
+            "idle" => self.finish_turn(agent_session_id),
             _ => {}
         }
+    }
+
+    fn process_session_idle(&mut self, dto: &OpencodeLineDto) {
+        if let Some(agent_session_id) = opencode_session_id(dto) {
+            self.finish_turn(agent_session_id);
+        }
+    }
+
+    fn finish_turn(&mut self, agent_session_id: &str) {
+        if !self.turn_active {
+            return;
+        }
+        self.turn_active = false;
+        self.record_phase(agent_session_id, AgentPhase::Idle);
     }
 
     fn process_session_error(&mut self, dto: &OpencodeLineDto) {
@@ -993,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn status_busy_to_idle_emits_one_live_completion_edge() {
+    fn status_busy_to_session_idle_emits_one_live_completion_edge() {
         let sink = Arc::new(FakeEventSink::new());
         let mut dec = decoder(&sink, None);
         dec.on_caught_up();
@@ -1002,10 +1013,10 @@ mod tests {
             r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
         );
         dec.decode_line(
-            r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
         );
         dec.decode_line(
-            r#"{"v":1,"ts":3,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
         );
 
         let lifecycle: Vec<Value> = sink
@@ -1605,6 +1616,14 @@ mod tests {
 
         assert_eq!(sink.count("agent-turn"), 0);
         assert_eq!(sink.count("agent-tool-call"), 0);
+        let lifecycle: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle.len(), 1);
+        assert_eq!(lifecycle[0]["phase"], "idle");
         let summaries: Vec<Value> = sink
             .recorded()
             .into_iter()

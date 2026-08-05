@@ -260,6 +260,22 @@ describe('Background agent notifications', () => {
         'notification watcher emitted a full agent event'
       )
 
+      await browser.waitUntil(
+        async () =>
+          await browser.execute((sessionId: string) => {
+            const row = document.querySelector(
+              `[data-testid="session-row"][data-session-id="${CSS.escape(sessionId)}"]`
+            )
+
+            return row?.textContent?.includes('Idle') ?? false
+          }, sessionA),
+        {
+          timeout: 10_000,
+          interval: 100,
+          timeoutMsg: 'background completion left the session running',
+        }
+      )
+
       const afterBackground = await notificationDiagnostics()
       const switched = await browser.execute((sessionId: string) => {
         const activation = document.querySelector<HTMLButtonElement>(
