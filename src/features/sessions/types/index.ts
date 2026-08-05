@@ -1,5 +1,7 @@
 // Session domain types — owned by src/features/sessions/.
 // cspell:ignore vsplit hsplit
+import type { AgentPhase } from '@/bindings'
+
 export type SessionStatus =
   | 'running'
   | 'awaiting'
@@ -107,6 +109,9 @@ export interface Pane {
 
   /** Materialized pane status. */
   status: SessionStatus
+
+  /** Latest semantic agent lifecycle phase; absent until a watcher emits one. */
+  agentPhase?: AgentPhase
 
   /** Restoration buffer for buffered-event drain. */
   restoreData?: import('../../terminal/types').RestoreData
