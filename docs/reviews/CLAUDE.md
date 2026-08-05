@@ -55,7 +55,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 37       | 27   | 2026-07-31   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 9        | 3    | 2026-08-05   |
-| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 13       | 6    | 2026-07-26   |
+| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 14       | 6    | 2026-08-05   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 95       | 46   | 2026-08-02   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 12       | 7    | 2026-08-02   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 106      | 98   | 2026-07-31   |
@@ -84,7 +84,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 2        | 1    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 48       | 28   | 2026-08-05   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 49       | 28   | 2026-08-05   |
 | [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 22       | 9    | 2026-07-29   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 17       | 5    | 2026-07-30   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 49       | 19   | 2026-07-26   |

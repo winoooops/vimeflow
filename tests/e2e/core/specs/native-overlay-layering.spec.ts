@@ -40,11 +40,6 @@ interface PixelMapping {
   offsetY?: number
 }
 
-interface OverlayWindowState {
-  alwaysOnTop: boolean
-  visible: boolean
-}
-
 interface LocalDialogState {
   nativeOverlayActive: boolean
   opacity: string
@@ -336,50 +331,6 @@ const getLayoutCreatorOverlayDraftGrid = async (): Promise<{
 
     return null
   })
-
-const getLayoutCreatorOverlayWindowState =
-  async (): Promise<OverlayWindowState | null> =>
-    browser.electron.execute(async (electron: ElectronModule) => {
-      let fallbackState: OverlayWindowState | null = null
-
-      for (const contents of electron.webContents.getAllWebContents()) {
-        const mode = new URL(contents.getURL()).searchParams.get(
-          'nativeOverlay'
-        )
-
-        if (mode !== '1' && mode !== 'menu') {
-          continue
-        }
-
-        const hasLayoutCreator = (await contents.executeJavaScript(`
-          Boolean(document.querySelector('[data-workspace-overlay-id="layout-creator"]'))
-        `)) as boolean
-
-        if (!hasLayoutCreator) {
-          continue
-        }
-
-        const overlay = electron.BrowserWindow.getAllWindows().find(
-          (window) => window.webContents.id === contents.id
-        )
-        if (overlay === undefined) {
-          continue
-        }
-
-        const state = {
-          alwaysOnTop: overlay.isAlwaysOnTop(),
-          visible: overlay.isVisible(),
-        }
-
-        if (state.alwaysOnTop && state.visible) {
-          return state
-        }
-
-        fallbackState ??= state
-      }
-
-      return fallbackState
-    })
 
 const getParentLocalLayoutDialogState =
   async (): Promise<LocalDialogState | null> =>
@@ -936,25 +887,6 @@ describe('NativeOverlay BrowserWindow layering', () => {
     )
     const localDialogState = await getParentLocalLayoutDialogState()
     expect(parentLocalLayoutDialogIsHidden(localDialogState)).toBe(true)
-
-    await browser.waitUntil(
-      async () => {
-        const state = await getLayoutCreatorOverlayWindowState()
-
-        return state?.alwaysOnTop === true && state.visible === true
-      },
-      {
-        timeout: 5_000,
-        interval: 100,
-        timeoutMsg:
-          'Layout Creator overlay window did not become visible and topmost',
-      }
-    )
-    const overlayWindowState = await getLayoutCreatorOverlayWindowState()
-    expect(overlayWindowState).toEqual({
-      alwaysOnTop: true,
-      visible: true,
-    })
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 

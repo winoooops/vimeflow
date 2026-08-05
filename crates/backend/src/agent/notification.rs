@@ -123,6 +123,7 @@ struct Registration {
     turn_active: bool,
     turn_id: Option<String>,
     notification_body: Option<String>,
+    claude_transcript_cursors: HashMap<PathBuf, u64>,
     pending_opencode_idle: Option<PendingOpenCodeIdle>,
     dedupe_keys: HashSet<String>,
     dedupe_order: VecDeque<String>,
@@ -154,6 +155,7 @@ impl Registration {
             turn_active: false,
             turn_id: None,
             notification_body: None,
+            claude_transcript_cursors: HashMap::new(),
             pending_opencode_idle: None,
             dedupe_keys: HashSet::new(),
             dedupe_order: VecDeque::new(),
@@ -702,6 +704,7 @@ fn scan_source(
         registration.turn_active = false;
         registration.turn_id = None;
         registration.pending_opencode_idle = None;
+        registration.claude_transcript_cursors.clear();
         diagnostics
             .lock()
             .expect("notification diagnostics mutex poisoned")
@@ -832,6 +835,7 @@ enum ClassifiedSignal {
         turn_id: Option<String>,
         agent_session_id: Option<String>,
         body: Option<String>,
+        transcript_path: Option<String>,
         requires_active_turn: bool,
         ends_turn: bool,
     },
@@ -862,6 +866,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: None,
             agent_session_id: None,
             body: None,
+            transcript_path: None,
             requires_active_turn: false,
             ends_turn: false,
         });
@@ -885,6 +890,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 turn_id,
                 agent_session_id: None,
                 body: envelope.payload.last_agent_message,
+                transcript_path: None,
                 // Registration starts at EOF and can occur after task_started.
                 // Any terminal record appended after that boundary is live.
                 requires_active_turn: false,
@@ -902,6 +908,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 turn_id: None,
                 agent_session_id: None,
                 body: None,
+                transcript_path: None,
                 requires_active_turn: false,
                 ends_turn: false,
             })
@@ -915,6 +922,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 turn_id: None,
                 agent_session_id: None,
                 body: None,
+                transcript_path: None,
                 requires_active_turn: false,
                 ends_turn: false,
             })
@@ -977,7 +985,8 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             dedupe_key: envelope.tool_use_id,
             turn_id: None,
             agent_session_id: envelope.session_id,
-            body: claude_hook_body(reason, envelope.transcript_path.as_deref()),
+            body: None,
+            transcript_path: envelope.transcript_path,
             requires_active_turn,
             ends_turn,
         });
@@ -1017,12 +1026,14 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         turn_id: None,
         agent_session_id: None,
         body: claude_message_text(&message.content),
+        transcript_path: None,
         requires_active_turn: true,
         ends_turn: true,
     })
 }
 
 fn claude_hook_body(
+    registration: &mut Registration,
     reason: AgentNotificationReason,
     transcript_path: Option<&str>,
 ) -> Option<String> {
@@ -1038,11 +1049,21 @@ fn claude_hook_body(
         crate::agent::adapter::claude_code::transcript::validate_transcript_path(transcript_path)
             .ok()?;
 
-    latest_claude_transcript_body_at_path(&path)
+    let cursor = registration
+        .claude_transcript_cursors
+        .entry(path.clone())
+        .or_default();
+    latest_claude_transcript_body_at_path(&path, cursor)
 }
 
-fn latest_claude_transcript_body_at_path(path: &Path) -> Option<String> {
-    let file = File::open(path).ok()?;
+fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Option<String> {
+    let mut file = File::open(path).ok()?;
+    let length = file.metadata().ok()?.len();
+    if length < *cursor {
+        *cursor = 0;
+    }
+    file.seek(SeekFrom::Start(*cursor)).ok()?;
+
     let mut latest = None;
 
     for_each_bounded_line(BufReader::new(file), "Claude notification transcript", |line| {
@@ -1067,6 +1088,7 @@ fn latest_claude_transcript_body_at_path(path: &Path) -> Option<String> {
     })
     .ok()?;
 
+    *cursor = length;
     latest
 }
 
@@ -1154,6 +1176,7 @@ fn classify_kimi(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         turn_id: event.turn_id,
         agent_session_id: None,
         body: None,
+        transcript_path: None,
         requires_active_turn: true,
         ends_turn: true,
     })
@@ -1227,6 +1250,7 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: None,
             agent_session_id,
             body: None,
+            transcript_path: None,
             requires_active_turn: true,
             ends_turn: true,
         }),
@@ -1237,6 +1261,7 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: None,
             agent_session_id,
             body: None,
+            transcript_path: None,
             requires_active_turn: false,
             ends_turn: false,
         }),
@@ -1247,6 +1272,7 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: None,
             agent_session_id,
             body: None,
+            transcript_path: None,
             requires_active_turn: false,
             ends_turn: false,
         }),
@@ -1264,6 +1290,7 @@ fn opencode_completion(occurred_at: u64, agent_session_id: Option<String>) -> Cl
         turn_id: None,
         agent_session_id,
         body: None,
+        transcript_path: None,
         requires_active_turn: true,
         ends_turn: true,
     }
@@ -1316,6 +1343,7 @@ fn apply_signal(
             turn_id,
             agent_session_id,
             body,
+            transcript_path,
             requires_active_turn,
             ends_turn,
         } => {
@@ -1343,9 +1371,12 @@ fn apply_signal(
             } else {
                 None
             };
+            let transcript_body =
+                claude_hook_body(registration, reason, transcript_path.as_deref());
             let body = body
                 .as_deref()
                 .and_then(normalize_notification_body)
+                .or(transcript_body)
                 .or(buffered_body)
                 .or_else(|| notification_action_body(reason).map(str::to_string));
 
@@ -1781,11 +1812,52 @@ mod tests {
             ),
         )
         .expect("write transcript");
+        let mut cursor = 0;
 
         assert_eq!(
-            latest_claude_transcript_body_at_path(&transcript).as_deref(),
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
             Some("latest done")
         );
+        assert_eq!(
+            cursor,
+            std::fs::metadata(&transcript).expect("metadata").len()
+        );
+    }
+
+    #[test]
+    fn claude_stop_hook_body_scans_only_new_transcript_bytes_after_cursor() {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        let mut file = std::fs::File::create(&transcript).expect("create transcript");
+        writeln!(
+            file,
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"first\"}}],\"stop_reason\":\"end_turn\"}}}}"
+        )
+        .expect("write first");
+        file.flush().expect("flush first");
+        let mut cursor = 0;
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("first")
+        );
+        let first_cursor = cursor;
+
+        file.seek(SeekFrom::End(0)).expect("seek end");
+        writeln!(
+            file,
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"second\"}}],\"stop_reason\":\"end_turn\"}}}}"
+        )
+        .expect("write second");
+        file.flush().expect("flush second");
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("second")
+        );
+        assert!(cursor > first_cursor);
     }
 
     #[test]

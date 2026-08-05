@@ -2,7 +2,7 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-07-26
+last_updated: 2026-08-05
 ref_count: 6
 ---
 
@@ -138,4 +138,13 @@ feature.
 - **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
 - **Finding:** Code-mode `apply_patch` custom tool calls computed patch paths separately for argument summarization and test-file detection. Each helper invocation reran JS tokenization, const-binding tracking, and string decoding over the same embedded patch body.
 - **Fix:** Compute the patch path list once when starting the custom tool call, then pass the shared slice into both the summary helper and the test-file classifier.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Claude notification hooks rescanned full transcripts on every stop
+
+- **Source:** github-claude | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Claude Stop and StopFailure hooks recovered the final assistant body by opening the transcript file and scanning from byte 0 every time. Long append-only transcripts made per-turn notification work grow with full session size and blocked the shared notification worker while unrelated sessions waited.
+- **Fix:** Added per-registration Claude transcript cursors keyed by validated transcript path. Hook notifications now read only bytes appended since the last extraction and reset cursors on source truncation or registration teardown while keeping misses retryable.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
