@@ -244,30 +244,30 @@ const clickEnabledOverlayCheckbox = async (
 
 const getOverlayMenuRect = async (): Promise<CssRect | null> =>
   browser.electron.execute(async (electron: ElectronModule) => {
-    const overlay = electron.webContents
-      .getAllWebContents()
-      .find((contents) => {
-        const mode = new URL(contents.getURL()).searchParams.get(
-          'nativeOverlay'
-        )
+    for (const overlay of electron.webContents.getAllWebContents()) {
+      const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
 
-        return mode === '1' || mode === 'menu'
-      })
+      if (mode !== '1' && mode !== 'menu') {
+        continue
+      }
 
-    if (!overlay) {
-      return null
+      const rect = (await overlay.executeJavaScript(`
+        (() => {
+          const rect = document
+            .querySelector('[role="menu"][aria-label="Displayed layouts"]')
+            ?.getBoundingClientRect()
+          return rect
+            ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+            : null
+        })()
+      `)) as CssRect | null
+
+      if (rect !== null) {
+        return rect
+      }
     }
 
-    return overlay.executeJavaScript(`
-      (() => {
-        const rect = document
-          .querySelector('[role="menu"][aria-label="Displayed layouts"]')
-          ?.getBoundingClientRect()
-        return rect
-          ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-          : null
-      })()
-    `) as Promise<CssRect | null>
+    return null
   })
 
 const getOverlayDialogRect = async (): Promise<CssRect | null> =>
@@ -433,13 +433,28 @@ const closeOverlayMenuIfPresent = async (): Promise<void> => {
   }
 
   await browser.electron.execute(async (electron: ElectronModule) => {
-    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+    let overlay:
+      | ReturnType<typeof electron.BrowserWindow.getAllWindows>[number]
+      | undefined
+
+    for (const window of electron.BrowserWindow.getAllWindows()) {
       const mode = new URL(window.webContents.getURL()).searchParams.get(
         'nativeOverlay'
       )
 
-      return mode === '1' || mode === 'menu'
-    })
+      if (mode !== '1' && mode !== 'menu') {
+        continue
+      }
+
+      const hasMenu = (await window.webContents.executeJavaScript(`
+        Boolean(document.querySelector('[role="menu"][aria-label="Displayed layouts"]'))
+      `)) as boolean
+
+      if (hasMenu) {
+        overlay = window
+        break
+      }
+    }
 
     overlay?.webContents.sendInputEvent({
       type: 'keyDown',
@@ -483,14 +498,33 @@ const mapViewportToScreenPixels = async (): Promise<PixelMapping> =>
   })
 
 const mapOverlayViewportToScreenPixels = async (): Promise<PixelMapping> =>
-  browser.electron.execute((electron: ElectronModule) => {
-    const overlay = electron.BrowserWindow.getAllWindows().find((window) => {
+  browser.electron.execute(async (electron: ElectronModule) => {
+    let overlay:
+      | ReturnType<typeof electron.BrowserWindow.getAllWindows>[number]
+      | undefined
+
+    for (const window of electron.BrowserWindow.getAllWindows()) {
       const mode = new URL(window.webContents.getURL()).searchParams.get(
         'nativeOverlay'
       )
 
-      return mode === '1' || mode === 'menu'
-    })
+      if (mode !== '1' && mode !== 'menu') {
+        continue
+      }
+
+      const hasTargetSurface = (await window.webContents.executeJavaScript(`
+        Boolean(
+          document.querySelector(
+            '[role="menu"][aria-label="Displayed layouts"], [data-workspace-overlay-id="layout-creator"]'
+          )
+        )
+      `)) as boolean
+
+      if (hasTargetSurface) {
+        overlay = window
+        break
+      }
+    }
 
     if (overlay === undefined) {
       throw new Error('Electron overlay window unavailable')

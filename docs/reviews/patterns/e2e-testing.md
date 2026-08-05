@@ -2,8 +2,8 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-07-31
-ref_count: 27
+last_updated: 2026-08-05
+ref_count: 28
 ---
 
 # E2E Testing
@@ -578,4 +578,13 @@ already exists` before the spec could assert agent status rendering.
 - **File:** `tests/e2e/terminal/specs/ghostty-runtime.spec.ts`
 - **Finding:** The Ghostty cursor shader smoke compared the full presentation fingerprint after appending `acceptedShader`. Changing only the accepted shader path could satisfy the inequality even when the presented frame `id` and `seed` were unchanged.
 - **Fix:** Parse the rendered-frame portion of the fingerprint separately, wait for shader acceptance, and require the `id`/`seed` portion to change before the smoke passes.
+- **Commit:** same commit as this entry
+
+### 48. Native overlay E2E helpers selected stale host windows
+
+- **Source:** deterministic CI failure | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke selected the first native overlay host window when reading menu geometry, mapping overlay pixels, or sending Escape. Preloaded or reused hosts can exist without the displayed layout menu, making the test time out even when a later overlay host rendered the target surface.
+- **Fix:** Scan native overlay webContents/windows for the host that actually contains the displayed-layout menu or layout-creator surface before reading rects, mapping coordinates, or closing the menu.
 - **Commit:** same commit as this entry
