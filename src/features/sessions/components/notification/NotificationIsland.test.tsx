@@ -405,6 +405,20 @@ describe('NotificationIsland', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('keeps the panel on the floating layer above the dock (z-50)', async () => {
+    render(<NotificationIsland {...props([notification('need')])} />)
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Notifications, 1 unread' })
+    )
+
+    // The custom className replaces GLASS_SURFACE's default, which carries
+    // the layer — without z-50 the portaled panel paints under the z-30 dock.
+    expect(
+      screen.getByRole('dialog', { name: 'Notification center' })
+    ).toHaveClass('z-50')
+  })
+
   test('does not move focus into the panel when it opens', async () => {
     render(<NotificationIsland {...props([notification('need')])} />)
 
@@ -605,5 +619,15 @@ describe('NotificationIsland', () => {
     })
 
     expect(handlers.onDismiss).toHaveBeenCalledWith('need')
+  })
+
+  test('does not preload native overlay windows before notifications exist', () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge()
+
+    render(<NotificationIsland {...props([])} />)
+
+    expect(bridge.preload).not.toHaveBeenCalled()
   })
 })

@@ -111,7 +111,12 @@ export const NotificationIsland = ({
         nativeOverlayPayload={island.notificationPayload}
         nativeOverlayActions={island.nativeActions}
         onNativeOverlayActiveChange={island.setNativeOverlayActive}
-        className={`vf-notification-panel overflow-hidden rounded-2xl bg-surface-container/[.97] shadow-[0_20px_52px_color-mix(in_srgb,var(--color-scrim)_50%,transparent)] ${
+        // z-50 restores the floating layer that GLASS_SURFACE normally
+        // supplies: a custom className replaces the default, and without the
+        // explicit layer the portaled panel (z-auto) paints under the dock
+        // panel (z-30). macOS native runtime is unaffected — the local panel
+        // unmounts whenever the native overlay window takes over.
+        className={`vf-notification-panel z-50 overflow-hidden rounded-2xl bg-surface-container/[.97] shadow-[0_20px_52px_color-mix(in_srgb,var(--color-scrim)_50%,transparent)] ${
           island.panelClosing ? 'vf-notification-panel-closing' : ''
         }`}
       >

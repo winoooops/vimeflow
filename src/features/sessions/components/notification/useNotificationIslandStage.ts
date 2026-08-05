@@ -200,12 +200,16 @@ export const useNotificationIslandStage = ({
     }
   }, [])
 
-  // Warm the native overlay layer on mount so the first panel open doesn't
-  // pay window creation + layer load on screen. No-op off macOS / when the
-  // native overlay feature is disabled.
+  // Warm the native overlay layer once the panel can actually show content.
+  // Creating hidden native overlay windows during an empty app boot can disturb
+  // Electron E2E window targeting before any notification surface is usable.
   useEffect(() => {
+    if (visibleRecords.length === 0) {
+      return
+    }
+
     preloadNativeOverlay()
-  }, [])
+  }, [visibleRecords.length])
 
   const closeToast = useCallback((): void => {
     clearTimer()
