@@ -4,6 +4,8 @@
 appId: io.vimeflow.app
 productName: Vimeflow
 electronVersion: 42.1.0
+electronLanguages:
+  - en-US
 
 directories:
   output: release

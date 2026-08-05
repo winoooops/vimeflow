@@ -93,6 +93,10 @@ interface GhosttyNativeParentAddon {
   setBackgroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setForegroundColor?: (surface: GhosttyNativeSurface, color: string) => void
   setFontFamily?: (surface: GhosttyNativeSurface, fontFamily: string) => void
+  setResizeThrottleMs?: (
+    surface: GhosttyNativeSurface,
+    milliseconds: number
+  ) => void
   setCursorShader?: (
     surface: GhosttyNativeSurface,
     shaderPath: string
@@ -156,6 +160,7 @@ interface GhosttyNativeSurfaceState {
   lastBackgroundColor: string | null
   lastForegroundColor: string | null
   lastFontFamily: string | null
+  lastResizeThrottleMs: number | null
   lastCursorEffect: string | null
   resizeThrottleMs: number
   lastResize: { cols: number; rows: number } | null
@@ -721,6 +726,10 @@ export class GhosttyNativeParentController {
     ) {
       state.resizeThrottleMs = payload.resizeThrottleMs
     }
+    if (state.lastResizeThrottleMs !== state.resizeThrottleMs) {
+      state.lastResizeThrottleMs = state.resizeThrottleMs
+      addon.setResizeThrottleMs?.(surface, state.resizeThrottleMs)
+    }
     addon.setFrame(
       surface,
       frame.x,
@@ -1094,6 +1103,7 @@ export class GhosttyNativeParentController {
       lastBackgroundColor: null,
       lastForegroundColor: null,
       lastFontFamily: null,
+      lastResizeThrottleMs: null,
       lastCursorEffect: null,
       resizeThrottleMs: this.resizeThrottleMs,
       lastResize: null,
@@ -1661,6 +1671,10 @@ export class GhosttyNativeParentController {
     state.lastKeybindings = null
     state.lastFontFamily = null
     state.lastCursorEffect = null
+    // A rebuilt surface starts with the engine's default throttle; a kept
+    // cache would dedupe the unchanged payload and silently strip the
+    // agent's throttle from the new surface.
+    state.lastResizeThrottleMs = null
   }
 
   private invokeSidecar(

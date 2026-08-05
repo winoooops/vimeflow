@@ -894,6 +894,7 @@ describe('ghostty native parent', () => {
       setForegroundColor: vi.fn(),
       setFontFamily: vi.fn(),
       setKeybindings: vi.fn(),
+      setResizeThrottleMs: vi.fn(),
       write: vi.fn(),
       focus: vi.fn(),
       destroy: vi.fn(),
@@ -931,6 +932,7 @@ describe('ghostty native parent', () => {
       visible: true,
       parentHeight: 900,
       bounds: { x: 10, y: 20, width: 300, height: 200 },
+      resizeThrottleMs: 96,
       shortcutContext: {
         paneIds: ['pane-1', 'pane-2', 'pane-3'],
         activePaneId: 'pane-1',
@@ -938,6 +940,12 @@ describe('ghostty native parent', () => {
     }
 
     handlers.get(GHOSTTY_NATIVE_UPDATE)?.({ sender: {} }, updatePayload)
+
+    expect(addon.setResizeThrottleMs).toHaveBeenCalledWith(firstSurface, 96)
+
+    handlers.get(GHOSTTY_NATIVE_UPDATE)?.({ sender: {} }, updatePayload)
+
+    expect(addon.setResizeThrottleMs).toHaveBeenCalledTimes(1)
 
     handlers.get(GHOSTTY_NATIVE_DESTROY)?.(
       {},
@@ -967,6 +975,12 @@ describe('ghostty native parent', () => {
       2,
       secondSurface,
       expect.any(String)
+    )
+
+    expect(addon.setResizeThrottleMs).toHaveBeenNthCalledWith(
+      2,
+      secondSurface,
+      96
     )
 
     expect(addon.addSecondary).toHaveBeenNthCalledWith(

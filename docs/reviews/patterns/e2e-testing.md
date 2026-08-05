@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-08-05
-ref_count: 28
+ref_count: 29
 ---
 
 # E2E Testing
@@ -580,7 +580,22 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Parse the rendered-frame portion of the fingerprint separately, wait for shader acceptance, and require the `id`/`seed` portion to change before the smoke passes.
 - **Commit:** same commit as this entry
 
-### 48. Native overlay E2E helpers selected stale host windows
+### 48. Native overlay E2E input checks must wait for the edited control
+
+- **Source:** deterministic CI failure | PR #781 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke clicked the Layout
+  Creator `Code · JSON/YAML` toggle, then silently treated a missing textarea as
+  an empty string. On CI, React had not mounted the code panel before the test
+  sent the space key, so the editability assertion compared empty values and
+  obscured the real readiness boundary.
+- **Fix:** Scope the code-panel toggle, textarea, and scroll-container lookups
+  to the Layout Creator overlay root, throw if the toggle or textarea is
+  unavailable, and wait for the textarea before sending input.
+- **Commit:** same commit as this entry
+
+### 49. Native overlay E2E helpers selected stale host windows
 
 - **Source:** deterministic CI failure | PR #784 round 1 | 2026-08-05
 - **Severity:** HIGH
@@ -589,7 +604,7 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Scan native overlay webContents/windows for the host that actually contains the displayed-layout menu or layout-creator surface before reading rects, mapping coordinates, or closing the menu.
 - **Commit:** same commit as this entry
 
-### 49. Native overlay z-order tests should not gate on transient BrowserWindow flags
+### 50. Native overlay z-order tests should not gate on transient BrowserWindow flags
 
 - **Source:** deterministic CI failure | PR #784 round 1 | 2026-08-05
 - **Severity:** HIGH
