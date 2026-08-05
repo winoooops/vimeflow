@@ -2,8 +2,8 @@
 id: documentation-accuracy
 category: code-quality
 created: 2026-04-09
-last_updated: 2026-07-31
-ref_count: 98
+last_updated: 2026-08-05
+ref_count: 99
 ---
 
 # Documentation Accuracy
@@ -1018,4 +1018,19 @@ Stale documentation misleads future contributors and review agents.
   pattern frontmatter and index row stay in lockstep.
 - **Fix:** Restored the Accessibility row's `Refs` value to 91 so it matches
   the pattern file frontmatter.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 107. Packaging-size PR credited a dependency move that did not affect packed files
+
+- **Source:** github-claude | PR #781 | 2026-08-05
+- **Severity:** MEDIUM
+- **File:** `package.json`, `package-lock.json`
+- **Finding:** Moving Vite-bundled app packages from `dependencies` to
+  `devDependencies` was presented as a packaging-size reduction, but this
+  project already uses an electron-builder `files` allowlist that excludes
+  `node_modules`. The dependency reclassification therefore did not change the
+  packaged app contents and risked misattributing the actual size reduction.
+- **Fix:** Removed the no-op dependency reclassification from the PR, leaving
+  the size win to the effective Cargo release stripping and Electron locale
+  trimming changes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
