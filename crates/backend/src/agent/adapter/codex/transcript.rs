@@ -933,7 +933,9 @@ fn process_line(
             CodexPayloadType::TaskStarted | CodexPayloadType::UserMessage => {
                 Some(AgentPhase::Running)
             }
-            CodexPayloadType::TaskComplete => Some(AgentPhase::Idle),
+            CodexPayloadType::TaskComplete | CodexPayloadType::TurnAborted => {
+                Some(AgentPhase::Idle)
+            }
             _ => None,
         };
         if let Some(phase) = phase {
@@ -1147,6 +1149,15 @@ fn process_event_msg(
             emit_reply_if_present(payload, session_id, events, replay_done);
             emit_review_if_present(payload, session_id, events, replay_done);
         }
+        CodexPayloadType::TurnAborted => flush_in_flight_tool_calls(
+            session_id,
+            events,
+            in_flight,
+            ToolCallStatus::Failed,
+            &timestamp,
+            replay_activity,
+            replay_done,
+        ),
         CodexPayloadType::ExecApprovalRequest
         | CodexPayloadType::ApplyPatchApprovalRequest
         | CodexPayloadType::RequestPermissions => emit_attention(
@@ -1906,6 +1917,22 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
         );
         assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+    }
+
+    #[test]
+    fn codex_live_interrupt_emits_idle_transition() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
+        decoder.decode_line(r#"{"type":"session_meta","payload":{"id":"cx-1","cwd":"/ws"}}"#);
+        decoder.on_caught_up();
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1"}}"#,
+        );
+        decoder.decode_line(
+            r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","reason":"interrupted"}}"#,
+        );
+
+        assert_eq!(lifecycle_phases(&sink), vec!["running", "idle"]);
     }
 
     #[test]
