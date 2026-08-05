@@ -11,6 +11,7 @@ const record: NotificationRecord = {
   ptyId: 'pty-1',
   reason: 'approval-requested',
   title: 'Claude needs approval',
+  body: 'Awaiting your approval',
   occurredAt: 1,
   read: false,
 }
@@ -50,7 +51,7 @@ describe('NotificationToast', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: 'Open notification center for Claude needs approval',
+        name: 'Open notification center for Claude needs approval: Awaiting your approval',
       })
     )
     expect(handlers.onOpenPanel).toHaveBeenCalledOnce()
@@ -71,6 +72,17 @@ describe('NotificationToast', () => {
     expect(screen.getByRole('status', { hidden: true })).toHaveTextContent(
       'Claude needs approval'
     )
+  })
+
+  test('shows the notification message in the arrival toast', () => {
+    setupToast()
+
+    expect(screen.getByText('Awaiting your approval')).toHaveClass('truncate')
+    expect(
+      screen.getByRole('button', {
+        name: 'Open notification center for Claude needs approval: Awaiting your approval',
+      })
+    ).toBeInTheDocument()
   })
 
   test('holds toast dwell while keyboard focus is inside', async () => {

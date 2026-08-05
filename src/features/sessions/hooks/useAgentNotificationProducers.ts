@@ -117,6 +117,7 @@ export const useAgentNotificationProducers = ({
       candidate: {
         readonly agentSessionId: string | null
         readonly title: string
+        readonly body?: string
         readonly occurredAt: number
         readonly dedupeKey?: string
         readonly requireLifecycle: boolean
@@ -145,6 +146,7 @@ export const useAgentNotificationProducers = ({
           ptyId: target.pane.ptyId,
           reason: 'turn-complete',
           title: candidate.title,
+          ...(candidate.body === undefined ? {} : { body: candidate.body }),
           occurredAt: candidate.occurredAt,
           ...(candidate.dedupeKey === undefined
             ? {}
@@ -259,6 +261,7 @@ export const useAgentNotificationProducers = ({
           scheduleTurnComplete(payload.ptyId, {
             agentSessionId: payload.agentSessionId,
             title: payload.title,
+            ...(payload.body === null ? {} : { body: payload.body }),
             occurredAt: Number(payload.occurredAt),
             ...(payload.dedupeKey === null
               ? {}

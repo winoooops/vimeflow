@@ -18,6 +18,43 @@ interface NotificationPanelProps {
 const MINI_BUTTON_CLASSES =
   'h-[18px] rounded-full px-2 text-[10px] font-semibold'
 
+// Row geometry. Each row keeps its p-2 padding; the two text lines are pinned
+// to explicit leadings (leading-4 + mt-[2px] + leading-[14px] = 32px of
+// content) so every row is exactly 48px tall regardless of font metrics. The
+// list/panel max-heights below are derived from this pitch so the scroll edge
+// always lands on a whole-row boundary — no half-clipped last row.
+export const NOTIFICATION_ROW_HEIGHT_PX = 48
+
+export const NOTIFICATION_ROW_GAP_PX = 2
+
+export const NOTIFICATION_LIST_MAX_VISIBLE_ROWS = 6
+
+const LIST_TOP_PADDING_PX = 7 // pt-[7px] on the first group container
+const LIST_BOTTOM_PADDING_PX = 4 // pb-1 on the scroll container
+const HEADER_HEIGHT_PX = 35 // p-[6px] + h-[22px] buttons + 1px border-b
+const ALERTS_HEADING_HEIGHT_PX = 25
+
+const rowsHeight = (count: number): number =>
+  count * NOTIFICATION_ROW_HEIGHT_PX +
+  Math.max(0, count - 1) * NOTIFICATION_ROW_GAP_PX
+
+const listMaxHeight = (needsCount: number, alertsCount: number): number => {
+  const visibleNeeds = Math.min(needsCount, NOTIFICATION_LIST_MAX_VISIBLE_ROWS)
+
+  const visibleAlerts = Math.min(
+    alertsCount,
+    NOTIFICATION_LIST_MAX_VISIBLE_ROWS - visibleNeeds
+  )
+
+  return (
+    (visibleNeeds > 0 ? LIST_TOP_PADDING_PX + rowsHeight(visibleNeeds) : 0) +
+    (visibleAlerts > 0
+      ? ALERTS_HEADING_HEIGHT_PX + rowsHeight(visibleAlerts)
+      : 0) +
+    LIST_BOTTOM_PADDING_PX
+  )
+}
+
 const relativeTime = (occurredAt: number): string => {
   const elapsedMinutes = Math.max(
     0,
@@ -72,10 +109,10 @@ const NotificationRow = ({
           <AgentGlyph agent={agent} size={15} />
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-[11.5px] font-semibold tracking-[-0.005em] text-on-surface">
+          <span className="block truncate text-[11.5px] font-semibold leading-4 tracking-[-0.005em] text-on-surface">
             {item.title}
           </span>
-          <span className="mt-[2px] block truncate text-[10.5px] text-on-surface-muted">
+          <span className="mt-[2px] block truncate text-[10.5px] leading-[14px] text-on-surface-muted">
             {item.sessionName}
             {item.body === undefined ? '' : ` · ${item.body}`}
           </span>
@@ -110,7 +147,7 @@ const NotificationRow = ({
 }
 
 const groupHeading = (label: string, count: number): ReactElement => (
-  <div className="flex items-center justify-between px-[11px] pb-1 pt-[7px]">
+  <div className="flex h-[25px] items-center justify-between px-[11px]">
     <h2 className="font-mono text-[9.5px] uppercase tracking-[.09em] text-on-surface-muted">
       {label}
     </h2>
@@ -136,6 +173,8 @@ export const NotificationPanel = ({
   const alerts = items.filter(({ kind }) => kind === 'err')
   const unread = items.filter(({ read }) => !read).length
 
+  const notificationListMaxHeight = listMaxHeight(needs.length, alerts.length)
+
   const rows = (
     groupItems: readonly NativeOverlayNotificationCenterItem[]
   ): ReactElement[] =>
@@ -150,7 +189,11 @@ export const NotificationPanel = ({
     ))
 
   return (
-    <div className="flex max-h-[340px] flex-col">
+    <div
+      data-testid="notification-panel"
+      className="flex flex-col"
+      style={{ maxHeight: HEADER_HEIGHT_PX + notificationListMaxHeight }}
+    >
       {/* Actions live on top in place of the "Needs you" heading, so the list
           keeps its full height; the unread count rides inside Mark all read. */}
       <header className="flex items-center gap-1 border-b border-outline-variant/50 bg-surface-container-lowest/45 p-[6px]">
@@ -181,7 +224,11 @@ export const NotificationPanel = ({
           onClick={onClosePanel}
         />
       </header>
-      <div className="max-h-[262px] overflow-y-auto pb-1">
+      <div
+        data-testid="notification-list"
+        className="overflow-y-auto pb-1"
+        style={{ maxHeight: notificationListMaxHeight }}
+      >
         {needs.length > 0 && (
           <div className="flex flex-col gap-[2px] px-[5px] pt-[7px]">
             {rows(needs)}

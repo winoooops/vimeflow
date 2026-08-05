@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-08-04
-ref_count: 20
+last_updated: 2026-08-05
+ref_count: 21
 ---
 
 # Parser Resilience
@@ -464,3 +464,12 @@ true` and drop the chunk.
 - **Finding:** The Rust OSC 9;4 progress parser treated a bare `ESC` inside an OSC only as a possible ST terminator. If the next byte was not `\`, the parser kept the OSC open in discard mode, so normal CSI/color output such as `ESC [` was consumed as discarded OSC payload and later valid progress reports could be ignored until an incidental BEL or ST arrived.
 - **Fix:** Abort the current OSC when pending `ESC` is followed by a non-ST byte, then reprocess that byte through normal escape-state scanning. Added regressions covering a truncated progress frame followed by CSI output and a later valid progress report, plus immediate recovery into a new OSC introducer.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Claude Stop-hook body parsing relied on undocumented hook fields
+
+- **Source:** github-claude | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Claude completion notifications read `last_assistant_message` from Stop-hook stdin, but the real hook contract supplies a transcript path rather than the final assistant text. The optional field made the regression silent: realistic Stop payloads parsed successfully but produced no notification body.
+- **Fix:** Read the latest completed assistant text from the validated Claude transcript path using the bounded JSONL reader, and keep transcript assistant-line parsing on the same extraction helper.
+- **Commit:** same commit as this entry

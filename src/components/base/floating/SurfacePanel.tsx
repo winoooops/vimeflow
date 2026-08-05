@@ -12,7 +12,11 @@ export interface SurfacePanelProps {
   context: FloatingContext
   width?: number
   // FloatingFocusManager config; an object turns focus management on. Default off.
-  focus?: false | { initialFocus?: number; modal?: boolean }
+  // returnFocus defaults to floating-ui's own (true when modal); pass false when
+  // the caller restores focus itself (e.g. with focusVisible: false).
+  focus?:
+    | false
+    | { initialFocus?: number; modal?: boolean; returnFocus?: boolean }
   className?: string
   children: ReactNode
   // getFloatingProps() output is spread through.
@@ -53,6 +57,7 @@ export const SurfacePanel = ({
           context={context}
           initialFocus={focus.initialFocus}
           modal={focus.modal}
+          returnFocus={focus.returnFocus}
         >
           {panel}
         </FloatingFocusManager>

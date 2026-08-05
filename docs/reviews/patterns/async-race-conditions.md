@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-08-02
-ref_count: 98
+last_updated: 2026-08-05
+ref_count: 99
 ---
 
 # Async Race Conditions
@@ -1277,4 +1277,20 @@ prevent showing previous data.
   completion, and the timer rechecks the latest phase, active pane, and error
   marker before publishing. Added regression coverage for the idle-then-error
   ordering.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 112. OpenCode next-turn start dropped pending idle completion
+
+- **Source:** github-claude | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** OpenCode `session.status: idle` was buffered so nearby assistant
+  text could provide the notification body, but the following `TurnStarted`
+  path cleared the pending idle before it could flush. A scan batch containing
+  previous-turn idle followed by next-turn busy could therefore drop the
+  previous completion notification entirely.
+- **Fix:** Flush any pending OpenCode idle before replacing turn state in the
+  `TurnStarted` arm, preserving the opportunistic body attachment while
+  guaranteeing the completion event is emitted. Added regression coverage for
+  the idle-then-busy batch.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

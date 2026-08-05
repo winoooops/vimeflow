@@ -324,7 +324,7 @@ describe('NotificationIsland', () => {
     const anchor = screen.getByRole('navigation', { name: 'Open sessions' })
     await userEvent.click(
       screen.getByRole('button', {
-        name: 'Open notification center for Claude finished',
+        name: /Open notification center for Claude finished/,
       })
     )
 
@@ -355,7 +355,7 @@ describe('NotificationIsland', () => {
 
     expect(
       screen.getByRole('button', {
-        name: 'Open notification center for Claude finished',
+        name: /Open notification center for Claude finished/,
       })
     ).toHaveFocus()
   })
@@ -371,7 +371,7 @@ describe('NotificationIsland', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Open notification center for Claude finished',
+        name: /Open notification center for Claude finished/,
       })
     )
 
@@ -529,6 +529,43 @@ describe('NotificationIsland', () => {
     )
 
     await waitFor(() => expect(screen.getByTestId('terminal')).toHaveFocus())
+  })
+
+  test('closes the panel on Escape without painting a focus ring on the bell', async () => {
+    render(<NotificationIsland {...props([notification('need')])} />)
+
+    const bell = screen.getByRole('button', {
+      name: 'Notifications, 1 unread',
+    })
+    const focusSpy = vi.spyOn(bell, 'focus')
+
+    await userEvent.click(bell)
+    expect(
+      screen.getByRole('dialog', { name: 'Notification center' })
+    ).toBeInTheDocument()
+
+    // userEvent's own click focused the bell with a plain focus(); only the
+    // Escape-close path is under test.
+    focusSpy.mockClear()
+
+    // fireEvent, not userEvent.keyboard: the modal focus manager inerts the
+    // island subtree while the panel is open, and userEvent refuses to send
+    // keys to an inert focused element (a real browser still delivers Esc).
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Notification center' })
+      ).not.toBeInTheDocument()
+    )
+
+    // Focus still returns to the bell, but only via focusVisible: false so
+    // the keyboard focus ring never appears after an Escape close.
+    await waitFor(() => expect(bell).toHaveFocus())
+    expect(focusSpy).toHaveBeenCalledWith({ focusVisible: false })
+    expect(focusSpy).not.toHaveBeenCalledWith()
+
+    focusSpy.mockRestore()
   })
 
   test('routes row, dismiss, mark-all, and clear actions by stable id', async () => {

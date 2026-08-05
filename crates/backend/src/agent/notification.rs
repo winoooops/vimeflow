@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -12,6 +12,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::agent::adapter::base::for_each_bounded_line;
 use crate::agent::types::{AgentNotificationEvent, AgentNotificationReason, AgentType};
 use crate::agent::AgentWatcherState;
 use crate::runtime::{serialize_event, EventSink};
@@ -22,6 +23,7 @@ const MAX_PARTIAL_LINE_BYTES: usize = 256 * 1024;
 const READ_BUFFER_BYTES: usize = 64 * 1024;
 const RECENT_DEDUPE_KEYS: usize = 128;
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(3);
+const MAX_NOTIFICATION_BODY_CHARS: usize = 80;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -120,8 +122,17 @@ struct Registration {
     agent_session_id: Option<String>,
     turn_active: bool,
     turn_id: Option<String>,
+    notification_body: Option<String>,
+    claude_transcript_cursors: HashMap<PathBuf, u64>,
+    pending_opencode_idle: Option<PendingOpenCodeIdle>,
     dedupe_keys: HashSet<String>,
     dedupe_order: VecDeque<String>,
+}
+
+#[derive(Clone)]
+struct PendingOpenCodeIdle {
+    occurred_at: u64,
+    agent_session_id: Option<String>,
 }
 
 impl Registration {
@@ -143,6 +154,9 @@ impl Registration {
             agent_session_id: None,
             turn_active: false,
             turn_id: None,
+            notification_body: None,
+            claude_transcript_cursors: HashMap::new(),
+            pending_opencode_idle: None,
             dedupe_keys: HashSet::new(),
             dedupe_order: VecDeque::new(),
         }
@@ -689,6 +703,8 @@ fn scan_source(
         registration.dropping_oversize_line = false;
         registration.turn_active = false;
         registration.turn_id = None;
+        registration.pending_opencode_idle = None;
+        registration.claude_transcript_cursors.clear();
         diagnostics
             .lock()
             .expect("notification diagnostics mutex poisoned")
@@ -731,6 +747,8 @@ fn scan_source(
             }
         }
     }
+
+    flush_pending_opencode_idle(registration, diagnostics, events);
 
     Ok(())
 }
@@ -796,10 +814,16 @@ struct CodexPayload {
     call_id: Option<String>,
     request_id: Option<String>,
     name: Option<String>,
+    last_agent_message: Option<String>,
 }
 
 enum ClassifiedSignal {
     Session(String),
+    AssistantText(String),
+    OpenCodeStatusIdle {
+        occurred_at: u64,
+        agent_session_id: Option<String>,
+    },
     TurnStarted {
         turn_id: Option<String>,
         agent_session_id: Option<String>,
@@ -810,6 +834,8 @@ enum ClassifiedSignal {
         dedupe_key: Option<String>,
         turn_id: Option<String>,
         agent_session_id: Option<String>,
+        body: Option<String>,
+        transcript_path: Option<String>,
         requires_active_turn: bool,
         ends_turn: bool,
     },
@@ -839,6 +865,8 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             dedupe_key: key,
             turn_id: None,
             agent_session_id: None,
+            body: None,
+            transcript_path: None,
             requires_active_turn: false,
             ends_turn: false,
         });
@@ -861,6 +889,8 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 dedupe_key: turn_id.as_ref().map(|id| format!("turn:{id}")),
                 turn_id,
                 agent_session_id: None,
+                body: envelope.payload.last_agent_message,
+                transcript_path: None,
                 // Registration starts at EOF and can occur after task_started.
                 // Any terminal record appended after that boundary is live.
                 requires_active_turn: false,
@@ -877,6 +907,8 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 dedupe_key: key,
                 turn_id: None,
                 agent_session_id: None,
+                body: None,
+                transcript_path: None,
                 requires_active_turn: false,
                 ends_turn: false,
             })
@@ -889,6 +921,8 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 dedupe_key: key,
                 turn_id: None,
                 agent_session_id: None,
+                body: None,
+                transcript_path: None,
                 requires_active_turn: false,
                 ends_turn: false,
             })
@@ -908,6 +942,7 @@ struct ClaudeEnvelope {
     tool_name: Option<String>,
     tool_use_id: Option<String>,
     session_id: Option<String>,
+    transcript_path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -915,6 +950,13 @@ struct ClaudeMessage {
     #[serde(default)]
     content: Value,
     stop_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeTranscriptBodyLine {
+    #[serde(rename = "type")]
+    line_type: Option<String>,
+    message: Option<ClaudeMessage>,
 }
 
 fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
@@ -943,6 +985,8 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             dedupe_key: envelope.tool_use_id,
             turn_id: None,
             agent_session_id: envelope.session_id,
+            body: None,
+            transcript_path: envelope.transcript_path,
             requires_active_turn,
             ends_turn,
         });
@@ -981,9 +1025,83 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         dedupe_key,
         turn_id: None,
         agent_session_id: None,
+        body: claude_message_text(&message.content),
+        transcript_path: None,
         requires_active_turn: true,
         ends_turn: true,
     })
+}
+
+fn claude_hook_body(
+    registration: &mut Registration,
+    reason: AgentNotificationReason,
+    transcript_path: Option<&str>,
+) -> Option<String> {
+    if !matches!(
+        reason,
+        AgentNotificationReason::TurnComplete | AgentNotificationReason::AgentError
+    ) {
+        return None;
+    }
+
+    let transcript_path = transcript_path?;
+    let path =
+        crate::agent::adapter::claude_code::transcript::validate_transcript_path(transcript_path)
+            .ok()?;
+
+    let cursor = registration
+        .claude_transcript_cursors
+        .entry(path.clone())
+        .or_default();
+    latest_claude_transcript_body_at_path(&path, cursor)
+}
+
+fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Option<String> {
+    let mut file = File::open(path).ok()?;
+    let length = file.metadata().ok()?.len();
+    if length < *cursor {
+        *cursor = 0;
+    }
+    file.seek(SeekFrom::Start(*cursor)).ok()?;
+
+    let mut latest = None;
+
+    for_each_bounded_line(BufReader::new(file), "Claude notification transcript", |line| {
+        let Ok(dto) = serde_json::from_str::<ClaudeTranscriptBodyLine>(line) else {
+            return;
+        };
+        if dto.line_type.as_deref() != Some("assistant") {
+            return;
+        }
+        let Some(message) = dto.message else {
+            return;
+        };
+        if !matches!(
+            message.stop_reason.as_deref(),
+            Some("end_turn" | "stop_sequence" | "max_tokens")
+        ) {
+            return;
+        }
+        if let Some(body) = claude_message_text(&message.content) {
+            latest = Some(body);
+        }
+    })
+    .ok()?;
+
+    *cursor = length;
+    latest
+}
+
+fn claude_message_text(content: &Value) -> Option<String> {
+    let text = content
+        .as_array()?
+        .iter()
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    (!text.is_empty()).then_some(text)
 }
 
 #[derive(Deserialize)]
@@ -1009,6 +1127,14 @@ struct KimiEvent {
     turn_id: Option<String>,
     #[serde(rename = "finishReason")]
     finish_reason: Option<String>,
+    part: Option<KimiPart>,
+}
+
+#[derive(Deserialize)]
+struct KimiPart {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    text: Option<String>,
 }
 
 fn classify_kimi(line: &[u8]) -> Result<ClassifiedSignal, ()> {
@@ -1025,6 +1151,17 @@ fn classify_kimi(line: &[u8]) -> Result<ClassifiedSignal, ()> {
     let Some(event) = envelope.event else {
         return Ok(ClassifiedSignal::Irrelevant);
     };
+    if envelope.record_type == "context.append_loop_event"
+        && event.kind.as_deref() == Some("content.part")
+        && event.part.as_ref().and_then(|part| part.kind.as_deref()) == Some("text")
+    {
+        return Ok(event
+            .part
+            .and_then(|part| part.text)
+            .filter(|text| !text.is_empty())
+            .map(ClassifiedSignal::AssistantText)
+            .unwrap_or(ClassifiedSignal::Irrelevant));
+    }
     if envelope.record_type != "context.append_loop_event"
         || event.kind.as_deref() != Some("step.end")
         || event.finish_reason.as_deref() != Some("end_turn")
@@ -1038,6 +1175,8 @@ fn classify_kimi(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         dedupe_key: event.uuid.map(|id| format!("turn:{id}")),
         turn_id: event.turn_id,
         agent_session_id: None,
+        body: None,
+        transcript_path: None,
         requires_active_turn: true,
         ends_turn: true,
     })
@@ -1059,6 +1198,7 @@ struct OpenCodeData {
     #[serde(rename = "sessionID")]
     session_id: Option<String>,
     status: Option<OpenCodeStatus>,
+    text: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1087,8 +1227,17 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             })
         }
         Some("session.status") if status_kind.as_deref() == Some("idle") => {
-            Ok(opencode_completion(occurred_at, agent_session_id))
+            Ok(ClassifiedSignal::OpenCodeStatusIdle {
+                occurred_at,
+                agent_session_id,
+            })
         }
+        Some("assistant.text") => Ok(envelope
+            .data
+            .text
+            .filter(|text| !text.is_empty())
+            .map(ClassifiedSignal::AssistantText)
+            .unwrap_or(ClassifiedSignal::Irrelevant)),
         Some("session.idle") => Ok(opencode_completion(occurred_at, agent_session_id)),
         Some("session.error") => Ok(ClassifiedSignal::Notification {
             reason: AgentNotificationReason::AgentError,
@@ -1100,6 +1249,8 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             }),
             turn_id: None,
             agent_session_id,
+            body: None,
+            transcript_path: None,
             requires_active_turn: true,
             ends_turn: true,
         }),
@@ -1109,6 +1260,8 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             dedupe_key: envelope.data.id,
             turn_id: None,
             agent_session_id,
+            body: None,
+            transcript_path: None,
             requires_active_turn: false,
             ends_turn: false,
         }),
@@ -1118,6 +1271,8 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             dedupe_key: envelope.data.id,
             turn_id: None,
             agent_session_id,
+            body: None,
+            transcript_path: None,
             requires_active_turn: false,
             ends_turn: false,
         }),
@@ -1134,6 +1289,8 @@ fn opencode_completion(occurred_at: u64, agent_session_id: Option<String>) -> Cl
             .map(|id| format!("turn:{id}:{occurred_at}")),
         turn_id: None,
         agent_session_id,
+        body: None,
+        transcript_path: None,
         requires_active_turn: true,
         ends_turn: true,
     }
@@ -1149,15 +1306,35 @@ fn apply_signal(
         ClassifiedSignal::Session(agent_session_id) => {
             registration.agent_session_id = Some(agent_session_id);
         }
+        ClassifiedSignal::AssistantText(text) => {
+            if let Some(body) = normalize_notification_body(&text) {
+                registration.notification_body = Some(body);
+                flush_pending_opencode_idle(registration, diagnostics, events);
+            }
+        }
+        ClassifiedSignal::OpenCodeStatusIdle {
+            occurred_at,
+            agent_session_id,
+        } => {
+            if agent_session_id.is_some() {
+                registration.agent_session_id = agent_session_id.clone();
+            }
+            registration.pending_opencode_idle = Some(PendingOpenCodeIdle {
+                occurred_at,
+                agent_session_id,
+            });
+        }
         ClassifiedSignal::TurnStarted {
             turn_id,
             agent_session_id,
         } => {
+            flush_pending_opencode_idle(registration, diagnostics, events);
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
             }
             registration.turn_active = true;
             registration.turn_id = turn_id;
+            registration.notification_body = None;
         }
         ClassifiedSignal::Notification {
             reason,
@@ -1165,6 +1342,8 @@ fn apply_signal(
             dedupe_key,
             turn_id,
             agent_session_id,
+            body,
+            transcript_path,
             requires_active_turn,
             ends_turn,
         } => {
@@ -1184,7 +1363,22 @@ fn apply_signal(
             if ends_turn {
                 registration.turn_active = false;
                 registration.turn_id = None;
+                registration.pending_opencode_idle = None;
             }
+
+            let buffered_body = if ends_turn {
+                registration.notification_body.take()
+            } else {
+                None
+            };
+            let transcript_body =
+                claude_hook_body(registration, reason, transcript_path.as_deref());
+            let body = body
+                .as_deref()
+                .and_then(normalize_notification_body)
+                .or(transcript_body)
+                .or(buffered_body)
+                .or_else(|| notification_action_body(reason).map(str::to_string));
 
             if dedupe_key
                 .as_deref()
@@ -1202,7 +1396,7 @@ fn apply_signal(
                 agent_session_id: registration.agent_session_id.clone(),
                 reason,
                 title: notification_title(registration.provider, reason).to_string(),
-                body: None,
+                body,
                 occurred_at,
                 dedupe_key,
             };
@@ -1219,6 +1413,67 @@ fn apply_signal(
             }
         }
         ClassifiedSignal::Irrelevant => {}
+    }
+}
+
+fn flush_pending_opencode_idle(
+    registration: &mut Registration,
+    diagnostics: &Arc<Mutex<MutableDiagnostics>>,
+    events: &dyn EventSink,
+) {
+    if registration.provider != NotificationProvider::OpenCode {
+        return;
+    }
+
+    if let Some(pending) = registration.pending_opencode_idle.take() {
+        apply_signal(
+            registration,
+            opencode_completion(pending.occurred_at, pending.agent_session_id),
+            diagnostics,
+            events,
+        );
+    }
+}
+
+fn normalize_notification_body(message: &str) -> Option<String> {
+    let normalized = message
+        .lines()
+        .map(str::trim)
+        .take_while(|line| !line.starts_with("<<<VIMEFLOW_"))
+        .find_map(|line| {
+            let without_markdown = line
+                .trim_matches(|character: char| matches!(character, '#' | '-' | '*' | '>' | '`'))
+                .trim();
+            let without_controls: String = without_markdown
+                .chars()
+                .filter(|character| !character.is_control())
+                .collect();
+            let collapsed = without_controls
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            (!collapsed.is_empty()).then_some(collapsed)
+        })?;
+
+    let mut characters = normalized.chars();
+    let mut body: String = characters
+        .by_ref()
+        .take(MAX_NOTIFICATION_BODY_CHARS)
+        .collect();
+    if characters.next().is_some() {
+        body.pop();
+        body.push('…');
+    }
+
+    Some(body)
+}
+
+fn notification_action_body(reason: AgentNotificationReason) -> Option<&'static str> {
+    match reason {
+        AgentNotificationReason::ApprovalRequested => Some("Awaiting your approval"),
+        AgentNotificationReason::QuestionRequested => Some("Awaiting your response"),
+        AgentNotificationReason::TurnComplete | AgentNotificationReason::AgentError => None,
     }
 }
 
@@ -1349,6 +1604,8 @@ mod tests {
                 },
                 ClassifiedSignal::Irrelevant => "irrelevant",
                 ClassifiedSignal::Session(_) => "session",
+                ClassifiedSignal::AssistantText(_) => "assistant-text",
+                ClassifiedSignal::OpenCodeStatusIdle { .. } => "opencode-status-idle",
             };
             assert_eq!(actual, expected);
         }
@@ -1397,6 +1654,10 @@ mod tests {
                 "turn-complete",
             ),
             (
+                r#"{"v":1,"ts":2,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+                "turn-complete",
+            ),
+            (
                 r#"{"v":1,"ts":3,"kind":"event","type":"permission.asked","data":{"id":"permission-1","sessionID":"ses1"}}"#,
                 "approval-requested",
             ),
@@ -1431,6 +1692,12 @@ mod tests {
                         AgentNotificationReason::AgentError => "agent-error",
                     }
                 }
+                ClassifiedSignal::OpenCodeStatusIdle {
+                    agent_session_id, ..
+                } => {
+                    assert_eq!(agent_session_id.as_deref(), Some("ses1"));
+                    "turn-complete"
+                }
                 _ => "irrelevant",
             };
             assert_eq!(actual, expected);
@@ -1451,6 +1718,7 @@ mod tests {
                     reason: AgentNotificationReason::TurnComplete,
                     ..
                 } => Some("turn-complete"),
+                ClassifiedSignal::OpenCodeStatusIdle { .. } => Some("turn-complete"),
                 _ => None,
             })
             .collect();
@@ -1514,12 +1782,99 @@ mod tests {
     }
 
     #[test]
+    fn claude_completion_extracts_body_from_transcript_assistant_text() {
+        let line = br###"{"type":"assistant","uuid":"assistant-1","timestamp":"2026-04-28T11:00:01Z","message":{"content":[{"type":"text","text":"## PR #42 is ready for review\n<<<VIMEFLOW_REPLY\nprotocol\nVIMEFLOW_REPLY>>>"}],"stop_reason":"end_turn"}}"###;
+
+        let actual = classify_claude(line).expect("valid Claude record");
+
+        match actual {
+            ClassifiedSignal::Notification { body, .. } => {
+                assert_eq!(
+                    body.as_deref(),
+                    Some(
+                        "## PR #42 is ready for review\n<<<VIMEFLOW_REPLY\nprotocol\nVIMEFLOW_REPLY>>>"
+                    )
+                );
+            }
+            _ => panic!("expected notification"),
+        }
+    }
+
+    #[test]
+    fn claude_stop_hook_body_reads_latest_completed_transcript_text() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        std::fs::write(
+            &transcript,
+            concat!(
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"first\"}],\"stop_reason\":\"end_turn\"}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"latest done\"}],\"stop_reason\":\"end_turn\"}}\n"
+            ),
+        )
+        .expect("write transcript");
+        let mut cursor = 0;
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("latest done")
+        );
+        assert_eq!(
+            cursor,
+            std::fs::metadata(&transcript).expect("metadata").len()
+        );
+    }
+
+    #[test]
+    fn claude_stop_hook_body_scans_only_new_transcript_bytes_after_cursor() {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        let mut file = std::fs::File::create(&transcript).expect("create transcript");
+        writeln!(
+            file,
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"first\"}}],\"stop_reason\":\"end_turn\"}}}}"
+        )
+        .expect("write first");
+        file.flush().expect("flush first");
+        let mut cursor = 0;
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("first")
+        );
+        let first_cursor = cursor;
+
+        file.seek(SeekFrom::End(0)).expect("seek end");
+        writeln!(
+            file,
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"second\"}}],\"stop_reason\":\"end_turn\"}}}}"
+        )
+        .expect("write second");
+        file.flush().expect("flush second");
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("second")
+        );
+        assert!(cursor > first_cursor);
+    }
+
+    #[test]
     fn timestamp_falls_back_without_retaining_provider_content() {
         assert_eq!(
             timestamp_millis(Some("2026-08-02T15:00:00Z")),
             1_785_682_800_000
         );
         assert!(timestamp_millis(Some("not-a-time")) > 0);
+    }
+
+    #[test]
+    fn notification_body_caps_unicode_text_at_80_characters_with_ellipsis() {
+        let body = normalize_notification_body(&"界".repeat(81)).expect("notification body");
+
+        assert_eq!(body.chars().count(), 80);
+        assert_eq!(body, format!("{}…", "界".repeat(79)));
     }
 
     #[test]
@@ -1569,7 +1924,15 @@ mod tests {
         .expect("append noise");
         writeln!(
             file,
-            "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_complete\",\"turn_id\":\"live\"}}}}"
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_complete",
+                    "turn_id": "live",
+                    "last_agent_message": "## PR #42 is ready for review\n<<<VIMEFLOW_REPLY\nprotocol payload\nVIMEFLOW_REPLY>>>",
+                },
+            })
         )
         .expect("append complete");
         file.flush().expect("flush rollout");
@@ -1582,6 +1945,7 @@ mod tests {
         assert_eq!(recorded[0].1["ptyId"], "pty-a");
         assert_eq!(recorded[0].1["agentSessionId"], "agent-a");
         assert_eq!(recorded[0].1["reason"], "turn-complete");
+        assert_eq!(recorded[0].1["body"], "PR #42 is ready for review");
         let metrics = diagnostics.lock().expect("diagnostics");
         assert_eq!(metrics.records_scanned, 4);
         assert_eq!(
@@ -1660,5 +2024,184 @@ mod tests {
         assert_eq!(sink.count("agent-notification"), 1);
         assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
         assert_eq!(sink.recorded()[0].1["title"], "Claude finished");
+        assert!(sink.recorded()[0].1["body"].is_null());
+    }
+
+    #[test]
+    fn kimi_completion_uses_the_latest_assistant_text_part() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("wire.jsonl");
+        std::fs::write(&source, "").expect("create wire");
+        let mut registration = Registration::new(
+            "pty-kimi".to_string(),
+            1,
+            NotificationProvider::Kimi,
+            source.clone(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open wire");
+        writeln!(
+            file,
+            r#"{{"type":"turn.prompt","origin":{{"kind":"user"}}}}"#
+        )
+        .expect("append prompt");
+        writeln!(
+            file,
+            r#"{{"type":"context.append_loop_event","event":{{"type":"content.part","part":{{"type":"text","text":"I will inspect the repository"}}}}}}"#
+        )
+        .expect("append text");
+        writeln!(
+            file,
+            r#"{{"type":"context.append_loop_event","event":{{"type":"content.part","part":{{"type":"text","text":"PR #43 is ready for review"}}}}}}"#
+        )
+        .expect("append final text");
+        writeln!(
+            file,
+            r#"{{"type":"context.append_loop_event","event":{{"type":"step.end","finishReason":"end_turn"}}}}"#
+        )
+        .expect("append completion");
+        file.flush().expect("flush wire");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan wire");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["body"], "PR #43 is ready for review");
+    }
+
+    #[test]
+    fn opencode_waits_for_assistant_text_before_completion() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("session.jsonl");
+        std::fs::write(&source, "").expect("create bridge stream");
+        let mut registration = Registration::new(
+            "pty-opencode".to_string(),
+            1,
+            NotificationProvider::OpenCode,
+            source.clone(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open bridge stream");
+        for line in [
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":3,"kind":"event","type":"assistant.text","data":{"sessionID":"ses1","text":"PR #44 is ready for review"}}"#,
+            r#"{"v":1,"ts":4,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+        ] {
+            writeln!(file, "{line}").expect("append bridge line");
+        }
+        file.flush().expect("flush bridge stream");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan bridge stream");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["body"], "PR #44 is ready for review");
+    }
+
+    #[test]
+    fn opencode_status_idle_completes_without_assistant_text() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("session.jsonl");
+        std::fs::write(&source, "").expect("create bridge stream");
+        let mut registration = Registration::new(
+            "pty-opencode".to_string(),
+            1,
+            NotificationProvider::OpenCode,
+            source.clone(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open bridge stream");
+        for line in [
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+        ] {
+            writeln!(file, "{line}").expect("append bridge line");
+        }
+        file.flush().expect("flush bridge stream");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan bridge stream");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+        assert_eq!(sink.recorded()[0].1["body"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn opencode_next_busy_flushes_previous_pending_idle() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("session.jsonl");
+        std::fs::write(&source, "").expect("create bridge stream");
+        let mut registration = Registration::new(
+            "pty-opencode".to_string(),
+            1,
+            NotificationProvider::OpenCode,
+            source.clone(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open bridge stream");
+        for line in [
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+        ] {
+            writeln!(file, "{line}").expect("append bridge line");
+        }
+        file.flush().expect("flush bridge stream");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan bridge stream");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+        assert_eq!(sink.recorded()[0].1["body"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn semantic_attention_includes_the_next_action() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("rollout.jsonl");
+        std::fs::write(&source, "").expect("create rollout");
+        let mut registration = Registration::new(
+            "pty-codex".to_string(),
+            1,
+            NotificationProvider::Codex,
+            source.clone(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open rollout");
+        writeln!(
+            file,
+            r#"{{"type":"response_item","payload":{{"type":"function_call","name":"request_user_input","call_id":"q1"}}}}"#
+        )
+        .expect("append question");
+        file.flush().expect("flush rollout");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan rollout");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["body"], "Awaiting your response");
     }
 }

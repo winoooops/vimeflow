@@ -45,6 +45,11 @@ interface PopoverProps {
   offset?: number
   pointerEvents?: CSSProperties['pointerEvents']
   focus?: 'dialog' | 'dialog-unfocused' | 'none'
+  // Passed to FloatingFocusManager. Default true (focus returns to the
+  // previously focused element on close). Set false when the caller restores
+  // focus itself — e.g. the notification island refocuses its bell with
+  // focusVisible: false so an Escape close never paints a focus ring.
+  returnFocus?: boolean
   // e.g. { ancestorScroll: false } for a plain-dismiss confirm dialog
   middleware?: { ancestorScroll?: boolean }
   dismissWhen?: (event: MouseEvent) => boolean
@@ -83,6 +88,7 @@ export const Popover = ({
   offset = undefined,
   pointerEvents = undefined,
   focus = 'dialog',
+  returnFocus = true,
   middleware = undefined,
   dismissWhen = undefined,
   className = undefined,
@@ -250,7 +256,11 @@ export const Popover = ({
       context={context}
       width={width}
       className={className}
-      focus={POPOVER_FOCUS_CONFIG[focus]}
+      focus={
+        focus === 'none'
+          ? false
+          : { ...POPOVER_FOCUS_CONFIG[focus], returnFocus }
+      }
       aria-label={ariaLabel}
       {...getFloatingProps()}
     >

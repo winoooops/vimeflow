@@ -3,7 +3,7 @@ id: verify-render-target
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-07-22
-ref_count: 3
+ref_count: 4
 ---
 
 # Verify Render Target
