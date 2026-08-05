@@ -1059,16 +1059,32 @@ describe('NativeOverlay BrowserWindow layering', () => {
           }
         }
 
-        await overlay.webContents.executeJavaScript(`
-          Array.from(document.querySelectorAll('button'))
-            .find((button) => button.textContent?.includes('Code · JSON/YAML'))
-            ?.click()
-        `)
+        const codePanelOpened = (await overlay.webContents.executeJavaScript(`
+          (() => {
+            const root = document.querySelector(
+              '[data-workspace-overlay-id="layout-creator"]'
+            )
+            const button = Array.from(root?.querySelectorAll('button') ?? [])
+              .find((button) => button.textContent?.includes('Code · JSON/YAML'))
+            if (!(button instanceof HTMLElement)) {
+              return false
+            }
+
+            button.click()
+            return true
+          })()
+        `)) as boolean
+        if (!codePanelOpened) {
+          throw new Error('Layout Creator code panel toggle unavailable')
+        }
+
         let beforeCode: string | null = null
         for (let attempt = 0; attempt < 50; attempt += 1) {
           beforeCode = (await overlay.webContents.executeJavaScript(`
             (() => {
-              const textarea = document.querySelector('textarea')
+              const textarea = document.querySelector(
+                '[data-workspace-overlay-id="layout-creator"] textarea'
+              )
               if (!(textarea instanceof HTMLTextAreaElement)) {
                 return null
               }
@@ -1083,13 +1099,17 @@ describe('NativeOverlay BrowserWindow layering', () => {
 
           await delay(100)
         }
-        beforeCode ??= ''
+        if (beforeCode === null) {
+          throw new Error('Layout Creator code textarea unavailable')
+        }
         overlay.webContents.sendInputEvent({ type: 'char', keyCode: ' ' })
         let afterCode = beforeCode
         for (let attempt = 0; attempt < 20; attempt += 1) {
           await delay(50)
           afterCode = (await overlay.webContents.executeJavaScript(`
-            document.querySelector('textarea')?.value ?? ''
+            document.querySelector(
+              '[data-workspace-overlay-id="layout-creator"] textarea'
+            )?.value ?? ''
           `)) as string
           if (afterCode === `${beforeCode} `) {
             break
@@ -1106,7 +1126,9 @@ describe('NativeOverlay BrowserWindow layering', () => {
           await delay(100)
           scroll = (await overlay.webContents.executeJavaScript(`
             (() => {
-              const region = document.querySelector('[role="dialog"] .overflow-y-auto')
+              const region = document.querySelector(
+                '[data-workspace-overlay-id="layout-creator"] .overflow-y-auto'
+              )
               if (!(region instanceof HTMLElement)) {
                 return null
               }
