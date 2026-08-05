@@ -436,8 +436,7 @@ mod tests {
             let cmsg = libc::CMSG_FIRSTHDR(&msg);
             (*cmsg).cmsg_level = libc::SOL_SOCKET;
             (*cmsg).cmsg_type = libc::SCM_RIGHTS;
-            (*cmsg).cmsg_len =
-                libc::CMSG_LEN((std::mem::size_of::<RawFd>() * 2) as u32) as _;
+            (*cmsg).cmsg_len = libc::CMSG_LEN((std::mem::size_of::<RawFd>() * 2) as u32) as _;
             let fds = [fd_a.as_raw_fd(), fd_b.as_raw_fd()];
             std::ptr::copy_nonoverlapping(
                 fds.as_ptr().cast::<u8>(),

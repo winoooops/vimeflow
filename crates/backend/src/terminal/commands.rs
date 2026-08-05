@@ -1633,8 +1633,8 @@ mod tests {
 
         let state = PtyState::new();
         let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
-        let broker = FdBroker::start(rust_end.as_raw_fd(), state.clone())
-            .expect("broker should start");
+        let broker =
+            FdBroker::start(rust_end.as_raw_fd(), state.clone()).expect("broker should start");
         state.set_fd_broker(broker);
         std::mem::forget(rust_end);
 
@@ -1999,13 +1999,10 @@ mod tests {
         .expect("burner spawn");
 
         let mut buf = [0u8; fd_transport::MAX_MESSAGE_BYTES];
-        let (len, _fd) = fd_transport::recv_fd_timeout(
-            addon_end.as_raw_fd(),
-            &mut buf,
-            Duration::from_secs(5),
-        )
-        .expect("receive fd")
-        .expect("fd message");
+        let (len, _fd) =
+            fd_transport::recv_fd_timeout(addon_end.as_raw_fd(), &mut buf, Duration::from_secs(5))
+                .expect("receive fd")
+                .expect("fd message");
         let offered: serde_json::Value = serde_json::from_slice(&buf[..len]).expect("parse fd");
         let generation = offered["generation"].as_u64().expect("generation");
         let lease_id = offered["leaseId"].as_u64().expect("lease id");
@@ -2023,13 +2020,10 @@ mod tests {
         )
         .expect("send native-ready");
 
-        let (len, _fd) = fd_transport::recv_fd_timeout(
-            addon_end.as_raw_fd(),
-            &mut buf,
-            Duration::from_secs(5),
-        )
-        .expect("receive activate ack")
-        .expect("activate ack");
+        let (len, _fd) =
+            fd_transport::recv_fd_timeout(addon_end.as_raw_fd(), &mut buf, Duration::from_secs(5))
+                .expect("receive activate ack")
+                .expect("activate ack");
         let ack: serde_json::Value = serde_json::from_slice(&buf[..len]).expect("parse ack");
         assert_eq!(ack["t"], "activate-ack");
         assert!(broker.is_native_owned("burner-broker", generation));

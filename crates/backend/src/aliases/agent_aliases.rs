@@ -93,7 +93,9 @@ impl AgentAlias {
             ("extra", self.extra.as_str()),
         ] {
             if value.chars().count() > MAX_ALIAS_FIELD_CHARS {
-                return Err(format!("{field} exceeds {MAX_ALIAS_FIELD_CHARS} characters"));
+                return Err(format!(
+                    "{field} exceeds {MAX_ALIAS_FIELD_CHARS} characters"
+                ));
             }
         }
 

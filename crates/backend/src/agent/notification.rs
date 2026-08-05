@@ -1066,26 +1066,30 @@ fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Optio
 
     let mut latest = None;
 
-    for_each_bounded_line(BufReader::new(file), "Claude notification transcript", |line| {
-        let Ok(dto) = serde_json::from_str::<ClaudeTranscriptBodyLine>(line) else {
-            return;
-        };
-        if dto.line_type.as_deref() != Some("assistant") {
-            return;
-        }
-        let Some(message) = dto.message else {
-            return;
-        };
-        if !matches!(
-            message.stop_reason.as_deref(),
-            Some("end_turn" | "stop_sequence" | "max_tokens")
-        ) {
-            return;
-        }
-        if let Some(body) = claude_message_text(&message.content) {
-            latest = Some(body);
-        }
-    })
+    for_each_bounded_line(
+        BufReader::new(file),
+        "Claude notification transcript",
+        |line| {
+            let Ok(dto) = serde_json::from_str::<ClaudeTranscriptBodyLine>(line) else {
+                return;
+            };
+            if dto.line_type.as_deref() != Some("assistant") {
+                return;
+            }
+            let Some(message) = dto.message else {
+                return;
+            };
+            if !matches!(
+                message.stop_reason.as_deref(),
+                Some("end_turn" | "stop_sequence" | "max_tokens")
+            ) {
+                return;
+            }
+            if let Some(body) = claude_message_text(&message.content) {
+                latest = Some(body);
+            }
+        },
+    )
     .ok()?;
 
     *cursor = length;
