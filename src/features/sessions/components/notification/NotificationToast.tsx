@@ -84,7 +84,9 @@ export const NotificationToast = ({
       <button
         ref={ref}
         type="button"
-        aria-label={`Open notification center for ${display.record.title}`}
+        aria-label={`Open notification center for ${display.record.title}${
+          display.record.body === undefined ? '' : `: ${display.record.body}`
+        }`}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:bg-on-surface/5"
         onClick={onOpenPanel}
       >
@@ -103,7 +105,7 @@ export const NotificationToast = ({
             {display.record.title}
           </span>
           <span className="max-w-[130px] shrink-0 truncate text-[10.5px] text-on-surface-muted">
-            {display.sessionName}
+            {display.record.body ?? display.sessionName}
           </span>
         </span>
         {coalescedCount > 0 && (

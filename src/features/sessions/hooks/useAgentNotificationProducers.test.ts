@@ -105,7 +105,7 @@ describe('useAgentNotificationProducers', () => {
         agentSessionId: 'agent-background',
         reason: 'turn-complete',
         title: 'Codex finished',
-        body: null,
+        body: 'PR #42 is ready for review',
         occurredAt: BigInt(42),
         dedupeKey: 'turn:42',
       })
@@ -118,6 +118,7 @@ describe('useAgentNotificationProducers', () => {
       ptyId: 'pty-background',
       reason: 'turn-complete',
       title: 'Codex finished',
+      body: 'PR #42 is ready for review',
       occurredAt: 42,
       dedupeKey: 'turn:42',
     })

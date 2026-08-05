@@ -495,7 +495,15 @@ export const useNotificationIslandStage = ({
       const restoreBellFocus = restoreBellFocusRef.current
       restoreBellFocusRef.current = true
       if (restoreBellFocus) {
-        queueMicrotask(() => bellRef.current?.focus())
+        // focusVisible: false keeps the focus move (keyboard/AT users land
+        // back on the bell) without matching :focus-visible — an Escape
+        // close would otherwise leave a "navigation" ring on the bell. The
+        // property is missing from this TS lib's FocusOptions, hence the
+        // widened type (supported in Chromium/WebKit).
+        const focusOptions: FocusOptions & { focusVisible?: boolean } = {
+          focusVisible: false,
+        }
+        queueMicrotask(() => bellRef.current?.focus(focusOptions))
       }
     }
     wasPanelOpenRef.current = panelOpen

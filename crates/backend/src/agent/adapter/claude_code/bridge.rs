@@ -361,7 +361,7 @@ pub fn generate_bridge_files(
         },
         "hooks": {
             "UserPromptSubmit": [signal_hook("UserPromptSubmit")],
-            "Stop": [signal_hook("Stop")],
+            "Stop": [hook()],
             "PermissionRequest": [hook()],
             "PreToolUse": [{
                 "matcher": "AskUserQuestion",
@@ -624,12 +624,14 @@ mod tests {
         assert!(settings.contains("attention.sh"));
         let settings_json: serde_json::Value =
             serde_json::from_str(&settings).expect("settings JSON");
-        for event_name in ["UserPromptSubmit", "Stop"] {
-            let command = settings_json["hooks"][event_name][0]["hooks"][0]["command"]
-                .as_str()
-                .expect("signal hook command");
-            assert!(command.contains(&format!("{{\"hook_event_name\":\"{event_name}\"}}")));
-        }
+        let prompt_command = settings_json["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+            .as_str()
+            .expect("prompt signal hook command");
+        assert!(prompt_command.contains("{\"hook_event_name\":\"UserPromptSubmit\"}"));
+        let stop_command = settings_json["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .expect("stop hook command");
+        assert!(stop_command.contains("attention.sh"));
     }
 
     #[cfg(unix)]

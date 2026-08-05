@@ -107,6 +107,11 @@ export const NotificationIsland = ({
         width={NOTIFICATION_PANEL_WIDTH_PX}
         aria-label="Notification center"
         focus="dialog-unfocused"
+        // The island restores bell focus itself (with focusVisible: false),
+        // so the focus manager must not also refocus on close — its plain
+        // focus() would paint the keyboard focus ring after an Escape exit.
+        // eslint-disable-next-line react/jsx-boolean-value -- returnFocus defaults to true; explicit false is required
+        returnFocus={false}
         nativeOverlay
         nativeOverlayPayload={island.notificationPayload}
         nativeOverlayActions={island.nativeActions}
