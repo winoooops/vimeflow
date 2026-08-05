@@ -620,4 +620,14 @@ describe('NotificationIsland', () => {
 
     expect(handlers.onDismiss).toHaveBeenCalledWith('need')
   })
+
+  test('does not preload native overlay windows before notifications exist', () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge()
+
+    render(<NotificationIsland {...props([])} />)
+
+    expect(bridge.preload).not.toHaveBeenCalled()
+  })
 })
