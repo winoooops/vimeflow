@@ -853,7 +853,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: envelope.payload.turn_id,
             agent_session_id: None,
         }),
-        Some("task_complete") => {
+        Some("task_complete" | "turn_aborted") => {
             let turn_id = envelope.payload.turn_id;
             Ok(ClassifiedSignal::Notification {
                 reason: AgentNotificationReason::TurnComplete,
@@ -861,7 +861,9 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 dedupe_key: turn_id.as_ref().map(|id| format!("turn:{id}")),
                 turn_id,
                 agent_session_id: None,
-                requires_active_turn: true,
+                // Registration starts at EOF and can occur after task_started.
+                // Any terminal record appended after that boundary is live.
+                requires_active_turn: false,
                 ends_turn: true,
             })
         }
@@ -1169,17 +1171,15 @@ fn apply_signal(
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
             }
-            if requires_active_turn {
-                let mismatched_turn = registration.turn_id.is_some()
-                    && turn_id.is_some()
-                    && registration.turn_id != turn_id;
-                if !registration.turn_active || mismatched_turn {
-                    diagnostics
-                        .lock()
-                        .expect("notification diagnostics mutex poisoned")
-                        .replay_suppressions += 1;
-                    return;
-                }
+            let mismatched_turn = registration.turn_id.is_some()
+                && turn_id.is_some()
+                && registration.turn_id != turn_id;
+            if mismatched_turn || (requires_active_turn && !registration.turn_active) {
+                diagnostics
+                    .lock()
+                    .expect("notification diagnostics mutex poisoned")
+                    .replay_suppressions += 1;
+                return;
             }
             if ends_turn {
                 registration.turn_active = false;
@@ -1314,6 +1314,10 @@ mod tests {
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}"#,
+                "turn-complete",
+            ),
+            (
+                r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#,
                 "turn-complete",
             ),
             (
@@ -1586,6 +1590,47 @@ mod tests {
                 .get(&AgentNotificationReason::TurnComplete),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn codex_live_terminal_event_after_mid_turn_registration_is_not_suppressed() {
+        for terminal_type in ["task_complete", "turn_aborted"] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let source = temp.path().join("rollout.jsonl");
+            std::fs::write(
+                &source,
+                concat!(
+                    "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-a\"}}\n",
+                    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"live\"}}\n",
+                ),
+            )
+            .expect("seed active turn");
+            let cursor = std::fs::metadata(&source).expect("metadata").len();
+            let mut registration = Registration::new(
+                "pty-a".to_string(),
+                1,
+                NotificationProvider::Codex,
+                source.clone(),
+                cursor,
+            );
+            let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+            let sink = FakeEventSink::new();
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(source)
+                .expect("open rollout");
+            writeln!(
+                file,
+                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"{terminal_type}\",\"turn_id\":\"live\"}}}}"
+            )
+            .expect("append terminal event");
+            file.flush().expect("flush rollout");
+
+            scan_source(&mut registration, &diagnostics, &sink).expect("scan terminal event");
+
+            assert_eq!(sink.count("agent-notification"), 1, "{terminal_type}");
+            assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+        }
     }
 
     #[test]
