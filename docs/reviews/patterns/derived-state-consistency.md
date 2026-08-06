@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-08-06
-ref_count: 35
+ref_count: 36
 ---
 
 # Derived State Consistency
@@ -582,4 +582,17 @@ base data is technically "correct."
   service keeps renderer-neutral identity until a caller has authoritative
   attachment evidence. Restored unit and E2E expectations for the neutral
   environment.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 44. Workspace spawns lost their selected native renderer identity
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P1 / HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Create, add, and restart spawns omitted `nativeTransport`, so the
+  conservative service default stripped Ghostty identity from PTYs selected
+  for the packaged native renderer and disabled OSC progress producers.
+- **Fix:** Passed the existing renderer selection into all three workspace
+  spawn paths while preserving explicit xterm opt-outs. Restored unit and E2E
+  coverage for native Ghostty and renderer-neutral fallback environments.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

@@ -1,4 +1,4 @@
-// cspell:ignore worktrees
+// cspell:ignore Ghostty worktrees
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSessionManager } from './useSessionManager'
@@ -116,10 +116,15 @@ const mockListen = vi.hoisted(() =>
   )
 )
 const mockInvoke = vi.hoisted(() => vi.fn(() => Promise.resolve(false)))
+const mockShouldUseNativeGhostty = vi.hoisted(() => vi.fn(() => false))
 
 vi.mock('../../../lib/backend', () => ({
   invoke: mockInvoke,
   listen: mockListen,
+}))
+
+vi.mock('../../terminal/nativeGhosttyClient', () => ({
+  shouldUseNativeGhostty: mockShouldUseNativeGhostty,
 }))
 
 vi.mock('../workspaceLayoutBridge', () => ({
@@ -278,6 +283,7 @@ describe('useSessionManager', () => {
     vi.clearAllMocks()
     mockInvoke.mockReset()
     mockInvoke.mockResolvedValue(false)
+    mockShouldUseNativeGhostty.mockReturnValue(false)
     window.vimeflow = {
       invoke: vi.fn(),
       listen: vi.fn(),
@@ -2095,6 +2101,7 @@ describe('useSessionManager', () => {
       cwd: '/home/will/proj',
       env: {},
       enableAgentBridge: true,
+      nativeTransport: false,
     })
     expect(result.current.sessions[0].id).toBe('ws-shell')
     expect(result.current.sessions[0].status).toBe('running')
@@ -3210,6 +3217,7 @@ describe('useSessionManager', () => {
   })
 
   test('createSession spawns PTY and appends to sessions', async () => {
+    mockShouldUseNativeGhostty.mockReturnValue(true)
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({
       activeSessionId: null,
@@ -3241,6 +3249,7 @@ describe('useSessionManager', () => {
     expect(service.spawn).toHaveBeenCalledWith(
       expect.objectContaining({
         enableAgentBridge: true,
+        nativeTransport: true,
       })
     )
 
@@ -6518,6 +6527,7 @@ describe('useSessionManager', () => {
       cwd: '/side',
       env: {},
       enableAgentBridge: true,
+      nativeTransport: false,
     })
     expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-side' })
     expect(
@@ -7043,6 +7053,7 @@ describe('useSessionManager', () => {
         cwd: '/workspace',
         env: {},
         enableAgentBridge: true,
+        nativeTransport: false,
       })
       expect(session.panes).toHaveLength(2)
       expect(session.panes[0]).toMatchObject({
@@ -7447,6 +7458,7 @@ describe('useSessionManager', () => {
       cwd: '/Users/x/proj',
       env: {},
       enableAgentBridge: true,
+      nativeTransport: false,
     })
 
     expect(service.write).toHaveBeenCalledWith({
