@@ -301,6 +301,109 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
+  test('prunes notification state when PTY ids leave the workspace', async () => {
+    installBridge()
+    const publish = vi.fn()
+    let currentSessions = [
+      session('active', 'pty-active'),
+      session('semantic-old', 'pty-semantic', {
+        agentType: 'codex',
+        agentSessionId: 'agent-old',
+      }),
+      session('legacy-old', 'pty-legacy', {
+        agentSessionId: 'agent-legacy',
+      }),
+    ]
+
+    const { rerender } = renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: currentSessions,
+        activeSessionId: 'active',
+        publish,
+        getAgentSessionId: () => undefined,
+      })
+    )
+
+    await waitFor(() => {
+      expect(listeners.has('agent-status')).toBe(true)
+      expect(listeners.has('agent-lifecycle')).toBe(true)
+      expect(listeners.has('agent-notification')).toBe(true)
+    })
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentStatusEvent>('agent-status', {
+        sessionId: 'pty-semantic',
+        agentSessionId: 'agent-old',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+        usageFetched: false,
+      })
+
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-semantic',
+        agentSessionId: 'agent-old',
+        phase: 'running',
+        occurredAt: BigInt(100),
+      })
+
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-legacy',
+        agentSessionId: 'agent-legacy',
+        phase: 'running',
+        occurredAt: BigInt(1),
+      })
+    })
+
+    act(() => {
+      currentSessions = [session('active', 'pty-active')]
+      rerender()
+    })
+
+    act(() => {
+      currentSessions = [
+        session('active', 'pty-active'),
+        session('semantic-new', 'pty-semantic', {
+          agentType: 'codex',
+          agentSessionId: 'agent-new',
+        }),
+        session('legacy-new', 'pty-legacy', {
+          agentSessionId: 'agent-legacy',
+        }),
+      ]
+      rerender()
+    })
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-semantic',
+        agentSessionId: 'agent-new',
+        reason: 'turn-complete',
+        title: 'New Codex finished',
+        body: null,
+        occurredAt: BigInt(50),
+        dedupeKey: 'turn:50',
+      })
+
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-legacy',
+        agentSessionId: 'agent-legacy',
+        phase: 'idle',
+        occurredAt: BigInt(2),
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'New Codex finished' })
+    )
+  })
+
   test('drops a completion when the pane agent changes during settle', async () => {
     installBridge()
     const publish = vi.fn()

@@ -319,10 +319,7 @@ export const useNotificationIslandStage = ({
     const arrivals = visibleRecords.filter(
       ({ id }) => !seenIdsRef.current.has(id)
     )
-    seenIdsRef.current = new Set([
-      ...seenIdsRef.current,
-      ...visibleRecords.map(({ id }) => id),
-    ])
+    seenIdsRef.current = new Set(visibleRecords.map(({ id }) => id))
 
     if (arrivals.length === 0) {
       return

@@ -222,6 +222,33 @@ describe('NotificationIsland', () => {
     expect(island).toHaveAttribute('data-state', 'badge')
   })
 
+  test('forgets notification ids after their records leave history', () => {
+    const retained = notification('retained')
+
+    const { result, rerender } = renderHook(
+      ({ records }: { records: readonly NotificationRecord[] }) =>
+        useNotificationIslandStage({
+          records,
+          sessions: [session('session-1', 'Payments')],
+          onOpen: vi.fn(),
+          onDismiss: vi.fn(),
+          onMarkAllRead: vi.fn(),
+          onClear: vi.fn(),
+        }),
+      {
+        initialProps: {
+          records: [notification('first'), retained],
+        },
+      }
+    )
+
+    rerender({ records: [notification('second'), retained] })
+    expect(result.current.freshId).toBe('second')
+
+    rerender({ records: [notification('first'), retained] })
+    expect(result.current.freshId).toBe('first')
+  })
+
   test('resolves notification icons from the target pane', () => {
     const multiPaneSession: Session = {
       ...session('session-1', 'Payments'),

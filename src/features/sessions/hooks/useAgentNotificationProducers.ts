@@ -86,6 +86,7 @@ export const useAgentNotificationProducers = ({
   const phasesRef = useRef(
     new Map<string, Pick<AgentLifecycleEvent, 'agentSessionId' | 'phase'>>()
   )
+  const latestRunningAtRef = useRef(new Map<string, number>())
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   publishRef.current = publish
@@ -98,13 +99,35 @@ export const useAgentNotificationProducers = ({
   }
 
   useEffect(() => {
+    const livePtyIds = new Set(
+      sessions.flatMap((session) => session.panes.map(({ ptyId }) => ptyId))
+    )
+
+    const trackedPtyIds = new Set([
+      ...observedAgentSessionIdsRef.current.keys(),
+      ...phasesRef.current.keys(),
+      ...latestRunningAtRef.current.keys(),
+    ])
+
+    for (const ptyId of trackedPtyIds) {
+      if (livePtyIds.has(ptyId)) {
+        continue
+      }
+
+      observedAgentSessionIdsRef.current.delete(ptyId)
+      phasesRef.current.delete(ptyId)
+      latestRunningAtRef.current.delete(ptyId)
+    }
+  }, [sessions])
+
+  useEffect(() => {
     let cancelled = false
     const unlisten: UnlistenFn[] = []
 
     // Per-PTY settle timers for confirmed turn-complete events from normalized
     // agent notifications or the legacy lifecycle fallback.
     const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
-    const latestRunningAt = new Map<string, number>()
+    const latestRunningAt = latestRunningAtRef.current
 
     const cancelTurnComplete = (ptyId: string): void => {
       const timer = completionTimers.get(ptyId)

@@ -1309,6 +1309,7 @@ export const useSessionManager = (
       dropAllForPty(ptyId)
       restoreDataRef.current.delete(ptyId)
       agentSessionIdsRef.current.delete(ptyId)
+      latestAgentRunningAtRef.current.delete(ptyId)
       invalidatedAgentSessionsRef.current.delete(ptyId)
       unregisterPtySession(ptyId)
 
@@ -1952,6 +1953,7 @@ export const useSessionManager = (
           deleteCacheHistory(ptyId)
           restoreDataRef.current.delete(ptyId)
           agentSessionIdsRef.current.delete(ptyId)
+          latestAgentRunningAtRef.current.delete(ptyId)
           invalidatedAgentSessionsRef.current.delete(ptyId)
           unregisterPtySession(ptyId)
         }
@@ -2382,6 +2384,7 @@ export const useSessionManager = (
             deleteCacheHistory(target.ptyId)
             restoreDataRef.current.delete(target.ptyId)
             agentSessionIdsRef.current.delete(target.ptyId)
+            latestAgentRunningAtRef.current.delete(target.ptyId)
             invalidatedAgentSessionsRef.current.delete(target.ptyId)
             releaseLatestAgentResumeClaimsForPty(target.ptyId)
             unregisterPtySession(target.ptyId)
@@ -2740,6 +2743,7 @@ export const useSessionManager = (
         restoreDataRef.current.delete(oldSession.id)
         restoreDataRef.current.set(oldSession.id, restoreData)
         agentSessionIdsRef.current.delete(oldPane.ptyId)
+        latestAgentRunningAtRef.current.delete(oldPane.ptyId)
         invalidatedAgentSessionsRef.current.delete(oldPane.ptyId)
         if (replacementAgentSessionId !== undefined) {
           agentSessionIdsRef.current.set(
