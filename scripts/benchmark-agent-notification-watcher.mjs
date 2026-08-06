@@ -225,7 +225,13 @@ export const runBenchmark = async (options) => {
       })
       sessionIds.push(sessionId)
       const sourcePath = path.join(tempRoot, `${sessionId}.jsonl`)
-      fs.writeFileSync(sourcePath, '')
+      fs.writeFileSync(
+        sourcePath,
+        `${JSON.stringify({
+          type: 'session_meta',
+          payload: { id: sessionId },
+        })}\n`
+      )
       sources.push({ sessionId, path: sourcePath })
       if (options.mode === 'treatment') {
         await sidecar.invoke('e2e_register_agent_notification_source', {
@@ -249,6 +255,9 @@ export const runBenchmark = async (options) => {
     const diagnostics = await sidecar.invoke(
       'get_agent_notification_diagnostics'
     )
+    if (options.mode === 'treatment' && receivedKeys.size === 0) {
+      throw new Error('treatment received no agent notifications')
+    }
 
     const ticksPerSecond = Number(
       spawnSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).stdout.trim()

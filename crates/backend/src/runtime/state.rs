@@ -1371,7 +1371,11 @@ mod tests {
         seed_live_agent(&state, AgentType::Codex);
         let dir = tempfile::tempdir().expect("tempdir");
         let source = dir.path().join("rollout.jsonl");
-        std::fs::write(&source, "").expect("create notification source");
+        std::fs::write(
+            &source,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-1\"}}\n",
+        )
+        .expect("create notification source");
         state
             .agent_notifications
             .register(
