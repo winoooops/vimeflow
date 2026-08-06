@@ -112,6 +112,18 @@ describe('terminal notifications', () => {
     expect(bellScanner.push('\x07')).toEqual([''])
   })
 
+  test('recovers attention after an oversized unterminated OSC', () => {
+    const osc9Scanner = new TerminalAttentionScanner()
+
+    expect(osc9Scanner.push(`\x1b]777;${'x'.repeat(5000)}\x1b`)).toEqual([])
+    expect(osc9Scanner.push(']9;build done\x07')).toEqual(['build done'])
+
+    const osc777Scanner = new TerminalAttentionScanner()
+
+    expect(osc777Scanner.push(`\x1b]9;${'x'.repeat(5000)}`)).toEqual([])
+    expect(osc777Scanner.push('\x1b]777;notify\x1b\\')).toEqual(['notify'])
+  })
+
   test('recovers when oversized reserved progress ends ESC then BEL', () => {
     const scanner = new TerminalAttentionScanner()
 
