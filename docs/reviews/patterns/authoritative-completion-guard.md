@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-05
-ref_count: 8
+ref_count: 9
 ---
 
 # Authoritative Completion Guard
@@ -207,4 +207,13 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** `session.error` required `turn_active`, but EOF-based registration can occur after the matching busy record. A genuinely live error appended after registration was suppressed as replay.
 - **Fix:** Treated post-registration `session.error` as authoritative terminal evidence without requiring a locally observed start edge, retaining provider identity and dedupe guards. Added a mid-turn registration regression.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 16. OpenCode errors were followed by contradictory success notifications
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** After `session.error` emitted an error and settled the turn, a following status-idle or session-idle record could still emit “OpenCode finished” because live completion fallback intentionally did not require a locally observed active turn.
+- **Fix:** Track failed OpenCode turns separately from active-turn evidence, suppress both idle completion forms after an error, and clear the failed state only when a later busy or retry signal starts a new turn. Added regressions for both idle forms and the new-turn reset.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

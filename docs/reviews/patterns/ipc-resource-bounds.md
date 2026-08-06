@@ -3,7 +3,7 @@ id: ipc-resource-bounds
 category: security
 created: 2026-07-05
 last_updated: 2026-08-05
-ref_count: 12
+ref_count: 13
 ---
 
 # IPC Resource Bounds
@@ -283,4 +283,22 @@ not become repeated unhandled main-process failures.
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** Provider-controlled session, turn, and dedupe identifiers could retain and emit nearly the full 256 KiB JSONL line, multiplying memory use across the recent-key cache and sending oversized renderer events.
 - **Fix:** Truncate owned provider identifiers to 256 characters before state retention, dedupe, or event emission, with a regression covering retained and serialized values.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 22. Claude transcript fallback bypassed notification-body bounds
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Claude Stop-hook transcript recovery entered the notification body after the shared sanitizer, allowing long text, control characters, and internal protocol markers to reach the renderer and invalidate the bounded native-overlay request.
+- **Fix:** Normalize transcript-extracted assistant text before it becomes a notification fallback, with emitted-event coverage for protocol-marker removal and the 80-character body cap.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 23. Valid session names exceeded the native notification payload contract
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-05
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/notification/useNotificationIslandStage.ts`
+- **Finding:** Notification-center payloads forwarded session names accepted by existing rename paths, while the native-overlay validator rejected names longer than 160 characters and fell back to the occluded renderer surface.
+- **Fix:** Bound only the transport-facing notification session name to 160 characters, preserving the full application name, with a 161-character boundary regression.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

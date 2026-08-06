@@ -276,6 +276,23 @@ describe('NotificationIsland', () => {
     expect(result.current.panelItems[0]?.agentId).toBe('codex')
   })
 
+  test('bounds native notification session names to 160 characters', () => {
+    const { result } = renderHook(() =>
+      useNotificationIslandStage({
+        records: [notification('long-session-name')],
+        sessions: [session('session-1', 'x'.repeat(161))],
+        onOpen: vi.fn(),
+        onDismiss: vi.fn(),
+        onMarkAllRead: vi.fn(),
+        onClear: vi.fn(),
+      })
+    )
+
+    expect(result.current.notificationPayload.items[0]?.sessionName).toBe(
+      'x'.repeat(160)
+    )
+  })
+
   test('pauses the toast dwell while the pointer is inside', () => {
     vi.useFakeTimers()
     const initialProps = props([])

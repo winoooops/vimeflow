@@ -131,6 +131,7 @@ struct Registration {
     notification_body: Option<String>,
     claude_transcript_cursors: HashMap<PathBuf, u64>,
     pending_opencode_idle: Option<PendingOpenCodeIdle>,
+    opencode_turn_failed: bool,
     dedupe_keys: HashSet<String>,
     dedupe_order: VecDeque<String>,
 }
@@ -164,6 +165,7 @@ impl Registration {
             notification_body: None,
             claude_transcript_cursors: HashMap::new(),
             pending_opencode_idle: None,
+            opencode_turn_failed: false,
             dedupe_keys: HashSet::new(),
             dedupe_order: VecDeque::new(),
         }
@@ -748,6 +750,7 @@ fn scan_source(
         registration.turn_active = false;
         registration.turn_id = None;
         registration.pending_opencode_idle = None;
+        registration.opencode_turn_failed = false;
         registration.claude_transcript_cursors.clear();
         diagnostics
             .lock()
@@ -1142,7 +1145,7 @@ fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Optio
     .ok()?;
 
     *cursor = length;
-    latest
+    latest.and_then(|body| normalize_notification_body(&body))
 }
 
 fn claude_message_text(content: &Value) -> Option<String> {
@@ -1391,6 +1394,7 @@ fn apply_signal(
             let agent_session_id = agent_session_id.map(bound_provider_identifier);
             flush_pending_opencode_idle(registration, diagnostics, events);
             if registration.provider == NotificationProvider::OpenCode {
+                registration.opencode_turn_failed = false;
                 if let Some(agent_session_id) = agent_session_id.as_deref() {
                     registration.forget_dedupe_key(&opencode_completion_key(agent_session_id));
                 }
@@ -1445,6 +1449,21 @@ fn apply_signal(
                     .expect("notification diagnostics mutex poisoned")
                     .replay_suppressions += 1;
                 return;
+            }
+            if registration.provider == NotificationProvider::OpenCode
+                && registration.opencode_turn_failed
+                && matches!(reason, AgentNotificationReason::TurnComplete)
+            {
+                diagnostics
+                    .lock()
+                    .expect("notification diagnostics mutex poisoned")
+                    .replay_suppressions += 1;
+                return;
+            }
+            if registration.provider == NotificationProvider::OpenCode
+                && matches!(reason, AgentNotificationReason::AgentError)
+            {
+                registration.opencode_turn_failed = true;
             }
             if ends_turn {
                 registration.turn_active = false;
@@ -1985,6 +2004,67 @@ mod tests {
     }
 
     #[test]
+    fn claude_transcript_fallback_emits_a_normalized_body() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        std::fs::write(
+            &transcript,
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "text",
+                        "text": format!(
+                            "## {}\n<<<VIMEFLOW_REPLY\nprotocol\nVIMEFLOW_REPLY>>>",
+                            "界".repeat(81)
+                        ),
+                    }],
+                    "stop_reason": "end_turn",
+                },
+            })
+            .to_string()
+                + "\n",
+        )
+        .expect("write transcript");
+        let mut cursor = 0;
+        let transcript_body = latest_claude_transcript_body_at_path(&transcript, &mut cursor)
+            .expect("transcript body");
+        let mut registration = Registration::new(
+            "pty-claude".to_string(),
+            1,
+            NotificationProvider::ClaudeCode,
+            PathBuf::from("attention.jsonl"),
+            0,
+        );
+        registration.notification_body = Some(transcript_body);
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+
+        apply_signal(
+            &mut registration,
+            ClassifiedSignal::Notification {
+                reason: AgentNotificationReason::TurnComplete,
+                occurred_at: 1,
+                dedupe_key: None,
+                turn_id: None,
+                agent_session_id: None,
+                body: None,
+                transcript_path: None,
+                requires_active_turn: false,
+                ends_turn: true,
+            },
+            &diagnostics,
+            &sink,
+        );
+
+        let recorded = sink.recorded();
+        let body = recorded[0].1["body"].as_str().expect("emitted body");
+        assert_eq!(body.chars().count(), MAX_NOTIFICATION_BODY_CHARS);
+        assert_eq!(body, format!("{}…", "界".repeat(79)));
+        assert!(!body.contains("VIMEFLOW"));
+    }
+
+    #[test]
     fn claude_stop_hook_body_scans_only_new_transcript_bytes_after_cursor() {
         use std::io::{Seek, SeekFrom, Write};
 
@@ -2274,6 +2354,51 @@ mod tests {
         assert_eq!(sink.count("agent-notification"), 1);
         assert_eq!(sink.recorded()[0].1["reason"], "agent-error");
         assert_eq!(sink.recorded()[0].1["body"], "Model stopped responding");
+    }
+
+    #[test]
+    fn opencode_error_suppresses_idle_completion_until_next_turn() {
+        let busy = r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#;
+        let error = r#"{"v":1,"ts":2,"kind":"event","type":"session.error","data":{"id":"error-live","sessionID":"ses1","error":{"name":"ProviderError"}}}"#;
+        let status_idle = r#"{"v":1,"ts":3,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#;
+        let session_idle =
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#;
+
+        for (lines, expected_reasons) in [
+            (vec![busy, error, status_idle], vec!["agent-error"]),
+            (vec![busy, error, session_idle], vec!["agent-error"]),
+            (
+                vec![busy, error, busy, session_idle],
+                vec!["agent-error", "turn-complete"],
+            ),
+        ] {
+            let mut registration = Registration::new(
+                "pty-opencode".to_string(),
+                1,
+                NotificationProvider::OpenCode,
+                PathBuf::from("session.jsonl"),
+                0,
+            );
+            let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+            let sink = FakeEventSink::new();
+
+            for line in lines {
+                apply_signal(
+                    &mut registration,
+                    classify_opencode(line.as_bytes()).expect("valid OpenCode record"),
+                    &diagnostics,
+                    &sink,
+                );
+            }
+            flush_pending_opencode_idle(&mut registration, &diagnostics, &sink);
+
+            let reasons: Vec<_> = sink
+                .recorded()
+                .into_iter()
+                .map(|(_, payload)| payload["reason"].as_str().expect("reason").to_string())
+                .collect();
+            assert_eq!(reasons, expected_reasons);
+        }
     }
 
     #[test]
