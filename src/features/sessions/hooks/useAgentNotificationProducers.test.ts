@@ -76,7 +76,11 @@ const emit = <T>(event: string, payload: T): void => {
   listeners.get(event)?.(payload)
 }
 
-const semanticAgentTypes = ['claude-code', 'codex', 'kimi', 'opencode'] as const
+const semanticAttentionAgentTypes = [
+  'claude-code',
+  'codex',
+  'opencode',
+] as const
 
 describe('useAgentNotificationProducers', () => {
   test('publishes a notification-only completion without a lifecycle watcher', async () => {
@@ -365,7 +369,7 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
-  test.each(semanticAgentTypes)(
+  test.each(semanticAttentionAgentTypes)(
     'suppresses terminal attention for %s panes',
     (agentType) => {
       const publish = vi.fn()
@@ -388,6 +392,34 @@ describe('useAgentNotificationProducers', () => {
       expect(publish).not.toHaveBeenCalled()
     }
   )
+
+  test('preserves terminal attention for completion-only Kimi panes', () => {
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'kimi' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    act(() => {
+      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ptyId: 'pty-background',
+        reason: 'terminal-attention',
+        body: 'approval',
+      })
+    )
+  })
 
   test('does not publish a foreground completion after navigation during settle', async () => {
     installBridge()
@@ -426,7 +458,7 @@ describe('useAgentNotificationProducers', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
-  test.each(semanticAgentTypes)(
+  test.each(semanticAttentionAgentTypes)(
     'coalesces a %s semantic completion over terminal attention',
     async (agentType) => {
       installBridge()
@@ -472,7 +504,7 @@ describe('useAgentNotificationProducers', () => {
     }
   )
 
-  test.each(semanticAgentTypes)(
+  test.each(semanticAttentionAgentTypes)(
     'suppresses %s terminal attention during semantic watcher recovery',
     async (agentType) => {
       installBridge()

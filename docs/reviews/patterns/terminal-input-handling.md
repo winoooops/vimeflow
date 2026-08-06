@@ -2,8 +2,8 @@
 id: terminal-input-handling
 category: terminal
 created: 2026-04-09
-last_updated: 2026-08-02
-ref_count: 7
+last_updated: 2026-08-06
+ref_count: 8
 ---
 
 # Terminal Input Handling
@@ -124,3 +124,12 @@ double execution, and paste failures.
 - **Finding:** Terminal BEL/OSC attention signals were promoted for all panes, including agents with semantic attention hooks. A hook-covered CLI could therefore produce both a semantic notification and a terminal fallback notification for one real event.
 - **Fix:** Gate terminal fallback promotion by pane agent type, ignoring fallback signals for Claude Code, Codex, and OpenCode panes. Added producer tests for generic panes and hook-covered panes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Completion-only semantic coverage suppressed terminal attention
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Kimi was grouped with agents that have semantic approval, question, and error notifications, so its BEL/OSC attention fallback was discarded even though Kimi only emits semantic completion notifications.
+- **Fix:** Split terminal-attention coverage from general semantic coverage so Kimi keeps BEL/OSC fallback notifications while Claude Code, Codex, and OpenCode remain deduplicated. Added a focused producer regression.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

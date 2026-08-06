@@ -28,6 +28,12 @@ const SEMANTIC_AGENT_TYPES = new Set<Pane['agentType']>([
   'opencode',
 ])
 
+const SEMANTIC_ATTENTION_AGENT_TYPES = new Set<Pane['agentType']>([
+  'claude-code',
+  'codex',
+  'opencode',
+])
+
 const findTarget = (
   sessions: readonly Session[],
   ptyId: string
@@ -139,7 +145,7 @@ export const useAgentNotificationProducers = ({
       if (
         target === undefined ||
         !isBackgroundTarget(target, activeSessionIdRef.current) ||
-        SEMANTIC_AGENT_TYPES.has(target.pane.agentType)
+        SEMANTIC_ATTENTION_AGENT_TYPES.has(target.pane.agentType)
       ) {
         return
       }
