@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-08-05
-ref_count: 9
+last_updated: 2026-08-06
+ref_count: 10
 ---
 
 # Authoritative Completion Guard
@@ -216,4 +216,17 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** After `session.error` emitted an error and settled the turn, a following status-idle or session-idle record could still emit “OpenCode finished” because live completion fallback intentionally did not require a locally observed active turn.
 - **Fix:** Track failed OpenCode turns separately from active-turn evidence, suppress both idle completion forms after an error, and clear the failed state only when a later busy or retry signal starts a new turn. Added regressions for both idle forms and the new-turn reset.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 17. Notifications were pruned before session removal committed
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Both close paths deleted a session's notification records before
+  asynchronous PTY cleanup finished, even though a failed kill intentionally
+  leaves the React session open for retry.
+- **Fix:** Removed eager pruning from both callers and rely on the existing
+  sessions-derived pruning effect, which deletes records only after the session
+  and pane actually disappear from committed state.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

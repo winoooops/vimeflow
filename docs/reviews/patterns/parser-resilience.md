@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-08-05
-ref_count: 23
+last_updated: 2026-08-06
+ref_count: 24
 ---
 
 # Parser Resilience
@@ -482,3 +482,17 @@ true` and drop the chunk.
 - **Finding:** The renderer attention scanner searched past a later `ESC ]` introducer when locating an OSC terminator, so an unterminated frame swallowed a subsequent valid OSC 9/777 notification. Oversized non-progress OSC frames also dropped their buffered payload without retaining discard state, allowing their later BEL terminator to become a false standalone alert.
 - **Fix:** Scan OSC boundaries in byte order and resynchronize at non-ST escapes, while routing every oversized OSC through the existing discard-until-BEL/ST state. Added regressions for nested/split OSC recovery and oversized non-progress frames terminated by BEL or ST.
 - **Commit:** same commit as this entry
+
+### 40. Claude attention hook parsed JSON strings as quote-delimited text
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** The generated hook extracted string fields with `sed`, so an
+  escaped quote inside valid StopFailure JSON terminated the match early and
+  silently truncated the provider error before escaping ran.
+- **Fix:** Parse stdin with the Node runtime, rebuild the existing allowlisted
+  record, clamp fields at a valid UTF-8 boundary, and serialize with
+  `JSON.stringify`. Expanded the script regression to combine quotes,
+  backslashes, control characters, and a long non-ASCII value.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

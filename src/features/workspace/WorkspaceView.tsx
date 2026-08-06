@@ -1832,7 +1832,6 @@ const WorkspaceViewContent = (): ReactElement => {
       }
 
       const wasActive = sessionId === activeSessionId
-      notificationCenter.pruneSession(sessionId)
       removeSession(sessionId)
       if (wasActive) {
         claimTerminal()
@@ -1844,7 +1843,6 @@ const WorkspaceViewContent = (): ReactElement => {
       activeSessionId,
       claimTerminal,
       hasUnsavedChanges,
-      notificationCenter,
       removeSession,
       setActiveSessionId,
       setPendingFilePathSynced,
@@ -1888,7 +1886,6 @@ const WorkspaceViewContent = (): ReactElement => {
       }
 
       removeSession(sessionId)
-      notificationCenter.pruneSession(sessionId)
 
       if (sessionId === activeSessionId || nextId !== undefined) {
         claimTerminal()
@@ -1897,7 +1894,6 @@ const WorkspaceViewContent = (): ReactElement => {
     [
       activeSessionId,
       claimTerminal,
-      notificationCenter,
       removeSession,
       sessions,
       setActiveSessionId,
