@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-08-06
-ref_count: 32
+ref_count: 33
 ---
 
 # Derived State Consistency
@@ -540,4 +540,17 @@ base data is technically "correct."
   terminal service and clear it whenever a semantic pane leaves its running
   lifecycle. Added a regression covering idle settlement followed by a new
   running turn.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 41. Pre-running OSC progress was cleared before the lifecycle edge
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** A semantic agent could emit OSC progress before its asynchronous
+  running lifecycle update, but clearing progress from the current idle state
+  deleted that live value before the pane could display it.
+- **Fix:** Clear cached progress only on an observed running-to-settled edge or
+  agent replacement, preserving early OSC progress until its lifecycle catches
+  up. Added a focused idle-to-running regression.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

@@ -126,6 +126,52 @@ describe('useAgentNotificationProducers', () => {
     })
   })
 
+  test('rejects a semantic completion older than the latest running lifecycle', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', {
+            agentType: 'claude-code',
+          }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => {
+      expect(listeners.has('agent-lifecycle')).toBe(true)
+      expect(listeners.has('agent-notification')).toBe(true)
+    })
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-background',
+        phase: 'running',
+        occurredAt: BigInt(42),
+      })
+
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'turn-complete',
+        title: 'Claude finished',
+        body: null,
+        occurredAt: BigInt(41),
+        dedupeKey: 'turn:41',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   test('does not duplicate a normalized completion from the full watcher', async () => {
     installBridge()
     const publish = vi.fn()

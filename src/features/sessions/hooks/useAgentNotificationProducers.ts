@@ -78,6 +78,7 @@ export const useAgentNotificationProducers = ({
     // Per-PTY settle timers for confirmed turn-complete events from normalized
     // agent notifications or the legacy lifecycle fallback.
     const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+    const latestRunningAt = new Map<string, number>()
 
     const cancelTurnComplete = (ptyId: string): void => {
       const timer = completionTimers.get(ptyId)
@@ -100,6 +101,11 @@ export const useAgentNotificationProducers = ({
         readonly requireLifecycle: boolean
       }
     ): void => {
+      const runningAt = latestRunningAt.get(ptyId)
+      if (runningAt !== undefined && candidate.occurredAt < runningAt) {
+        return
+      }
+
       const scheduledTarget = findTarget(sessionsRef.current, ptyId)
       if (
         scheduledTarget === undefined ||
@@ -180,10 +186,18 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.sessionId)
         if (
           target === undefined ||
-          SEMANTIC_AGENT_TYPES.has(target.pane.agentType) ||
           (target.pane.agentSessionId !== undefined &&
             target.pane.agentSessionId !== payload.agentSessionId)
         ) {
+          return
+        }
+
+        if (payload.phase === 'running') {
+          latestRunningAt.set(payload.sessionId, Number(payload.occurredAt))
+          cancelTurnComplete(payload.sessionId)
+        }
+
+        if (SEMANTIC_AGENT_TYPES.has(target.pane.agentType)) {
           return
         }
 
@@ -192,10 +206,6 @@ export const useAgentNotificationProducers = ({
           agentSessionId: payload.agentSessionId,
           phase: payload.phase,
         })
-
-        if (payload.phase === 'running') {
-          cancelTurnComplete(payload.sessionId)
-        }
 
         if (
           payload.phase !== 'idle' ||

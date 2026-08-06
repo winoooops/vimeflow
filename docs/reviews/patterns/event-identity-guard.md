@@ -3,7 +3,7 @@ id: event-identity-guard
 category: backend
 created: 2026-06-11
 last_updated: 2026-08-06
-ref_count: 3
+ref_count: 4
 ---
 
 # Event Identity Guard
@@ -62,4 +62,17 @@ Events that carry an identity field for deduplication, stale-event rejection, or
   record without reading hook stdin, allowing the existing renderer staleness
   guard to reject delayed completions. Added generation and pane-state
   regressions.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 6. Delayed semantic completion ignored a newer running lifecycle
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** The notification producer skipped semantic lifecycle events, so
+  a delayed completion from the previous turn could be scheduled after the next
+  turn was already running and publish an obsolete finished notification.
+- **Fix:** Record the latest running timestamp for every agent, reject older
+  completions before scheduling, and cancel pending completion timers on a new
+  running edge. Added a focused delayed-Claude regression.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)
