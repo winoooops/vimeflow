@@ -76,6 +76,8 @@ const emit = <T>(event: string, payload: T): void => {
   listeners.get(event)?.(payload)
 }
 
+const semanticAgentTypes = ['claude-code', 'codex', 'kimi', 'opencode'] as const
+
 describe('useAgentNotificationProducers', () => {
   test('publishes a notification-only completion without a lifecycle watcher', async () => {
     installBridge()
@@ -308,59 +310,39 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
-  test('ignores terminal fallback attention for hook-covered agents', () => {
-    const publish = vi.fn()
+  test.each(semanticAgentTypes)(
+    'keeps unrelated terminal attention for %s panes',
+    (agentType) => {
+      vi.useFakeTimers()
+      const publish = vi.fn()
 
-    renderHook(() =>
-      useAgentNotificationProducers({
-        sessions: [
-          session('active', 'pty-active'),
-          session('background', 'pty-background', {
-            agentType: 'codex',
-          }),
-        ],
-        activeSessionId: 'active',
-        publish,
+      renderHook(() =>
+        useAgentNotificationProducers({
+          sessions: [
+            session('active', 'pty-active'),
+            session('background', 'pty-background', { agentType }),
+          ],
+          activeSessionId: 'active',
+          publish,
+        })
+      )
+
+      act(() => {
+        emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
+        vi.advanceTimersByTime(750)
       })
-    )
 
-    act(() => {
-      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
-    })
+      expect(publish).toHaveBeenCalledOnce()
+      expect(publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'terminal-attention',
+          body: 'approval',
+        })
+      )
+    }
+  )
 
-    expect(publish).not.toHaveBeenCalled()
-  })
-
-  test('keeps terminal fallback attention for Kimi', () => {
-    vi.useFakeTimers()
-    const publish = vi.fn()
-
-    renderHook(() =>
-      useAgentNotificationProducers({
-        sessions: [
-          session('active', 'pty-active'),
-          session('background', 'pty-background', { agentType: 'kimi' }),
-        ],
-        activeSessionId: 'active',
-        publish,
-      })
-    )
-
-    act(() => {
-      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
-      vi.advanceTimersByTime(750)
-    })
-
-    expect(publish).toHaveBeenCalledOnce()
-    expect(publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'terminal-attention',
-        body: 'approval',
-      })
-    )
-  })
-
-  test('clears pending Kimi terminal attention timers in non-desktop cleanup', () => {
+  test('clears pending terminal attention timers in non-desktop cleanup', () => {
     vi.useFakeTimers()
     const publish = vi.fn()
 
@@ -421,44 +403,49 @@ describe('useAgentNotificationProducers', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
-  test('coalesces Kimi completion over its terminal attention fallback', async () => {
-    installBridge()
-    const publish = vi.fn()
+  test.each(semanticAgentTypes)(
+    'coalesces a %s semantic completion over terminal attention',
+    async (agentType) => {
+      installBridge()
+      const publish = vi.fn()
 
-    renderHook(() =>
-      useAgentNotificationProducers({
-        sessions: [
-          session('active', 'pty-active'),
-          session('background', 'pty-background', { agentType: 'kimi' }),
-        ],
-        activeSessionId: 'active',
-        publish,
+      renderHook(() =>
+        useAgentNotificationProducers({
+          sessions: [
+            session('active', 'pty-active'),
+            session('background', 'pty-background', { agentType }),
+          ],
+          activeSessionId: 'active',
+          publish,
+        })
+      )
+
+      await waitFor(() =>
+        expect(listeners.has('agent-notification')).toBe(true)
+      )
+      vi.useFakeTimers()
+
+      act(() => {
+        emitTerminalAttention({ ptyId: 'pty-background', body: 'attention' })
+        emit<AgentNotificationEvent>('agent-notification', {
+          ptyId: 'pty-background',
+          agentSessionId: 'agent-background',
+          reason: 'turn-complete',
+          title: `${agentType} finished`,
+          body: null,
+          occurredAt: BigInt(42),
+          dedupeKey: 'turn:42',
+        })
+        vi.advanceTimersByTime(750)
       })
-    )
 
-    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
-    vi.useFakeTimers()
-
-    act(() => {
-      emitTerminalAttention({ ptyId: 'pty-background', body: 'attention' })
-      emit<AgentNotificationEvent>('agent-notification', {
-        ptyId: 'pty-background',
-        agentSessionId: 'kimi-background',
-        reason: 'turn-complete',
-        title: 'Kimi finished',
-        body: null,
-        occurredAt: BigInt(42),
-        dedupeKey: 'turn:42',
-      })
-      vi.advanceTimersByTime(750)
-    })
-
-    expect(publish).toHaveBeenCalledOnce()
-    expect(publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'turn-complete',
-        title: 'Kimi finished',
-      })
-    )
-  })
+      expect(publish).toHaveBeenCalledOnce()
+      expect(publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'turn-complete',
+          title: `${agentType} finished`,
+        })
+      )
+    }
+  )
 })

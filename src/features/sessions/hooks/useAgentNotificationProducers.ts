@@ -21,16 +21,10 @@ interface TargetPane {
 
 const TURN_COMPLETE_SETTLE_DELAY_MS = 750
 
-const NOTIFICATION_ONLY_AGENT_TYPES = new Set<Pane['agentType']>([
+const SEMANTIC_AGENT_TYPES = new Set<Pane['agentType']>([
   'claude-code',
   'codex',
   'kimi',
-  'opencode',
-])
-
-const SEMANTIC_ATTENTION_AGENT_TYPES = new Set<Pane['agentType']>([
-  'claude-code',
-  'codex',
   'opencode',
 ])
 
@@ -79,8 +73,9 @@ export const useAgentNotificationProducers = ({
     // agent notifications or the legacy lifecycle fallback.
     const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
-    // Kimi-only grace timers for ambiguous terminal BEL signals. A normalized
-    // Kimi notification cancels the fallback before it publishes attention.
+    // Per-PTY grace timers for ambiguous terminal BEL/OSC signals. A nearby
+    // normalized notification from the same semantic-agent pane cancels the
+    // fallback before it publishes attention.
     const terminalAttentionTimers = new Map<
       string,
       ReturnType<typeof setTimeout>
@@ -161,7 +156,6 @@ export const useAgentNotificationProducers = ({
       const target = findTarget(sessionsRef.current, payload.ptyId)
       if (
         target === undefined ||
-        SEMANTIC_ATTENTION_AGENT_TYPES.has(target.pane.agentType) ||
         !isBackgroundTarget(target, activeSessionIdRef.current)
       ) {
         return
@@ -189,7 +183,7 @@ export const useAgentNotificationProducers = ({
         })
       }
 
-      if (target.pane.agentType !== 'kimi') {
+      if (!SEMANTIC_AGENT_TYPES.has(target.pane.agentType)) {
         publishTerminalAttention()
 
         return
@@ -222,7 +216,7 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.sessionId)
         if (
           target === undefined ||
-          NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType) ||
+          SEMANTIC_AGENT_TYPES.has(target.pane.agentType) ||
           (target.pane.agentSessionId !== undefined &&
             target.pane.agentSessionId !== payload.agentSessionId)
         ) {

@@ -501,6 +501,36 @@ describe('NotificationIsland', () => {
     ).toHaveFocus()
   })
 
+  test('moves panel focus to a new arrival toast', async () => {
+    const initialProps = props([notification('existing')])
+    const { rerender } = render(<NotificationIsland {...initialProps} />)
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Notifications, 1 unread' })
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Mark all read (1)' })
+      ).toHaveFocus()
+    )
+
+    rerender(
+      <NotificationIsland
+        {...initialProps}
+        records={[notification('new'), notification('existing')]}
+      />
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: /Open notification center for Claude finished/,
+        })
+      ).toHaveFocus()
+    )
+  })
+
   test('animates only the fresh row and clears freshness after 300ms', () => {
     vi.useFakeTimers()
     const initialProps = props([])

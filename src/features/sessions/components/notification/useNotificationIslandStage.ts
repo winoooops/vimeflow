@@ -188,6 +188,7 @@ export const useNotificationIslandStage = ({
   const panelExitTimerRef = useRef<number | null>(null)
   const wasPanelOpenRef = useRef(false)
   const restoreBellFocusRef = useRef(true)
+  const focusToastAfterPanelCloseRef = useRef(false)
   const seenIdsRef = useRef(new Set(visibleRecords.map(({ id }) => id)))
   const [toastId, setToastId] = useState<string | null>(null)
   const [coalescedCount, setCoalescedCount] = useState(0)
@@ -329,6 +330,11 @@ export const useNotificationIslandStage = ({
 
     const newest = arrivals[0]
 
+    const panelOwnsFocus =
+      panelOpen &&
+      document.activeElement instanceof Element &&
+      document.activeElement.closest('.vf-notification-panel') !== null
+
     setCoalescedCount((current) =>
       toastIdRef.current === null
         ? arrivals.length - 1
@@ -345,12 +351,16 @@ export const useNotificationIslandStage = ({
       freshTimerRef.current = null
       setFreshId(null)
     }, 300)
+    if (panelOwnsFocus) {
+      focusToastAfterPanelCloseRef.current = true
+      restoreBellFocusRef.current = false
+    }
     cancelPanelExit()
     setPanelOpen(false)
     if (!toastHeldRef.current) {
       startToastDwell()
     }
-  }, [cancelPanelExit, hideToast, startToastDwell, visibleRecords])
+  }, [cancelPanelExit, hideToast, panelOpen, startToastDwell, visibleRecords])
 
   useEffect(() => {
     if (toastId === null) {
@@ -369,10 +379,13 @@ export const useNotificationIslandStage = ({
   }, [closeToast, toastId])
 
   useEffect(() => {
+    const transferPanelFocus = focusToastAfterPanelCloseRef.current
+    focusToastAfterPanelCloseRef.current = false
     if (
       toastId !== null &&
-      document.activeElement instanceof Node &&
-      rootRef.current?.contains(document.activeElement)
+      (transferPanelFocus ||
+        (document.activeElement instanceof Node &&
+          rootRef.current?.contains(document.activeElement)))
     ) {
       toastButtonRef.current?.focus()
     }
