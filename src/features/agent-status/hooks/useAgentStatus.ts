@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AgentNotificationEvent } from '../../../bindings/AgentNotificationEvent'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import {
@@ -28,6 +29,7 @@ import type {
 // buffer is reachable without overloading the initial render.
 const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 500
+const BACKGROUND_KIMI_DETECTION_POLL_MS = 3000
 const EXIT_HOLD_MS = 5000
 
 const TOOL_CALL_FLOOD_THRESHOLD = 16
@@ -223,6 +225,21 @@ export const useAgentStatus = (
   // restarted and run-scoped panel state must be cleared.
   const detectedAgentPidRef = useRef<number | null>(null)
 
+  const detectedAgentTypeRef = useRef<AgentStatus['agentType']>(
+    status.agentType
+  )
+  const backgroundKimiWatcherPtyIdsRef = useRef(new Set<string>())
+  const backgroundKimiDetectionInFlightRef = useRef(new Set<string>())
+
+  const stopBackgroundKimiWatcher = useCallback((ptyId: string): void => {
+    if (!backgroundKimiWatcherPtyIdsRef.current.delete(ptyId)) {
+      return
+    }
+
+    backgroundKimiDetectionInFlightRef.current.delete(ptyId)
+    void stopWatchers(ptyId, ptyId)
+  }, [])
+
   // Stale-detection guard: written synchronously during render so IPC continuations see the latest sessionId.
   const currentSessionIdRef = useRef(sessionId)
   currentSessionIdRef.current = sessionId
@@ -274,16 +291,25 @@ export const useAgentStatus = (
   // Reset state when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
-      // Clean up watchers for the old session. We always invoke
-      // `stopWatchers` (which suppresses errors) rather than gating on
-      // `watcherStartedRef.current`, because the ref reflects only the
-      // last LOCAL start outcome — if a prior `stop_agent_watcher`
-      // failed transiently, the ref reads false but the BACKEND watcher
-      // is still alive. Skipping stop here would leak that watcher
-      // across the session-change boundary (Codex review on PR #153).
+      // Kimi's transcript supervisor is also its relocation-aware background
+      // notification watcher. Retain it across navigation until the turn
+      // settles or the agent exits. Other providers retain their separate
+      // notification-only watcher after this full watcher stops.
       const oldId = prevSessionIdRef.current
       if (oldId) {
-        void stopWatchers(oldId, knownPtyIdRef.current)
+        if (detectedAgentTypeRef.current === 'kimi') {
+          const oldPtyId =
+            knownPtyIdRef.current ?? getPtySessionId(oldId) ?? oldId
+          backgroundKimiWatcherPtyIdsRef.current.add(oldPtyId)
+        } else {
+          void stopWatchers(oldId, knownPtyIdRef.current)
+        }
+      }
+
+      if (sessionId) {
+        const nextPtyId = getPtySessionId(sessionId) ?? sessionId
+        backgroundKimiWatcherPtyIdsRef.current.delete(nextPtyId)
+        backgroundKimiDetectionInFlightRef.current.delete(nextPtyId)
       }
 
       prevSessionIdRef.current = sessionId
@@ -298,6 +324,7 @@ export const useAgentStatus = (
       watcherStartGenerationRef.current += 1
       knownPtyIdRef.current = undefined
       detectedAgentPidRef.current = null
+      detectedAgentTypeRef.current = nextStatus.agentType
       locallyResetAgentSessionIdRef.current = null
       locallyResetTokenTotalRef.current = null
       locallyResetRunScopedEventsRef.current = false
@@ -309,6 +336,42 @@ export const useAgentStatus = (
       setStatus(nextStatus)
     }
   }, [sessionId])
+
+  useEffect(() => {
+    const pollBackgroundKimiWatcher = async (ptyId: string): Promise<void> => {
+      try {
+        const detected = await invoke<AgentDetectedEvent | null>(
+          'detect_agent_in_session',
+          { sessionId: ptyId }
+        )
+        if (
+          detected === null &&
+          backgroundKimiWatcherPtyIdsRef.current.has(ptyId)
+        ) {
+          stopBackgroundKimiWatcher(ptyId)
+        }
+      } catch {
+        // A transient detection failure is retried on the next poll.
+      } finally {
+        backgroundKimiDetectionInFlightRef.current.delete(ptyId)
+      }
+    }
+
+    const interval = setInterval(() => {
+      for (const ptyId of backgroundKimiWatcherPtyIdsRef.current) {
+        if (backgroundKimiDetectionInFlightRef.current.has(ptyId)) {
+          continue
+        }
+
+        backgroundKimiDetectionInFlightRef.current.add(ptyId)
+        void pollBackgroundKimiWatcher(ptyId)
+      }
+    }, BACKGROUND_KIMI_DETECTION_POLL_MS)
+
+    return (): void => {
+      clearInterval(interval)
+    }
+  }, [stopBackgroundKimiWatcher])
 
   useEffect(() => {
     if (status.sessionId === null) {
@@ -373,13 +436,18 @@ export const useAgentStatus = (
           knownPtyIdRef.current = ptySessionId
         }
 
+        const detectedAgentType = mapDetectedAgentType(
+          result.agentType as string
+        )
+        detectedAgentTypeRef.current = detectedAgentType
+
         setStatus((prev) =>
           prev.sessionId === sid
             ? {
                 ...(agentProcessChanged ? createDefaultAgentStatus(sid) : prev),
                 isActive: true,
                 agentExited: false,
-                agentType: mapDetectedAgentType(result.agentType as string),
+                agentType: detectedAgentType,
               }
             : prev
         )
@@ -417,16 +485,21 @@ export const useAgentStatus = (
               !agentEverDetectedRef.current ||
               watcherStartGenerationRef.current !== startGeneration
             ) {
-              // Skip stop only when a newer same-sid start has already
-              // registered a backend watcher; otherwise we'd tear down
-              // its watcher (backend stop is sid-keyed). All other bail
-              // paths leave watcherStartedRef false, so they correctly
-              // stop here.
+              // Skip stop when a newer same-sid start already registered the
+              // backend watcher, or when navigation retained this Kimi start
+              // as the background completion source.
               const newerSameSidWatcherIsActive =
                 currentSessionIdRef.current === sid &&
                 watcherStartGenerationRef.current !== startGeneration &&
                 watcherStartedRef.current
-              if (!newerSameSidWatcherIsActive) {
+
+              const retainedBackgroundKimiWatcher =
+                backgroundKimiWatcherPtyIdsRef.current.has(ptySessionId)
+
+              if (
+                !newerSameSidWatcherIsActive &&
+                !retainedBackgroundKimiWatcher
+              ) {
                 void stopWatchers(sid, ptySessionId)
               }
 
@@ -455,6 +528,7 @@ export const useAgentStatus = (
         }
         agentEverDetectedRef.current = false
         detectedAgentPidRef.current = null
+        detectedAgentTypeRef.current = null
 
         watcherStartedRef.current = false
         watcherStartInFlightRef.current = false
@@ -975,6 +1049,43 @@ export const useAgentStatus = (
     }
   }, [sessionId, handleDetection])
 
+  useEffect(() => {
+    let cancelled = false
+    let unlistenFn: (() => void) | undefined
+
+    void (async (): Promise<void> => {
+      let fn: () => void
+      try {
+        fn = await listen<AgentNotificationEvent>(
+          'agent-notification',
+          (payload) => {
+            if (
+              payload.reason === 'turn-complete' ||
+              payload.reason === 'agent-error'
+            ) {
+              stopBackgroundKimiWatcher(payload.ptyId)
+            }
+          }
+        )
+      } catch {
+        return
+      }
+
+      // cancelled may flip while the listener promise is awaiting.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (cancelled) {
+        fn()
+      } else {
+        unlistenFn = fn
+      }
+    })()
+
+    return (): void => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [stopBackgroundKimiWatcher])
+
   // Cleanup watchers when the hook unmounts entirely.
   // Read from prevSessionIdRef (not the closure's sessionId) so the
   // cleanup sees the LATEST session, not the mount-time null.
@@ -1003,6 +1114,11 @@ export const useAgentStatus = (
         knownPtyIdRef.current = undefined
         detectedAgentPidRef.current = null
       }
+      for (const ptyId of backgroundKimiWatcherPtyIdsRef.current) {
+        void stopWatchers(ptyId, ptyId)
+      }
+      backgroundKimiWatcherPtyIdsRef.current.clear()
+      backgroundKimiDetectionInFlightRef.current.clear()
     },
     []
   )

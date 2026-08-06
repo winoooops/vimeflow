@@ -571,6 +571,8 @@ pub struct AgentLifecycleEvent {
     /// The agent's own session identity (Claude transcript stem, Codex session_meta.id); lets the bridge drop a stale tail across restart.
     pub agent_session_id: String,
     pub phase: AgentPhase,
+    /// Unix epoch milliseconds from the provider event when available.
+    pub occurred_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

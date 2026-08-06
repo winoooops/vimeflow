@@ -80,6 +80,7 @@ pub(crate) fn emit_lifecycle_on_change(
     agent_session_id: &str,
     last: &mut Option<AgentPhase>,
     phase: AgentPhase,
+    occurred_at: u64,
 ) {
     if *last == Some(phase) {
         return;
@@ -89,6 +90,7 @@ pub(crate) fn emit_lifecycle_on_change(
         session_id: session_id.to_string(),
         agent_session_id: agent_session_id.to_string(),
         phase,
+        occurred_at,
     };
     if let Err(e) = emit_agent_lifecycle(events, &payload) {
         log::warn!("Failed to emit agent-lifecycle event: {}", e);
@@ -202,6 +204,7 @@ pub(crate) fn record_tool_call(
 /// else accumulate the settled phase for the one-shot boundary flush.
 pub(crate) fn record_lifecycle(
     phase: AgentPhase,
+    occurred_at: u64,
     session_id: &str,
     agent_session_id: &str,
     events: &Arc<dyn EventSink>,
@@ -216,10 +219,24 @@ pub(crate) fn record_lifecycle(
             agent_session_id,
             last_phase,
             phase,
+            occurred_at,
         );
     } else {
         *replay_phase = Some(phase);
     }
+}
+
+pub(crate) fn parse_timestamp_millis(timestamp: Option<&str>) -> Option<u64> {
+    timestamp
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .and_then(|value| u64::try_from(value.timestamp_millis()).ok())
+}
+
+pub(crate) fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 #[cfg(test)]
@@ -371,10 +388,11 @@ mod tests {
     fn lifecycle_emits_only_on_change() {
         let sink = Arc::new(FakeEventSink::new());
         let mut last: Option<AgentPhase> = None;
-        emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Running);
-        emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Running); // dup
-        emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Idle);
+        emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Running, 1);
+        emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Running, 2); // dup
+        emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Idle, 3);
         assert_eq!(sink.count("agent-lifecycle"), 2); // Running, Idle — the dup is suppressed
         assert_eq!(last, Some(AgentPhase::Idle));
+        assert_eq!(sink.recorded()[1].1["occurredAt"], 3);
     }
 }

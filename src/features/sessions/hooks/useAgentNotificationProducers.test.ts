@@ -148,12 +148,14 @@ describe('useAgentNotificationProducers', () => {
         sessionId: 'pty-background',
         agentSessionId: 'agent-background',
         phase: 'running',
+        occurredAt: BigInt(1),
       })
 
       emit<AgentLifecycleEvent>('agent-lifecycle', {
         sessionId: 'pty-background',
         agentSessionId: 'agent-background',
         phase: 'idle',
+        occurredAt: BigInt(2),
       })
       vi.advanceTimersByTime(750)
       emit<AgentNotificationEvent>('agent-notification', {
@@ -247,18 +249,21 @@ describe('useAgentNotificationProducers', () => {
         sessionId: 'pty-background',
         agentSessionId: 'agent-background',
         phase: 'idle',
+        occurredAt: BigInt(1),
       })
 
       emit<AgentLifecycleEvent>('agent-lifecycle', {
         sessionId: 'pty-background',
         agentSessionId: 'agent-background',
         phase: 'running',
+        occurredAt: BigInt(2),
       })
 
       emit<AgentLifecycleEvent>('agent-lifecycle', {
         sessionId: 'pty-background',
         agentSessionId: 'agent-background',
         phase: 'idle',
+        occurredAt: BigInt(3),
       })
     })
 

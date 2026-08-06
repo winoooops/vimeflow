@@ -477,6 +477,7 @@ export const useSessionManager = (
   // previous agent run that share the same ptyId but a different agentSessionId
   // (Codex P2 finding on PR #421).
   const agentSessionIdsRef = useRef(new Map<string, string>())
+  const latestAgentRunningAtRef = useRef(new Map<string, number>())
 
   const invalidatedAgentSessionsRef = useRef(
     new Map<string, { agentSessionId: string; tokenTotal: number | null }>()
@@ -1023,11 +1024,17 @@ export const useSessionManager = (
                 }
 
                 const pane = session.panes[idx]
+
+                const latestRunningAt = latestAgentRunningAtRef.current.get(
+                  payload.ptyId
+                )
                 if (
                   pane.status !== 'running' ||
                   pane.agentSessionId === undefined ||
                   (payload.agentSessionId !== null &&
-                    payload.agentSessionId !== pane.agentSessionId)
+                    payload.agentSessionId !== pane.agentSessionId) ||
+                  (latestRunningAt !== undefined &&
+                    Number(payload.occurredAt) < latestRunningAt)
                 ) {
                   return session
                 }
@@ -1118,6 +1125,12 @@ export const useSessionManager = (
                 payload.sessionId,
                 payload.agentSessionId
               )
+              if (payload.phase === 'running') {
+                latestAgentRunningAtRef.current.set(
+                  payload.sessionId,
+                  Number(payload.occurredAt)
+                )
+              }
 
               const newPanes = session.panes.map((pane, i) =>
                 i === idx

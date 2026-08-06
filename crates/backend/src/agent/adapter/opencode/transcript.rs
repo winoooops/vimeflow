@@ -211,16 +211,20 @@ impl OpencodeTranscriptDecoder {
             Err(_) => return,
         };
         let timestamp = ts_to_iso8601(dto.ts);
+        let occurred_at = dto
+            .ts
+            .and_then(|timestamp| u64::try_from(timestamp).ok())
+            .unwrap_or(0);
 
         match dto.kind() {
             OpencodeKind::ToolBefore => self.start_tool_call_from_before(&dto, &timestamp),
             OpencodeKind::ToolAfter => self.finish_tool_call_from_after(&dto, &timestamp),
-            OpencodeKind::Event => self.process_event(&dto, &timestamp),
+            OpencodeKind::Event => self.process_event(&dto, &timestamp, occurred_at),
             OpencodeKind::Unknown => {}
         }
     }
 
-    fn process_event(&mut self, dto: &OpencodeLineDto, timestamp: &str) {
+    fn process_event(&mut self, dto: &OpencodeLineDto, timestamp: &str, occurred_at: u64) {
         match dto.event_type() {
             OpencodeEventType::MessageUpdated => self.process_message_updated(dto),
             OpencodeEventType::MessagePartUpdated => self.process_part_updated(dto, timestamp),
@@ -228,16 +232,16 @@ impl OpencodeTranscriptDecoder {
             OpencodeEventType::SessionCreated | OpencodeEventType::SessionUpdated => {
                 self.process_session_event(dto);
             }
-            OpencodeEventType::SessionStatus => self.process_session_status(dto),
-            OpencodeEventType::SessionIdle => self.process_session_idle(dto),
-            OpencodeEventType::SessionError => self.process_session_error(dto),
+            OpencodeEventType::SessionStatus => self.process_session_status(dto, occurred_at),
+            OpencodeEventType::SessionIdle => self.process_session_idle(dto, occurred_at),
+            OpencodeEventType::SessionError => self.process_session_error(dto, occurred_at),
             // Semantic and resolution notifications are owned by the
             // notification-only watcher.
             _ => {}
         }
     }
 
-    fn process_session_status(&mut self, dto: &OpencodeLineDto) {
+    fn process_session_status(&mut self, dto: &OpencodeLineDto, occurred_at: u64) {
         let Some(status) = dto
             .data
             .get("status")
@@ -257,28 +261,28 @@ impl OpencodeTranscriptDecoder {
         match status {
             "busy" | "retry" => {
                 self.turn_active = true;
-                self.record_phase(agent_session_id, AgentPhase::Running);
+                self.record_phase(agent_session_id, AgentPhase::Running, occurred_at);
             }
-            "idle" => self.finish_turn(agent_session_id),
+            "idle" => self.finish_turn(agent_session_id, occurred_at),
             _ => {}
         }
     }
 
-    fn process_session_idle(&mut self, dto: &OpencodeLineDto) {
+    fn process_session_idle(&mut self, dto: &OpencodeLineDto, occurred_at: u64) {
         if let Some(agent_session_id) = opencode_session_id(dto) {
-            self.finish_turn(agent_session_id);
+            self.finish_turn(agent_session_id, occurred_at);
         }
     }
 
-    fn finish_turn(&mut self, agent_session_id: &str) {
+    fn finish_turn(&mut self, agent_session_id: &str, occurred_at: u64) {
         if !self.turn_active {
             return;
         }
         self.turn_active = false;
-        self.record_phase(agent_session_id, AgentPhase::Idle);
+        self.record_phase(agent_session_id, AgentPhase::Idle, occurred_at);
     }
 
-    fn process_session_error(&mut self, dto: &OpencodeLineDto) {
+    fn process_session_error(&mut self, dto: &OpencodeLineDto, occurred_at: u64) {
         if !self.turn_active {
             return;
         }
@@ -286,12 +290,13 @@ impl OpencodeTranscriptDecoder {
             return;
         };
         self.turn_active = false;
-        self.record_phase(agent_session_id, AgentPhase::Idle);
+        self.record_phase(agent_session_id, AgentPhase::Idle, occurred_at);
     }
 
-    fn record_phase(&mut self, agent_session_id: &str, phase: AgentPhase) {
+    fn record_phase(&mut self, agent_session_id: &str, phase: AgentPhase, occurred_at: u64) {
         record_lifecycle(
             phase,
+            occurred_at,
             &self.session_id,
             agent_session_id,
             &self.events,
@@ -752,6 +757,7 @@ impl TranscriptDecoder for OpencodeTranscriptDecoder {
                         agent_session_id,
                         &mut self.last_phase,
                         phase,
+                        0,
                     );
                 }
             }
@@ -964,6 +970,8 @@ mod tests {
         assert_eq!(lifecycle[0]["phase"], "running");
         assert_eq!(lifecycle[1]["phase"], "idle");
         assert_eq!(lifecycle[1]["agentSessionId"], "ses1");
+        assert_eq!(lifecycle[0]["occurredAt"], 1);
+        assert_eq!(lifecycle[1]["occurredAt"], 2);
     }
 
     #[test]

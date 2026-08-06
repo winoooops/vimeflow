@@ -1259,6 +1259,7 @@ describe('useSessionManager', () => {
         sessionId: 'a',
         agentSessionId: 'x',
         phase: 'idle',
+        occurredAt: BigInt(1),
       })
     })
     expect(result.current.sessions[0].panes[0].status).toBe('idle')
@@ -1272,6 +1273,7 @@ describe('useSessionManager', () => {
         sessionId: 'a',
         agentSessionId: 'x',
         phase: 'running',
+        occurredAt: BigInt(2),
       })
     })
     expect(result.current.sessions[0].panes[0].status).toBe('running')
@@ -1294,6 +1296,7 @@ describe('useSessionManager', () => {
         sessionId: 'a',
         agentSessionId: 'agent-current',
         phase: 'running',
+        occurredAt: BigInt(1),
       })
 
       getNotificationCallback()?.({
@@ -1315,6 +1318,7 @@ describe('useSessionManager', () => {
         sessionId: 'a',
         agentSessionId: 'agent-current',
         phase: 'running',
+        occurredAt: BigInt(2),
       })
 
       getNotificationCallback()?.({
@@ -1324,6 +1328,40 @@ describe('useSessionManager', () => {
         title: 'Stale completion',
         body: null,
         occurredAt: BigInt(2),
+        dedupeKey: 'turn-old',
+      })
+    })
+
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+    expect(result.current.sessions[0].panes[0].agentPhase).toBe('running')
+  })
+
+  test('an older completion cannot settle a newer running turn', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+    await waitFor(() => expect(getNotificationCallback()).toBeDefined())
+
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'agent-current',
+        phase: 'running',
+        occurredAt: BigInt(20),
+      })
+
+      getNotificationCallback()?.({
+        ptyId: 'a',
+        agentSessionId: null,
+        reason: 'turn-complete',
+        title: 'Delayed completion',
+        body: null,
+        occurredAt: BigInt(10),
         dedupeKey: 'turn-old',
       })
     })
@@ -1347,6 +1385,7 @@ describe('useSessionManager', () => {
         sessionId: 'a',
         agentSessionId: 'x',
         phase: 'idle',
+        occurredAt: BigInt(1),
       })
     })
 
@@ -1393,6 +1432,7 @@ describe('useSessionManager', () => {
         sessionId: 'a',
         agentSessionId: 'x',
         phase: 'running',
+        occurredAt: BigInt(1),
       })
     })
     expect(result.current.sessions[0].panes[0].status).toBe('completed')
@@ -1459,6 +1499,7 @@ describe('useSessionManager', () => {
         sessionId: 'pty-1',
         agentSessionId: 'conversation-old',
         phase: 'idle',
+        occurredAt: BigInt(1),
       })
     })
 

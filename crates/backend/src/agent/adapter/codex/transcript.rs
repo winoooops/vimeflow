@@ -22,7 +22,8 @@ use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
-    emit_agent_turn, emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
+    emit_agent_turn, emit_lifecycle_on_change, parse_timestamp_millis, record_lifecycle,
+    record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
 use crate::agent::types::{
@@ -848,6 +849,7 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
                         &self.codex_agent_session_id,
                         &mut self.last_phase,
                         phase,
+                        0,
                     );
                 }
             }
@@ -939,6 +941,7 @@ fn process_line(
             if !codex_agent_session_id.is_empty() {
                 record_lifecycle(
                     phase,
+                    parse_timestamp_millis(dto.timestamp.as_deref()).unwrap_or(0),
                     session_id,
                     codex_agent_session_id,
                     events,
@@ -1837,12 +1840,20 @@ mod tests {
         );
         decoder.on_caught_up();
         decoder.decode_line(
-            r#"{"type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#,
+            r#"{"timestamp":"1970-01-01T00:00:00.010Z","type":"event_msg","payload":{"type":"task_started","model_context_window":1}}"#,
         );
         decoder.decode_line(
-            r#"{"type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
+            r#"{"timestamp":"1970-01-01T00:00:00.020Z","type":"event_msg","payload":{"type":"task_complete","duration_ms":5}}"#,
         );
         assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+        let lifecycle: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle[1]["occurredAt"], 10);
+        assert_eq!(lifecycle[2]["occurredAt"], 20);
     }
 
     #[test]

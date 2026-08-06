@@ -23,8 +23,8 @@ use crate::agent::adapter::base::{
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_session_title,
-    emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change, record_lifecycle,
-    record_tool_call, ReplayActivity,
+    emit_agent_tool_call, emit_agent_turn, emit_lifecycle_on_change, parse_timestamp_millis,
+    record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
 use crate::agent::sanitize_title;
@@ -406,6 +406,7 @@ impl TranscriptDecoder for ClaudeTranscriptDecoder {
                     &self.claude_agent_session_id,
                     &mut self.last_phase,
                     phase,
+                    0,
                 );
             }
             for event in self.replay_activity.take_running() {
@@ -518,6 +519,7 @@ fn process_line(
     if let Some(phase) = phase {
         record_lifecycle(
             phase,
+            parse_timestamp_millis(dto.timestamp.as_deref()).unwrap_or(0),
             session_id,
             claude_agent_session_id,
             events,
@@ -1311,12 +1313,20 @@ mod tests {
         );
         decoder.on_caught_up();
         decoder.decode_line(
-            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{}}],"stop_reason":"tool_use"}}"#,
+            r#"{"type":"assistant","timestamp":"1970-01-01T00:00:00.010Z","message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{}}],"stop_reason":"tool_use"}}"#,
         );
         decoder.decode_line(
-            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}}"#,
+            r#"{"type":"assistant","timestamp":"1970-01-01T00:00:00.020Z","message":{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}}"#,
         );
         assert_eq!(lifecycle_phases(&sink), vec!["idle", "running", "idle"]);
+        let lifecycle: Vec<_> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle[1]["occurredAt"], 10);
+        assert_eq!(lifecycle[2]["occurredAt"], 20);
     }
 
     #[test]

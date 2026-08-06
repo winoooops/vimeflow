@@ -1004,6 +1004,7 @@ impl TranscriptDecoder for KimiTranscriptDecoder {
                     &self.agent_session_id,
                     &mut last,
                     phase,
+                    0,
                 );
                 self.last_phase = last;
             }
@@ -1059,7 +1060,7 @@ impl KimiTranscriptDecoder {
         }
 
         // A new user prompt moves the agent into the running phase.
-        self.record_phase(AgentPhase::Running);
+        self.record_phase(AgentPhase::Running, dto.time.unwrap_or(0));
     }
 
     fn process_loop_event(&mut self, dto: &KimiLineDto) {
@@ -1173,7 +1174,7 @@ impl KimiTranscriptDecoder {
                         self.notification_body = None;
                     }
                     self.flush_turn_outputs();
-                    self.record_phase(AgentPhase::Idle);
+                    self.record_phase(AgentPhase::Idle, dto.time.unwrap_or(0));
                 }
             }
             KimiLoopEventType::Other => {}
@@ -1205,9 +1206,10 @@ impl KimiTranscriptDecoder {
         }
     }
 
-    fn record_phase(&mut self, phase: AgentPhase) {
+    fn record_phase(&mut self, phase: AgentPhase, occurred_at: u64) {
         record_lifecycle(
             phase,
+            occurred_at,
             &self.session_id,
             &self.agent_session_id,
             &self.events,
@@ -1839,6 +1841,18 @@ mod tests {
         assert_eq!(notification["body"], "Relocated task complete");
         assert_eq!(notification["occurredAt"], 1_781_345_366_000_u64);
         assert_eq!(notification["dedupeKey"], "turn:relocated-turn");
+        let lifecycle = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, payload)| {
+                name == "agent-lifecycle"
+                    && payload["agentSessionId"] == "session_new"
+                    && payload["phase"] == "idle"
+            })
+            .map(|(_, payload)| payload)
+            .last()
+            .expect("relocated completion lifecycle event");
+        assert_eq!(lifecycle["occurredAt"], 1_781_345_366_000_u64);
     }
 
     /// The supervisor's status refresh merges the locator's fetched plan-usage

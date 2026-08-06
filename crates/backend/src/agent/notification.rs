@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use crate::agent::adapter::base::for_each_bounded_line;
 use crate::agent::adapter::base::WatcherHandle;
+use crate::agent::events::{now_millis, parse_timestamp_millis};
 use crate::agent::types::{AgentNotificationEvent, AgentNotificationReason, AgentType};
 use crate::agent::AgentWatcherState;
 use crate::runtime::{serialize_event, EventSink};
@@ -1656,17 +1657,7 @@ fn notification_title(
 }
 
 fn timestamp_millis(timestamp: Option<&str>) -> u64 {
-    timestamp
-        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-        .and_then(|value| u64::try_from(value.timestamp_millis()).ok())
-        .unwrap_or_else(now_millis)
-}
-
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    parse_timestamp_millis(timestamp).unwrap_or_else(now_millis)
 }
 
 #[cfg(target_os = "linux")]
