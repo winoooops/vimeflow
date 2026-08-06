@@ -642,12 +642,6 @@ impl BackendState {
     }
 
     pub async fn stop_agent_watcher(&self, session_id: String) -> Result<(), String> {
-        let notifications = self.agent_notifications.clone();
-        let notification_session_id = session_id.clone();
-        tokio::task::spawn_blocking(move || notifications.stop(&notification_session_id))
-            .await
-            .map_err(|error| format!("notification stop task panicked: {error}"))?;
-
         crate::agent::adapter::stop_agent_watcher_inner(
             self.pty.clone(),
             self.agents.clone(),
@@ -1253,15 +1247,19 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn stop_agent_watcher_unregisters_notification_watcher() {
-        let (state, _sink) = BackendState::with_fake_sink();
+    async fn stop_agent_watcher_keeps_background_notifications_alive() {
+        let (state, sink) = BackendState::with_fake_sink();
         seed_live_agent(&state, AgentType::Codex);
         let dir = tempfile::tempdir().expect("tempdir");
         let source = dir.path().join("rollout.jsonl");
         std::fs::write(&source, "").expect("create notification source");
         state
             .agent_notifications
-            .register("pty-1".to_string(), NotificationProvider::Codex, source)
+            .register(
+                "pty-1".to_string(),
+                NotificationProvider::Codex,
+                source.clone(),
+            )
             .expect("notification registration");
 
         state
@@ -1269,9 +1267,32 @@ mod tests {
             .await
             .expect("stop agent watcher");
 
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open rollout");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": { "type": "task_complete", "turn_id": "background" },
+            })
+        )
+        .expect("append background completion");
+        file.flush().expect("flush rollout");
+
+        assert!(sink.wait_for_count("agent-notification", 1, std::time::Duration::from_secs(2),));
         let diagnostics = state.agent_notifications.diagnostics();
-        assert_eq!(diagnostics.active_registrations, 0);
-        assert!(!diagnostics.worker_alive);
+        assert_eq!(diagnostics.active_registrations, 1);
+        assert!(diagnostics.worker_alive);
+        let notification = sink
+            .recorded()
+            .into_iter()
+            .find(|(event, _)| event == "agent-notification")
+            .expect("background notification");
+        assert_eq!(notification.1["ptyId"], "pty-1");
+        assert_eq!(notification.1["reason"], "turn-complete");
     }
 
     #[tokio::test(flavor = "current_thread")]

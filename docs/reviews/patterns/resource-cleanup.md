@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-06
-ref_count: 28
+ref_count: 29
 ---
 
 # Resource Cleanup
@@ -386,4 +386,13 @@ causes listener accumulation and duplicate event handling.
 - **File:** `crates/backend/src/runtime/state.rs`
 - **Finding:** `stop_agent_watcher` stopped the full agent watcher without unregistering the paired notification watcher, and the notification worker's alive flag was cleared only after normal `run_worker` return.
 - **Fix:** Stopped the notification watcher from `stop_agent_watcher`, added a drop guard that clears worker-alive diagnostics during unwinds, and covered stop cleanup with a backend regression test.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Foreground watcher cleanup must preserve background notifications
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** `stop_agent_watcher` is used when the active pane changes, so coupling notification cleanup to that command removed the lightweight watcher that must keep observing background panes. A completion appended after the stop returned was then missed permanently because notification registration resumes at EOF.
+- **Fix:** Kept notification registration out of the ordinary full-watcher stop path; PTY teardown and source replacement retain ownership of notification cleanup. Replaced the inverse lifecycle test with a regression that appends a Codex completion after the awaited stop and verifies the background notification is emitted.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
