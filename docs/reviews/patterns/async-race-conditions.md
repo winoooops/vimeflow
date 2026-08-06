@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-06
-ref_count: 105
+ref_count: 106
 ---
 
 # Async Race Conditions
@@ -1337,4 +1337,19 @@ prevent showing previous data.
 - **Fix:** Require the matching pane to remain live and generic in both the
   commit precheck and mapping update. Added a deferred-alias regression that
   exits the PTY before resolution completes.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 117. Split watcher startup skipped semantic events
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/base/watcher_runtime.rs`,
+  `crates/backend/src/agent/notification.rs`, `crates/backend/src/runtime/state.rs`
+- **Finding:** The full watcher completed startup before the notification watcher
+  captured EOF, so semantic events appended between those phases were classified
+  as historical and never emitted.
+- **Fix:** Capture the notification cursor before full-watcher startup, retain it
+  on the authoritative watcher handle, and immediately scan from that cursor when
+  notification registration completes. Added a regression that appends a Codex
+  completion between the two boundaries and verifies exactly one emission.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

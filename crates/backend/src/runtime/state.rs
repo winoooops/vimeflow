@@ -7,7 +7,9 @@ use std::time::SystemTime;
 #[cfg(feature = "e2e-test")]
 use rusqlite::{params, Connection};
 
-use crate::agent::notification::{NotificationProvider, NotificationWatcherService};
+use crate::agent::notification::{
+    NotificationProvider, NotificationSourceBoundary, NotificationWatcherService,
+};
 #[cfg(feature = "e2e-test")]
 use crate::agent::types::{AgentStatusEvent, AgentTurnEvent};
 use crate::agent::types::{
@@ -629,19 +631,24 @@ impl BackendState {
             .agents
             .agent_type_for_pty(session_id)
             .ok_or_else(|| format!("agent watcher missing after start: {session_id}"))?;
-        if let (Some(provider), Some(mut source_path)) = (
-            NotificationProvider::from_agent_type(agent_type),
-            self.agents.current_status_path(session_id),
-        ) {
-            if provider == NotificationProvider::ClaudeCode {
-                source_path = crate::agent::adapter::claude_code::bridge::session_attention_file(
-                    &source_path,
-                );
-            }
+        if let Some(provider) = NotificationProvider::from_agent_type(agent_type) {
+            let boundary = self
+                .agents
+                .current_notification_boundary(session_id)
+                .unwrap_or_else(|| {
+                    NotificationSourceBoundary::capture(
+                        agent_type,
+                        &self
+                            .agents
+                            .current_status_path(session_id)
+                            .unwrap_or_default(),
+                    )
+                    .expect("notification provider checked above")
+                });
             let notifications = self.agent_notifications.clone();
             let notification_session_id = session_id.to_string();
             tokio::task::spawn_blocking(move || {
-                notifications.register(notification_session_id, provider, source_path)
+                notifications.register_from_boundary(notification_session_id, boundary)
             })
             .await
             .map_err(|error| format!("notification registration task panicked: {error}"))
@@ -1259,6 +1266,47 @@ mod tests {
         let diagnostics = state.agent_notifications.diagnostics();
         assert!(diagnostics.worker_alive);
         assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[test]
+    fn notification_registration_replays_event_appended_between_setup_phases_once() {
+        let (state, sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::Codex);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("rollout.jsonl");
+        std::fs::write(
+            &source,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-1\"}}\n",
+        )
+        .expect("create notification source");
+
+        let boundary = NotificationSourceBoundary::capture(AgentType::Codex, &source)
+            .expect("Codex notification boundary");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&source)
+            .expect("open rollout");
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": { "type": "task_complete", "turn_id": "during-startup" },
+            })
+        )
+        .expect("append completion during full-watcher startup");
+        file.flush().expect("flush rollout");
+
+        state
+            .agent_notifications
+            .register_from_boundary("pty-1".to_string(), boundary.clone())
+            .expect("notification registration");
+        state
+            .agent_notifications
+            .register_from_boundary("pty-1".to_string(), boundary)
+            .expect("idempotent notification registration");
+
+        assert_eq!(sink.count("agent-notification"), 1);
     }
 
     #[tokio::test(flavor = "current_thread")]

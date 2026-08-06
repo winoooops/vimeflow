@@ -18,6 +18,7 @@ use super::super::bindings::AgentBindings;
 use super::diagnostics::short_sid;
 use super::diagnostics::{record_event_diag, EventTiming, PathHistory, TxOutcome};
 use super::transcript_state::{TranscriptHandle, TranscriptStartStatus, TranscriptState};
+use crate::agent::notification::NotificationSourceBoundary;
 use crate::agent::types::AgentType;
 // `TranscriptPathValidator` and `TranscriptStreamer` are referenced as
 // `Arc<dyn ...>` in `maybe_start_transcript`'s signature, so both must be
@@ -62,6 +63,7 @@ pub struct WatcherHandle {
     /// same path (the drift tick calls `start_agent_watcher` every few
     /// seconds; re-tailing a 20-114MB rollout on every tick is wasteful).
     status_path: PathBuf,
+    notification_boundary: Option<NotificationSourceBoundary>,
     _watcher: Option<RecommendedWatcher>,
     /// Signals the polling fallback thread to exit
     poll_stop: Arc<(Mutex<bool>, Condvar)>,
@@ -586,6 +588,16 @@ impl AgentWatcherState {
             .map(|handle| handle.status_path.clone())
     }
 
+    pub(crate) fn current_notification_boundary(
+        &self,
+        session_id: &str,
+    ) -> Option<NotificationSourceBoundary> {
+        let watchers = self.watchers.lock().expect("failed to lock watchers");
+        watchers
+            .get(session_id)
+            .and_then(|handle| handle.notification_boundary.clone())
+    }
+
     /// Test-only seam to set a pty's agent type without going through a
     /// real watcher startup. Builds a stub `WatcherHandle::new_for_test`
     /// with a fresh `TranscriptState` (whose `stop` is a no-op for an
@@ -845,6 +857,7 @@ pub(crate) fn start_watching(
     // is the `Arc<CodexAdapter>` that shares the same
     // `Arc<CompositeLocator>` the locator uses).
     let agent_type = bindings.agent_type;
+    let notification_boundary = NotificationSourceBoundary::capture(agent_type, &status_file_path);
     let decoder = bindings.decoder;
     let validator = bindings.validator;
     let transcript_paths = bindings.transcript_paths;
@@ -1323,6 +1336,7 @@ pub(crate) fn start_watching(
 
     Ok(WatcherHandle {
         status_path: handle_status_path,
+        notification_boundary,
         _watcher: Some(watcher),
         poll_stop,
         join_handle: poll_join_handle,
@@ -1363,6 +1377,7 @@ impl WatcherHandle {
         // tests that never call `agent_type_for_pty` on the stub.
         WatcherHandle {
             status_path: PathBuf::new(),
+            notification_boundary: None,
             _watcher: None,
             poll_stop: Arc::new((Mutex::new(false), Condvar::new())),
             join_handle: None,

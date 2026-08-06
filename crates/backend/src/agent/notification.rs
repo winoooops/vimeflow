@@ -41,6 +41,33 @@ pub(crate) enum NotificationProvider {
     OpenCode,
 }
 
+#[derive(Clone)]
+pub(crate) struct NotificationSourceBoundary {
+    provider: NotificationProvider,
+    source_path: PathBuf,
+    cursor: u64,
+}
+
+impl NotificationSourceBoundary {
+    pub(crate) fn capture(agent_type: AgentType, status_path: &Path) -> Option<Self> {
+        let provider = NotificationProvider::from_agent_type(agent_type)?;
+        let source_path = if provider == NotificationProvider::ClaudeCode {
+            crate::agent::adapter::claude_code::bridge::session_attention_file(status_path)
+        } else {
+            status_path.to_path_buf()
+        };
+        let cursor = std::fs::metadata(&source_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+
+        Some(Self {
+            provider,
+            source_path,
+            cursor,
+        })
+    }
+}
+
 impl NotificationProvider {
     pub(crate) fn from_agent_type(agent_type: AgentType) -> Option<Self> {
         match agent_type {
@@ -268,11 +295,35 @@ impl NotificationWatcherService {
         }
     }
 
+    #[cfg(any(test, feature = "e2e-test"))]
     pub(crate) fn register(
         &self,
         pty_id: String,
         provider: NotificationProvider,
         source_path: PathBuf,
+    ) -> Result<(), String> {
+        self.register_inner(pty_id, provider, source_path, None)
+    }
+
+    pub(crate) fn register_from_boundary(
+        &self,
+        pty_id: String,
+        boundary: NotificationSourceBoundary,
+    ) -> Result<(), String> {
+        self.register_inner(
+            pty_id,
+            boundary.provider,
+            boundary.source_path,
+            Some(boundary.cursor),
+        )
+    }
+
+    fn register_inner(
+        &self,
+        pty_id: String,
+        provider: NotificationProvider,
+        source_path: PathBuf,
+        cursor: Option<u64>,
     ) -> Result<(), String> {
         let pty_generation = self
             .pty_state
@@ -292,7 +343,7 @@ impl NotificationWatcherService {
             pty_generation,
             provider,
             source_path,
-            metadata.len(),
+            cursor.unwrap_or(metadata.len()),
         );
         for _ in 0..2 {
             let sender = self.worker_sender()?;
@@ -526,6 +577,7 @@ fn run_worker(
                 registration,
                 acknowledge,
             }) => {
+                let pty_id = registration.pty_id.clone();
                 let result = if pty_state.generation(&registration.pty_id)
                     == Some(registration.pty_generation)
                 {
@@ -544,6 +596,12 @@ fn run_worker(
                     }
                     drop(metrics);
                     refresh_registration_diagnostics(&registrations, &diagnostics);
+                    scan_ids(
+                        std::slice::from_ref(&pty_id),
+                        &mut registrations,
+                        &diagnostics,
+                        events.as_ref(),
+                    );
                 }
                 let _ = acknowledge.send(result.map(|_| ()));
             }
