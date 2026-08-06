@@ -957,8 +957,12 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         }),
         Some("exec_approval_request")
         | Some("apply_patch_approval_request")
-        | Some("request_permissions") => {
-            let key = envelope.payload.approval_id.or(envelope.payload.call_id);
+        | Some("request_user_input") => {
+            let key = envelope
+                .payload
+                .approval_id
+                .or(envelope.payload.request_id)
+                .or(envelope.payload.call_id);
             Ok(ClassifiedSignal::Notification {
                 reason: AgentNotificationReason::ApprovalRequested,
                 occurred_at,
@@ -1749,6 +1753,23 @@ mod tests {
             };
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn codex_classifier_maps_event_user_input_to_approval() {
+        let signal = classify_codex(
+            br#"{"type":"event_msg","payload":{"type":"request_user_input","request_id":"request-1"}}"#,
+        )
+        .expect("valid Codex envelope");
+
+        assert!(matches!(
+            signal,
+            ClassifiedSignal::Notification {
+                reason: AgentNotificationReason::ApprovalRequested,
+                dedupe_key: Some(key),
+                ..
+            } if key == "request-1"
+        ));
     }
 
     #[test]

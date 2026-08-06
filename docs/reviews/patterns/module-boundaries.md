@@ -3,7 +3,7 @@ id: module-boundaries
 category: code-quality
 created: 2026-04-30
 last_updated: 2026-08-05
-ref_count: 10
+ref_count: 11
 ---
 
 # Module Boundaries
@@ -275,4 +275,21 @@ Don't widen the coupling by adding a second importer.
   key for the exact record shape. Kept the change local because the two decoders
   produce different event contracts; a shared classifier can wait until more
   protocol mappings demonstrably drift.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 24. Lightweight Codex classifier drifted from the event-message wire contract
+
+- **Source:** local-codex | PR #785 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** The full Codex decoder mapped event-message
+  `request_user_input` to an approval request and used `request_id` as an
+  identifier fallback, while the lightweight notification classifier matched
+  the unsupported `request_permissions` literal and skipped `request_id`.
+  Background Codex panes therefore received no notification for the supported
+  event shape.
+- **Fix:** Aligned the lightweight event-message branch with
+  `request_user_input` and the full decoder's
+  `approval_id` → `request_id` → `call_id` fallback. Added a focused classifier
+  regression covering the approval reason and `request_id` dedupe key.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)
