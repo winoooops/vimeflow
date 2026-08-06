@@ -3125,22 +3125,25 @@ export const useSessionManager = (
         }
 
         setSessions((prev) => {
-          const paneExists = prev.some((session) =>
+          const promotablePaneExists = prev.some((session) =>
             session.panes.some(
               (pane) =>
                 isShellPane(pane) &&
                 pane.ptyId === ptyId &&
-                (pane.agentLauncher !== launcher ||
-                  pane.agentType !== agentType)
+                pane.agentType === 'generic' &&
+                !isTerminalStatus(pane.status)
             )
           )
-          if (!paneExists) {
+          if (!promotablePaneExists) {
             return prev
           }
 
           return prev.map((session) => {
             const panes = session.panes.map((pane) =>
-              isShellPane(pane) && pane.ptyId === ptyId
+              isShellPane(pane) &&
+              pane.ptyId === ptyId &&
+              pane.agentType === 'generic' &&
+              !isTerminalStatus(pane.status)
                 ? {
                     ...pane,
                     agentLauncher: launcher,

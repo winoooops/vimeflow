@@ -180,6 +180,7 @@ export const useNotificationIslandStage = ({
   const bellRef = useRef<HTMLButtonElement | null>(null)
   const toastButtonRef = useRef<HTMLButtonElement | null>(null)
   const timerRef = useRef<number | null>(null)
+  const toastHeldRef = useRef(false)
   const freshTimerRef = useRef<number | null>(null)
   const toastIdRef = useRef<string | null>(null)
   const lastToastRef = useRef<ToastDisplay | null>(null)
@@ -217,15 +218,22 @@ export const useNotificationIslandStage = ({
 
   const closeToast = useCallback((): void => {
     clearTimer()
+    toastHeldRef.current = false
     toastIdRef.current = null
     setToastId(null)
     setCoalescedCount(0)
   }, [clearTimer])
 
   const startToastDwell = useCallback((): void => {
+    toastHeldRef.current = false
     clearTimer()
     timerRef.current = window.setTimeout(closeToast, TOAST_DWELL_MS)
   }, [clearTimer, closeToast])
+
+  const holdToastDwell = useCallback((): void => {
+    toastHeldRef.current = true
+    clearTimer()
+  }, [clearTimer])
 
   const cancelPanelExit = useCallback((): void => {
     if (panelExitTimerRef.current !== null) {
@@ -315,7 +323,9 @@ export const useNotificationIslandStage = ({
     }, 300)
     cancelPanelExit()
     setPanelOpen(false)
-    startToastDwell()
+    if (!toastHeldRef.current) {
+      startToastDwell()
+    }
   }, [cancelPanelExit, closeToast, startToastDwell, visibleRecords])
 
   useEffect(() => {
@@ -603,7 +613,7 @@ export const useNotificationIslandStage = ({
     openRecord,
     dismissRecord,
     closeToast,
-    holdToastDwell: clearTimer,
+    holdToastDwell,
     startToastDwell,
   }
 }

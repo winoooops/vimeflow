@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-06
-ref_count: 101
+ref_count: 102
 ---
 
 # Async Race Conditions
@@ -1311,4 +1311,30 @@ prevent showing previous data.
 - **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
 - **Finding:** Turn-complete events were scheduled even when the pane was foreground, then only rechecked background eligibility when the settle timer fired. Navigating away during the delay could publish a notification for a completion that occurred in the foreground.
 - **Fix:** Require background eligibility before scheduling and again at timer fire, while keeping the explicit error-flag clear separate from the boolean guard. Added regression coverage for the foreground-then-navigation sequence.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 115. New notification arrival restarted a held toast dwell
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/components/notification/useNotificationIslandStage.ts`
+- **Finding:** Pointer and focus entry only cleared the current dwell timer, so a
+  later notification arrival unconditionally started a replacement timer and
+  could dismiss the toast while the user was still reading or operating it.
+- **Fix:** Track the combined held state beside the dwell timer, skip arrival
+  timers while held, and start a fresh dwell only after the final pointer/focus
+  release. Added regression coverage for an arrival during both holds.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 116. Late alias resolution restored identity on an exited pane
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** `recordPaneAgentLauncher` checked pane liveness before awaiting
+  alias configuration but did not repeat that check in its state commit, so a
+  PTY exit during the await could be overwritten with stale agent identity.
+- **Fix:** Require the matching pane to remain live and generic in both the
+  commit precheck and mapping update. Added a deferred-alias regression that
+  exits the PTY before resolution completes.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

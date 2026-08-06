@@ -5145,6 +5145,88 @@ describe('useSessionManager', () => {
     expect(aliasLoad).toHaveBeenCalledTimes(2)
   })
 
+  test('recordPaneAgentLauncher ignores an alias resolved after the pane exits', async () => {
+    let resolveAliasLoad: (aliases: AgentAlias[]) => void = vi.fn()
+
+    const aliasLoad = vi.fn(
+      () =>
+        new Promise<AgentAlias[]>((resolve) => {
+          resolveAliasLoad = resolve
+        })
+    )
+    installAgentAliases()
+
+    const bridge = window.vimeflow
+    if (bridge?.aliases === undefined) {
+      throw new Error('expected the test backend bridge to be installed')
+    }
+
+    window.vimeflow = {
+      ...bridge,
+      aliases: {
+        ...bridge.aliases,
+        load: aliasLoad,
+      },
+    }
+
+    const service = createMockService()
+    let exitCallback:
+      | ((sessionId: string, code: number | null) => void)
+      | null = null
+    service.onExit = vi.fn((callback) => {
+      exitCallback = callback
+
+      return Promise.resolve((): void => undefined)
+    })
+
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'CC --fast'))
+    await waitFor(() => expect(aliasLoad).toHaveBeenCalledOnce())
+
+    act(() => {
+      ;(exitCallback as (sessionId: string, code: number | null) => void)(
+        's1',
+        0
+      )
+    })
+
+    expect(result.current.sessions[0].panes[0]).toMatchObject({
+      status: 'completed',
+      agentType: 'generic',
+    })
+
+    await act(async () => {
+      resolveAliasLoad([agentAlias('CC', 'claude')])
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions[0].panes[0]).toMatchObject({
+      status: 'completed',
+      agentType: 'generic',
+    })
+    expect(result.current.sessions[0].panes[0].agentLauncher).toBeUndefined()
+  })
+
   test('attaches a watcher as soon as an agent launcher is submitted', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue({

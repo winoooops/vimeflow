@@ -315,6 +315,66 @@ describe('NotificationIsland', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
+  test('keeps a new arrival held until pointer and focus both leave', () => {
+    vi.useFakeTimers()
+    const initialProps = props([])
+    const { rerender } = render(<NotificationIsland {...initialProps} />)
+
+    rerender(
+      <NotificationIsland {...initialProps} records={[notification('first')]} />
+    )
+
+    const toast = screen.getByRole('status')
+
+    const toastButton = screen.getByRole('button', {
+      name: /Open notification center/,
+    })
+    fireEvent.pointerEnter(toast)
+    act(() => {
+      toastButton.focus()
+    })
+
+    rerender(
+      <NotificationIsland
+        {...initialProps}
+        records={[
+          notification('second', {
+            sessionId: 'session-2',
+            ptyId: 'pty-session-2',
+            title: 'Codex needs approval',
+            reason: 'approval-requested',
+          }),
+          notification('first'),
+        ]}
+      />
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Codex needs approval')
+
+    fireEvent.pointerLeave(toast)
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(screen.getByRole('status')).toBeInTheDocument()
+
+    act(() => {
+      toastButton.blur()
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(3999)
+    })
+    expect(screen.getByRole('status')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
   test('keeps inside pointerdown open and collapses toast on outside pointerdown', () => {
     const initialProps = props([])
     const { rerender } = render(<NotificationIsland {...initialProps} />)
