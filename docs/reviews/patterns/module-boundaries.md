@@ -2,7 +2,7 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 ref_count: 11
 ---
 
@@ -293,3 +293,12 @@ Don't widen the coupling by adding a second importer.
   `approval_id` → `request_id` → `call_id` fallback. Added a focused classifier
   regression covering the approval reason and `request_id` dedupe key.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 25. Production and mock progress timeout logic drifted
+
+- **Source:** github-claude | PR #785 round 1 | 2026-08-06
+- **Severity:** MEDIUM
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** Desktop and mock terminal services each implemented progress timeout, dedupe, and clear behavior separately, and the mock had already drifted by broadcasting expiry even when no current progress was removed.
+- **Fix:** Extracted a shared `ProgressTracker` used by both services and added a focused regression test for the guarded expiry broadcast.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

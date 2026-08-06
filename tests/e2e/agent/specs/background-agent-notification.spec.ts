@@ -222,13 +222,6 @@ describe('Background agent notifications', () => {
       await createNewSessionWithDefaults()
       await waitForVisiblePtyId(ptyA)
 
-      // `useAgentStatus` performs this same stop on session switch. Repeating
-      // it here makes the regression barrier deterministic before completion.
-      await browser.execute(async (sessionId: string) => {
-        await window.__VIMEFLOW_E2E__
-          ?.invokeBackend('stop_agent_watcher', { sessionId })
-          .catch(() => undefined)
-      }, ptyA)
       await captureUnexpectedNotificationEvents(ptyA)
       await writePty(ptyA, 'complete')
       await waitForPtyText(ptyA, 'COMPLETED 2')

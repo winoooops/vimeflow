@@ -2,7 +2,7 @@
 id: hot-path-caching
 category: backend
 created: 2026-06-09
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 ref_count: 6
 ---
 
@@ -147,4 +147,13 @@ feature.
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** Claude Stop and StopFailure hooks recovered the final assistant body by opening the transcript file and scanning from byte 0 every time. Long append-only transcripts made per-turn notification work grow with full session size and blocked the shared notification worker while unrelated sessions waited.
 - **Fix:** Added per-registration Claude transcript cursors keyed by validated transcript path. Hook notifications now read only bytes appended since the last extraction and reset cursors on source truncation or registration teardown while keeping misses retryable.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. First Claude transcript lookup still scanned from byte zero
+
+- **Source:** github-codex-connector | PR #785 round 1 | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** New Claude transcript paths seeded their cursor with zero, so the first Stop hook for a long-lived transcript could synchronously scan the entire file on the shared notification worker.
+- **Fix:** Seed first-time transcript body lookups from a bounded tail window, skip any partial first line, and retain cursor-based incremental scans afterward. Added a regression test for the bounded initial scan.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

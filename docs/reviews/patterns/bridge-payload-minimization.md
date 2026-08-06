@@ -2,7 +2,7 @@
 id: bridge-payload-minimization
 category: security
 created: 2026-06-20
-last_updated: 2026-07-15
+last_updated: 2026-08-06
 ref_count: 5
 ---
 
@@ -57,4 +57,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `crates/backend/src/agent/adapter/opencode/plugin/vimeflow-opencode-bridge.ts`
 - **Finding:** The OpenCode bridge buffered each `message.part.updated` text snapshot in memory at full size and applied the 32 KiB tail cap only when `session.idle` flushed `assistant.text`. A large prompt or verbose assistant response could therefore grow plugin memory before the intended minimization boundary ran.
 - **Fix:** Added a shared tail-clamp helper and applied it before storing text parts in `sessionTextParts`, while keeping the final joined `assistant.text` row tail-clamped as before. Added a bridge regression test that verifies large assistant text emits a bounded tail row.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 6. Claude hook transport persisted raw stdin payloads
+
+- **Source:** github-human | PR #785 round 1 | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** The generated Claude attention hook appended raw stdin for payloads below its size threshold, so unrelated prompt, body, and credential-shaped fields could enter the durable hook transport.
+- **Fix:** Rebuilt the hook record from explicit bounded routing fields only and added a regression test proving secret-shaped and body fields are omitted from the JSONL transport.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

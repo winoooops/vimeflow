@@ -123,18 +123,30 @@ export const useAgentNotificationProducers = ({
         readonly requireLifecycle: boolean
       }
     ): void => {
+      const scheduledTarget = findTarget(sessionsRef.current, ptyId)
+      if (
+        scheduledTarget === undefined ||
+        !isBackgroundTarget(scheduledTarget, activeSessionIdRef.current)
+      ) {
+        return
+      }
+
       cancelTurnComplete(ptyId)
 
       const timer = setTimeout(() => {
         completionTimers.delete(ptyId)
         const phase = phasesRef.current.get(ptyId)
         const target = findTarget(sessionsRef.current, ptyId)
+        const wasErrored = erroredPtyIdsRef.current.has(ptyId)
+        if (wasErrored) {
+          erroredPtyIdsRef.current.delete(ptyId)
+        }
 
         if (
           (candidate.requireLifecycle &&
             (phase?.phase !== 'idle' ||
               phase.agentSessionId !== candidate.agentSessionId ||
-              erroredPtyIdsRef.current.delete(ptyId))) ||
+              wasErrored)) ||
           target === undefined ||
           !isBackgroundTarget(target, activeSessionIdRef.current)
         ) {
@@ -202,8 +214,18 @@ export const useAgentNotificationProducers = ({
       )
     })
 
+    const cleanupTimers = (): void => {
+      completionTimers.forEach((timer) => clearTimeout(timer))
+      completionTimers.clear()
+      terminalAttentionTimers.forEach((timer) => clearTimeout(timer))
+      terminalAttentionTimers.clear()
+    }
+
     if (!isDesktop()) {
-      return stopTerminalAttention
+      return (): void => {
+        stopTerminalAttention()
+        cleanupTimers()
+      }
     }
 
     const lifecycle = listen<AgentLifecycleEvent>(
@@ -350,10 +372,7 @@ export const useAgentNotificationProducers = ({
       cancelled = true
       stopTerminalAttention()
       unlisten.forEach((stop) => stop())
-      completionTimers.forEach((timer) => clearTimeout(timer))
-      completionTimers.clear()
-      terminalAttentionTimers.forEach((timer) => clearTimeout(timer))
-      terminalAttentionTimers.clear()
+      cleanupTimers()
     }
   }, [])
 }

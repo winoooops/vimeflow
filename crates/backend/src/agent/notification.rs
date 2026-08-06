@@ -20,8 +20,9 @@ use crate::runtime::{serialize_event, EventSink};
 use crate::terminal::state::PtyState;
 
 const EVENT_QUEUE_CAPACITY: usize = 1024;
-const MAX_PARTIAL_LINE_BYTES: usize = 256 * 1024;
+const MAX_PARTIAL_LINE_BYTES: usize = 1024 * 1024;
 const READ_BUFFER_BYTES: usize = 64 * 1024;
+const CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES: u64 = 256 * 1024;
 const RECENT_DEDUPE_KEYS: usize = 128;
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(3);
 #[cfg(not(test))]
@@ -142,6 +143,33 @@ struct PendingOpenCodeIdle {
     occurred_at: u64,
     agent_session_id: Option<String>,
     buffered_at: Instant,
+}
+
+struct WorkerAliveGuard {
+    alive: Arc<AtomicBool>,
+    diagnostics: Arc<Mutex<MutableDiagnostics>>,
+}
+
+impl WorkerAliveGuard {
+    fn mark_alive(alive: Arc<AtomicBool>, diagnostics: Arc<Mutex<MutableDiagnostics>>) -> Self {
+        alive.store(true, Ordering::Release);
+        diagnostics
+            .lock()
+            .expect("notification diagnostics mutex poisoned")
+            .worker_alive = true;
+
+        Self { alive, diagnostics }
+    }
+}
+
+impl Drop for WorkerAliveGuard {
+    fn drop(&mut self) {
+        self.alive.store(false, Ordering::Release);
+        self.diagnostics
+            .lock()
+            .expect("notification diagnostics mutex poisoned")
+            .worker_alive = false;
+    }
 }
 
 impl Registration {
@@ -422,11 +450,8 @@ fn start_worker(
                 }
             };
 
-            alive_for_thread.store(true, Ordering::Release);
-            diagnostics
-                .lock()
-                .expect("notification diagnostics mutex poisoned")
-                .worker_alive = true;
+            let _alive_guard =
+                WorkerAliveGuard::mark_alive(alive_for_thread.clone(), diagnostics.clone());
             let _ = startup.send(Ok(()));
             run_worker(
                 &mut watcher,
@@ -438,11 +463,6 @@ fn start_worker(
                 events,
                 blocking_runtime,
             );
-            alive_for_thread.store(false, Ordering::Release);
-            diagnostics
-                .lock()
-                .expect("notification diagnostics mutex poisoned")
-                .worker_alive = false;
         })
         .map_err(|error| format!("spawn notification worker: {error}"))?;
 
@@ -1119,7 +1139,21 @@ fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Optio
     if length < *cursor {
         *cursor = 0;
     }
+    let should_skip_partial_initial_line =
+        *cursor == 0 && length > CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES;
+    if should_skip_partial_initial_line {
+        *cursor = length.saturating_sub(CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES);
+    }
     file.seek(SeekFrom::Start(*cursor)).ok()?;
+    if should_skip_partial_initial_line {
+        let mut byte = [0_u8; 1];
+        while file.read(&mut byte).ok()? == 1 {
+            *cursor += 1;
+            if byte[0] == b'\n' {
+                break;
+            }
+        }
+    }
 
     let mut latest = None;
 
@@ -1445,19 +1479,6 @@ fn apply_signal(
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
             }
-            if registration.provider == NotificationProvider::OpenCode
-                && matches!(reason, AgentNotificationReason::TurnComplete)
-            {
-                dedupe_key = registration
-                    .agent_session_id
-                    .as_deref()
-                    .map(|agent_session_id| {
-                        opencode_completion_key(
-                            agent_session_id,
-                            registration.opencode_turn_sequence,
-                        )
-                    });
-            }
             let mismatched_turn = registration.turn_id.is_some()
                 && turn_id.is_some()
                 && registration.turn_id != turn_id;
@@ -1468,21 +1489,12 @@ fn apply_signal(
                     .replay_suppressions += 1;
                 return;
             }
-            if registration.provider == NotificationProvider::OpenCode
-                && registration.opencode_turn_failed
-                && matches!(reason, AgentNotificationReason::TurnComplete)
-            {
-                diagnostics
-                    .lock()
-                    .expect("notification diagnostics mutex poisoned")
-                    .replay_suppressions += 1;
+            let Some(prepared_dedupe_key) =
+                prepare_opencode_notification(registration, reason, dedupe_key, diagnostics)
+            else {
                 return;
-            }
-            if registration.provider == NotificationProvider::OpenCode
-                && matches!(reason, AgentNotificationReason::AgentError)
-            {
-                registration.opencode_turn_failed = true;
-            }
+            };
+            dedupe_key = prepared_dedupe_key;
             if ends_turn {
                 registration.turn_active = false;
                 registration.turn_id = None;
@@ -1538,6 +1550,41 @@ fn apply_signal(
         }
         ClassifiedSignal::Irrelevant => {}
     }
+}
+
+fn prepare_opencode_notification(
+    registration: &mut Registration,
+    reason: AgentNotificationReason,
+    dedupe_key: Option<String>,
+    diagnostics: &Arc<Mutex<MutableDiagnostics>>,
+) -> Option<Option<String>> {
+    if registration.provider != NotificationProvider::OpenCode {
+        return Some(dedupe_key);
+    }
+
+    let dedupe_key = if matches!(reason, AgentNotificationReason::TurnComplete) {
+        if registration.opencode_turn_failed {
+            diagnostics
+                .lock()
+                .expect("notification diagnostics mutex poisoned")
+                .replay_suppressions += 1;
+            return None;
+        }
+        registration
+            .agent_session_id
+            .as_deref()
+            .map(|agent_session_id| {
+                opencode_completion_key(agent_session_id, registration.opencode_turn_sequence)
+            })
+    } else {
+        dedupe_key
+    };
+
+    if matches!(reason, AgentNotificationReason::AgentError) {
+        registration.opencode_turn_failed = true;
+    }
+
+    Some(dedupe_key)
 }
 
 fn flush_pending_opencode_idle(
@@ -2031,6 +2078,30 @@ mod tests {
         assert_eq!(
             latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
             Some("latest done")
+        );
+        assert_eq!(
+            cursor,
+            std::fs::metadata(&transcript).expect("metadata").len()
+        );
+    }
+
+    #[test]
+    fn initial_claude_transcript_body_scan_starts_from_bounded_tail() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        let old_line = format!(
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"stop_reason\":\"end_turn\"}}}}\n",
+            "old".repeat(100_000)
+        );
+        let latest_line =
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"tail\"}],\"stop_reason\":\"end_turn\"}}\n";
+        std::fs::write(&transcript, format!("{old_line}{latest_line}"))
+            .expect("write transcript");
+        let mut cursor = 0;
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("tail")
         );
         assert_eq!(
             cursor,

@@ -2,7 +2,7 @@
 id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 ref_count: 29
 ---
 
@@ -629,4 +629,13 @@ already exists` before the spec could assert agent status rendering.
 - **File:** `tests/e2e/terminal/specs/xterm-cursor-effects.spec.ts`
 - **Finding:** The cursor-effect smoke clicked the settings footer directly, assuming the sidebar was visible, and then relied on WebDriver key focus after closing Settings. In retained workspace states the spec could fail before the cursor-effect assertion or fail because xterm's hidden textarea focus did not stick.
 - **Fix:** Reused the same settings-opening flow as the keymap spec, waited for Settings to close, and triggered terminal input through the E2E backend PTY bridge so the smoke still exercises real terminal output without depending on OS focus.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 53. E2E regressions were masked by weakened assertions
+
+- **Source:** github-claude | PR #785 round 1 | 2026-08-06
+- **Severity:** MEDIUM
+- **File:** `tests/e2e/agent/specs/background-agent-notification.spec.ts`
+- **Finding:** Several E2E changes removed the invariant they claimed to prove: one test manually invoked the stop behavior it was meant to verify, native overlay checks dropped window/xterm assertions, and the OSC progress test did not assert notification absence.
+- **Fix:** Removed the manual stop call, restored native overlay window and stale-xterm assertions, and replaced the fixed OSC sleep with a polling assertion that also checks no unread notification badge appears.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

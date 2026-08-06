@@ -2,7 +2,7 @@
 id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-08-02
+last_updated: 2026-08-06
 ref_count: 28
 ---
 
@@ -377,4 +377,13 @@ causes listener accumulation and duplicate event handling.
 - **Fix:** Dispose the addon and clear the ref on the Off transition, while
   preserving lazy creation for future non-Off effects. Added a Body regression
   test that toggles from an enabled effect back to Off.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Notification watcher lifecycle cleanup missed stop and panic paths
+
+- **Source:** github-claude | PR #785 round 1 | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** `stop_agent_watcher` stopped the full agent watcher without unregistering the paired notification watcher, and the notification worker's alive flag was cleared only after normal `run_worker` return.
+- **Fix:** Stopped the notification watcher from `stop_agent_watcher`, added a drop guard that clears worker-alive diagnostics during unwinds, and covered stop cleanup with a backend regression test.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

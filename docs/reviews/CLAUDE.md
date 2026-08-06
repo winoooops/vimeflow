@@ -49,27 +49,27 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 36       | 28   | 2026-08-02   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 37       | 28   | 2026-08-06   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 17       | 14   | 2026-07-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 37       | 28   | 2026-07-31   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 9        | 3    | 2026-08-05   |
-| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 14       | 6    | 2026-08-05   |
+| [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 15       | 6    | 2026-08-06   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 95       | 46   | 2026-08-02   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 12       | 7    | 2026-08-02   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 107      | 99   | 2026-08-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 103      | 91   | 2026-08-02   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 4        | 2    | 2026-08-05   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 114      | 100  | 2026-08-05   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 115      | 100  | 2026-08-06   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 6        | 4    | 2026-08-05   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 5        | 5    | 2026-07-15   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 6        | 5    | 2026-08-06   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
 | [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 23       | 13   | 2026-08-05   |
@@ -84,8 +84,8 @@ When appending findings to a pattern file, label the source so future readers ca
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 2        | 1    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
-| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 52       | 29   | 2026-08-05   |
-| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 24       | 11   | 2026-08-05   |
+| [E2E Testing](patterns/e2e-testing.md)                                                               | e2e-testing        | 53       | 29   | 2026-08-06   |
+| [Module Boundaries](patterns/module-boundaries.md)                                                   | code-quality       | 25       | 11   | 2026-08-06   |
 | [Diagnostic Instrumentation](patterns/diagnostic-instrumentation.md)                                 | code-quality       | 17       | 5    | 2026-07-30   |
 | [Keyboard Shortcut Guards](patterns/keyboard-shortcut-guards.md)                                     | keyboard-shortcuts | 49       | 19   | 2026-07-26   |
 | [Verify Render Target](patterns/verify-render-target.md)                                             | code-quality       | 4        | 4    | 2026-07-22   |

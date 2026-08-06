@@ -514,6 +514,67 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
+  test('clears pending Kimi terminal attention timers in non-desktop cleanup', () => {
+    vi.useFakeTimers()
+    const publish = vi.fn()
+
+    const { unmount } = renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'kimi' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    act(() => {
+      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
+      unmount()
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  test('does not publish a foreground completion after navigation during settle', async () => {
+    installBridge()
+    const publish = vi.fn()
+    let activeSessionId = 'active'
+
+    const { rerender } = renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active', { agentType: 'codex' }),
+          session('background', 'pty-background'),
+        ],
+        activeSessionId,
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-active',
+        agentSessionId: 'agent-active',
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+      activeSessionId = 'background'
+      rerender()
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   test('coalesces Kimi completion over its terminal attention fallback', async () => {
     installBridge()
     const publish = vi.fn()

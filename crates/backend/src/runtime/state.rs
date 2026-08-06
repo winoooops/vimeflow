@@ -642,6 +642,12 @@ impl BackendState {
     }
 
     pub async fn stop_agent_watcher(&self, session_id: String) -> Result<(), String> {
+        let notifications = self.agent_notifications.clone();
+        let notification_session_id = session_id.clone();
+        tokio::task::spawn_blocking(move || notifications.stop(&notification_session_id))
+            .await
+            .map_err(|error| format!("notification stop task panicked: {error}"))?;
+
         crate::agent::adapter::stop_agent_watcher_inner(
             self.pty.clone(),
             self.agents.clone(),
@@ -1244,6 +1250,28 @@ mod tests {
         let diagnostics = state.agent_notifications.diagnostics();
         assert!(diagnostics.worker_alive);
         assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn stop_agent_watcher_unregisters_notification_watcher() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::Codex);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("rollout.jsonl");
+        std::fs::write(&source, "").expect("create notification source");
+        state
+            .agent_notifications
+            .register("pty-1".to_string(), NotificationProvider::Codex, source)
+            .expect("notification registration");
+
+        state
+            .stop_agent_watcher("pty-1".to_string())
+            .await
+            .expect("stop agent watcher");
+
+        let diagnostics = state.agent_notifications.diagnostics();
+        assert_eq!(diagnostics.active_registrations, 0);
+        assert!(!diagnostics.worker_alive);
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -2,7 +2,7 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 ref_count: 100
 ---
 
@@ -1302,4 +1302,13 @@ prevent showing previous data.
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** OpenCode `session.status: idle` was flushed at the end of the scan that first saw it. When the bridge wrote `assistant.text` or `session.idle` shortly afterward, the pending idle had already cleared, producing a body-less completion and suppressing the enriched completion that should have followed.
 - **Fix:** Keep status-idle pending through a short grace window and flush it when assistant text, explicit `session.idle`, the next busy event, or a stale no-change scan resolves it. OpenCode completion dedupe now uses the session-turn key and clears that key on the next busy edge, preventing status-idle plus session-idle double emission.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 114. Foreground completion could become a background notification during settle
+
+- **Source:** github-human | PR #785 round 1 | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Turn-complete events were scheduled even when the pane was foreground, then only rechecked background eligibility when the settle timer fired. Navigating away during the delay could publish a notification for a completion that occurred in the foreground.
+- **Fix:** Require background eligibility before scheduling and again at timer fire, while keeping the explicit error-flag clear separate from the boolean guard. Added regression coverage for the foreground-then-navigation sequence.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

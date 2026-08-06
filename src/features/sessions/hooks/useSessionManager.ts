@@ -1322,6 +1322,21 @@ export const useSessionManager = (
       let retryDelayMs = 0
       const isRestartMounted = (): boolean => restartMountedRef.current
 
+      const shouldAbortAgentWatcherAttach = (
+        pane: Pane | undefined,
+        expectedAgentType: Pane['agentType'],
+        rejectAttachedAgentSession: boolean
+      ): boolean =>
+        !isRestartMounted() ||
+        pane === undefined ||
+        isTerminalStatus(pane.status) ||
+        (rejectAttachedAgentSession && pane.agentSessionId !== undefined) ||
+        (pane.agentType !== expectedAgentType &&
+          (launcher === undefined ||
+            pane.agentType !== 'generic' ||
+            (pane.agentLauncher !== undefined &&
+              pane.agentLauncher !== launcher)))
+
       for (
         let attempt = 0;
         attempt < RESUMED_AGENT_WATCHER_MAX_ATTEMPTS;
@@ -1336,17 +1351,7 @@ export const useSessionManager = (
           .find(
             (candidate) => isShellPane(candidate) && candidate.ptyId === ptyId
           )
-        if (
-          !isRestartMounted() ||
-          pane === undefined ||
-          isTerminalStatus(pane.status) ||
-          pane.agentSessionId !== undefined ||
-          (pane.agentType !== agentType &&
-            (launcher === undefined ||
-              pane.agentType !== 'generic' ||
-              (pane.agentLauncher !== undefined &&
-                pane.agentLauncher !== launcher)))
-        ) {
+        if (shouldAbortAgentWatcherAttach(pane, agentType, true)) {
           return
         }
 
@@ -1358,16 +1363,7 @@ export const useSessionManager = (
             .find(
               (candidate) => isShellPane(candidate) && candidate.ptyId === ptyId
             )
-          if (
-            !isRestartMounted() ||
-            currentPane === undefined ||
-            isTerminalStatus(currentPane.status) ||
-            (currentPane.agentType !== agentType &&
-              (launcher === undefined ||
-                currentPane.agentType !== 'generic' ||
-                (currentPane.agentLauncher !== undefined &&
-                  currentPane.agentLauncher !== launcher)))
-          ) {
+          if (shouldAbortAgentWatcherAttach(currentPane, agentType, false)) {
             void stopAgentWatcher(ptyId)
 
             return
@@ -1376,7 +1372,7 @@ export const useSessionManager = (
           autoStartedAgentWatcherPtyIds.current.add(ptyId)
           if (
             agentSessionIdsRef.current.has(ptyId) ||
-            currentPane.agentSessionId !== undefined
+            currentPane?.agentSessionId !== undefined
           ) {
             releaseAutoStartedAgentWatcher(ptyId)
           }

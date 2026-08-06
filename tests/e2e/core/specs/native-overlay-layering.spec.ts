@@ -45,6 +45,11 @@ interface LocalDialogState {
   opacity: string
 }
 
+interface OverlayWindowState {
+  visible: boolean
+  alwaysOnTop: boolean
+}
+
 type ElectronModule = typeof import('electron')
 
 const pngSignature = Buffer.from([
@@ -308,6 +313,38 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
     return fallbackRect
   })
 
+const getLayoutCreatorOverlayWindowState =
+  async (): Promise<OverlayWindowState | null> =>
+    browser.electron.execute(async (electron: ElectronModule) => {
+      for (const overlay of electron.webContents.getAllWebContents()) {
+        const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
+
+        if (mode !== '1' && mode !== 'menu') {
+          continue
+        }
+
+        const hasLayoutCreator = (await overlay.executeJavaScript(`
+          document.querySelector('[data-workspace-overlay-id="layout-creator"]') !== null
+        `)) as boolean
+        if (!hasLayoutCreator) {
+          continue
+        }
+
+        const overlayWindow = electron.BrowserWindow.getAllWindows().find(
+          (window) => window.webContents.id === overlay.id
+        )
+
+        return overlayWindow === undefined
+          ? null
+          : {
+              visible: overlayWindow.isVisible(),
+              alwaysOnTop: overlayWindow.isAlwaysOnTop(),
+            }
+      }
+
+      return null
+    })
+
 const getLayoutCreatorOverlayDraftGrid = async (): Promise<{
   cols: number
   rows: number
@@ -549,6 +586,7 @@ const sampledPixelCount = (bounds: Bounds): number =>
 
 const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
   let lastNativePaneCount = 0
+  let lastXtermCount = 0
 
   await browser.waitUntil(
     async () => {
@@ -556,15 +594,17 @@ const waitForRealNativeGhosttyPane = async (): Promise<CssRect> => {
         nativePaneCount: document.querySelectorAll(
           '[data-testid="native-ghostty-pane"]'
         ).length,
+        xtermCount: document.querySelectorAll('.xterm').length,
       }))
       lastNativePaneCount = runtime.nativePaneCount
+      lastXtermCount = runtime.xtermCount
 
-      return runtime.nativePaneCount > 0
+      return runtime.nativePaneCount > 0 && runtime.xtermCount === 0
     },
     {
       timeout: 20_000,
       interval: 250,
-      timeoutMsg: `real Ghostty native pane did not render (${lastNativePaneCount} native panes)`,
+      timeoutMsg: `real Ghostty native pane did not replace xterm (${lastNativePaneCount} native panes, ${lastXtermCount} xterm nodes)`,
     }
   )
 
@@ -887,6 +927,12 @@ describe('NativeOverlay BrowserWindow layering', () => {
     )
     const localDialogState = await getParentLocalLayoutDialogState()
     expect(parentLocalLayoutDialogIsHidden(localDialogState)).toBe(true)
+
+    const overlayWindowState = await getLayoutCreatorOverlayWindowState()
+    expect(overlayWindowState).toEqual({
+      visible: true,
+      alwaysOnTop: true,
+    })
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 

@@ -143,15 +143,26 @@ describe('PTY progress reports', () => {
       { timeoutMsg: 'both panes did not retain independent progress' }
     )
 
-    await browser.pause(750)
-    expect(
-      await browser.execute(
-        () =>
-          document
-            .querySelector('[data-testid="session-island"]')
-            ?.getAttribute('data-state') ?? null
-      )
-    ).toBe('pill')
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => {
+          const islandState =
+            document
+              .querySelector('[data-testid="session-island"]')
+              ?.getAttribute('data-state') ?? null
+          const unreadNotificationBadge = document.querySelector(
+            'button[aria-label^="Notifications,"][aria-label$=" unread"]'
+          )
+
+          return islandState === 'pill' && unreadNotificationBadge === null
+        }),
+      {
+        timeout: 5_000,
+        interval: 100,
+        timeoutMsg:
+          'OSC progress changed pane state or created an unread notification',
+      }
+    )
 
     await writePty(secondPtyId, 'exit\r')
     await browser.waitUntil(

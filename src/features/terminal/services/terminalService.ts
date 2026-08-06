@@ -13,8 +13,7 @@ import type {
 } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
 import { DesktopTerminalService } from './desktopTerminalService'
-
-const PROGRESS_TIMEOUT_MS = 15_000
+import { ProgressTracker } from './progressTracker'
 
 /**
  * Terminal service interface for PTY operations
@@ -174,12 +173,11 @@ export class MockTerminalService implements ITerminalService {
     sessionId: string,
     running: boolean
   ) => void)[] = []
-  private progressBySession = new Map<string, PtyProgress>()
-  private progressTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private progressCallbacks: ((
     sessionId: string,
     progress: PtyProgress | undefined
   ) => void)[] = []
+  private progressTracker = new ProgressTracker(this.progressCallbacks)
 
   spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
     // Mock implementation - params unused in mock but required by interface
@@ -345,7 +343,7 @@ export class MockTerminalService implements ITerminalService {
   }
 
   getProgress(sessionId: string): PtyProgress | undefined {
-    return this.progressBySession.get(sessionId)
+    return this.progressTracker.get(sessionId)
   }
 
   onProgress(
@@ -413,50 +411,18 @@ export class MockTerminalService implements ITerminalService {
   }
 
   emitExit(sessionId: string, code: number | null): void {
-    this.setProgress(sessionId, undefined)
+    this.progressTracker.clear(sessionId)
     this.exitCallbacks.forEach((cb) => cb(sessionId, code))
   }
 
   emitProgress(sessionId: string, progress: PtyProgress | undefined): void {
-    this.setProgress(sessionId, progress)
-  }
-
-  private setProgress(
-    sessionId: string,
-    progress: PtyProgress | undefined
-  ): void {
-    const timer = this.progressTimers.get(sessionId)
-    if (timer !== undefined) {
-      clearTimeout(timer)
-      this.progressTimers.delete(sessionId)
-    }
-
-    const previous = this.progressBySession.get(sessionId)
-    if (!progress) {
-      if (this.progressBySession.delete(sessionId)) {
-        this.progressCallbacks.forEach((cb) => cb(sessionId, undefined))
-      }
+    if (progress === undefined) {
+      this.progressTracker.clear(sessionId)
 
       return
     }
 
-    this.progressBySession.set(sessionId, progress)
-
-    const nextTimer = setTimeout(() => {
-      if (this.progressTimers.get(sessionId) === nextTimer) {
-        this.progressTimers.delete(sessionId)
-        this.progressBySession.delete(sessionId)
-        this.progressCallbacks.forEach((cb) => cb(sessionId, undefined))
-      }
-    }, PROGRESS_TIMEOUT_MS)
-    this.progressTimers.set(sessionId, nextTimer)
-
-    if (
-      previous?.state !== progress.state ||
-      previous.value !== progress.value
-    ) {
-      this.progressCallbacks.forEach((cb) => cb(sessionId, progress))
-    }
+    this.progressTracker.set(sessionId, progress)
   }
 
   emitBurnerForeground(sessionId: string, running: boolean): void {
