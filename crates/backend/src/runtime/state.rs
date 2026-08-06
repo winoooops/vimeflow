@@ -610,8 +610,16 @@ impl BackendState {
         )
         .await?;
 
-        self.register_agent_notification_watcher(&session_id)
-            .await?;
+        if let Err(error) = self.register_agent_notification_watcher(&session_id).await {
+            if changed {
+                self.stop_agent_watcher(session_id)
+                    .await
+                    .map_err(|rollback| {
+                        format!("{error}; failed to roll back agent watcher: {rollback}")
+                    })?;
+            }
+            return Err(error);
+        }
 
         Ok(changed)
     }
@@ -1268,6 +1276,29 @@ mod tests {
             state.agent_notifications.diagnostics().active_registrations,
             0
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_watcher_start_rolls_back_when_notification_registration_fails() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::ClaudeCode);
+        let status_path = crate::agent::adapter::claude_code::bridge::session_status_file(
+            &state.app_data_dir,
+            std::path::Path::new("/tmp"),
+            "pty-1",
+        );
+        std::fs::create_dir_all(status_path.parent().expect("status parent"))
+            .expect("create status parent");
+        std::fs::write(&status_path, r#"{"session_id":"sid","model":{}}"#)
+            .expect("create status source");
+
+        let error = state
+            .start_agent_watcher("pty-1".to_string(), None)
+            .await
+            .expect_err("missing attention source should reject attachment");
+
+        assert!(error.contains("notification watcher registration failed"));
+        assert!(!state.agents.contains("pty-1"));
     }
 
     #[tokio::test(flavor = "current_thread")]

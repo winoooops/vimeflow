@@ -3,7 +3,7 @@ id: error-surfacing
 category: error-handling
 created: 2026-04-10
 last_updated: 2026-08-06
-ref_count: 59
+ref_count: 60
 ---
 
 # Error Surfacing
@@ -586,4 +586,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `crates/backend/src/runtime/state.rs`
 - **Finding:** `start_agent_watcher` logged notification registration failures but still returned success, preventing the frontend's existing bounded retry loops from reattaching semantic notification producers.
 - **Fix:** Propagate worker startup and registration errors through the IPC result while leaving the full watcher available for an idempotent retry. Added a focused regression for an invalid notification source.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 57. Failed notification registration leaked a newly installed full watcher
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** `start_agent_watcher` installed or replaced the full watcher before notification registration could fail. The returned error hid that successful mutation, so callers that exhausted their bounded retries could abandon a live watcher and its transcript threads without cleanup ownership.
+- **Fix:** Roll back the full watcher when notification registration fails after a changed start, while preserving an existing Codex watcher after a no-op start. Added a composed-start regression that verifies the failed call leaves no full watcher behind.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

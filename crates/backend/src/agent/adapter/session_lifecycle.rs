@@ -979,11 +979,10 @@ impl SessionLifecycle {
             |shell_pid| {
                 let detected = detect_agent(shell_pid);
 
-                #[cfg(feature = "e2e-test")]
+                #[cfg(any(test, feature = "e2e-test"))]
                 {
-                    // E2E tests seed the watcher map instead of launching a real
-                    // Claude/Codex process, but still exercise the normal watcher
-                    // startup and status-file emission path.
+                    // Tests seed the watcher map instead of launching a real agent,
+                    // but still exercise the normal watcher startup path.
                     detected.or_else(|| {
                         self.watcher_state
                             .agent_type_for_pty(&session_id)
@@ -991,7 +990,7 @@ impl SessionLifecycle {
                     })
                 }
 
-                #[cfg(not(feature = "e2e-test"))]
+                #[cfg(not(any(test, feature = "e2e-test")))]
                 {
                     detected
                 }
