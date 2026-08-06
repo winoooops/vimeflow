@@ -2,8 +2,8 @@
 id: event-identity-guard
 category: backend
 created: 2026-06-11
-last_updated: 2026-08-05
-ref_count: 2
+last_updated: 2026-08-06
+ref_count: 3
 ---
 
 # Event Identity Guard
@@ -48,4 +48,18 @@ Events that carry an identity field for deduplication, stale-event rejection, or
 - **File:** `crates/backend/src/agent/notification.rs`, `src/features/sessions/hooks/useNotificationCenter.ts`
 - **Finding:** OpenCode completion events reused `turn:<agentSessionId>` after each busy edge, but the renderer retained that key in notification history and suppressed every later completion for the same session.
 - **Fix:** Added a per-registration OpenCode turn sequence to completion keys so status-idle and session-idle duplicates share one identity while later turns receive distinct identities. Added backend and renderer regressions for the cross-layer contract.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 5. Delayed Claude hooks used watcher scan time as occurrence time
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** Minimized Claude hook records omitted both identity and occurrence
+  time, so delayed filesystem reconciliation stamped an old completion as newer
+  than the following turn's running lifecycle event.
+- **Fix:** Added a privacy-safe hook-execution timestamp to every generated
+  record without reading hook stdin, allowing the existing renderer staleness
+  guard to reject delayed completions. Added generation and pane-state
+  regressions.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

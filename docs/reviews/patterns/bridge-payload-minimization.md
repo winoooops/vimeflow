@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-08-06
-ref_count: 8
+ref_count: 9
 ---
 
 # Bridge Payload Minimization

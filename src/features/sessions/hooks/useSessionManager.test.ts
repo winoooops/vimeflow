@@ -1336,7 +1336,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].agentPhase).toBe('running')
   })
 
-  test('an older completion cannot settle a newer running turn', async () => {
+  test('a delayed Claude Stop cannot settle a newer running turn', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
 
@@ -1350,7 +1350,7 @@ describe('useSessionManager', () => {
     act(() => {
       getLifecycleCallback()?.({
         sessionId: 'a',
-        agentSessionId: 'agent-current',
+        agentSessionId: 'claude-current',
         phase: 'running',
         occurredAt: BigInt(20),
       })
@@ -1359,10 +1359,10 @@ describe('useSessionManager', () => {
         ptyId: 'a',
         agentSessionId: null,
         reason: 'turn-complete',
-        title: 'Delayed completion',
+        title: 'Claude finished',
         body: null,
         occurredAt: BigInt(10),
-        dedupeKey: 'turn-old',
+        dedupeKey: null,
       })
     })
 

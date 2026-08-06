@@ -3,7 +3,7 @@ id: generated-shell-scripts
 category: backend
 created: 2026-06-02
 last_updated: 2026-08-06
-ref_count: 5
+ref_count: 6
 ---
 
 # Generated Shell Scripts

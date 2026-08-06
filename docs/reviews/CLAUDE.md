@@ -54,22 +54,22 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
 | [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 39       | 31   | 2026-08-06   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
-| [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 10       | 5    | 2026-08-06   |
+| [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 10       | 6    | 2026-08-06   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 15       | 6    | 2026-08-06   |
 | [Testing Gaps](patterns/testing-gaps.md)                                                             | testing            | 95       | 46   | 2026-08-02   |
 | [Terminal Input Handling](patterns/terminal-input-handling.md)                                       | terminal           | 12       | 7    | 2026-08-02   |
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 107      | 99   | 2026-08-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 104      | 92   | 2026-08-06   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
-| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 4        | 2    | 2026-08-05   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 116      | 104  | 2026-08-06   |
+| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 5        | 3    | 2026-08-06   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 116      | 105  | 2026-08-06   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 6        | 4    | 2026-08-05   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 8        | 8    | 2026-08-06   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 8        | 9    | 2026-08-06   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
 | [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 23       | 13   | 2026-08-05   |
@@ -105,11 +105,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 20       | 13   | 2026-07-31   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 3        | 2    | 2026-07-26   |
 | [String Protocol Coupling](patterns/string-protocol-coupling.md)                                     | code-quality       | 3        | 2    | 2026-08-02   |
-| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 12   | 2026-07-05   |
+| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 13   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 18       | 11   | 2026-08-06   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 19       | 12   | 2026-08-06   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 5        | 6    | 2026-08-02   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |

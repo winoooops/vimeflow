@@ -73,14 +73,6 @@ export const useAgentNotificationProducers = ({
     // agent notifications or the legacy lifecycle fallback.
     const completionTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
-    // Per-PTY grace timers for ambiguous terminal BEL/OSC signals. A nearby
-    // normalized notification from the same semantic-agent pane cancels the
-    // fallback before it publishes attention.
-    const terminalAttentionTimers = new Map<
-      string,
-      ReturnType<typeof setTimeout>
-    >()
-
     const cancelTurnComplete = (ptyId: string): void => {
       const timer = completionTimers.get(ptyId)
       if (timer === undefined) {
@@ -89,16 +81,6 @@ export const useAgentNotificationProducers = ({
 
       clearTimeout(timer)
       completionTimers.delete(ptyId)
-    }
-
-    const cancelTerminalAttention = (ptyId: string): void => {
-      const timer = terminalAttentionTimers.get(ptyId)
-      if (timer === undefined) {
-        return
-      }
-
-      clearTimeout(timer)
-      terminalAttentionTimers.delete(ptyId)
     }
 
     const scheduleTurnComplete = (
@@ -156,51 +138,27 @@ export const useAgentNotificationProducers = ({
       const target = findTarget(sessionsRef.current, payload.ptyId)
       if (
         target === undefined ||
-        !isBackgroundTarget(target, activeSessionIdRef.current)
+        !isBackgroundTarget(target, activeSessionIdRef.current) ||
+        SEMANTIC_AGENT_TYPES.has(target.pane.agentType)
       ) {
         return
       }
 
-      const publishTerminalAttention = (): void => {
-        terminalAttentionTimers.delete(payload.ptyId)
-        const currentTarget = findTarget(sessionsRef.current, payload.ptyId)
-        if (
-          currentTarget === undefined ||
-          !isBackgroundTarget(currentTarget, activeSessionIdRef.current)
-        ) {
-          return
-        }
-
-        publishRef.current({
-          sessionId: currentTarget.session.id,
-          ptyId: currentTarget.pane.ptyId,
-          reason: 'terminal-attention',
-          title: 'Terminal requested attention',
-          ...(payload.body === undefined || payload.body.length === 0
-            ? {}
-            : { body: payload.body }),
-          occurredAt: Date.now(),
-        })
-      }
-
-      if (!SEMANTIC_AGENT_TYPES.has(target.pane.agentType)) {
-        publishTerminalAttention()
-
-        return
-      }
-
-      cancelTerminalAttention(payload.ptyId)
-      terminalAttentionTimers.set(
-        payload.ptyId,
-        setTimeout(publishTerminalAttention, TURN_COMPLETE_SETTLE_DELAY_MS)
-      )
+      publishRef.current({
+        sessionId: target.session.id,
+        ptyId: target.pane.ptyId,
+        reason: 'terminal-attention',
+        title: 'Terminal requested attention',
+        ...(payload.body === undefined || payload.body.length === 0
+          ? {}
+          : { body: payload.body }),
+        occurredAt: Date.now(),
+      })
     })
 
     const cleanupTimers = (): void => {
       completionTimers.forEach((timer) => clearTimeout(timer))
       completionTimers.clear()
-      terminalAttentionTimers.forEach((timer) => clearTimeout(timer))
-      terminalAttentionTimers.clear()
     }
 
     if (!isDesktop()) {
@@ -257,8 +215,6 @@ export const useAgentNotificationProducers = ({
         if (target === undefined) {
           return
         }
-
-        cancelTerminalAttention(payload.ptyId)
 
         if (payload.reason === 'turn-complete') {
           scheduleTurnComplete(payload.ptyId, {

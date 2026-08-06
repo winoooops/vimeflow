@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-06
-ref_count: 11
+ref_count: 12
 ---
 
 # Authoritative Completion Guard
@@ -243,4 +243,17 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Fix:** Cancel the existing same-PTY completion timer when agent-error
   arrives, while allowing a later completion event to schedule a fresh timer.
   Added fake-timer regressions for both event orders.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 19. Terminal fallback beat semantic watcher recovery
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Semantic-agent panes published terminal attention after 750 ms,
+  before the backend's three-second filesystem reconciliation bound, so a
+  delayed semantic completion produced a second notification.
+- **Fix:** Restored provider gating: Claude, Codex, Kimi, and OpenCode panes use
+  semantic notifications exclusively, while generic terminal panes retain
+  immediate BEL/OSC attention. Added a fake-timer recovery regression.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

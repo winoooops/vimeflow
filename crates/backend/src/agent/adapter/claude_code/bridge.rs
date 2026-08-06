@@ -16,6 +16,13 @@ use std::path::{Path, PathBuf};
 const BRIDGE_RUNTIME_DIR: &str = "runtime";
 const BRIDGE_WORKSPACES_DIR: &str = "workspaces";
 const BRIDGE_SESSIONS_DIR: &str = "sessions";
+// BSD date lacks fractional seconds; JXA provides native millisecond precision
+// so rapid follow-up turns remain correctly ordered on macOS.
+#[cfg(target_os = "macos")]
+const HOOK_TIMESTAMP_COMMAND: &str =
+    "/usr/bin/osascript -l JavaScript -e 'new Date().toISOString()'";
+#[cfg(not(target_os = "macos"))]
+const HOOK_TIMESTAMP_COMMAND: &str = "/bin/date -u +%Y-%m-%dT%H:%M:%S.%3NZ";
 
 /// Result of generating statusline bridge files
 #[derive(Debug, Clone)]
@@ -316,12 +323,15 @@ pub fn generate_bridge_files(
 
     // Generate the settings.json overlay using serde_json for proper escaping
     let signal_hook = |record: serde_json::Value| {
+        let mut record_prefix = record.to_string();
+        record_prefix.pop();
+        record_prefix.push_str(",\"timestamp\":\"");
         serde_json::json!({
             "hooks": [{
                 "type": "command",
                 "command": format!(
-                    "printf '%s\\n' {} >> \"$VIMEFLOW_ATTENTION_FILE\"",
-                    shell_quote_path(&record.to_string()),
+                    "printf '%s%s%s\\n' {} \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
+                    shell_quote_path(&record_prefix),
                 )
             }]
         })
@@ -669,11 +679,20 @@ mod tests {
             assert!(child.wait().expect("wait hook").success());
         }
 
-        let records = fs::read_to_string(&files.attention_file_path)
+        let mut records = fs::read_to_string(&files.attention_file_path)
             .expect("attention file")
             .lines()
             .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("hook record"))
             .collect::<Vec<_>>();
+        assert!(records.iter().all(|record| record["timestamp"]
+            .as_str()
+            .is_some_and(|timestamp| chrono::DateTime::parse_from_rfc3339(timestamp).is_ok())));
+        for record in &mut records {
+            record
+                .as_object_mut()
+                .expect("hook record object")
+                .remove("timestamp");
+        }
         assert_eq!(
             records,
             vec![
