@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-08-02
-ref_count: 11
+last_updated: 2026-08-05
+ref_count: 12
 ---
 
 # IPC Resource Bounds
@@ -275,3 +275,12 @@ not become repeated unhandled main-process failures.
   main-process action type and validator, and covered both the empty-update and
   oversized-close-action cases in native overlay tests.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Notification dedupe identifiers were retained and emitted unbounded
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-05
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Provider-controlled session, turn, and dedupe identifiers could retain and emit nearly the full 256 KiB JSONL line, multiplying memory use across the recent-key cache and sending oversized renderer events.
+- **Fix:** Truncate owned provider identifiers to 256 characters before state retention, dedupe, or event emission, with a regression covering retained and serialized values.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

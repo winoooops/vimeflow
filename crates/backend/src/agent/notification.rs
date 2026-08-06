@@ -29,6 +29,7 @@ const OPENCODE_IDLE_FLUSH_GRACE: Duration = Duration::from_secs(2);
 #[cfg(test)]
 const OPENCODE_IDLE_FLUSH_GRACE: Duration = Duration::from_millis(1);
 const MAX_NOTIFICATION_BODY_CHARS: usize = 80;
+const MAX_PROVIDER_IDENTIFIER_CHARS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -993,6 +994,9 @@ struct ClaudeEnvelope {
     tool_use_id: Option<String>,
     session_id: Option<String>,
     transcript_path: Option<String>,
+    #[serde(default)]
+    error: Value,
+    error_details: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1029,13 +1033,16 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             "StopFailure" => (AgentNotificationReason::AgentError, false, true),
             _ => return Ok(ClassifiedSignal::Irrelevant),
         };
+        let body = matches!(reason, AgentNotificationReason::AgentError)
+            .then(|| provider_error_body(&envelope.error, envelope.error_details.as_deref()))
+            .flatten();
         return Ok(ClassifiedSignal::Notification {
             reason,
             occurred_at,
             dedupe_key: envelope.tool_use_id,
             turn_id: None,
             agent_session_id: envelope.session_id,
-            body: None,
+            body,
             transcript_path: envelope.transcript_path,
             requires_active_turn,
             ends_turn,
@@ -1084,16 +1091,8 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
 
 fn claude_hook_body(
     registration: &mut Registration,
-    reason: AgentNotificationReason,
     transcript_path: Option<&str>,
 ) -> Option<String> {
-    if !matches!(
-        reason,
-        AgentNotificationReason::TurnComplete | AgentNotificationReason::AgentError
-    ) {
-        return None;
-    }
-
     let transcript_path = transcript_path?;
     let path =
         crate::agent::adapter::claude_code::transcript::validate_transcript_path(transcript_path)
@@ -1253,6 +1252,8 @@ struct OpenCodeData {
     session_id: Option<String>,
     status: Option<OpenCodeStatus>,
     text: Option<String>,
+    #[serde(default)]
+    error: Value,
 }
 
 #[derive(Deserialize)]
@@ -1303,7 +1304,7 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             }),
             turn_id: None,
             agent_session_id,
-            body: None,
+            body: provider_error_body(&envelope.data.error, None),
             transcript_path: None,
             requires_active_turn: false,
             ends_turn: true,
@@ -1349,7 +1350,7 @@ fn opencode_completion(occurred_at: u64, agent_session_id: Option<String>) -> Cl
 }
 
 fn opencode_completion_key(agent_session_id: &str) -> String {
-    format!("turn:{agent_session_id}")
+    bound_provider_identifier(format!("turn:{agent_session_id}"))
 }
 
 fn apply_signal(
@@ -1360,7 +1361,7 @@ fn apply_signal(
 ) {
     match signal {
         ClassifiedSignal::Session(agent_session_id) => {
-            registration.agent_session_id = Some(agent_session_id);
+            registration.agent_session_id = Some(bound_provider_identifier(agent_session_id));
         }
         ClassifiedSignal::AssistantText(text) => {
             if let Some(body) = normalize_notification_body(&text) {
@@ -1372,6 +1373,7 @@ fn apply_signal(
             occurred_at,
             agent_session_id,
         } => {
+            let agent_session_id = agent_session_id.map(bound_provider_identifier);
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id.clone();
             }
@@ -1385,6 +1387,8 @@ fn apply_signal(
             turn_id,
             agent_session_id,
         } => {
+            let turn_id = turn_id.map(bound_provider_identifier);
+            let agent_session_id = agent_session_id.map(bound_provider_identifier);
             flush_pending_opencode_idle(registration, diagnostics, events);
             if registration.provider == NotificationProvider::OpenCode {
                 if let Some(agent_session_id) = agent_session_id.as_deref() {
@@ -1399,6 +1403,7 @@ fn apply_signal(
             registration.notification_body = None;
         }
         ClassifiedSignal::TurnSettled { turn_id } => {
+            let turn_id = turn_id.map(bound_provider_identifier);
             let mismatched_turn = registration.turn_id.is_some()
                 && turn_id.is_some()
                 && registration.turn_id != turn_id;
@@ -1425,6 +1430,9 @@ fn apply_signal(
             requires_active_turn,
             ends_turn,
         } => {
+            let dedupe_key = dedupe_key.map(bound_provider_identifier);
+            let turn_id = turn_id.map(bound_provider_identifier);
+            let agent_session_id = agent_session_id.map(bound_provider_identifier);
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
             }
@@ -1449,8 +1457,9 @@ fn apply_signal(
             } else {
                 None
             };
-            let transcript_body =
-                claude_hook_body(registration, reason, transcript_path.as_deref());
+            let transcript_body = matches!(reason, AgentNotificationReason::TurnComplete)
+                .then(|| claude_hook_body(registration, transcript_path.as_deref()))
+                .flatten();
             let body = body
                 .as_deref()
                 .and_then(normalize_notification_body)
@@ -1559,6 +1568,21 @@ fn normalize_notification_body(message: &str) -> Option<String> {
     }
 
     Some(body)
+}
+
+fn provider_error_body(error: &Value, fallback: Option<&str>) -> Option<String> {
+    error
+        .as_str()
+        .or_else(|| error.get("message").and_then(Value::as_str))
+        .or(fallback)
+        .and_then(normalize_notification_body)
+}
+
+fn bound_provider_identifier(mut identifier: String) -> String {
+    if let Some((index, _)) = identifier.char_indices().nth(MAX_PROVIDER_IDENTIFIER_CHARS) {
+        identifier.truncate(index);
+    }
+    identifier
 }
 
 fn notification_action_body(reason: AgentNotificationReason) -> Option<&'static str> {
@@ -1894,6 +1918,49 @@ mod tests {
     }
 
     #[test]
+    fn claude_stop_failure_emits_bounded_provider_error_details() {
+        let cases = [
+            (
+                serde_json::json!({
+                    "hook_event_name": "StopFailure",
+                    "error": { "message": "界".repeat(81) },
+                }),
+                format!("{}…", "界".repeat(79)),
+            ),
+            (
+                serde_json::json!({
+                    "hook_event_name": "StopFailure",
+                    "error_details": "hook process exited",
+                }),
+                "hook process exited".to_string(),
+            ),
+        ];
+
+        for (line, expected_body) in cases {
+            let mut registration = Registration::new(
+                "pty-claude".to_string(),
+                1,
+                NotificationProvider::ClaudeCode,
+                PathBuf::from("attention.jsonl"),
+                0,
+            );
+            let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+            let sink = FakeEventSink::new();
+
+            apply_signal(
+                &mut registration,
+                classify_claude(line.to_string().as_bytes()).expect("valid Claude hook"),
+                &diagnostics,
+                &sink,
+            );
+
+            let payload = sink.recorded()[0].1.clone();
+            assert_eq!(payload["reason"], "agent-error");
+            assert_eq!(payload["body"], expected_body);
+        }
+    }
+
+    #[test]
     fn claude_stop_hook_body_reads_latest_completed_transcript_text() {
         let temp = tempfile::tempdir().expect("tempdir");
         let transcript = temp.path().join("claude.jsonl");
@@ -1968,6 +2035,79 @@ mod tests {
 
         assert_eq!(body.chars().count(), 80);
         assert_eq!(body, format!("{}…", "界".repeat(79)));
+    }
+
+    #[test]
+    fn provider_identifiers_are_bounded_before_retention_and_emission() {
+        let oversized = "界".repeat(300);
+        let mut registration = Registration::new(
+            "pty-codex".to_string(),
+            1,
+            NotificationProvider::Codex,
+            PathBuf::from("rollout.jsonl"),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+
+        apply_signal(
+            &mut registration,
+            ClassifiedSignal::TurnStarted {
+                turn_id: Some(oversized.clone()),
+                agent_session_id: Some(oversized.clone()),
+            },
+            &diagnostics,
+            &sink,
+        );
+        assert_eq!(
+            registration
+                .turn_id
+                .as_deref()
+                .expect("turn id")
+                .chars()
+                .count(),
+            256
+        );
+
+        apply_signal(
+            &mut registration,
+            ClassifiedSignal::Notification {
+                reason: AgentNotificationReason::ApprovalRequested,
+                occurred_at: 1,
+                dedupe_key: Some(oversized.clone()),
+                turn_id: None,
+                agent_session_id: Some(oversized),
+                body: None,
+                transcript_path: None,
+                requires_active_turn: false,
+                ends_turn: false,
+            },
+            &diagnostics,
+            &sink,
+        );
+
+        let payload = sink.recorded()[0].1.clone();
+        assert_eq!(
+            payload["agentSessionId"]
+                .as_str()
+                .expect("agent session id")
+                .chars()
+                .count(),
+            256
+        );
+        assert_eq!(
+            payload["dedupeKey"]
+                .as_str()
+                .expect("dedupe key")
+                .chars()
+                .count(),
+            256
+        );
+        assert_eq!(
+            registration.dedupe_order[0].chars().count(),
+            256,
+            "retained dedupe key must use the emitted bound"
+        );
     }
 
     #[test]
@@ -2124,7 +2264,7 @@ mod tests {
             .expect("open bridge stream");
         writeln!(
             file,
-            r#"{{"v":1,"ts":2,"kind":"event","type":"session.error","data":{{"id":"error-live","sessionID":"ses1","error":{{"name":"ProviderError"}}}}}}"#
+            r#"{{"v":1,"ts":2,"kind":"event","type":"session.error","data":{{"id":"error-live","sessionID":"ses1","error":{{"name":"ProviderError","message":"Model stopped responding"}}}}}}"#
         )
         .expect("append live error");
         file.flush().expect("flush bridge stream");
@@ -2133,6 +2273,7 @@ mod tests {
 
         assert_eq!(sink.count("agent-notification"), 1);
         assert_eq!(sink.recorded()[0].1["reason"], "agent-error");
+        assert_eq!(sink.recorded()[0].1["body"], "Model stopped responding");
     }
 
     #[test]

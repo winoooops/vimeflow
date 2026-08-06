@@ -3,7 +3,7 @@ id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
 last_updated: 2026-08-05
-ref_count: 3
+ref_count: 4
 ---
 
 # Tokio Blocking On Async Worker
@@ -64,4 +64,13 @@ original Tauri command wording.
 - **File:** `crates/backend/src/runtime/state.rs`, `crates/backend/src/agent/notification.rs`
 - **Finding:** PTY kill handlers synchronously waited for notification-worker acknowledgements and dropped full watcher handles whose teardown joins OS threads, while reconciliation performed the same drop on the only notification scanner thread. Session churn could therefore starve Tokio workers and serialize unrelated notification delivery.
 - **Fix:** Moved each full PTY kill and its watcher teardown into one `spawn_blocking` task, batching ephemeral cleanup in one task. Reconciliation now detaches the exact stale handles before dispatching their blocking `Drop` through the captured Tokio runtime, with a standalone-thread fallback for runtime-free tests.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 6. Notification registration blocked async watcher startup
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-05
+- **Severity:** MEDIUM
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** Async watcher startup directly performed notification-source filesystem calls and waited for a synchronous worker acknowledgement, parking the Tokio worker during slow or queued registration.
+- **Fix:** Run the existing synchronous registration handshake through `tokio::task::spawn_blocking`, await it, and preserve the prior non-fatal warning behavior.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

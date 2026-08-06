@@ -623,9 +623,14 @@ impl BackendState {
                     &source_path,
                 );
             }
-            if let Err(error) =
-                self.agent_notifications
-                    .register(session_id.clone(), provider, source_path)
+            let notifications = self.agent_notifications.clone();
+            let notification_session_id = session_id.clone();
+            if let Err(error) = tokio::task::spawn_blocking(move || {
+                notifications.register(notification_session_id, provider, source_path)
+            })
+            .await
+            .map_err(|error| format!("notification registration task panicked: {error}"))
+            .and_then(|result| result)
             {
                 log::warn!(
                     "notification watcher registration failed for {session_id} ({provider:?}): {error}"
