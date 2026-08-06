@@ -65,7 +65,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 114      | 99   | 2026-08-05   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 5        | 3    | 2026-08-05   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
@@ -105,11 +105,11 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 20       | 13   | 2026-07-31   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 3        | 2    | 2026-07-26   |
 | [String Protocol Coupling](patterns/string-protocol-coupling.md)                                     | code-quality       | 3        | 2    | 2026-08-02   |
-| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 11   | 2026-07-05   |
+| [Agent-State Guards](patterns/agent-state-guards.md)                                                 | correctness        | 15       | 12   | 2026-07-05   |
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 13       | 6    | 2026-08-05   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 15       | 7    | 2026-08-05   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 5        | 6    | 2026-08-02   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |

@@ -552,13 +552,15 @@ impl AgentWatcherState {
     /// removed `WatcherHandle` drops outside the mutex (Claude review
     /// on PR #152, F7).
     pub fn remove(&self, session_id: &str) -> bool {
-        let handle = {
-            let mut watchers = self.watchers.lock().expect("failed to lock watchers");
-            watchers.remove(session_id)
-        };
-        handle.is_some()
-        // `handle: Option<WatcherHandle>` drops at end of function,
-        // after the lock guard above has already gone out of scope.
+        self.take(session_id).is_some()
+    }
+
+    /// Detach a watcher so its blocking `Drop` can run in a caller-owned context.
+    pub(crate) fn take(&self, session_id: &str) -> Option<WatcherHandle> {
+        self.watchers
+            .lock()
+            .expect("failed to lock watchers")
+            .remove(session_id)
     }
 
     /// Check if a session has an active watcher

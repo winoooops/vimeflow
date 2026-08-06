@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-05
-ref_count: 6
+ref_count: 7
 ---
 
 # Authoritative Completion Guard
@@ -190,3 +190,21 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Finding:** The shared notification apply guard dropped provider completions with `requires_active_turn` when the watcher attached after the start record but before the completion record. The appended completion was live relative to the EOF cursor, so the active-turn requirement incorrectly treated it as replay.
 - **Fix:** Mark provider completion classifiers as not requiring a locally observed active turn and keep the existing mismatch guard for turn IDs that were actually seen. The regression test seeds a start before the cursor, appends only the completion, and asserts one notification is emitted.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Interrupted Codex turns were published as successful completions
+
+- **Source:** local-codex | PR #785 round 2 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** The notification classifier mapped both `task_complete` and `turn_aborted` to `TurnComplete`, so an interrupted turn produced a misleading “Codex finished” notification even though the transcript lifecycle already treated the abort as an idle edge.
+- **Fix:** Kept `task_complete` as the only completion notification and mapped `turn_aborted` to an internal non-publishing settle signal that clears notification turn state. Added a regression covering the interrupted reason.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 15. Live OpenCode errors required an observed start edge
+
+- **Source:** local-codex | PR #785 round 2 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** `session.error` required `turn_active`, but EOF-based registration can occur after the matching busy record. A genuinely live error appended after registration was suppressed as replay.
+- **Fix:** Treated post-registration `session.error` as authoritative terminal evidence without requiring a locally observed start edge, retaining provider identity and dedupe guards. Added a mid-turn registration regression.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

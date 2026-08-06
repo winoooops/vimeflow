@@ -27,6 +27,19 @@ use super::event_sink::EventSink;
 
 const MAX_REVIEW_REPOSITORY_IDS: usize = 128;
 
+fn teardown_agent_sessions(
+    notifications: &NotificationWatcherService,
+    agents: &AgentWatcherState,
+    transcripts: &TranscriptState,
+    session_ids: &[String],
+) {
+    for session_id in session_ids {
+        notifications.stop(session_id);
+        agents.remove(session_id);
+        transcripts.forget_recovery_source(session_id);
+    }
+}
+
 fn no_live_agent_error(pty_id: &str) -> RenameAgentSessionError {
     RenameAgentSessionError::new(
         RenameAgentSessionErrorReason::NoLiveAgent,
@@ -149,7 +162,13 @@ impl BackendState {
 
     pub fn shutdown(&self) {
         // Best-effort kill of burner PTYs (reap-on-boot is the authoritative net).
-        let _ = self.kill_ephemeral_ptys();
+        let killed = crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty);
+        teardown_agent_sessions(
+            &self.agent_notifications,
+            &self.agents,
+            &self.transcripts,
+            &killed,
+        );
         if let Err(err) = self.sessions.clear_all() {
             log::warn!("BackendState::shutdown: cache clear failed: {err}");
         }
@@ -358,24 +377,43 @@ impl BackendState {
         crate::terminal::commands::resize_pty_inner(&self.pty, request)
     }
 
-    pub fn kill_pty(&self, request: crate::terminal::types::KillPtyRequest) -> Result<(), String> {
-        let session_id = request.session_id.clone();
-        crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)?;
-        self.agent_notifications.stop(&session_id);
-        self.agents.remove(&session_id);
-        self.transcripts.forget_recovery_source(&session_id);
-        Ok(())
+    pub async fn kill_pty(
+        &self,
+        request: crate::terminal::types::KillPtyRequest,
+    ) -> Result<(), String> {
+        let pty = self.pty.clone();
+        let sessions = self.sessions.clone();
+        let notifications = self.agent_notifications.clone();
+        let agents = self.agents.clone();
+        let transcripts = self.transcripts.clone();
+        tokio::task::spawn_blocking(move || {
+            let session_id = request.session_id.clone();
+            crate::terminal::commands::kill_pty_inner(&pty, &sessions, request)?;
+            teardown_agent_sessions(
+                &notifications,
+                &agents,
+                &transcripts,
+                std::slice::from_ref(&session_id),
+            );
+            Ok(())
+        })
+        .await
+        .map_err(|error| format!("kill_pty task panicked: {error}"))?
     }
 
     /// Reap all ephemeral (burner) PTYs. Returns the ids killed.
-    pub fn kill_ephemeral_ptys(&self) -> Vec<String> {
-        let killed = crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty);
-        for session_id in &killed {
-            self.agent_notifications.stop(session_id);
-            self.agents.remove(session_id);
-            self.transcripts.forget_recovery_source(session_id);
-        }
-        killed
+    pub async fn kill_ephemeral_ptys(&self) -> Result<Vec<String>, String> {
+        let pty = self.pty.clone();
+        let notifications = self.agent_notifications.clone();
+        let agents = self.agents.clone();
+        let transcripts = self.transcripts.clone();
+        tokio::task::spawn_blocking(move || {
+            let killed = crate::terminal::commands::kill_ephemeral_ptys_inner(&pty);
+            teardown_agent_sessions(&notifications, &agents, &transcripts, &killed);
+            killed
+        })
+        .await
+        .map_err(|error| format!("kill_ephemeral_ptys task panicked: {error}"))
     }
 
     pub fn list_sessions(&self) -> Result<crate::terminal::types::SessionList, String> {
@@ -1040,6 +1078,34 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct SlowExitChild;
+
+    impl portable_pty::ChildKiller for SlowExitChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(SlowExitChild)
+        }
+    }
+
+    impl portable_pty::Child for SlowExitChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            Ok(Some(portable_pty::ExitStatus::with_exit_code(0)))
+        }
+
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            Ok(portable_pty::ExitStatus::with_exit_code(0))
+        }
+
+        fn process_id(&self) -> Option<u32> {
+            Some(1)
+        }
+    }
+
     fn make_capturing_session(writes: Arc<Mutex<Vec<u8>>>) -> ManagedSession {
         make_capturing_session_with_hook(writes, None)
     }
@@ -1060,6 +1126,15 @@ mod tests {
         on_write: Option<Arc<dyn Fn() + Send + Sync>>,
         fail: bool,
     ) -> ManagedSession {
+        make_capturing_session_with_child(writes, on_write, fail, Box::new(NoopChild))
+    }
+
+    fn make_capturing_session_with_child(
+        writes: Arc<Mutex<Vec<u8>>>,
+        on_write: Option<Arc<dyn Fn() + Send + Sync>>,
+        fail: bool,
+        child: Box<dyn portable_pty::Child + Send + Sync>,
+    ) -> ManagedSession {
         use portable_pty::{native_pty_system, PtySize};
 
         let pty_system = native_pty_system();
@@ -1079,7 +1154,7 @@ mod tests {
                 on_write,
                 fail,
             }),
-            child: Box::new(NoopChild),
+            child,
             cwd: "/tmp".into(),
             bridge_dir: None,
             shim_dir: None,
@@ -1164,6 +1239,30 @@ mod tests {
         let diagnostics = state.agent_notifications.diagnostics();
         assert!(diagnostics.worker_alive);
         assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn kill_pty_keeps_the_async_executor_responsive() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        state.pty.insert(
+            "pty-slow-exit".to_string(),
+            make_capturing_session_with_child(
+                Arc::new(Mutex::new(Vec::new())),
+                None,
+                false,
+                Box::new(SlowExitChild),
+            ),
+        );
+        let mut kill = Box::pin(state.kill_pty(crate::terminal::types::KillPtyRequest {
+            session_id: "pty-slow-exit".to_string(),
+        }));
+
+        tokio::select! {
+            result = &mut kill => panic!("blocking kill completed too early: {result:?}"),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
+        }
+
+        kill.await.expect("kill PTY");
     }
 
     /// The consent IPC round-trips through `BackendState`: set persists +

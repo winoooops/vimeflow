@@ -493,7 +493,7 @@ mod router {
                 }
 
                 let p: P = serde_json::from_value(params).map_err(|e| format!("params: {e}"))?;
-                state.kill_pty(p.request)?;
+                state.kill_pty(p.request).await?;
                 Ok(Value::Null)
             }
             "list_sessions" => {
@@ -511,7 +511,7 @@ mod router {
                 encode_result(state.get_pty_replay(&p.session_id))
             }
             "kill_ephemeral_ptys" => {
-                let res = state.kill_ephemeral_ptys();
+                let res = state.kill_ephemeral_ptys().await?;
                 encode_result(res)
             }
             "set_active_session" => {

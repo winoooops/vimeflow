@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::agent::adapter::base::for_each_bounded_line;
+use crate::agent::adapter::base::WatcherHandle;
 use crate::agent::types::{AgentNotificationEvent, AgentNotificationReason, AgentType};
 use crate::agent::AgentWatcherState;
 use crate::runtime::{serialize_event, EventSink};
@@ -349,6 +350,7 @@ impl NotificationWatcherService {
                 self.pty_state.clone(),
                 self.full_watchers.clone(),
                 self.events.clone(),
+                tokio::runtime::Handle::try_current().ok(),
             )?);
         }
 
@@ -382,6 +384,7 @@ fn start_worker(
     pty_state: PtyState,
     full_watchers: AgentWatcherState,
     events: Arc<dyn EventSink>,
+    blocking_runtime: Option<tokio::runtime::Handle>,
 ) -> Result<WorkerHandle, String> {
     let (sender, receiver) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
     let (startup, started) = mpsc::sync_channel(1);
@@ -433,6 +436,7 @@ fn start_worker(
                 pty_state,
                 full_watchers,
                 events,
+                blocking_runtime,
             );
             alive_for_thread.store(false, Ordering::Release);
             diagnostics
@@ -461,6 +465,7 @@ fn run_worker(
     pty_state: PtyState,
     full_watchers: AgentWatcherState,
     events: Arc<dyn EventSink>,
+    blocking_runtime: Option<tokio::runtime::Handle>,
 ) {
     let mut registrations = HashMap::<String, Registration>::new();
     let mut last_reconcile = Instant::now();
@@ -474,6 +479,7 @@ fn run_worker(
                 &pty_state,
                 &full_watchers,
                 events.as_ref(),
+                blocking_runtime.as_ref(),
             );
             last_reconcile = Instant::now();
             if registrations.is_empty() {
@@ -550,6 +556,7 @@ fn run_worker(
                     &pty_state,
                     &full_watchers,
                     events.as_ref(),
+                    blocking_runtime.as_ref(),
                 );
                 let empty = registrations.is_empty();
                 if empty {
@@ -667,6 +674,7 @@ fn reconcile_sources(
     pty_state: &PtyState,
     full_watchers: &AgentWatcherState,
     events: &dyn EventSink,
+    blocking_runtime: Option<&tokio::runtime::Handle>,
 ) {
     let missing: Vec<String> = registrations
         .values()
@@ -675,13 +683,38 @@ fn reconcile_sources(
         })
         .map(|registration| registration.pty_id.clone())
         .collect();
-    for pty_id in missing {
-        remove_source(watcher, registrations, &pty_id, diagnostics);
-        full_watchers.remove(&pty_id);
+    for pty_id in &missing {
+        remove_source(watcher, registrations, pty_id, diagnostics);
     }
+    let removed_watchers = missing
+        .iter()
+        .filter_map(|pty_id| full_watchers.take(pty_id))
+        .collect();
+    dispatch_full_watcher_cleanup(removed_watchers, blocking_runtime);
 
     let ids: Vec<String> = registrations.keys().cloned().collect();
     scan_ids(&ids, registrations, diagnostics, events);
+}
+
+fn dispatch_full_watcher_cleanup(
+    removed_watchers: Vec<WatcherHandle>,
+    blocking_runtime: Option<&tokio::runtime::Handle>,
+) {
+    if removed_watchers.is_empty() {
+        return;
+    }
+
+    if let Some(runtime) = blocking_runtime {
+        drop(runtime.spawn_blocking(move || drop(removed_watchers)));
+        return;
+    }
+
+    if let Err(error) = std::thread::Builder::new()
+        .name("agent-watcher-cleanup".to_string())
+        .spawn(move || drop(removed_watchers))
+    {
+        log::warn!("failed to dispatch stale agent watcher cleanup: {error}");
+    }
 }
 
 fn scan_ids(
@@ -839,6 +872,9 @@ enum ClassifiedSignal {
         turn_id: Option<String>,
         agent_session_id: Option<String>,
     },
+    TurnSettled {
+        turn_id: Option<String>,
+    },
     Notification {
         reason: AgentNotificationReason,
         occurred_at: u64,
@@ -892,7 +928,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: envelope.payload.turn_id,
             agent_session_id: None,
         }),
-        Some("task_complete" | "turn_aborted") => {
+        Some("task_complete") => {
             let turn_id = envelope.payload.turn_id;
             Ok(ClassifiedSignal::Notification {
                 reason: AgentNotificationReason::TurnComplete,
@@ -908,6 +944,9 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 ends_turn: true,
             })
         }
+        Some("turn_aborted") => Ok(ClassifiedSignal::TurnSettled {
+            turn_id: envelope.payload.turn_id,
+        }),
         Some("exec_approval_request")
         | Some("apply_patch_approval_request")
         | Some("request_permissions") => {
@@ -1266,7 +1305,7 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             agent_session_id,
             body: None,
             transcript_path: None,
-            requires_active_turn: true,
+            requires_active_turn: false,
             ends_turn: true,
         }),
         Some("permission.asked") => Ok(ClassifiedSignal::Notification {
@@ -1358,6 +1397,22 @@ fn apply_signal(
             registration.turn_active = true;
             registration.turn_id = turn_id;
             registration.notification_body = None;
+        }
+        ClassifiedSignal::TurnSettled { turn_id } => {
+            let mismatched_turn = registration.turn_id.is_some()
+                && turn_id.is_some()
+                && registration.turn_id != turn_id;
+            if mismatched_turn {
+                diagnostics
+                    .lock()
+                    .expect("notification diagnostics mutex poisoned")
+                    .replay_suppressions += 1;
+                return;
+            }
+            registration.turn_active = false;
+            registration.turn_id = None;
+            registration.notification_body = None;
+            registration.pending_opencode_idle = None;
         }
         ClassifiedSignal::Notification {
             reason,
@@ -1610,7 +1665,7 @@ mod tests {
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#,
-                "turn-complete",
+                "settled",
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"exec_approval_request","approval_id":"a1"}}"#,
@@ -1633,6 +1688,7 @@ mod tests {
         for (line, expected) in cases {
             let actual = match classify_codex(line.as_bytes()).expect("valid Codex envelope") {
                 ClassifiedSignal::TurnStarted { .. } => "started",
+                ClassifiedSignal::TurnSettled { .. } => "settled",
                 ClassifiedSignal::Notification { reason, .. } => match reason {
                     AgentNotificationReason::TurnComplete => "turn-complete",
                     AgentNotificationReason::ApprovalRequested => "approval-requested",
@@ -1994,8 +2050,17 @@ mod tests {
     }
 
     #[test]
-    fn codex_live_terminal_event_after_mid_turn_registration_is_not_suppressed() {
-        for terminal_type in ["task_complete", "turn_aborted"] {
+    fn codex_live_terminal_events_after_mid_turn_registration_settle_correctly() {
+        for (terminal_line, expected_notifications) in [
+            (
+                r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"live"}}"#,
+                1,
+            ),
+            (
+                r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"live","reason":"interrupted"}}"#,
+                0,
+            ),
+        ] {
             let temp = tempfile::tempdir().expect("tempdir");
             let source = temp.path().join("rollout.jsonl");
             std::fs::write(
@@ -2020,18 +2085,54 @@ mod tests {
                 .append(true)
                 .open(source)
                 .expect("open rollout");
-            writeln!(
-                file,
-                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"{terminal_type}\",\"turn_id\":\"live\"}}}}"
-            )
-            .expect("append terminal event");
+            writeln!(file, "{terminal_line}").expect("append terminal event");
             file.flush().expect("flush rollout");
 
             scan_source(&mut registration, &diagnostics, &sink).expect("scan terminal event");
 
-            assert_eq!(sink.count("agent-notification"), 1, "{terminal_type}");
-            assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+            assert!(!registration.turn_active);
+            assert_eq!(
+                sink.count("agent-notification"),
+                expected_notifications,
+                "{terminal_line}"
+            );
         }
+    }
+
+    #[test]
+    fn opencode_live_error_after_mid_turn_registration_is_not_suppressed() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("session.jsonl");
+        std::fs::write(
+            &source,
+            "{\"v\":1,\"ts\":1,\"kind\":\"event\",\"type\":\"session.status\",\"data\":{\"sessionID\":\"ses1\",\"status\":{\"type\":\"busy\"}}}\n",
+        )
+        .expect("seed active turn");
+        let cursor = std::fs::metadata(&source).expect("metadata").len();
+        let mut registration = Registration::new(
+            "pty-opencode".to_string(),
+            1,
+            NotificationProvider::OpenCode,
+            source.clone(),
+            cursor,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open bridge stream");
+        writeln!(
+            file,
+            r#"{{"v":1,"ts":2,"kind":"event","type":"session.error","data":{{"id":"error-live","sessionID":"ses1","error":{{"name":"ProviderError"}}}}}}"#
+        )
+        .expect("append live error");
+        file.flush().expect("flush bridge stream");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan live error");
+
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["reason"], "agent-error");
     }
 
     #[test]
@@ -2062,13 +2163,8 @@ mod tests {
             let source = temp.path().join("attention.jsonl");
             std::fs::write(&source, format!("{start_line}\n")).expect("seed active turn");
             let cursor = std::fs::metadata(&source).expect("metadata").len();
-            let mut registration = Registration::new(
-                "pty-live".to_string(),
-                1,
-                provider,
-                source.clone(),
-                cursor,
-            );
+            let mut registration =
+                Registration::new("pty-live".to_string(), 1, provider, source.clone(), cursor);
             let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
             let sink = FakeEventSink::new();
             let mut file = std::fs::OpenOptions::new()

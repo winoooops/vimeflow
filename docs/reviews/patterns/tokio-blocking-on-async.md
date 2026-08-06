@@ -2,8 +2,8 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-06-14
-ref_count: 2
+last_updated: 2026-08-05
+ref_count: 3
 ---
 
 # Tokio Blocking On Async Worker
@@ -56,3 +56,12 @@ original Tauri command wording.
 - **Finding:** `KimiLocator::locate()` retried proc-fd/index resolution up to five attempts and called `std::thread::sleep(100 ms)` between misses. The locator was invoked from the async session lifecycle / watcher startup path, so a fresh Kimi attach where the index row or proc-fd was not yet visible could park the async worker thread for up to ~400 ms, freezing unrelated IPC work on a single-thread runtime and reducing worker capacity on a multi-thread runtime.
 - **Fix:** Removed the retry loop and synchronous sleep from `KimiLocator::locate` so it performs a single locate attempt. Moved the retry loop into `SessionLifecycle::locate_async`, which dispatches each attempt via `tokio::task::spawn_blocking` and uses `tokio::time::sleep` between attempts so the async task yields instead of parking a thread. Added `Clone` to `AgentBindings` so the async retry wrapper can own the bindings across spawned attempts.
 - **Commit:** same commit as this entry
+
+### 5. PTY teardown blocked IPC and notification reconciliation
+
+- **Source:** local-codex | PR #785 round 2 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`, `crates/backend/src/agent/notification.rs`
+- **Finding:** PTY kill handlers synchronously waited for notification-worker acknowledgements and dropped full watcher handles whose teardown joins OS threads, while reconciliation performed the same drop on the only notification scanner thread. Session churn could therefore starve Tokio workers and serialize unrelated notification delivery.
+- **Fix:** Moved each full PTY kill and its watcher teardown into one `spawn_blocking` task, batching ephemeral cleanup in one task. Reconciliation now detaches the exact stale handles before dispatching their blocking `Drop` through the captured Tokio runtime, with a standalone-thread fallback for runtime-free tests.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
