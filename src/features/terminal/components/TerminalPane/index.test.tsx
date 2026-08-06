@@ -423,7 +423,7 @@ describe('TerminalPane index', () => {
     expect(screen.getByTestId('agent-glyph-label')).toHaveClass('hidden')
   })
 
-  test('passes this PTY progress to its header', () => {
+  test('passes generic shell PTY progress to its header', () => {
     usePtyProgressSpy.mockReturnValue({ state: 'normal', value: 35 })
 
     render(
@@ -431,7 +431,7 @@ describe('TerminalPane index', () => {
         {...baseProps}
         pane={{
           ...baseProps.pane,
-          agentSessionId: 'agent-1',
+          agentType: 'generic',
           status: 'idle',
         }}
       />
@@ -446,6 +446,34 @@ describe('TerminalPane index', () => {
     expect(
       screen.getByRole('progressbar', { name: 'Terminal progress' })
     ).toHaveAttribute('aria-valuenow', '35')
+  })
+
+  test('hides native progress when its semantic agent turn settles', () => {
+    usePtyProgressSpy.mockReturnValue({ state: 'normal', value: 35 })
+
+    const runningPane = {
+      ...baseProps.pane,
+      agentSessionId: 'agent-1',
+      agentPhase: 'running' as const,
+      status: 'running' as const,
+    }
+
+    const { rerender } = render(
+      <TerminalPane {...baseProps} pane={runningPane} />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuenow', '35')
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        pane={{ ...runningPane, agentPhase: 'idle', status: 'idle' }}
+      />
+    )
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
   test('does not treat a live PTY as an active agent turn', () => {

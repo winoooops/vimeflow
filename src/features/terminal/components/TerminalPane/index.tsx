@@ -337,9 +337,11 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       native: boolean
     }>({ agentSessionId: undefined, running: false, native: false })
 
+    const hasSemanticAgentLifecycle =
+      pane.agentSessionId !== undefined && pane.agentType !== 'generic'
+
     const lifecycleProgressActive =
-      pane.agentSessionId !== undefined &&
-      pane.agentType !== 'generic' &&
+      hasSemanticAgentLifecycle &&
       pane.agentPhase === 'running' &&
       pane.status === 'running'
 
@@ -362,7 +364,9 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     }, [lifecycleProgressActive, nativeOwnsTurn, pane.agentSessionId])
 
     const effectiveProgress =
-      progress ??
+      (!hasSemanticAgentLifecycle || lifecycleProgressActive
+        ? progress
+        : undefined) ??
       (lifecycleProgressActive && !nativeOwnsTurn
         ? AGENT_LIFECYCLE_PROGRESS
         : undefined)
