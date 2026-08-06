@@ -162,7 +162,8 @@ export interface SessionManager {
     agentSessionId: string | null,
     tokenTotal: number | null
   ) => void
-  getAgentSessionId: (ptyId: string) => string | undefined
+  /** `null` is invalidated; `undefined` is not yet hydrated. */
+  getAgentSessionId: (ptyId: string) => string | null | undefined
   appendPaneCacheReading: (
     sessionId: string,
     paneId: string,
@@ -479,16 +480,20 @@ export const useSessionManager = (
   // (Codex P2 finding on PR #421).
   const agentSessionIdsRef = useRef(new Map<string, string>())
 
-  const getAgentSessionId = useCallback(
-    (ptyId: string): string | undefined =>
-      agentSessionIdsRef.current.get(ptyId),
-    []
-  )
   const latestAgentRunningAtRef = useRef(new Map<string, number>())
 
   const invalidatedAgentSessionsRef = useRef(
     new Map<string, { agentSessionId: string; tokenTotal: number | null }>()
   )
+
+  const getAgentSessionId = useCallback(
+    (ptyId: string): string | null | undefined =>
+      invalidatedAgentSessionsRef.current.has(ptyId)
+        ? null
+        : agentSessionIdsRef.current.get(ptyId),
+    []
+  )
+
   const autoStartedAgentWatcherPtyIds = useRef(new Set<string>())
 
   const agentAliasConfigInFlightRef = useRef<Promise<AgentAliasConfig> | null>(

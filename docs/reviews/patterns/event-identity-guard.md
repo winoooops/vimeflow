@@ -3,7 +3,7 @@ id: event-identity-guard
 category: backend
 created: 2026-06-11
 last_updated: 2026-08-06
-ref_count: 6
+ref_count: 7
 ---
 
 # Event Identity Guard
@@ -105,4 +105,18 @@ Events that carry an identity field for deduplication, stale-event rejection, or
   identity first, retaining the hydrated pane identity only as the restore
   fallback. Added a startup-order regression that observes status identity
   before pane restore and completion afterward.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 9. Notification fallback revived an invalidated conversation
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`,
+  `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** The startup identity fallback treated a deliberately invalidated
+  manager identity like one that had not hydrated, so a delayed event could
+  reuse the cached identity from the replaced conversation.
+- **Fix:** Made the manager identity lookup distinguish invalidation from
+  hydration lag and allowed the observed fallback only for the latter. Added
+  focused regressions for the manager tombstone and notification rejection.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

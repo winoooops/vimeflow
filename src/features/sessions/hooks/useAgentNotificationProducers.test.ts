@@ -187,6 +187,59 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
+  test('rejects observed identity after authoritative invalidation', async () => {
+    installBridge()
+    const publish = vi.fn()
+    let agentSessionId: string | null | undefined
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', {
+            agentType: 'codex',
+            agentSessionId: undefined,
+          }),
+        ],
+        activeSessionId: 'active',
+        publish,
+        getAgentSessionId: () => agentSessionId,
+      })
+    )
+
+    await waitFor(() => {
+      expect(listeners.has('agent-status')).toBe(true)
+      expect(listeners.has('agent-notification')).toBe(true)
+    })
+
+    act(() => {
+      emit<AgentStatusEvent>('agent-status', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-old',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+        usageFetched: false,
+      })
+
+      agentSessionId = null
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-old',
+        reason: 'agent-error',
+        title: 'Old Codex failed',
+        body: null,
+        occurredAt: BigInt(43),
+        dedupeKey: 'error:43',
+      })
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   test('ignores a stale event after the pane agent is replaced', async () => {
     installBridge()
     const publish = vi.fn()

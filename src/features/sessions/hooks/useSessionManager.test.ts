@@ -1517,6 +1517,7 @@ describe('useSessionManager', () => {
     })
 
     expect(result.current.sessions[0].panes[0].agentSessionId).toBeUndefined()
+    expect(result.current.getAgentSessionId('pty-1')).toBeNull()
     await waitFor(() =>
       expect(
         vi.mocked(pushWorkspaceShape).mock.lastCall?.[0].sessions[0].panes[0]

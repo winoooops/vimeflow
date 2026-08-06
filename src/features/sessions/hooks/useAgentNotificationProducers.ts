@@ -13,7 +13,7 @@ interface AgentNotificationProducerOptions {
   readonly sessions: readonly Session[]
   readonly activeSessionId: string | null
   readonly publish: (input: NotificationInput) => void
-  readonly getAgentSessionId: (ptyId: string) => string | undefined
+  readonly getAgentSessionId: (ptyId: string) => string | null | undefined
 }
 
 interface TargetPane {
@@ -60,10 +60,16 @@ const isBackgroundTarget = (
 const isCurrentAgent = (
   target: TargetPane,
   agentSessionId: string,
-  getAgentSessionId: (ptyId: string) => string | undefined
-): boolean =>
-  (getAgentSessionId(target.pane.ptyId) ?? target.pane.agentSessionId) ===
-  agentSessionId
+  getAgentSessionId: (ptyId: string) => string | null | undefined
+): boolean => {
+  const currentAgentSessionId = getAgentSessionId(target.pane.ptyId)
+
+  return (
+    (currentAgentSessionId === undefined
+      ? target.pane.agentSessionId
+      : currentAgentSessionId) === agentSessionId
+  )
+}
 
 export const useAgentNotificationProducers = ({
   sessions,
@@ -83,8 +89,13 @@ export const useAgentNotificationProducers = ({
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   publishRef.current = publish
-  getAgentSessionIdRef.current = (ptyId): string | undefined =>
-    getAgentSessionId(ptyId) ?? observedAgentSessionIdsRef.current.get(ptyId)
+  getAgentSessionIdRef.current = (ptyId): string | null | undefined => {
+    const agentSessionId = getAgentSessionId(ptyId)
+
+    return agentSessionId === undefined
+      ? observedAgentSessionIdsRef.current.get(ptyId)
+      : agentSessionId
+  }
 
   useEffect(() => {
     let cancelled = false
