@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-08-06
-ref_count: 33
+ref_count: 34
 ---
 
 # Derived State Consistency
@@ -553,4 +553,18 @@ base data is technically "correct."
 - **Fix:** Clear cached progress only on an observed running-to-settled edge or
   agent replacement, preserving early OSC progress until its lifecycle catches
   up. Added a focused idle-to-running regression.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 42. Process-wide Ghostty capability became per-PTY renderer identity
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/services/desktopTerminalService.ts`
+- **Finding:** Omitted `nativeTransport` was derived from a process-wide
+  Ghostty bridge probe before per-pane native attachment. A later xterm
+  fallback therefore kept immutable `TERM_PROGRAM=ghostty` metadata for a
+  renderer that had never attached.
+- **Fix:** Restored the conservative false default and kept native identity an
+  explicit spawn choice. Updated unit and E2E coverage to require no renderer
+  identity when attachment has not been confirmed.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

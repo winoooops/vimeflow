@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-06
-ref_count: 106
+ref_count: 107
 ---
 
 # Async Race Conditions
@@ -1353,3 +1353,17 @@ prevent showing previous data.
   notification registration completes. Added a regression that appends a Codex
   completion between the two boundaries and verifies exactly one emission.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 118. Launcher watcher release bypassed background Kimi retention
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Launcher-started watcher ownership was deleted as soon as agent
+  identity hydrated. If the pane had already moved to the background, that
+  release stopped Kimi's only completion watcher even though `useAgentStatus`
+  had independently retained the same backend resource.
+- **Fix:** Preserve launcher ownership for live background Kimi panes while
+  keeping the existing terminal and reclassification cleanup paths. Added a
+  regression covering background identity hydration.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

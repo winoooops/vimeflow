@@ -600,7 +600,7 @@ export const useSessionManager = (
 
   const releaseAutoStartedAgentWatcher = useCallback(
     (ptyId: string): void => {
-      if (!autoStartedAgentWatcherPtyIds.current.delete(ptyId)) {
+      if (!autoStartedAgentWatcherPtyIds.current.has(ptyId)) {
         return
       }
 
@@ -613,6 +613,26 @@ export const useSessionManager = (
             pane.active &&
             !isTerminalStatus(pane.status)
         )
+
+      const backgroundKimiOwnsWatcher =
+        !activePaneOwnsWatcher &&
+        sessionsRef.current.some((session) =>
+          session.panes.some(
+            (pane) =>
+              isShellPane(pane) &&
+              pane.ptyId === ptyId &&
+              pane.agentType === 'kimi' &&
+              !isTerminalStatus(pane.status)
+          )
+        )
+
+      // Kimi has no notification-only watcher, so the launcher watcher owns
+      // background completion delivery until the pane exits or is reclassified.
+      if (backgroundKimiOwnsWatcher) {
+        return
+      }
+
+      autoStartedAgentWatcherPtyIds.current.delete(ptyId)
 
       if (activePaneOwnsWatcher) {
         return

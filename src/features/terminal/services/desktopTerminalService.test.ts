@@ -180,14 +180,14 @@ describe('DesktopTerminalService', () => {
       })
     })
 
-    test('spawn defaults native transport to the selected renderer', async () => {
+    test('spawn does not infer native transport from process-wide capability', async () => {
       mockShouldUseNativeGhostty.mockReturnValue(true)
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
 
       await service.spawn({ cwd: '/repo' })
 
       expect(invoke).toHaveBeenCalledWith('spawn_pty', {
-        request: expect.objectContaining({ nativeTransport: true }),
+        request: expect.objectContaining({ nativeTransport: false }),
       })
     })
 
