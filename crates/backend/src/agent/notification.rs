@@ -615,6 +615,7 @@ fn register_source(
         .is_some_and(|current| {
             current.provider == registration.provider
                 && current.source_path == registration.source_path
+                && current.pty_generation == registration.pty_generation
         })
     {
         return Ok(RegisterOutcome::Noop);
@@ -1684,6 +1685,67 @@ mod tests {
     use std::io::Write;
 
     use crate::runtime::event_sink::FakeEventSink;
+
+    #[test]
+    fn same_source_registration_rebinds_to_replacement_pty_generation() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("rollout.jsonl");
+        std::fs::write(&source, "").expect("create notification source");
+        let mut watcher = notify::recommended_watcher(|_: notify::Result<notify::Event>| {})
+            .expect("create watcher");
+        let mut registrations = HashMap::new();
+        let pty_state = PtyState::new();
+        let mut first_session = crate::agent::adapter::make_test_session();
+        first_session.generation = 1;
+        pty_state.insert("pty-a".to_string(), first_session);
+
+        register_source(
+            &mut watcher,
+            &mut registrations,
+            Registration::new(
+                "pty-a".to_string(),
+                1,
+                NotificationProvider::Codex,
+                source.clone(),
+                0,
+            ),
+        )
+        .expect("register first generation");
+
+        let mut replacement_session = crate::agent::adapter::make_test_session();
+        replacement_session.generation = 2;
+        pty_state.insert("pty-a".to_string(), replacement_session);
+        let outcome = register_source(
+            &mut watcher,
+            &mut registrations,
+            Registration::new(
+                "pty-a".to_string(),
+                2,
+                NotificationProvider::Codex,
+                source,
+                0,
+            ),
+        )
+        .expect("register replacement generation");
+        assert!(matches!(outcome, RegisterOutcome::Rebound));
+
+        reconcile_sources(
+            &mut watcher,
+            &mut registrations,
+            &Arc::new(Mutex::new(MutableDiagnostics::default())),
+            &pty_state,
+            &AgentWatcherState::new(),
+            &FakeEventSink::new(),
+            None,
+        );
+
+        assert_eq!(
+            registrations
+                .get("pty-a")
+                .map(|registration| registration.pty_generation),
+            Some(2)
+        );
+    }
 
     #[test]
     fn codex_classifier_maps_only_notification_relevant_records() {

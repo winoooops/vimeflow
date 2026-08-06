@@ -55,6 +55,12 @@ const isBackgroundTarget = (
   target.session.id !== activeSessionId ||
   findActivePane(target.session)?.ptyId !== target.pane.ptyId
 
+const isCurrentAgent = (
+  target: TargetPane,
+  agentSessionId: string | null
+): boolean =>
+  agentSessionId === null || target.pane.agentSessionId === agentSessionId
+
 export const useAgentNotificationProducers = ({
   sessions,
   activeSessionId,
@@ -125,6 +131,7 @@ export const useAgentNotificationProducers = ({
             (phase?.phase !== 'idle' ||
               phase.agentSessionId !== candidate.agentSessionId)) ||
           target === undefined ||
+          !isCurrentAgent(target, candidate.agentSessionId) ||
           !isBackgroundTarget(target, activeSessionIdRef.current)
         ) {
           return
@@ -228,7 +235,10 @@ export const useAgentNotificationProducers = ({
       'agent-notification',
       (payload) => {
         const target = findTarget(sessionsRef.current, payload.ptyId)
-        if (target === undefined) {
+        if (
+          target === undefined ||
+          !isCurrentAgent(target, payload.agentSessionId)
+        ) {
           return
         }
 

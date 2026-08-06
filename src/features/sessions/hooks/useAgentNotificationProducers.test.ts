@@ -126,6 +126,112 @@ describe('useAgentNotificationProducers', () => {
     })
   })
 
+  test('ignores a stale event after the pane agent is replaced', async () => {
+    installBridge()
+    const publish = vi.fn()
+    let background = session('background', 'pty-background', {
+      agentType: 'codex',
+      agentSessionId: 'agent-old',
+    })
+
+    const { rerender } = renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [session('active', 'pty-active'), background],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      background = session('background', 'pty-background', {
+        agentType: 'codex',
+        agentSessionId: 'agent-new',
+      })
+      rerender()
+    })
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-new',
+        reason: 'turn-complete',
+        title: 'New Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-old',
+        reason: 'agent-error',
+        title: 'Old Codex failed',
+        body: null,
+        occurredAt: BigInt(43),
+        dedupeKey: 'error:43',
+      })
+
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'turn-complete',
+        title: 'New Codex finished',
+      })
+    )
+  })
+
+  test('drops a completion when the pane agent changes during settle', async () => {
+    installBridge()
+    const publish = vi.fn()
+    let background = session('background', 'pty-background', {
+      agentType: 'codex',
+      agentSessionId: 'agent-old',
+    })
+
+    const { rerender } = renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [session('active', 'pty-active'), background],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-old',
+        reason: 'turn-complete',
+        title: 'Old Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+    })
+
+    act(() => {
+      background = session('background', 'pty-background', {
+        agentType: 'codex',
+        agentSessionId: 'agent-new',
+      })
+      rerender()
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   test('rejects a semantic completion older than the latest running lifecycle', async () => {
     installBridge()
     const publish = vi.fn()
