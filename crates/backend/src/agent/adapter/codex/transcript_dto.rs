@@ -80,10 +80,6 @@ pub(super) struct CodexPayloadDto {
     #[serde(default, deserialize_with = "lenient_string")]
     pub call_id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
-    pub approval_id: Option<String>,
-    #[serde(default, deserialize_with = "lenient_string")]
-    pub request_id: Option<String>,
-    #[serde(default, deserialize_with = "lenient_string")]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub namespace: Option<String>,

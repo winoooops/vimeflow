@@ -14,7 +14,6 @@ use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 
 pub(crate) mod bridge;
-pub(crate) mod hooks;
 pub mod statusline;
 pub mod test_runners;
 pub mod transcript;

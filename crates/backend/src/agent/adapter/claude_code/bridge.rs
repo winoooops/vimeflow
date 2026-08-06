@@ -38,7 +38,7 @@ pub struct BridgeFiles {
     /// Path to the status.json file that the script writes to
     pub status_file_path: PathBuf,
     /// Path to the append-only Claude hook transport stream. The backend tails
-    /// this file and converts new records into live `agent-attention` events;
+    /// this file and converts new records into live `agent-notification` events;
     /// it is not the notification center's history store.
     pub attention_file_path: PathBuf,
     /// Path to the shell init script that installs the `claude` PATH shim

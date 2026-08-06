@@ -92,7 +92,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [UI Visual Regression](patterns/ui-visual-regression.md)                                             | code-quality       | 33       | 22   | 2026-07-25   |
 | [Status Indicator Display](patterns/status-indicator-display.md)                                     | code-quality       | 3        | 0    | 2026-05-26   |
 | [Persisted State Invariants](patterns/persisted-state-invariants.md)                                 | correctness        | 26       | 16   | 2026-07-19   |
-| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 39       | 22   | 2026-08-05   |
+| [Parser Resilience](patterns/parser-resilience.md)                                                   | code-quality       | 39       | 23   | 2026-08-05   |
 | [macOS Window Chrome](patterns/macos-window-chrome.md)                                               | cross-platform     | 9        | 2    | 2026-06-15   |
 | [Platform Metadata Semantics](patterns/platform-metadata-semantics.md)                               | cross-platform     | 2        | 2    | 2026-06-22   |
 | [Guard Branch Correctness](patterns/guard-branch-correctness.md)                                     | correctness        | 3        | 1    | 2026-07-31   |
@@ -100,7 +100,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Prototype Handoff Artifacts](patterns/prototype-handoff-artifacts.md)                               | review-process     | 2        | 0    | 2026-06-12   |
 | [CloudFormation Environment Prefix Coupling](patterns/cloudformation-environment-prefix-coupling.md) | infrastructure     | 1        | 0    | 2026-06-12   |
 | [CloudFormation Stale References](patterns/cloudformation-stale-references.md)                       | infrastructure     | 2        | 1    | 2026-06-12   |
-| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 14       | 10   | 2026-07-27   |
+| [Dead Code](patterns/dead-code.md)                                                                   | code-quality       | 15       | 11   | 2026-08-06   |
 | [Unsafe Block Safety Comments](patterns/unsafe-block-safety-comments.md)                             | security           | 3        | 3    | 2026-07-30   |
 | [Type Contract Safety](patterns/type-contract-safety.md)                                             | code-quality       | 20       | 13   | 2026-07-31   |
 | [String Construction Hygiene](patterns/string-construction-hygiene.md)                               | code-quality       | 3        | 2    | 2026-07-26   |

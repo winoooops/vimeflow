@@ -1,9 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type {
-  AgentAttentionEvent,
-  AgentLifecycleEvent,
-  AgentNotificationEvent,
-} from '@/bindings'
+import type { AgentLifecycleEvent, AgentNotificationEvent } from '@/bindings'
 import { listen, type UnlistenFn } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import { subscribeTerminalAttention } from '@/features/terminal/notifications'
@@ -71,8 +67,6 @@ export const useAgentNotificationProducers = ({
   const phasesRef = useRef(
     new Map<string, Pick<AgentLifecycleEvent, 'agentSessionId' | 'phase'>>()
   )
-  const erroredPtyIdsRef = useRef(new Set<string>())
-
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   publishRef.current = publish
@@ -137,16 +131,10 @@ export const useAgentNotificationProducers = ({
         completionTimers.delete(ptyId)
         const phase = phasesRef.current.get(ptyId)
         const target = findTarget(sessionsRef.current, ptyId)
-        const wasErrored = erroredPtyIdsRef.current.has(ptyId)
-        if (wasErrored) {
-          erroredPtyIdsRef.current.delete(ptyId)
-        }
-
         if (
           (candidate.requireLifecycle &&
             (phase?.phase !== 'idle' ||
-              phase.agentSessionId !== candidate.agentSessionId ||
-              wasErrored)) ||
+              phase.agentSessionId !== candidate.agentSessionId)) ||
           target === undefined ||
           !isBackgroundTarget(target, activeSessionIdRef.current)
         ) {
@@ -248,7 +236,6 @@ export const useAgentNotificationProducers = ({
         })
 
         if (payload.phase === 'running') {
-          erroredPtyIdsRef.current.delete(payload.sessionId)
           cancelTurnComplete(payload.sessionId)
         }
 
@@ -312,46 +299,8 @@ export const useAgentNotificationProducers = ({
       }
     )
 
-    const attention = listen<AgentAttentionEvent>(
-      'agent-attention',
-      (payload) => {
-        const target = findTarget(sessionsRef.current, payload.ptyId)
-        if (
-          target === undefined ||
-          NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType)
-        ) {
-          return
-        }
-
-        if (payload.reason === 'agent-error') {
-          erroredPtyIdsRef.current.add(payload.ptyId)
-          cancelTurnComplete(payload.ptyId)
-        }
-
-        if (!isBackgroundTarget(target, activeSessionIdRef.current)) {
-          return
-        }
-
-        publishRef.current({
-          sessionId: target.session.id,
-          ptyId: target.pane.ptyId,
-          reason: payload.reason,
-          title: payload.title,
-          ...(payload.body === null ? {} : { body: payload.body }),
-          occurredAt: Number(payload.occurredAt),
-          ...(payload.dedupeKey === null
-            ? {}
-            : { dedupeKey: payload.dedupeKey }),
-        })
-      }
-    )
-
     const registerListeners = async (): Promise<void> => {
-      const results = await Promise.allSettled([
-        lifecycle,
-        attention,
-        notification,
-      ])
+      const results = await Promise.allSettled([lifecycle, notification])
 
       for (const result of results) {
         if (result.status !== 'fulfilled') {

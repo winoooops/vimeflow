@@ -2,8 +2,8 @@
 id: dead-code
 category: code-quality
 created: 2026-06-13
-last_updated: 2026-07-27
-ref_count: 10
+last_updated: 2026-08-06
+ref_count: 11
 ---
 
 # Dead Code
@@ -167,3 +167,17 @@ code and should be removed.
 - **Fix:** Removed the unused helper so the stage-setter spec only carries
   active setup and diagnostic code.
 - **Commit:** same commit as this entry
+
+### 15. Agent attention pipeline was unreachable for every real producer
+
+- **Source:** local-codex | PR #785 fixer cycle | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`, `crates/backend/src/agent/adapter/`
+- **Finding:** Claude Code, Codex, and OpenCode emitted `agent-attention`, but the
+  renderer rejected that event for all three agent types in favor of the
+  normalized `agent-notification` watcher. The dead parallel route retained
+  duplicate parsers, bindings, tests, and a second per-session Claude tail.
+- **Fix:** Kept `NotificationWatcherService` as the sole semantic-notification
+  pipeline and removed the unreachable event contract, producers, renderer
+  listener, Claude tail thread, and route-specific tests.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

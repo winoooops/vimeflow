@@ -49,13 +49,11 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
-    emit_agent_turn, emit_lifecycle_on_change, record_attention, record_lifecycle,
-    record_tool_call, ReplayActivity,
+    emit_agent_turn, emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
 use crate::agent::types::{
-    AgentAttentionEvent, AgentAttentionReason, AgentCwdEvent, AgentPhase, AgentReplyEvent,
-    AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentReplyEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -65,8 +63,6 @@ use super::transcript_dto::{OpencodeEventType, OpencodeKind, OpencodeLineDto};
 /// Cap on the displayed args preview, matching `codex/transcript.rs`'s
 /// `MAX_ARGS_LEN` so the agent-status activity card renders a bounded string.
 const MAX_ARGS_LEN: usize = 1024;
-const MAX_ATTENTION_BODY_LEN: usize = 500;
-const MAX_ATTENTION_DEDUPE_LEN: usize = 256;
 
 /// An in-flight tool call awaiting its terminal `tool.after` (or a
 /// `message.part.updated` `completed`/`error`). Keyed by `callID` (fallback the
@@ -235,18 +231,8 @@ impl OpencodeTranscriptDecoder {
             OpencodeEventType::SessionStatus => self.process_session_status(dto),
             OpencodeEventType::SessionIdle => self.process_session_idle(dto),
             OpencodeEventType::SessionError => self.process_session_error(dto),
-            OpencodeEventType::PermissionAsked => self.process_attention(
-                dto,
-                AgentAttentionReason::ApprovalRequested,
-                "OpenCode needs approval",
-            ),
-            OpencodeEventType::QuestionAsked => self.process_attention(
-                dto,
-                AgentAttentionReason::QuestionRequested,
-                "OpenCode has a question",
-            ),
-            // Resolution only clears OpenCode's responder state. Notification
-            // read state remains an explicit renderer action.
+            // Semantic and resolution notifications are owned by the
+            // notification-only watcher.
             _ => {}
         }
     }
@@ -299,59 +285,8 @@ impl OpencodeTranscriptDecoder {
         let Some(agent_session_id) = opencode_session_id(dto) else {
             return;
         };
-        let body = dto
-            .data
-            .get("error")
-            .and_then(|error| error.get("message"))
-            .and_then(Value::as_str)
-            .filter(|message| !message.is_empty())
-            .map(|message| truncate_string(message, MAX_ATTENTION_BODY_LEN));
-
-        self.emit_attention(
-            dto,
-            AgentAttentionReason::AgentError,
-            "OpenCode failed",
-            body,
-        );
         self.turn_active = false;
         self.record_phase(agent_session_id, AgentPhase::Idle);
-    }
-
-    fn process_attention(
-        &mut self,
-        dto: &OpencodeLineDto,
-        reason: AgentAttentionReason,
-        title: &str,
-    ) {
-        self.emit_attention(dto, reason, title, None);
-    }
-
-    fn emit_attention(
-        &mut self,
-        dto: &OpencodeLineDto,
-        reason: AgentAttentionReason,
-        title: &str,
-        body: Option<String>,
-    ) {
-        let dedupe_key = dto
-            .data
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-            .map(|id| truncate_string(id, MAX_ATTENTION_DEDUPE_LEN));
-
-        record_attention(
-            &self.events,
-            AgentAttentionEvent {
-                pty_id: self.session_id.clone(),
-                reason,
-                title: title.to_string(),
-                body,
-                occurred_at: dto.ts.and_then(|ts| u64::try_from(ts).ok()).unwrap_or(0),
-                dedupe_key,
-            },
-            self.replay_done,
-        );
     }
 
     fn record_phase(&mut self, agent_session_id: &str, phase: AgentPhase) {
@@ -1032,34 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_attention_is_live_only_and_uses_stable_request_ids() {
-        let sink = Arc::new(FakeEventSink::new());
-        let mut dec = decoder(&sink, None);
-        let permission = r#"{"v":1,"ts":42,"kind":"event","type":"permission.asked","data":{"id":"permission-1","sessionID":"ses1"}}"#;
-
-        dec.decode_line(permission);
-        assert_eq!(sink.count("agent-attention"), 0);
-
-        dec.on_caught_up();
-        dec.decode_line(permission);
-        dec.decode_line(
-            r#"{"v":1,"ts":43,"kind":"event","type":"question.asked","data":{"id":"question-1","sessionID":"ses1"}}"#,
-        );
-
-        let attention: Vec<Value> = sink
-            .recorded()
-            .into_iter()
-            .filter(|(name, _)| name == "agent-attention")
-            .map(|(_, payload)| payload)
-            .collect();
-        assert_eq!(attention.len(), 2);
-        assert_eq!(attention[0]["reason"], "approval-requested");
-        assert_eq!(attention[0]["dedupeKey"], "permission-1");
-        assert_eq!(attention[1]["reason"], "question-requested");
-    }
-
-    #[test]
-    fn session_error_notifies_and_returns_lifecycle_to_idle() {
+    fn session_error_returns_lifecycle_to_idle() {
         let sink = Arc::new(FakeEventSink::new());
         let mut dec = decoder(&sink, None);
         dec.on_caught_up();
@@ -1074,7 +982,6 @@ mod tests {
             r#"{"v":1,"ts":3,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
         );
 
-        assert_eq!(sink.count("agent-attention"), 1);
         let lifecycle: Vec<Value> = sink
             .recorded()
             .into_iter()
@@ -1084,14 +991,6 @@ mod tests {
         assert_eq!(lifecycle.len(), 2);
         assert_eq!(lifecycle[0]["phase"], "running");
         assert_eq!(lifecycle[1]["phase"], "idle");
-        let attention = sink
-            .recorded()
-            .into_iter()
-            .find(|(name, _)| name == "agent-attention")
-            .expect("error attention")
-            .1;
-        assert_eq!(attention["reason"], "agent-error");
-        assert_eq!(attention["body"], "Model stopped responding");
     }
 
     /// A user `message.updated` ⇒ exactly one `agent-turn`; a duplicate user

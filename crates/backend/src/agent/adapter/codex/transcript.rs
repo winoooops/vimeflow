@@ -22,13 +22,11 @@ use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
-    emit_agent_turn, emit_lifecycle_on_change, record_attention, record_lifecycle,
-    record_tool_call, ReplayActivity,
+    emit_agent_turn, emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
 use crate::agent::types::{
-    AgentAttentionEvent, AgentAttentionReason, AgentCwdEvent, AgentPhase, AgentToolCallEvent,
-    AgentTurnEvent, ToolCallStatus,
+    AgentCwdEvent, AgentPhase, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::agent::types::{AgentReplyEvent, AgentReviewEvent};
 use crate::runtime::EventSink;
@@ -45,7 +43,6 @@ use super::transcript_dto::{
 // the agent-status activity-detail card can show the full wrapped
 // command/path. Both kept here.
 const MAX_ARGS_LEN: usize = 1024;
-const MAX_ATTENTION_DEDUPE_LEN: usize = 256;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompletionMode {
@@ -1024,25 +1021,6 @@ fn process_response_item(
 
     match payload.payload_type() {
         CodexPayloadType::FunctionCall => {
-            if payload.name.as_deref() == Some("request_user_input") {
-                emit_attention(
-                    payload,
-                    session_id,
-                    events,
-                    AgentAttentionReason::QuestionRequested,
-                    "Codex has a question",
-                    replay_done,
-                );
-            } else if payload.name.as_deref() == Some("request_permissions") {
-                emit_attention(
-                    payload,
-                    session_id,
-                    events,
-                    AgentAttentionReason::ApprovalRequested,
-                    "Codex needs approval",
-                    replay_done,
-                );
-            }
             start_function_call(
                 payload,
                 session_id,
@@ -1158,53 +1136,8 @@ fn process_event_msg(
             replay_activity,
             replay_done,
         ),
-        CodexPayloadType::ExecApprovalRequest
-        | CodexPayloadType::ApplyPatchApprovalRequest
-        | CodexPayloadType::RequestPermissions => emit_attention(
-            payload,
-            session_id,
-            events,
-            AgentAttentionReason::ApprovalRequested,
-            "Codex needs approval",
-            replay_done,
-        ),
-        CodexPayloadType::ElicitationRequest => emit_attention(
-            payload,
-            session_id,
-            events,
-            AgentAttentionReason::QuestionRequested,
-            "Codex has a question",
-            replay_done,
-        ),
         _ => {}
     }
-}
-
-fn emit_attention(
-    payload: &CodexPayloadDto,
-    session_id: &str,
-    events: &Arc<dyn EventSink>,
-    reason: AgentAttentionReason,
-    title: &str,
-    replay_done: bool,
-) {
-    record_attention(
-        events,
-        AgentAttentionEvent {
-            pty_id: session_id.to_string(),
-            reason,
-            title: title.to_string(),
-            body: None,
-            occurred_at: now_epoch_ms(),
-            dedupe_key: payload
-                .approval_id
-                .as_deref()
-                .or(payload.request_id.as_deref())
-                .or(payload.call_id.as_deref())
-                .map(|key| truncate_string(key, MAX_ATTENTION_DEDUPE_LEN)),
-        },
-        replay_done,
-    );
 }
 
 /// If the completed reply on a `task_complete` carries the VIM-304 review
@@ -1777,13 +1710,6 @@ fn now_iso8601() -> String {
     )
 }
 
-fn now_epoch_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
 fn days_to_date(days_since_epoch: u64) -> (u64, u64, u64) {
     let z = days_since_epoch as i64 + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -1933,72 +1859,6 @@ mod tests {
         );
 
         assert_eq!(lifecycle_phases(&sink), vec!["running", "idle"]);
-    }
-
-    #[test]
-    fn codex_semantic_attention_is_exact_and_live_only() {
-        let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
-        decoder.decode_line(
-            r#"{"type":"event_msg","payload":{"type":"exec_approval_request","approval_id":"replayed"}}"#,
-        );
-        decoder.on_caught_up();
-        assert_eq!(sink.count("agent-attention"), 0);
-
-        decoder.decode_line(
-            r#"{"type":"event_msg","payload":{"type":"exec_approval_request","approval_id":"approval-1"}}"#,
-        );
-        decoder.decode_line(
-            r#"{"type":"event_msg","payload":{"type":"apply_patch_approval_request","call_id":"approval-2"}}"#,
-        );
-        decoder.decode_line(
-            r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"question-1","arguments":"{}"}}"#,
-        );
-        decoder.decode_line(
-            r#"{"type":"response_item","payload":{"type":"function_call","name":"request_permissions","call_id":"approval-3","arguments":"{}"}}"#,
-        );
-        decoder.decode_line(
-            r#"{"type":"event_msg","payload":{"type":"elicitation_request","request_id":"question-2"}}"#,
-        );
-
-        let attention: Vec<Value> = sink
-            .recorded()
-            .into_iter()
-            .filter(|(name, _)| name == "agent-attention")
-            .map(|(_, payload)| payload)
-            .collect();
-        assert_eq!(attention.len(), 5);
-        assert_eq!(attention[0]["reason"], "approval-requested");
-        assert_eq!(attention[0]["dedupeKey"], "approval-1");
-        assert_eq!(attention[1]["reason"], "approval-requested");
-        assert_eq!(attention[2]["reason"], "question-requested");
-        assert_eq!(attention[2]["dedupeKey"], "question-1");
-        assert_eq!(attention[3]["reason"], "approval-requested");
-        assert_eq!(attention[3]["dedupeKey"], "approval-3");
-        assert_eq!(attention[4]["reason"], "question-requested");
-    }
-
-    #[test]
-    fn codex_semantic_attention_dedupe_key_is_bounded() {
-        let sink = Arc::new(FakeEventSink::new());
-        let mut decoder = CodexTranscriptDecoder::new(sink.clone(), "sid".into(), None);
-        decoder.on_caught_up();
-
-        decoder.decode_line(&format!(
-            r#"{{"type":"event_msg","payload":{{"type":"exec_approval_request","approval_id":"{}"}}}}"#,
-            "x".repeat(300)
-        ));
-
-        let attention = sink
-            .recorded()
-            .into_iter()
-            .find(|(name, _)| name == "agent-attention")
-            .expect("attention event")
-            .1;
-        assert_eq!(
-            attention["dedupeKey"].as_str().expect("dedupe key").len(),
-            MAX_ATTENTION_DEDUPE_LEN
-        );
     }
 
     #[test]
