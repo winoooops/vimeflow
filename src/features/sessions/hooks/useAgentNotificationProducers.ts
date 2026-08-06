@@ -275,6 +275,10 @@ export const useAgentNotificationProducers = ({
           return
         }
 
+        if (payload.reason === 'agent-error') {
+          cancelTurnComplete(payload.ptyId)
+        }
+
         if (!isBackgroundTarget(target, activeSessionIdRef.current)) {
           return
         }

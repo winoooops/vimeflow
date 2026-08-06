@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-06
-ref_count: 10
+ref_count: 11
 ---
 
 # Authoritative Completion Guard
@@ -229,4 +229,18 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Fix:** Removed eager pruning from both callers and rely on the existing
   sessions-derived pruning effect, which deletes records only after the session
   and pane actually disappear from committed state.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 18. Agent errors left delayed success notifications pending
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** A normalized turn-complete event scheduled delayed publication,
+  but a same-PTY agent-error published immediately without cancelling that
+  timer, so the notification center later showed both failure and success for
+  one turn.
+- **Fix:** Cancel the existing same-PTY completion timer when agent-error
+  arrives, while allowing a later completion event to schedule a fresh timer.
+  Added fake-timer regressions for both event orders.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

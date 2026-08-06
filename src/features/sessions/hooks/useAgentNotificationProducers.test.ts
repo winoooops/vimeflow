@@ -228,6 +228,56 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
+  test('cancels a pending completion when the agent reports an error', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'opencode' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'turn-complete',
+        title: 'OpenCode finished',
+        body: null,
+        occurredAt: BigInt(41),
+        dedupeKey: 'turn:41',
+      })
+
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'agent-error',
+        title: 'OpenCode failed',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'error:42',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'agent-error',
+        title: 'OpenCode failed',
+      })
+    )
+  })
+
   test('publishes only a live running-to-idle transition in a background pane', async () => {
     installBridge()
     const publish = vi.fn()
