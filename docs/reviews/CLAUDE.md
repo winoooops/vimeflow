@@ -45,7 +45,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 29       | 9    | 2026-08-01   |
 | [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 22       | 10   | 2026-08-04   |
-| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 59       | 64   | 2026-06-27   |
+| [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 63       | 65   | 2026-08-06   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |

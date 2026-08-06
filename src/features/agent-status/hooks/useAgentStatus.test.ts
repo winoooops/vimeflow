@@ -1475,8 +1475,9 @@ describe('useAgentStatus', () => {
     }) as unknown as typeof invoke)
 
     const { rerender } = renderHook(
-      ({ id }: { id: string | null }) => useAgentStatus(id),
-      { initialProps: { id: 'session-1' } }
+      ({ id, hasActiveTurn }: { id: string | null; hasActiveTurn: boolean }) =>
+        useAgentStatus(id, 0, hasActiveTurn),
+      { initialProps: { id: 'session-1', hasActiveTurn: true } }
     )
 
     await vi.waitFor(() => {
@@ -1485,7 +1486,7 @@ describe('useAgentStatus', () => {
       })
     })
 
-    rerender({ id: 'session-2' })
+    rerender({ id: 'session-2', hasActiveTurn: false })
 
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('detect_agent_in_session', {
@@ -1520,6 +1521,47 @@ describe('useAgentStatus', () => {
     })
   })
 
+  test('stops a Kimi watcher when navigating away after its turn settled', async () => {
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
+      if (cmd === 'detect_agent_in_session') {
+        return Promise.resolve({
+          sessionId: (args as { sessionId: string }).sessionId,
+          agentType: 'kimi',
+          pid: 123,
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { rerender } = renderHook(
+      ({ id, hasActiveTurn }: { id: string | null; hasActiveTurn: boolean }) =>
+        useAgentStatus(id, 0, hasActiveTurn),
+      { initialProps: { id: 'session-1', hasActiveTurn: true } }
+    )
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    act(() => {
+      rerender({ id: 'session-1', hasActiveTurn: false })
+    })
+    vi.mocked(invoke).mockClear()
+
+    act(() => {
+      rerender({ id: 'session-2', hasActiveTurn: false })
+    })
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+  })
+
   test('stops a retained Kimi watcher when the background agent exits', async () => {
     let oldKimiIsRunning = true
     vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
@@ -1540,8 +1582,9 @@ describe('useAgentStatus', () => {
     }) as unknown as typeof invoke)
 
     const { rerender } = renderHook(
-      ({ id }: { id: string | null }) => useAgentStatus(id),
-      { initialProps: { id: 'session-1' } }
+      ({ id, hasActiveTurn }: { id: string | null; hasActiveTurn: boolean }) =>
+        useAgentStatus(id, 0, hasActiveTurn),
+      { initialProps: { id: 'session-1', hasActiveTurn: true } }
     )
 
     await vi.waitFor(() => {
@@ -1550,7 +1593,7 @@ describe('useAgentStatus', () => {
       })
     })
 
-    rerender({ id: 'session-2' })
+    rerender({ id: 'session-2', hasActiveTurn: false })
     oldKimiIsRunning = false
 
     await act(async () => {
@@ -1561,6 +1604,63 @@ describe('useAgentStatus', () => {
       expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
         sessionId: 'pty-session-1',
       })
+    })
+  })
+
+  test('stops polling when a retained Kimi pane has been closed', async () => {
+    let oldKimiSessionExists = true
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
+      if (cmd === 'detect_agent_in_session') {
+        const { sessionId } = args as { sessionId: string }
+        if (sessionId === 'pty-session-1') {
+          if (oldKimiSessionExists) {
+            return Promise.resolve({ sessionId, agentType: 'kimi', pid: 123 })
+          }
+
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- IPC propagates the backend's bare string.
+          return Promise.reject(`Session not found: ${sessionId}`)
+        }
+
+        return Promise.resolve(null)
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { rerender } = renderHook(
+      ({ id, hasActiveTurn }: { id: string | null; hasActiveTurn: boolean }) =>
+        useAgentStatus(id, 0, hasActiveTurn),
+      { initialProps: { id: 'session-1', hasActiveTurn: true } }
+    )
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    act(() => {
+      rerender({ id: 'session-2', hasActiveTurn: false })
+    })
+    oldKimiSessionExists = false
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BACKGROUND_KIMI_POLL_MS_FOR_TEST)
+    })
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-session-1',
+      })
+    })
+
+    vi.mocked(invoke).mockClear()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BACKGROUND_KIMI_POLL_MS_FOR_TEST)
+    })
+
+    expect(invoke).not.toHaveBeenCalledWith('detect_agent_in_session', {
+      sessionId: 'pty-session-1',
     })
   })
 

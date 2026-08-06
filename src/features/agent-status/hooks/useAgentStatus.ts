@@ -169,7 +169,8 @@ const stopWatchers = async (
 
 export const useAgentStatus = (
   sessionId: string | null,
-  resetGeneration = 0
+  resetGeneration = 0,
+  hasActiveTurn = false
 ): AgentStatus => {
   const [status, setStatus] = useState<AgentStatus>(() =>
     createStatusForSession(sessionId)
@@ -228,6 +229,7 @@ export const useAgentStatus = (
   const detectedAgentTypeRef = useRef<AgentStatus['agentType']>(
     status.agentType
   )
+  const hasActiveTurnRef = useRef(hasActiveTurn)
   const backgroundKimiWatcherPtyIdsRef = useRef(new Set<string>())
   const backgroundKimiDetectionInFlightRef = useRef(new Set<string>())
 
@@ -297,7 +299,10 @@ export const useAgentStatus = (
       // notification-only watcher after this full watcher stops.
       const oldId = prevSessionIdRef.current
       if (oldId) {
-        if (detectedAgentTypeRef.current === 'kimi') {
+        if (
+          detectedAgentTypeRef.current === 'kimi' &&
+          hasActiveTurnRef.current
+        ) {
           const oldPtyId =
             knownPtyIdRef.current ?? getPtySessionId(oldId) ?? oldId
           backgroundKimiWatcherPtyIdsRef.current.add(oldPtyId)
@@ -337,6 +342,12 @@ export const useAgentStatus = (
     }
   }, [sessionId])
 
+  // Keep this after the session-change effect: that effect must read the
+  // departed pane's last phase before this stores the newly active pane's.
+  useEffect(() => {
+    hasActiveTurnRef.current = hasActiveTurn
+  }, [hasActiveTurn])
+
   useEffect(() => {
     const pollBackgroundKimiWatcher = async (ptyId: string): Promise<void> => {
       try {
@@ -350,8 +361,11 @@ export const useAgentStatus = (
         ) {
           stopBackgroundKimiWatcher(ptyId)
         }
-      } catch {
-        // A transient detection failure is retried on the next poll.
+      } catch (error: unknown) {
+        if (error === `Session not found: ${ptyId}`) {
+          stopBackgroundKimiWatcher(ptyId)
+        }
+        // Other detection failures are retried on the next poll.
       } finally {
         backgroundKimiDetectionInFlightRef.current.delete(ptyId)
       }

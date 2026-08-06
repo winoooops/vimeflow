@@ -816,7 +816,8 @@ const WorkspaceViewContent = (): ReactElement => {
 
   const agentStatus = useAgentStatus(
     activePtyBackedPanePtyId ?? null,
-    agentStatusResetGeneration
+    agentStatusResetGeneration,
+    activePtyBackedPane?.agentPhase === 'running'
   )
 
   const agentTokenTotal = agentStatus.contextWindow

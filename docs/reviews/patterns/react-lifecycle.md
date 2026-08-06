@@ -2,8 +2,8 @@
 id: react-lifecycle
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-06-30
-ref_count: 64
+last_updated: 2026-08-06
+ref_count: 65
 ---
 
 # React Lifecycle
@@ -602,3 +602,12 @@ to avoid unintended re-runs (e.g., PTY respawning on every cwd change).
 - **Finding:** Native overlay checkbox actions called the same close callback as one-shot menu items. The layout display menu therefore dismissed after each checkbox toggle, regressing the DOM menu's multi-select behavior.
 - **Fix:** Removed checkbox serialization from the v0 native menu builder so menus containing `Menu.Checkbox` fall back to the local DOM menu. Existing DOM checkbox behavior remains open for repeated toggles.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 63. Background watcher retention outlived settled and closed Kimi panes
+
+- **Source:** github-codex-connector | PR #785 | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/agent-status/hooks/useAgentStatus.ts`
+- **Finding:** Navigation retained Kimi's full transcript watcher based only on agent type, so an already-settled foreground turn was added after its completion cleanup had passed. Closed retained panes then returned the permanent `Session not found` IPC error, but the polling loop treated every rejection as transient and retried forever.
+- **Fix:** Passed the pane's authoritative lifecycle state into `useAgentStatus`, retained Kimi only while the departed pane has a running turn, and pruned exact backend `Session not found` errors while continuing to retry other failures. Added regression coverage for `running → idle → navigate` and for closing a retained background pane.
+- **Commit:** not committed (worktree-only fixer cycle)
