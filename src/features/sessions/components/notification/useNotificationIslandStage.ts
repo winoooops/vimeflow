@@ -83,6 +83,7 @@ export interface NotificationIslandModel {
   readonly coalescedCount: number
   readonly freshId: string | null
   readonly panelOpen: boolean
+  readonly panelFocus: 'dialog' | 'dialog-unfocused'
   readonly panelClosing: boolean
   readonly panelAnchor: PanelAnchorPoint | null
   readonly nativeOverlayActive: boolean
@@ -186,6 +187,7 @@ export const useNotificationIslandStage = ({
   const lastToastRef = useRef<ToastDisplay | null>(null)
   const openTimerRef = useRef<number | null>(null)
   const panelExitTimerRef = useRef<number | null>(null)
+  const focusPanelOnOpenRef = useRef(false)
   const wasPanelOpenRef = useRef(false)
   const restoreBellFocusRef = useRef(true)
   const seenIdsRef = useRef(new Set(visibleRecords.map(({ id }) => id)))
@@ -197,6 +199,22 @@ export const useNotificationIslandStage = ({
   const [freshId, setFreshId] = useState<string | null>(null)
   const [pingArrivalId, setPingArrivalId] = useState<string | null>(null)
   const [nativeOverlayActive, setNativeOverlayActive] = useState(false)
+
+  const toastOwnsFocus = useCallback(
+    (): boolean =>
+      toastIdRef.current !== null &&
+      document.activeElement instanceof Node &&
+      (rootRef.current?.contains(document.activeElement) ?? false),
+    []
+  )
+
+  const focusBell = useCallback((): void => {
+    // Chromium supports focusVisible even though this TS lib omits it.
+    const focusOptions: FocusOptions & { focusVisible?: boolean } = {
+      focusVisible: false,
+    }
+    queueMicrotask(() => bellRef.current?.focus(focusOptions))
+  }, [])
 
   const clearTimer = useCallback((): void => {
     if (timerRef.current !== null) {
@@ -216,13 +234,21 @@ export const useNotificationIslandStage = ({
     preloadNativeOverlay()
   }, [visibleRecords.length])
 
-  const closeToast = useCallback((): void => {
+  const hideToast = useCallback((): void => {
     clearTimer()
     toastHeldRef.current = false
     toastIdRef.current = null
     setToastId(null)
     setCoalescedCount(0)
   }, [clearTimer])
+
+  const closeToast = useCallback((): void => {
+    const restoreFocus = toastOwnsFocus()
+    hideToast()
+    if (restoreFocus) {
+      focusBell()
+    }
+  }, [focusBell, hideToast, toastOwnsFocus])
 
   const startToastDwell = useCallback((): void => {
     toastHeldRef.current = false
@@ -282,7 +308,7 @@ export const useNotificationIslandStage = ({
   useEffect(() => {
     if (visibleRecords.length === 0) {
       seenIdsRef.current = new Set()
-      closeToast()
+      hideToast()
       setFreshId(null)
       cancelPanelExit()
       setPanelOpen(false)
@@ -326,7 +352,7 @@ export const useNotificationIslandStage = ({
     if (!toastHeldRef.current) {
       startToastDwell()
     }
-  }, [cancelPanelExit, closeToast, startToastDwell, visibleRecords])
+  }, [cancelPanelExit, hideToast, startToastDwell, visibleRecords])
 
   useEffect(() => {
     if (toastId === null) {
@@ -367,17 +393,18 @@ export const useNotificationIslandStage = ({
         return
       }
 
-      closeToast()
+      hideToast()
     }
 
     document.addEventListener('pointerdown', onPointerDown)
 
     return (): void =>
       document.removeEventListener('pointerdown', onPointerDown)
-  }, [closeToast, toastId])
+  }, [hideToast, toastId])
 
   const openPanel = useCallback((): void => {
     cancelPanelExit()
+    focusPanelOnOpenRef.current = toastOwnsFocus()
 
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect !== undefined) {
@@ -391,9 +418,9 @@ export const useNotificationIslandStage = ({
       })
     }
 
-    closeToast()
+    hideToast()
     setPanelOpen(true)
-  }, [cancelPanelExit, closeToast])
+  }, [cancelPanelExit, hideToast, toastOwnsFocus])
 
   const togglePanel = useCallback((): void => {
     closeToast()
@@ -509,19 +536,11 @@ export const useNotificationIslandStage = ({
       const restoreBellFocus = restoreBellFocusRef.current
       restoreBellFocusRef.current = true
       if (restoreBellFocus) {
-        // focusVisible: false keeps the focus move (keyboard/AT users land
-        // back on the bell) without matching :focus-visible — an Escape
-        // close would otherwise leave a "navigation" ring on the bell. The
-        // property is missing from this TS lib's FocusOptions, hence the
-        // widened type (supported in Chromium/WebKit).
-        const focusOptions: FocusOptions & { focusVisible?: boolean } = {
-          focusVisible: false,
-        }
-        queueMicrotask(() => bellRef.current?.focus(focusOptions))
+        focusBell()
       }
     }
     wasPanelOpenRef.current = panelOpen
-  }, [panelOpen])
+  }, [focusBell, panelOpen])
 
   // Replays the 420ms bell ping on every arrival. Done imperatively (remove,
   // reflow, re-add) instead of remounting so a focused bell keeps its focus.
@@ -596,6 +615,7 @@ export const useNotificationIslandStage = ({
     coalescedCount,
     freshId,
     panelOpen,
+    panelFocus: focusPanelOnOpenRef.current ? 'dialog' : 'dialog-unfocused',
     panelClosing,
     panelAnchor,
     nativeOverlayActive,

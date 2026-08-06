@@ -2,8 +2,8 @@
 id: accessibility
 category: a11y
 created: 2026-04-09
-last_updated: 2026-08-02
-ref_count: 91
+last_updated: 2026-08-06
+ref_count: 92
 ---
 
 # Accessibility
@@ -963,3 +963,12 @@ handlers must not trap focus without implementing the promised behavior.
 - **Finding:** Notification row dismiss buttons used only the notification title in their accessible name, so duplicate titles from different sessions were indistinguishable to assistive-technology users.
 - **Fix:** Included the session name in the dismiss button label to match the sibling Open action. Updated panel tests to assert the contextual label.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 104. Toast transitions hid focused controls in an inert subtree
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/notification/useNotificationIslandStage.ts`
+- **Finding:** Explicit toast close and panel-open transitions made the still-focused toast inert without first handing focus to the bell or panel, dropping keyboard users at the document body.
+- **Fix:** Split focus-neutral toast hiding from explicit close, restored focused closes to the bell, and selected the panel's initial-focus mode only when focus originated in the toast. Added close-button, Escape, and toast-to-panel focus regressions.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

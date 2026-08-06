@@ -390,6 +390,70 @@ describe('NotificationIsland', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
+  test('restores bell focus when the toast close button is used', async () => {
+    const initialProps = props([])
+    const { rerender } = render(<NotificationIsland {...initialProps} />)
+
+    rerender(
+      <NotificationIsland {...initialProps} records={[notification('first')]} />
+    )
+
+    const closeButton = screen.getByRole('button', {
+      name: 'Dismiss notification toast',
+    })
+    act(() => closeButton.focus())
+    fireEvent.click(closeButton)
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Notifications, 1 unread' })
+      ).toHaveFocus()
+    )
+  })
+
+  test('restores bell focus when Escape closes a focused toast', async () => {
+    const initialProps = props([])
+    const { rerender } = render(<NotificationIsland {...initialProps} />)
+
+    rerender(
+      <NotificationIsland {...initialProps} records={[notification('first')]} />
+    )
+
+    act(() =>
+      screen
+        .getByRole('button', { name: /Open notification center for/ })
+        .focus()
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Notifications, 1 unread' })
+      ).toHaveFocus()
+    )
+  })
+
+  test('moves toast focus into the notification panel when it opens', async () => {
+    const initialProps = props([])
+    const { rerender } = render(<NotificationIsland {...initialProps} />)
+
+    rerender(
+      <NotificationIsland {...initialProps} records={[notification('first')]} />
+    )
+
+    const toastButton = screen.getByRole('button', {
+      name: /Open notification center for Claude finished/,
+    })
+    toastButton.focus()
+    fireEvent.click(toastButton)
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Mark all read (1)' })
+      ).toHaveFocus()
+    )
+  })
+
   test('keeps one mounted anchor when the toast opens the panel', async () => {
     const initialProps = props([])
     const { rerender } = render(<NotificationIsland {...initialProps} />)
