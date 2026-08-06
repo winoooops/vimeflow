@@ -46,6 +46,7 @@ const createDefaultMockService = (): ITerminalService =>
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
     getProgress: vi.fn(() => undefined),
+    clearProgress: vi.fn(),
     onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
     getPtyReplay: vi.fn().mockResolvedValue(null),
     listSessions: vi.fn().mockResolvedValue({
@@ -2244,6 +2245,7 @@ describe('Body', () => {
         ),
         onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
         getProgress: vi.fn(() => undefined),
+        clearProgress: vi.fn(),
         onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
         getPtyReplay: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({
@@ -2309,6 +2311,7 @@ describe('Body', () => {
         ),
         onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
         getProgress: vi.fn(() => undefined),
+        clearProgress: vi.fn(),
         onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
         getPtyReplay: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({
@@ -2374,6 +2377,7 @@ describe('Body', () => {
         ),
         onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
         getProgress: vi.fn(() => undefined),
+        clearProgress: vi.fn(),
         onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
         getPtyReplay: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({

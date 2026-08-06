@@ -138,8 +138,10 @@ const session: Session = {
   },
 }
 
+const clearProgressSpy = vi.fn()
+
 const baseProps = {
-  service: {} as never,
+  service: { clearProgress: clearProgressSpy } as never,
   session,
   pane: session.panes[0],
   isActive: true,
@@ -156,6 +158,7 @@ describe('TerminalPane index', () => {
     useGitWorktreeSpy.mockClear()
     usePtyProgressSpy.mockReset()
     usePtyProgressSpy.mockReturnValue(undefined)
+    clearProgressSpy.mockClear()
     vi.mocked(usePaneWidth).mockReturnValue(null)
   })
 
@@ -448,8 +451,18 @@ describe('TerminalPane index', () => {
     ).toHaveAttribute('aria-valuenow', '35')
   })
 
-  test('hides native progress when its semantic agent turn settles', () => {
-    usePtyProgressSpy.mockReturnValue({ state: 'normal', value: 35 })
+  test('clears native progress when its semantic agent turn settles', () => {
+    let nativeProgress: PtyProgress | undefined = {
+      state: 'normal',
+      value: 35,
+    }
+
+    const clearProgress = vi.fn(() => {
+      nativeProgress = undefined
+    })
+    const service = { clearProgress } as never
+
+    usePtyProgressSpy.mockImplementation(() => nativeProgress)
 
     const runningPane = {
       ...baseProps.pane,
@@ -459,7 +472,7 @@ describe('TerminalPane index', () => {
     }
 
     const { rerender } = render(
-      <TerminalPane {...baseProps} pane={runningPane} />
+      <TerminalPane {...baseProps} service={service} pane={runningPane} />
     )
 
     expect(
@@ -469,11 +482,21 @@ describe('TerminalPane index', () => {
     rerender(
       <TerminalPane
         {...baseProps}
+        service={service}
         pane={{ ...runningPane, agentPhase: 'idle', status: 'idle' }}
       />
     )
 
+    expect(clearProgress).toHaveBeenCalledWith('pty-s1')
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(
+      <TerminalPane {...baseProps} service={service} pane={runningPane} />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuetext', 'In progress')
   })
 
   test('does not treat a live PTY as an active agent turn', () => {

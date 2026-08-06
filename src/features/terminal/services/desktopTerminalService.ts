@@ -193,10 +193,6 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
-  private clearProgress(sessionId: string): void {
-    this.progressTracker.clear(sessionId)
-  }
-
   private setProgress(sessionId: string, progress: PtyProgress): void {
     this.progressTracker.set(sessionId, progress)
   }
@@ -327,6 +323,10 @@ export class DesktopTerminalService implements ITerminalService {
 
   getProgress(sessionId: string): PtyProgress | undefined {
     return this.progressTracker.get(sessionId)
+  }
+
+  clearProgress(sessionId: string): void {
+    this.progressTracker.clear(sessionId)
   }
 
   async onProgress(

@@ -76,6 +76,9 @@ export interface ITerminalService {
   /** Return the latest non-expired progress value for one PTY. */
   getProgress(sessionId: string): PtyProgress | undefined
 
+  /** Clear cached progress for one PTY. */
+  clearProgress(sessionId: string): void
+
   /** Subscribe to PTY-scoped progress changes and clears. */
   onProgress(
     callback: (sessionId: string, progress: PtyProgress | undefined) => void
@@ -346,6 +349,10 @@ export class MockTerminalService implements ITerminalService {
     return this.progressTracker.get(sessionId)
   }
 
+  clearProgress(sessionId: string): void {
+    this.progressTracker.clear(sessionId)
+  }
+
   onProgress(
     callback: (sessionId: string, progress: PtyProgress | undefined) => void
   ): Promise<() => void> {
@@ -411,13 +418,13 @@ export class MockTerminalService implements ITerminalService {
   }
 
   emitExit(sessionId: string, code: number | null): void {
-    this.progressTracker.clear(sessionId)
+    this.clearProgress(sessionId)
     this.exitCallbacks.forEach((cb) => cb(sessionId, code))
   }
 
   emitProgress(sessionId: string, progress: PtyProgress | undefined): void {
     if (progress === undefined) {
-      this.progressTracker.clear(sessionId)
+      this.clearProgress(sessionId)
 
       return
     }

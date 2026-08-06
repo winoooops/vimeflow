@@ -356,12 +356,23 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
         (sameAgentTurn && progressOwnerRef.current.native))
 
     useEffect(() => {
+      if (hasSemanticAgentLifecycle && !lifecycleProgressActive) {
+        service.clearProgress(pane.ptyId)
+      }
+
       progressOwnerRef.current = {
         agentSessionId: pane.agentSessionId,
         running: lifecycleProgressActive,
         native: nativeOwnsTurn,
       }
-    }, [lifecycleProgressActive, nativeOwnsTurn, pane.agentSessionId])
+    }, [
+      hasSemanticAgentLifecycle,
+      lifecycleProgressActive,
+      nativeOwnsTurn,
+      pane.agentSessionId,
+      pane.ptyId,
+      service,
+    ])
 
     const effectiveProgress =
       (!hasSemanticAgentLifecycle || lifecycleProgressActive

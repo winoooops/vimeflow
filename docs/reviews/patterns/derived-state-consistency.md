@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-08-06
-ref_count: 31
+ref_count: 32
 ---
 
 # Derived State Consistency
@@ -526,4 +526,18 @@ base data is technically "correct."
 - **File:** `crates/backend/src/runtime/state.rs`
 - **Finding:** The lightweight notification watcher copied Kimi's initial wire path, but the full transcript supervisor can relocate to a delayed or resumed session without updating that copy, so later completions were missed.
 - **Fix:** Made Kimi's relocation-aware transcript decoder the sole completion producer and skipped the fixed-path notification registration. Added a regression that relocates from an old wire, suppresses replay, and emits one live completion from the new wire.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 40. Cached OSC progress crossed a semantic turn boundary
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** When an agent omitted its OSC remove frame, the cached progress
+  value survived lifecycle settlement and could claim ownership of the next
+  turn before the progress timeout expired.
+- **Fix:** Exposed the progress tracker's existing clear operation through the
+  terminal service and clear it whenever a semantic pane leaves its running
+  lifecycle. Added a regression covering idle settlement followed by a new
+  running turn.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

@@ -221,6 +221,7 @@ const makeMockService = (): ITerminalService => ({
   onError: vi.fn(() => Promise.resolve((): void => undefined)),
   onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
   getProgress: vi.fn(() => undefined),
+  clearProgress: vi.fn(),
   onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
   getPtyReplay: vi.fn(() => Promise.resolve(null)),
   listSessions: vi.fn(() =>
