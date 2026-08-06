@@ -131,6 +131,7 @@ struct Registration {
     notification_body: Option<String>,
     claude_transcript_cursors: HashMap<PathBuf, u64>,
     pending_opencode_idle: Option<PendingOpenCodeIdle>,
+    opencode_turn_sequence: u64,
     opencode_turn_failed: bool,
     dedupe_keys: HashSet<String>,
     dedupe_order: VecDeque<String>,
@@ -165,6 +166,7 @@ impl Registration {
             notification_body: None,
             claude_transcript_cursors: HashMap::new(),
             pending_opencode_idle: None,
+            opencode_turn_sequence: 0,
             opencode_turn_failed: false,
             dedupe_keys: HashSet::new(),
             dedupe_order: VecDeque::new(),
@@ -184,11 +186,6 @@ impl Registration {
         self.dedupe_keys.insert(key.to_string());
         self.dedupe_order.push_back(key.to_string());
         true
-    }
-
-    fn forget_dedupe_key(&mut self, key: &str) {
-        self.dedupe_keys.remove(key);
-        self.dedupe_order.retain(|candidate| candidate != key);
     }
 }
 
@@ -1350,7 +1347,7 @@ fn opencode_completion(occurred_at: u64, agent_session_id: Option<String>) -> Cl
     ClassifiedSignal::Notification {
         reason: AgentNotificationReason::TurnComplete,
         occurred_at,
-        dedupe_key: agent_session_id.as_deref().map(opencode_completion_key),
+        dedupe_key: None,
         turn_id: None,
         agent_session_id,
         body: None,
@@ -1360,8 +1357,8 @@ fn opencode_completion(occurred_at: u64, agent_session_id: Option<String>) -> Cl
     }
 }
 
-fn opencode_completion_key(agent_session_id: &str) -> String {
-    bound_provider_identifier(format!("turn:{agent_session_id}"))
+fn opencode_completion_key(agent_session_id: &str, turn_sequence: u64) -> String {
+    bound_provider_identifier(format!("turn:{turn_sequence}:{agent_session_id}"))
 }
 
 fn apply_signal(
@@ -1402,10 +1399,10 @@ fn apply_signal(
             let agent_session_id = agent_session_id.map(bound_provider_identifier);
             flush_pending_opencode_idle(registration, diagnostics, events);
             if registration.provider == NotificationProvider::OpenCode {
-                registration.opencode_turn_failed = false;
-                if let Some(agent_session_id) = agent_session_id.as_deref() {
-                    registration.forget_dedupe_key(&opencode_completion_key(agent_session_id));
+                if !registration.turn_active {
+                    registration.opencode_turn_sequence += 1;
                 }
+                registration.opencode_turn_failed = false;
             }
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
@@ -1442,11 +1439,24 @@ fn apply_signal(
             requires_active_turn,
             ends_turn,
         } => {
-            let dedupe_key = dedupe_key.map(bound_provider_identifier);
+            let mut dedupe_key = dedupe_key.map(bound_provider_identifier);
             let turn_id = turn_id.map(bound_provider_identifier);
             let agent_session_id = agent_session_id.map(bound_provider_identifier);
             if agent_session_id.is_some() {
                 registration.agent_session_id = agent_session_id;
+            }
+            if registration.provider == NotificationProvider::OpenCode
+                && matches!(reason, AgentNotificationReason::TurnComplete)
+            {
+                dedupe_key = registration
+                    .agent_session_id
+                    .as_deref()
+                    .map(|agent_session_id| {
+                        opencode_completion_key(
+                            agent_session_id,
+                            registration.opencode_turn_sequence,
+                        )
+                    });
             }
             let mismatched_turn = registration.turn_id.is_some()
                 && turn_id.is_some()
@@ -2581,6 +2591,49 @@ mod tests {
 
         assert_eq!(sink.count("agent-notification"), 1);
         assert_eq!(sink.recorded()[0].1["body"], "PR #44 is ready for review");
+    }
+
+    #[test]
+    fn opencode_completion_dedupe_is_scoped_to_each_turn() {
+        let mut registration = Registration::new(
+            "pty-opencode".to_string(),
+            1,
+            NotificationProvider::OpenCode,
+            PathBuf::from("session.jsonl"),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+
+        for line in [
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":3,"kind":"event","type":"assistant.text","data":{"sessionID":"ses1","text":"First turn done"}}"#,
+            r#"{"v":1,"ts":4,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+            r#"{"v":1,"ts":5,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+            r#"{"v":1,"ts":6,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+            r#"{"v":1,"ts":7,"kind":"event","type":"assistant.text","data":{"sessionID":"ses1","text":"Second turn done"}}"#,
+            r#"{"v":1,"ts":8,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+        ] {
+            apply_signal(
+                &mut registration,
+                classify_opencode(line.as_bytes()).expect("valid OpenCode record"),
+                &diagnostics,
+                &sink,
+            );
+        }
+
+        let recorded = sink.recorded();
+        assert_eq!(recorded.len(), 2);
+        assert_eq!(recorded[0].1["dedupeKey"], "turn:1:ses1");
+        assert_eq!(recorded[1].1["dedupeKey"], "turn:2:ses1");
+        assert_eq!(
+            diagnostics
+                .lock()
+                .expect("notification diagnostics mutex poisoned")
+                .duplicate_suppressions,
+            2
+        );
     }
 
     #[test]

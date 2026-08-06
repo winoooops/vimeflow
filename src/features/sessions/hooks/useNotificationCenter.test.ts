@@ -42,17 +42,17 @@ describe('notification center domain', () => {
     expect(notificationCategory('agent-error')).toBe('err')
   })
 
-  test('publishes newest first and ignores a duplicate producer key', () => {
+  test('keeps successive OpenCode turns and ignores same-turn delivery duplicates', () => {
     const first = notificationCenterReducer(notificationCenterInitialState, {
       type: 'publish',
-      record: record('first', { dedupeKey: 'turn-1' }),
+      record: record('first', { dedupeKey: 'turn:1:ses1' }),
     })
 
     const second = notificationCenterReducer(first, {
       type: 'publish',
       record: record('second', {
         occurredAt: 2,
-        dedupeKey: 'turn-2',
+        dedupeKey: 'turn:2:ses1',
       }),
     })
 
@@ -62,7 +62,7 @@ describe('notification center domain', () => {
         type: 'publish',
         record: record('duplicate', {
           title: 'Duplicate delivery',
-          dedupeKey: 'turn-2',
+          dedupeKey: 'turn:2:ses1',
         }),
       })
     ).toBe(second)

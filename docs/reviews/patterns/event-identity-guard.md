@@ -2,8 +2,8 @@
 id: event-identity-guard
 category: backend
 created: 2026-06-11
-last_updated: 2026-06-21
-ref_count: 1
+last_updated: 2026-08-05
+ref_count: 2
 ---
 
 # Event Identity Guard
@@ -40,3 +40,12 @@ Events that carry an identity field for deduplication, stale-event rejection, or
 - **Finding:** A locator that had already resolved one OpenCode session could later see a newer same-cwd index row from another pane and switch its transcript path by recency alone. That let an older pane's watcher surface another pane's agent activity.
 - **Fix:** Made same-cwd resolution fail closed when multiple distinct session IDs are fresh, while preserving an existing cached binding across ambiguous or missing-current-cwd reads.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 4. OpenCode completion dedupe reused session identity across turns
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`, `src/features/sessions/hooks/useNotificationCenter.ts`
+- **Finding:** OpenCode completion events reused `turn:<agentSessionId>` after each busy edge, but the renderer retained that key in notification history and suppressed every later completion for the same session.
+- **Fix:** Added a per-registration OpenCode turn sequence to completion keys so status-idle and session-idle duplicates share one identity while later turns receive distinct identities. Added backend and renderer regressions for the cross-layer contract.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
