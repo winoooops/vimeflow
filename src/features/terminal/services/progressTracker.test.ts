@@ -22,4 +22,17 @@ describe('ProgressTracker', () => {
     })
     expect(callback).toHaveBeenNthCalledWith(2, 'pty-1', undefined)
   })
+
+  test('distinguishes explicit removal from timeout expiry', () => {
+    vi.useFakeTimers()
+    const tracker = new ProgressTracker([])
+
+    tracker.set('removed', { state: 'normal', value: 10 })
+    tracker.set('expired', { state: 'normal', value: 20 })
+    tracker.clear('removed')
+    vi.advanceTimersByTime(15_000)
+
+    expect(tracker.hasExpired('removed')).toBe(false)
+    expect(tracker.hasExpired('expired')).toBe(true)
+  })
 })

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentNotificationEvent } from '../../../bindings/AgentNotificationEvent'
+import type {
+  AgentLifecycleEvent,
+  AgentNotificationEvent,
+} from '../../../bindings'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
 import {
@@ -30,6 +33,7 @@ import type {
 const RECENT_TOOL_CALLS_LIMIT = 50
 const DETECTION_POLL_MS = 500
 const BACKGROUND_KIMI_DETECTION_POLL_MS = 3000
+const BACKGROUND_KIMI_STARTUP_LEASE_MS = 5000
 const EXIT_HOLD_MS = 5000
 
 const TOOL_CALL_FLOOD_THRESHOLD = 16
@@ -231,16 +235,36 @@ export const useAgentStatus = (
   )
   const hasActiveTurnRef = useRef(hasActiveTurn)
   const backgroundKimiWatcherPtyIdsRef = useRef(new Set<string>())
+  // Lifecycle callbacks can lead the React pane-state commit during startup.
+  const backgroundKimiRunningPtyIdsRef = useRef(new Set<string>())
   const backgroundKimiDetectionInFlightRef = useRef(new Set<string>())
 
-  const stopBackgroundKimiWatcher = useCallback((ptyId: string): void => {
-    if (!backgroundKimiWatcherPtyIdsRef.current.delete(ptyId)) {
-      return
-    }
+  const backgroundKimiStartupTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>()
+  )
 
-    backgroundKimiDetectionInFlightRef.current.delete(ptyId)
-    void stopWatchers(ptyId, ptyId)
+  const clearBackgroundKimiStartupLease = useCallback((ptyId: string): void => {
+    const startupTimer = backgroundKimiStartupTimersRef.current.get(ptyId)
+    if (startupTimer !== undefined) {
+      clearTimeout(startupTimer)
+      backgroundKimiStartupTimersRef.current.delete(ptyId)
+    }
   }, [])
+
+  const stopBackgroundKimiWatcher = useCallback(
+    (ptyId: string): void => {
+      clearBackgroundKimiStartupLease(ptyId)
+
+      backgroundKimiRunningPtyIdsRef.current.delete(ptyId)
+      if (!backgroundKimiWatcherPtyIdsRef.current.delete(ptyId)) {
+        return
+      }
+
+      backgroundKimiDetectionInFlightRef.current.delete(ptyId)
+      void stopWatchers(ptyId, ptyId)
+    },
+    [clearBackgroundKimiStartupLease]
+  )
 
   // Stale-detection guard: written synchronously during render so IPC continuations see the latest sessionId.
   const currentSessionIdRef = useRef(sessionId)
@@ -294,18 +318,28 @@ export const useAgentStatus = (
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
       // Kimi's transcript supervisor is also its relocation-aware background
-      // notification watcher. Retain it across navigation until the turn
-      // settles or the agent exits. Other providers retain their separate
+      // notification watcher. Retain it through uncommitted startup and active
+      // background turns. Other providers retain their separate
       // notification-only watcher after this full watcher stops.
       const oldId = prevSessionIdRef.current
       if (oldId) {
-        if (
-          detectedAgentTypeRef.current === 'kimi' &&
-          hasActiveTurnRef.current
-        ) {
-          const oldPtyId =
-            knownPtyIdRef.current ?? getPtySessionId(oldId) ?? oldId
+        const oldPtyId =
+          knownPtyIdRef.current ?? getPtySessionId(oldId) ?? oldId
+
+        const backgroundTurnRunning =
+          hasActiveTurnRef.current ||
+          backgroundKimiRunningPtyIdsRef.current.has(oldPtyId)
+        if (detectedAgentTypeRef.current === 'kimi') {
           backgroundKimiWatcherPtyIdsRef.current.add(oldPtyId)
+          if (!backgroundTurnRunning) {
+            clearBackgroundKimiStartupLease(oldPtyId)
+
+            const startupTimer = setTimeout(
+              () => stopBackgroundKimiWatcher(oldPtyId),
+              BACKGROUND_KIMI_STARTUP_LEASE_MS
+            )
+            backgroundKimiStartupTimersRef.current.set(oldPtyId, startupTimer)
+          }
         } else {
           void stopWatchers(oldId, knownPtyIdRef.current)
         }
@@ -340,7 +374,12 @@ export const useAgentStatus = (
       }
       setStatus(nextStatus)
     }
-  }, [sessionId])
+  }, [
+    clearBackgroundKimiStartupLease,
+    hasActiveTurn,
+    sessionId,
+    stopBackgroundKimiWatcher,
+  ])
 
   // Keep this after the session-change effect: that effect must read the
   // departed pane's last phase before this stores the newly active pane's.
@@ -1065,40 +1104,64 @@ export const useAgentStatus = (
 
   useEffect(() => {
     let cancelled = false
-    let unlistenFn: (() => void) | undefined
+    const unlistenFns: (() => void)[] = []
 
     void (async (): Promise<void> => {
-      let fn: () => void
-      try {
-        fn = await listen<AgentNotificationEvent>(
-          'agent-notification',
-          (payload) => {
-            if (
-              payload.reason === 'turn-complete' ||
-              payload.reason === 'agent-error'
-            ) {
-              stopBackgroundKimiWatcher(payload.ptyId)
-            }
+      const results = await Promise.allSettled([
+        listen<AgentNotificationEvent>('agent-notification', (payload) => {
+          if (
+            payload.reason === 'turn-complete' ||
+            payload.reason === 'agent-error'
+          ) {
+            stopBackgroundKimiWatcher(payload.ptyId)
           }
-        )
-      } catch {
-        return
-      }
+        }),
+        listen<AgentLifecycleEvent>('agent-lifecycle', (payload) => {
+          if (payload.phase !== 'running') {
+            backgroundKimiRunningPtyIdsRef.current.delete(payload.sessionId)
 
-      // cancelled may flip while the listener promise is awaiting.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (cancelled) {
-        fn()
-      } else {
-        unlistenFn = fn
+            return
+          }
+
+          const currentId = prevSessionIdRef.current
+
+          const currentKimiPtyId =
+            detectedAgentTypeRef.current === 'kimi' && currentId !== null
+              ? (knownPtyIdRef.current ??
+                getPtySessionId(currentId) ??
+                currentId)
+              : undefined
+          if (
+            payload.sessionId !== currentKimiPtyId &&
+            !backgroundKimiWatcherPtyIdsRef.current.has(payload.sessionId)
+          ) {
+            return
+          }
+
+          backgroundKimiRunningPtyIdsRef.current.add(payload.sessionId)
+          clearBackgroundKimiStartupLease(payload.sessionId)
+        }),
+      ])
+
+      for (const result of results) {
+        if (result.status !== 'fulfilled') {
+          continue
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- cleanup can run while the listeners attach
+        if (cancelled) {
+          result.value()
+        } else {
+          unlistenFns.push(result.value)
+        }
       }
     })()
 
     return (): void => {
       cancelled = true
-      unlistenFn?.()
+      unlistenFns.forEach((unlisten) => unlisten())
     }
-  }, [stopBackgroundKimiWatcher])
+  }, [clearBackgroundKimiStartupLease, stopBackgroundKimiWatcher])
 
   // Cleanup watchers when the hook unmounts entirely.
   // Read from prevSessionIdRef (not the closure's sessionId) so the
@@ -1132,7 +1195,12 @@ export const useAgentStatus = (
         void stopWatchers(ptyId, ptyId)
       }
       backgroundKimiWatcherPtyIdsRef.current.clear()
+      backgroundKimiRunningPtyIdsRef.current.clear()
       backgroundKimiDetectionInFlightRef.current.clear()
+      backgroundKimiStartupTimersRef.current.forEach((timer) =>
+        clearTimeout(timer)
+      )
+      backgroundKimiStartupTimersRef.current.clear()
     },
     []
   )

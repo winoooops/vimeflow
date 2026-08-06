@@ -332,6 +332,10 @@ export class DesktopTerminalService implements ITerminalService {
     this.progressTracker.clear(sessionId)
   }
 
+  hasProgressExpired(sessionId: string): boolean {
+    return this.progressTracker.hasExpired(sessionId)
+  }
+
   async onProgress(
     callback: (sessionId: string, progress: PtyProgress | undefined) => void
   ): Promise<() => void> {

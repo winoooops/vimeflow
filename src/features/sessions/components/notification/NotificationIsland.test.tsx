@@ -832,6 +832,51 @@ describe('NotificationIsland', () => {
     expect(handlers.onDismiss).toHaveBeenCalledWith('need')
   })
 
+  test('updates an open notification panel anchor on viewport resize', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const bridge = installNativeOverlayBridge()
+
+    render(<NotificationIsland {...props([notification('need')])} />)
+
+    const island = screen.getByRole('navigation', { name: 'Open sessions' })
+    let rect = {
+      x: 100,
+      y: 8,
+      width: 120,
+      height: 28,
+      top: 8,
+      right: 220,
+      bottom: 36,
+      left: 100,
+      toJSON: () => ({}),
+    } as DOMRect
+    vi.spyOn(island, 'getBoundingClientRect').mockImplementation(() => rect)
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Notifications, 1 unread' })
+    )
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledOnce())
+
+    expect(bridge.open.mock.calls[0]?.[0]).toMatchObject({
+      anchorRect: { x: 160, y: 8, width: 0, height: 0 },
+    })
+
+    rect = {
+      ...rect,
+      x: 200,
+      width: 440,
+      right: 640,
+      left: 200,
+    }
+    fireEvent.resize(window)
+
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledTimes(2))
+    expect(bridge.open.mock.calls[1]?.[0]).toMatchObject({
+      anchorRect: { x: 420, y: 8, width: 0, height: 0 },
+    })
+  })
+
   test('does not preload native overlay windows before notifications exist', () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')

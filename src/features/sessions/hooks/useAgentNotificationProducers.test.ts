@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { AgentLifecycleEvent, AgentNotificationEvent } from '@/bindings'
+import type { AgentStatusEvent } from '@/features/agent-status/types'
 import { __resetBackendEventSubscriptions } from '@/lib/backend'
 import { emitTerminalAttention } from '@/features/terminal/notifications'
 import type { Session } from '../types'
@@ -130,7 +131,6 @@ describe('useAgentNotificationProducers', () => {
   test('uses observed status identity before pane restoration hydrates', async () => {
     installBridge()
     const publish = vi.fn()
-    const agentSessionIds = new Map<string, string>()
 
     renderHook(() =>
       useAgentNotificationProducers({
@@ -143,25 +143,29 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
-        getAgentSessionId: (ptyId) => agentSessionIds.get(ptyId),
+        getAgentSessionId: () => undefined,
       })
     )
 
-    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    await waitFor(() => {
+      expect(listeners.has('agent-status')).toBe(true)
+      expect(listeners.has('agent-notification')).toBe(true)
+    })
     vi.useFakeTimers()
 
     act(() => {
-      emit<AgentNotificationEvent>('agent-notification', {
-        ptyId: 'pty-background',
+      emit<AgentStatusEvent>('agent-status', {
+        sessionId: 'pty-background',
         agentSessionId: 'agent-background',
-        reason: 'agent-error',
-        title: 'Unverified Codex failed',
-        body: null,
-        occurredAt: BigInt(41),
-        dedupeKey: 'error:41',
+        modelId: null,
+        modelDisplayName: null,
+        version: null,
+        contextWindow: null,
+        cost: null,
+        rateLimits: null,
+        usageFetched: false,
       })
 
-      agentSessionIds.set('pty-background', 'agent-background')
       emit<AgentNotificationEvent>('agent-notification', {
         ptyId: 'pty-background',
         agentSessionId: 'agent-background',

@@ -328,9 +328,10 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       pane.ptyId,
       isSessionVisible && !isAwaitingRestart
     )
+    const progressExpired = service.hasProgressExpired?.(pane.ptyId) ?? false
 
-    // Once native OSC progress appears, it owns the rest of this agent turn;
-    // its remove event must not uncover the lifecycle fallback.
+    // Once native OSC progress appears, it owns the rest of this agent turn.
+    // Explicit remove stays hidden; timeout expiry restores the fallback.
     const progressOwnerRef = useRef<{
       agentSessionId: string | undefined
       running: boolean
@@ -353,7 +354,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
     const nativeOwnsTurn =
       lifecycleProgressActive &&
       (progress !== undefined ||
-        (sameAgentTurn && progressOwnerRef.current.native))
+        (sameAgentTurn && progressOwnerRef.current.native && !progressExpired))
 
     useEffect(() => {
       const previousOwner = progressOwnerRef.current

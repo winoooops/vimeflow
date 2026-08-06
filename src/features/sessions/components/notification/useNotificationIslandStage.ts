@@ -413,9 +413,7 @@ export const useNotificationIslandStage = ({
       document.removeEventListener('pointerdown', onPointerDown)
   }, [hideToast, toastId])
 
-  const openPanel = useCallback((): void => {
-    cancelPanelExit()
-
+  const updatePanelAnchor = useCallback((): void => {
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect !== undefined) {
       // Anchor to the island's top-center point: the card opens where the
@@ -427,10 +425,25 @@ export const useNotificationIslandStage = ({
         height: 0,
       })
     }
+  }, [])
+
+  const openPanel = useCallback((): void => {
+    cancelPanelExit()
+    updatePanelAnchor()
 
     hideToast()
     setPanelOpen(true)
-  }, [cancelPanelExit, hideToast])
+  }, [cancelPanelExit, hideToast, updatePanelAnchor])
+
+  useEffect(() => {
+    if (!panelOpen) {
+      return
+    }
+
+    window.addEventListener('resize', updatePanelAnchor)
+
+    return (): void => window.removeEventListener('resize', updatePanelAnchor)
+  }, [panelOpen, updatePanelAnchor])
 
   const togglePanel = useCallback((): void => {
     closeToast()

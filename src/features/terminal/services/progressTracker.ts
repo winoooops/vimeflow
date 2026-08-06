@@ -13,6 +13,7 @@ export class ProgressTracker {
     string,
     ReturnType<typeof setTimeout>
   >()
+  private readonly expiredSessions = new Set<string>()
 
   constructor(private readonly callbacks: readonly ProgressCallback[]) {}
 
@@ -20,7 +21,12 @@ export class ProgressTracker {
     return this.progressBySession.get(sessionId)
   }
 
+  hasExpired(sessionId: string): boolean {
+    return this.expiredSessions.has(sessionId)
+  }
+
   clear(sessionId: string): void {
+    this.expiredSessions.delete(sessionId)
     const timer = this.progressTimers.get(sessionId)
     if (timer !== undefined) {
       clearTimeout(timer)
@@ -39,11 +45,13 @@ export class ProgressTracker {
     }
 
     this.progressBySession.set(sessionId, progress)
+    this.expiredSessions.delete(sessionId)
 
     const nextTimer = setTimeout(() => {
       if (this.progressTimers.get(sessionId) === nextTimer) {
         this.progressTimers.delete(sessionId)
         if (this.progressBySession.delete(sessionId)) {
+          this.expiredSessions.add(sessionId)
           this.callbacks.forEach((cb) => cb(sessionId, undefined))
         }
       }
@@ -62,5 +70,6 @@ export class ProgressTracker {
     this.progressTimers.forEach((timer) => clearTimeout(timer))
     this.progressTimers.clear()
     this.progressBySession.clear()
+    this.expiredSessions.clear()
   }
 }

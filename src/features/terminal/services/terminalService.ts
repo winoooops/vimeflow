@@ -79,6 +79,9 @@ export interface ITerminalService {
   /** Clear cached progress for one PTY. */
   clearProgress(sessionId: string): void
 
+  /** Return whether the latest progress value disappeared by timeout. */
+  hasProgressExpired?(sessionId: string): boolean
+
   /** Subscribe to PTY-scoped progress changes and clears. */
   onProgress(
     callback: (sessionId: string, progress: PtyProgress | undefined) => void
@@ -351,6 +354,10 @@ export class MockTerminalService implements ITerminalService {
 
   clearProgress(sessionId: string): void {
     this.progressTracker.clear(sessionId)
+  }
+
+  hasProgressExpired(sessionId: string): boolean {
+    return this.progressTracker.hasExpired(sessionId)
   }
 
   onProgress(

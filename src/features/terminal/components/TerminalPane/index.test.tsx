@@ -626,6 +626,46 @@ describe('TerminalPane index', () => {
     ).toHaveAttribute('aria-valuetext', 'In progress')
   })
 
+  test('native progress expiry restores the running lifecycle fallback', () => {
+    let nativeProgress: PtyProgress | undefined = {
+      state: 'normal',
+      value: 25,
+    }
+    let progressExpired = false
+
+    const service = {
+      clearProgress: vi.fn(),
+      hasProgressExpired: vi.fn(() => progressExpired),
+    } as never
+
+    usePtyProgressSpy.mockImplementation(() => nativeProgress)
+
+    const runningPane = {
+      ...baseProps.pane,
+      agentSessionId: 'agent-1',
+      agentPhase: 'running' as const,
+      status: 'running' as const,
+    }
+
+    const { rerender } = render(
+      <TerminalPane {...baseProps} service={service} pane={runningPane} />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuenow', '25')
+
+    nativeProgress = undefined
+    progressExpired = true
+    rerender(
+      <TerminalPane {...baseProps} service={service} pane={runningPane} />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuetext', 'In progress')
+  })
+
   test('agent identity change and teardown reset lifecycle fallback ownership', () => {
     let nativeProgress: PtyProgress | undefined = {
       state: 'indeterminate',

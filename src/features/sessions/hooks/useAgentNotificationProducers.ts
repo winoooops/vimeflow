@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { AgentLifecycleEvent, AgentNotificationEvent } from '@/bindings'
 import { listen, type UnlistenFn } from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
+import type { AgentStatusEvent } from '@/features/agent-status/types'
 import { subscribeTerminalAttention } from '@/features/terminal/notifications'
 import type { NotificationInput } from './useNotificationCenter'
 import type { Pane, Session } from '../types'
@@ -74,6 +75,7 @@ export const useAgentNotificationProducers = ({
   const activeSessionIdRef = useRef(activeSessionId)
   const publishRef = useRef(publish)
   const getAgentSessionIdRef = useRef(getAgentSessionId)
+  const observedAgentSessionIdsRef = useRef(new Map<string, string>())
 
   const phasesRef = useRef(
     new Map<string, Pick<AgentLifecycleEvent, 'agentSessionId' | 'phase'>>()
@@ -81,7 +83,8 @@ export const useAgentNotificationProducers = ({
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   publishRef.current = publish
-  getAgentSessionIdRef.current = getAgentSessionId
+  getAgentSessionIdRef.current = (ptyId): string | undefined =>
+    getAgentSessionId(ptyId) ?? observedAgentSessionIdsRef.current.get(ptyId)
 
   useEffect(() => {
     let cancelled = false
@@ -197,6 +200,15 @@ export const useAgentNotificationProducers = ({
       }
     }
 
+    const status = listen<AgentStatusEvent>('agent-status', (payload) => {
+      if (payload.agentSessionId !== null) {
+        observedAgentSessionIdsRef.current.set(
+          payload.sessionId,
+          payload.agentSessionId
+        )
+      }
+    })
+
     const lifecycle = listen<AgentLifecycleEvent>(
       'agent-lifecycle',
       (payload) => {
@@ -297,7 +309,11 @@ export const useAgentNotificationProducers = ({
     )
 
     const registerListeners = async (): Promise<void> => {
-      const results = await Promise.allSettled([lifecycle, notification])
+      const results = await Promise.allSettled([
+        status,
+        lifecycle,
+        notification,
+      ])
 
       for (const result of results) {
         if (result.status !== 'fulfilled') {
