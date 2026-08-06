@@ -499,6 +499,57 @@ describe('TerminalPane index', () => {
     ).toHaveAttribute('aria-valuetext', 'In progress')
   })
 
+  test('retains hidden native progress until its agent turn starts', () => {
+    let nativeProgress: PtyProgress | undefined = {
+      state: 'normal',
+      value: 35,
+    }
+
+    const clearProgress = vi.fn(() => {
+      nativeProgress = undefined
+    })
+
+    const service = { clearProgress } as never
+
+    const agentPane = {
+      ...baseProps.pane,
+      agentSessionId: 'agent-1',
+    }
+
+    usePtyProgressSpy.mockImplementation(() => nativeProgress)
+
+    const { rerender } = render(
+      <TerminalPane
+        {...baseProps}
+        service={service}
+        pane={{
+          ...agentPane,
+          agentPhase: 'idle',
+          status: 'idle',
+        }}
+      />
+    )
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(clearProgress).not.toHaveBeenCalled()
+
+    rerender(
+      <TerminalPane
+        {...baseProps}
+        service={service}
+        pane={{
+          ...agentPane,
+          agentPhase: 'running',
+          status: 'running',
+        }}
+      />
+    )
+
+    expect(
+      screen.getByRole('progressbar', { name: 'Terminal progress' })
+    ).toHaveAttribute('aria-valuenow', '35')
+  })
+
   test('does not treat a live PTY as an active agent turn', () => {
     render(
       <TerminalPane
