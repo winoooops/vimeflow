@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 const BRIDGE_RUNTIME_DIR: &str = "runtime";
 const BRIDGE_WORKSPACES_DIR: &str = "workspaces";
 const BRIDGE_SESSIONS_DIR: &str = "sessions";
+const MAX_HOOK_PAYLOAD_BYTES: usize = 256 * 1024;
+const MAX_HOOK_TRANSCRIPT_PATH_JSON_BYTES: usize = 514;
 // BSD date lacks fractional seconds; JXA provides native millisecond precision
 // so rapid follow-up turns remain correctly ordered on macOS.
 #[cfg(target_os = "macos")]
@@ -322,17 +324,25 @@ pub fn generate_bridge_files(
         .map_err(|e| format!("failed to write claude shim: {}", e))?;
 
     // Generate the settings.json overlay using serde_json for proper escaping
-    let signal_hook = |record: serde_json::Value| {
+    let signal_hook = |record: serde_json::Value, preserve_transcript_path: bool| {
         let mut record_prefix = record.to_string();
         record_prefix.pop();
         record_prefix.push_str(",\"session_id\":\"");
+        let command = if preserve_transcript_path {
+            format!(
+                r#"LC_ALL=C; export LC_ALL; payload=$(/usr/bin/head -c {MAX_HOOK_PAYLOAD_BYTES}); /bin/cat >/dev/null; session_id=$(printf '%s' "$payload" | /usr/bin/sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_-]*\)".*/\1/p' | /usr/bin/head -n 1); case "$session_id" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' "$session_id"); transcript_path=$(printf '%s' "$payload" | /usr/bin/sed -nE 's/.*"transcript_path"[[:space:]]*:[[:space:]]*("([^"\\]|\\(["\\/bfnrt]|u[[:xdigit:]]{{4}}))*").*/\1/p' | /usr/bin/head -n 1); transcript_field=''; case "$transcript_path" in '"'/*.jsonl'"') [ "${{#transcript_path}}" -le {MAX_HOOK_TRANSCRIPT_PATH_JSON_BYTES} ] && transcript_field=',"transcript_path":'"$transcript_path" ;; esac; printf '%s%s%s%s%s%s%s\n' {} "$session_id" '"' "$transcript_field" ',"timestamp":"' "$({HOOK_TIMESTAMP_COMMAND})" '"}}' >> "$VIMEFLOW_ATTENTION_FILE""#,
+                shell_quote_path(&record_prefix),
+            )
+        } else {
+            format!(
+                "session_id=$(/usr/bin/sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9_-]*\\)\".*/\\1/p' | /usr/bin/head -n 1); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' \"$session_id\"); printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
+                shell_quote_path(&record_prefix),
+            )
+        };
         serde_json::json!({
             "hooks": [{
                 "type": "command",
-                "command": format!(
-                    "session_id=$(/usr/bin/sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9_-]*\\)\".*/\\1/p' | /usr/bin/head -n 1); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' \"$session_id\"); printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
-                    shell_quote_path(&record_prefix),
-                )
+                "command": command
             }]
         })
     };
@@ -346,15 +356,15 @@ pub fn generate_bridge_files(
             "UserPromptSubmit": [signal_hook(serde_json::json!({
                 "hook_event_name": "UserPromptSubmit",
                 "vimeflow_minimized": true,
-            }))],
+            }), false)],
             "Stop": [signal_hook(serde_json::json!({
                 "hook_event_name": "Stop",
                 "vimeflow_minimized": true,
-            }))],
+            }), true)],
             "PermissionRequest": [signal_hook(serde_json::json!({
                 "hook_event_name": "PermissionRequest",
                 "vimeflow_minimized": true,
-            }))],
+            }), false)],
             "PreToolUse": [{
                 "matcher": "AskUserQuestion",
                 "hooks": [{
@@ -363,7 +373,7 @@ pub fn generate_bridge_files(
                         "hook_event_name": "PreToolUse",
                         "tool_name": "AskUserQuestion",
                         "vimeflow_minimized": true,
-                    }))["hooks"][0]["command"]
+                    }), false)["hooks"][0]["command"]
                 }]
             }],
             // Deliberately title-only: retain the safe session identity while
@@ -371,7 +381,7 @@ pub fn generate_bridge_files(
             "StopFailure": [signal_hook(serde_json::json!({
                 "hook_event_name": "StopFailure",
                 "vimeflow_minimized": true,
-            }))]
+            }), false)]
         }
     });
     fs::write(
@@ -659,6 +669,14 @@ mod tests {
                 .as_str()
                 .expect("failure hook command"),
         ];
+        let transcript_path = "/Users/me/.claude/projects/quoted \"project\"/back\\slash.jsonl";
+        let payload = serde_json::json!({
+            "session_id": "claude-session",
+            "transcript_path": transcript_path,
+            "api_key": "sk-live-secret",
+            "prompt": "do not persist",
+        })
+        .to_string();
 
         for command in commands {
             let mut child = Command::new("/bin/sh")
@@ -674,9 +692,7 @@ mod tests {
                 .stdin
                 .as_mut()
                 .expect("stdin")
-                .write_all(
-                    br#"{"session_id":"claude-session","api_key":"sk-live-secret","prompt":"do not persist"}"#,
-                )
+                .write_all(payload.as_bytes())
                 .expect("write untrusted hook payload");
             assert!(child.wait().expect("wait hook").success());
         }
@@ -722,6 +738,7 @@ mod tests {
                 serde_json::json!({
                     "hook_event_name": "Stop",
                     "session_id": "claude-session",
+                    "transcript_path": transcript_path,
                     "vimeflow_minimized": true,
                 }),
                 serde_json::json!({

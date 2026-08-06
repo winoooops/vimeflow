@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-08-06
-ref_count: 9
+ref_count: 10
 ---
 
 # Bridge Payload Minimization
@@ -89,4 +89,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
 - **Finding:** Replacing the generated Node parser with dependency-free constant hook records made `StopFailure` error fields unreachable, while the notification decoder and design contract still promised an actionable failure body.
 - **Fix:** Explicitly adopted a title-only Claude failure contract, removed the unreachable decoder fields, and kept the generated hook's untrusted stdin discarded. Added a decoder regression proving even error-shaped input cannot become a persisted notification body.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 9. Claude Stop minimization dropped transcript routing metadata
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** Rebuilding every hook record from only the session ID and timestamp removed the Stop hook's transcript path, so the notification watcher could not recover the final assistant message.
+- **Fix:** Preserved only a bounded, syntactically valid absolute JSONL path for Stop records, while the existing consumer retains canonical Claude-root validation. Added a script-level regression covering JSON escaping and proving other hook records still omit the path and unrelated payload fields.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

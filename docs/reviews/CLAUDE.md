@@ -69,7 +69,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 8        | 9    | 2026-08-06   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 9        | 10   | 2026-08-06   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
 | [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 23       | 13   | 2026-08-05   |
