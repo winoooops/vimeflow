@@ -3,7 +3,7 @@ id: parser-resilience
 category: code-quality
 created: 2026-05-24
 last_updated: 2026-08-05
-ref_count: 21
+ref_count: 22
 ---
 
 # Parser Resilience
@@ -472,4 +472,13 @@ true` and drop the chunk.
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** Claude completion notifications read `last_assistant_message` from Stop-hook stdin, but the real hook contract supplies a transcript path rather than the final assistant text. The optional field made the regression silent: realistic Stop payloads parsed successfully but produced no notification body.
 - **Fix:** Read the latest completed assistant text from the validated Claude transcript path using the bounded JSONL reader, and keep transcript assistant-line parsing on the same extraction helper.
+- **Commit:** same commit as this entry
+
+### 39. OSC attention framing paired terminators across malformed boundaries
+
+- **Source:** github-codex-connector | PR #785 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `src/features/terminal/notifications.ts`
+- **Finding:** The renderer attention scanner searched past a later `ESC ]` introducer when locating an OSC terminator, so an unterminated frame swallowed a subsequent valid OSC 9/777 notification. Oversized non-progress OSC frames also dropped their buffered payload without retaining discard state, allowing their later BEL terminator to become a false standalone alert.
+- **Fix:** Scan OSC boundaries in byte order and resynchronize at non-ST escapes, while routing every oversized OSC through the existing discard-until-BEL/ST state. Added regressions for nested/split OSC recovery and oversized non-progress frames terminated by BEL or ST.
 - **Commit:** same commit as this entry
