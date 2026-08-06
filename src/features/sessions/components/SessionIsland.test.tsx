@@ -77,6 +77,38 @@ describe('SessionIsland', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('keeps notifications accessible when the only session is completed', () => {
+    render(
+      <SessionIsland
+        sessions={[recentSession()]}
+        activeSessionId="recent"
+        displayMode="dots"
+        onSessionSelect={vi.fn()}
+        notifications={{
+          records: [
+            {
+              id: 'notification-1',
+              sessionId: 'recent',
+              ptyId: 'pty-recent',
+              reason: 'turn-complete',
+              title: 'Turn complete',
+              occurredAt: 1,
+              read: false,
+            },
+          ],
+          onOpen: vi.fn(),
+          onDismiss: vi.fn(),
+          onMarkAllRead: vi.fn(),
+          onClear: vi.fn(),
+        }}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Notifications, 1 unread' })
+    ).toBeInTheDocument()
+  })
+
   test('keeps sidebar order, excludes Recent, and delegates selection', async () => {
     const onSessionSelect = vi.fn()
     const ordered = [session(3), recentSession(), session(1), session(2)]

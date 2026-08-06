@@ -76,7 +76,16 @@ export const SessionIsland = ({
   const lastBatchStartRef = useRef(0)
   const openSessions = sessions.filter(isOpenSession)
 
-  if (openSessions.length === 0) {
+  const hasVisibleNotifications =
+    notifications?.records.some((record) =>
+      sessions.some(
+        (session) =>
+          session.id === record.sessionId &&
+          session.panes.some(({ ptyId }) => ptyId === record.ptyId)
+      )
+    ) ?? false
+
+  if (openSessions.length === 0 && !hasVisibleNotifications) {
     return null
   }
 

@@ -212,6 +212,33 @@ describe('List', () => {
     ).toBeInTheDocument()
   })
 
+  test('maps an unread notification to its completed Recent session', () => {
+    render(
+      <List
+        sessions={[mockSessions[2]]}
+        activeSessionId="sess-3"
+        onSessionClick={mockOnSessionClick}
+        notificationRecords={[
+          {
+            id: 'notice-3',
+            sessionId: 'sess-3',
+            ptyId: 'sess-3',
+            reason: 'turn-complete',
+            title: 'Turn complete',
+            occurredAt: 1,
+            read: false,
+          },
+        ]}
+      />
+    )
+
+    expect(
+      within(
+        screen.getByText('refactor: api layer').closest('li')!
+      ).getByLabelText('Needs your attention')
+    ).toBeInTheDocument()
+  })
+
   test('section headers show per-group counts', () => {
     render(
       <List

@@ -142,6 +142,10 @@ export const List = ({
                   onRemove={cardRemoveSession}
                   onRename={onRenameSession}
                   layoutRegistry={layoutRegistry}
+                  notificationCategory={sessionUnreadCategory(
+                    notificationRecords,
+                    session
+                  )}
                 />
               ))}
             </Group>
