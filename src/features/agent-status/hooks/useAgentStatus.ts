@@ -174,7 +174,8 @@ const stopWatchers = async (
 export const useAgentStatus = (
   sessionId: string | null,
   resetGeneration = 0,
-  hasActiveTurn = false
+  hasActiveTurn = false,
+  agentTypeHint: AgentStatus['agentType'] = null
 ): AgentStatus => {
   const [status, setStatus] = useState<AgentStatus>(() =>
     createStatusForSession(sessionId)
@@ -233,6 +234,7 @@ export const useAgentStatus = (
   const detectedAgentTypeRef = useRef<AgentStatus['agentType']>(
     status.agentType
   )
+  const agentTypeHintRef = useRef(agentTypeHint)
   const hasActiveTurnRef = useRef(hasActiveTurn)
   const backgroundKimiWatcherPtyIdsRef = useRef(new Set<string>())
   // Lifecycle callbacks can lead the React pane-state commit during startup.
@@ -329,7 +331,10 @@ export const useAgentStatus = (
         const backgroundTurnRunning =
           hasActiveTurnRef.current ||
           backgroundKimiRunningPtyIdsRef.current.has(oldPtyId)
-        if (detectedAgentTypeRef.current === 'kimi') {
+        if (
+          detectedAgentTypeRef.current === 'kimi' ||
+          agentTypeHintRef.current === 'kimi'
+        ) {
           backgroundKimiWatcherPtyIdsRef.current.add(oldPtyId)
           if (!backgroundTurnRunning) {
             clearBackgroundKimiStartupLease(oldPtyId)
@@ -386,6 +391,10 @@ export const useAgentStatus = (
   useEffect(() => {
     hasActiveTurnRef.current = hasActiveTurn
   }, [hasActiveTurn])
+
+  useEffect(() => {
+    agentTypeHintRef.current = agentTypeHint
+  }, [agentTypeHint])
 
   useEffect(() => {
     const pollBackgroundKimiWatcher = async (ptyId: string): Promise<void> => {

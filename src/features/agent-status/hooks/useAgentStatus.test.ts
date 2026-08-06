@@ -3,7 +3,7 @@ import { afterEach, describe, test, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { invoke, listen } from '../../../lib/backend'
 import { getPtySessionId } from '../../terminal/ptySessionMap'
-import type { TestRunSnapshot } from '../types'
+import type { AgentStatus, TestRunSnapshot } from '../types'
 import {
   clearStatusSnapshots,
   readStatusSeenToolUseIds,
@@ -1459,6 +1459,54 @@ describe('useAgentStatus', () => {
       expect(invoke).toHaveBeenCalledWith('stop_agent_watcher', {
         sessionId: 'pty-session-1',
       })
+    })
+  })
+
+  test('keeps a launcher-classified Kimi watcher when switching before detection resolves', async () => {
+    let resolveDetection: ((value: unknown) => void) | undefined
+
+    vi.mocked(invoke).mockImplementation(((cmd: string, args?: unknown) => {
+      if (
+        cmd === 'detect_agent_in_session' &&
+        (args as { sessionId: string }).sessionId === 'pty-session-1'
+      ) {
+        return new Promise((resolve) => {
+          resolveDetection = resolve
+        })
+      }
+
+      return Promise.resolve(null)
+    }) as unknown as typeof invoke)
+
+    const { rerender } = renderHook(
+      ({
+        id,
+        agentType,
+      }: {
+        id: string | null
+        agentType: AgentStatus['agentType']
+      }) => useAgentStatus(id, 0, false, agentType),
+      {
+        initialProps: {
+          id: 'session-1',
+          agentType: 'kimi' as AgentStatus['agentType'],
+        },
+      }
+    )
+
+    await vi.waitFor(() => {
+      expect(resolveDetection).toBeDefined()
+    })
+
+    rerender({ id: 'session-2', agentType: 'generic' })
+
+    expect(invoke).not.toHaveBeenCalledWith('stop_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+
+    await act(async () => {
+      resolveDetection?.(null)
+      await Promise.resolve()
     })
   })
 

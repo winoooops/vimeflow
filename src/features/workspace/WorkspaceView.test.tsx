@@ -2185,7 +2185,7 @@ describe('WorkspaceView', () => {
     )
   })
 
-  test('lifts useAgentStatus and forwards the latest active pane ptyId', async () => {
+  test('lifts useAgentStatus and forwards the latest active pane identity', async () => {
     render(<WorkspaceView />)
 
     // Wait for session restore to settle (the listSessions mock resolves
@@ -2194,13 +2194,14 @@ describe('WorkspaceView', () => {
 
     const useAgentStatusMock = vi.mocked(useAgentStatus)
     const calls = useAgentStatusMock.mock.calls
-    const lastArg = calls[calls.length - 1]?.[0]
+    const lastCall = calls[calls.length - 1]
 
     // Latest call arg, not call count — activeSessionId flips from null
     // to the restored id during mount, and React may re-render multiple
     // times. Restored sessions keep ptyId === session id for compatibility,
     // so this pins the active-pane handle that useAgentStatus now receives.
-    expect(lastArg).toBe('sess-1')
+    expect(lastCall?.[0]).toBe('sess-1')
+    expect(lastCall?.[3]).toBe('generic')
   })
 
   test('passes the lifted agentStatus to AgentStatusPanel', async () => {
