@@ -55,6 +55,9 @@ pub struct SpawnPtyRequest {
     /// Generate statusline bridge files for agent status tracking
     #[serde(default)]
     pub enable_agent_bridge: bool,
+    /// Whether this PTY is intended for the native Ghostty renderer.
+    #[serde(default)]
+    pub native_transport: bool,
     /// Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir.
     #[serde(default)]
     pub ephemeral: bool,

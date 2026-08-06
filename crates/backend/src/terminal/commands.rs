@@ -95,12 +95,12 @@ fn locale_env_plan(
 }
 
 #[cfg(unix)]
-fn has_native_terminal_transport(state: &PtyState) -> bool {
-    state.fd_broker().is_some()
+fn has_native_terminal_transport(state: &PtyState, requested: bool) -> bool {
+    requested && state.fd_broker().is_some()
 }
 
 #[cfg(not(unix))]
-fn has_native_terminal_transport(_state: &PtyState) -> bool {
+fn has_native_terminal_transport(_state: &PtyState, _requested: bool) -> bool {
     false
 }
 
@@ -256,7 +256,10 @@ pub(crate) async fn spawn_pty_inner(
     // GUI launches (desktop/AppImage) often do not inherit a terminal-capable
     // environment. xterm.js supports 256-color + truecolor, so advertise that
     // contract to child TUIs without accepting arbitrary env from IPC.
-    configure_terminal_environment(&mut cmd, has_native_terminal_transport(&state));
+    configure_terminal_environment(
+        &mut cmd,
+        has_native_terminal_transport(&state, request.native_transport),
+    );
     // The app's terminal is unconditionally truecolor, so color-disabling
     // variables inherited from however the app itself was launched (a CI
     // runner, an automation harness piping stdout — wdio injects
@@ -1639,7 +1642,7 @@ mod tests {
         std::mem::forget(rust_end);
 
         let mut command = CommandBuilder::new("/bin/sh");
-        configure_terminal_environment(&mut command, has_native_terminal_transport(&state));
+        configure_terminal_environment(&mut command, has_native_terminal_transport(&state, true));
 
         assert_eq!(command.get_env("TERM"), Some(OsStr::new("xterm-256color")));
         assert_eq!(command.get_env("COLORTERM"), Some(OsStr::new("truecolor")));
@@ -1652,6 +1655,29 @@ mod tests {
         drop(addon_end);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn terminal_environment_does_not_advertise_ghostty_for_xterm_with_an_installed_fd_broker() {
+        use crate::fd_transport;
+        use crate::terminal::fd_broker::FdBroker;
+        use std::os::fd::AsRawFd;
+
+        let state = PtyState::new();
+        let (rust_end, addon_end) = fd_transport::socketpair().expect("socketpair");
+        let broker =
+            FdBroker::start(rust_end.as_raw_fd(), state.clone()).expect("broker should start");
+        state.set_fd_broker(broker);
+        std::mem::forget(rust_end);
+
+        let mut command = CommandBuilder::new("/bin/sh");
+        configure_terminal_environment(&mut command, has_native_terminal_transport(&state, false));
+
+        assert!(command.get_env("TERM_PROGRAM").is_none());
+        assert!(command.get_env("TERM_PROGRAM_VERSION").is_none());
+
+        drop(addon_end);
+    }
+
     #[test]
     fn terminal_environment_removes_inherited_identity_without_a_broker() {
         let state = PtyState::new();
@@ -1660,7 +1686,7 @@ mod tests {
         command.env("TERM_PROGRAM_VERSION", "999");
         command.env("VIMEFLOW_PTY_FD_TRANSPORT", "1");
 
-        configure_terminal_environment(&mut command, has_native_terminal_transport(&state));
+        configure_terminal_environment(&mut command, has_native_terminal_transport(&state, false));
 
         assert!(command.get_env("TERM_PROGRAM").is_none());
         assert!(command.get_env("TERM_PROGRAM_VERSION").is_none());
@@ -1683,6 +1709,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -1723,6 +1750,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -1752,6 +1780,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -1776,6 +1805,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: true,
         };
 
@@ -1826,6 +1856,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -1868,6 +1899,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: true,
+            native_transport: false,
             ephemeral: true,
         };
 
@@ -1911,6 +1943,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -1929,6 +1962,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: true,
             },
             &[],
@@ -1990,6 +2024,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: true,
             },
             &[],
@@ -2056,6 +2091,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: true,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2136,6 +2172,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: true,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2203,6 +2240,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2246,6 +2284,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2311,6 +2350,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2368,6 +2408,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2419,6 +2460,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2446,6 +2488,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
 
@@ -2486,6 +2529,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             };
 
@@ -2508,6 +2552,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: true,
+            native_transport: false,
             ephemeral: false,
         };
         let canonical_cwd = std::fs::canonicalize(cwd_temp_dir.path()).expect("canonical cwd");
@@ -2741,6 +2786,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
         spawn_pty_inner(
@@ -2760,6 +2806,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
         spawn_pty_inner(
@@ -2811,6 +2858,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
         spawn_pty_inner(
@@ -2830,6 +2878,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
         spawn_pty_inner(
@@ -2849,6 +2898,7 @@ mod tests {
             shell: None,
             env: None,
             enable_agent_bridge: false,
+            native_transport: false,
             ephemeral: false,
         };
         spawn_pty_inner(
@@ -2915,6 +2965,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -3027,6 +3078,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -3140,6 +3192,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -3227,6 +3280,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -3602,6 +3656,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -3753,6 +3808,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -3805,6 +3861,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -3890,6 +3947,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -3958,6 +4016,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -3999,6 +4058,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -4067,6 +4127,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -4120,6 +4181,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -4164,6 +4226,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -4216,6 +4279,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -4273,6 +4337,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -4587,6 +4652,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],
@@ -4654,6 +4720,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -4875,6 +4942,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -4986,6 +5054,7 @@ mod tests {
                     shell: None,
                     env: None,
                     enable_agent_bridge: false,
+                    native_transport: false,
                     ephemeral: false,
                 },
                 &[],
@@ -5064,6 +5133,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: false,
             },
             &[],

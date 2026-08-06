@@ -92,6 +92,7 @@ test('toggle (no target) spawns an ephemeral, no-bridge shell at the focused pan
       cwd: '/repo/projects/vimeflow',
       ephemeral: true,
       enableAgentBridge: false,
+      nativeTransport: false,
     })
   )
   expect([...result.current.runningByPane.keys()]).toEqual(['s1:p0'])

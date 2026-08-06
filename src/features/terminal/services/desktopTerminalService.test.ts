@@ -154,6 +154,24 @@ describe('DesktopTerminalService', () => {
       })
     })
 
+    test('spawn forwards the requested native transport', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
+      await service.spawn({ cwd: '/repo', nativeTransport: true })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ nativeTransport: true }),
+      })
+    })
+
+    test('spawn defaults native transport to false', async () => {
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
+      await service.spawn({ cwd: '/repo' })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ nativeTransport: false }),
+      })
+    })
+
     test('spawn defaults ephemeral to false when caller omits it', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/tmp' })
       await service.spawn({ cwd: '/tmp' })

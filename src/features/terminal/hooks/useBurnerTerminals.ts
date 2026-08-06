@@ -496,6 +496,7 @@ export const useBurnerTerminals = ({
           cwd: target.cwd,
           ephemeral: true,
           enableAgentBridge: false,
+          nativeTransport: false,
         })
         // The host pane may have closed mid-spawn (and a new pane may have reused
         // its id). `invalidatedSpawnsRef` flags a key whose pane left the live set

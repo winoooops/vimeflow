@@ -66,6 +66,7 @@ import { commandToPane } from '../utils/commandToPane'
 import { deriveSessionName } from '../utils/sessionPaths'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { usePtyExitListener } from '../../terminal/hooks/usePtyExitListener'
+import { shouldUseNativeGhostty } from '../../terminal/nativeGhosttyClient'
 import {
   createBrowserPane,
   destroyBrowserPane,
@@ -1471,6 +1472,7 @@ export const useSessionManager = (
                     cwd: requestedCwd,
                     env: {},
                     enableAgentBridge: true,
+                    nativeTransport: shouldUseNativeGhostty(),
                   })
             )
           )
@@ -2184,6 +2186,7 @@ export const useSessionManager = (
             cwd: spawnCwd,
             env: {},
             enableAgentBridge: true,
+            nativeTransport: shouldUseNativeGhostty(),
           })
 
           const fresh = sessionsRef.current.find((s) => s.id === sessionId)
@@ -2472,6 +2475,7 @@ export const useSessionManager = (
             cwd: oldPane.cwd,
             env: {},
             enableAgentBridge: true,
+            nativeTransport: shouldUseNativeGhostty(),
           })
         } catch (err) {
           log.warn('restartPane: spawn failed; old pane preserved', err)

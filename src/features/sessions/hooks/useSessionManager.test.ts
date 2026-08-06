@@ -2052,6 +2052,7 @@ describe('useSessionManager', () => {
       cwd: '/home/will/proj',
       env: {},
       enableAgentBridge: true,
+      nativeTransport: false,
     })
     expect(result.current.sessions[0].id).toBe('ws-shell')
     expect(result.current.sessions[0].status).toBe('running')
@@ -6377,6 +6378,7 @@ describe('useSessionManager', () => {
       cwd: '/side',
       env: {},
       enableAgentBridge: true,
+      nativeTransport: false,
     })
     expect(service.kill).toHaveBeenCalledWith({ sessionId: 'pty-side' })
     expect(
@@ -6902,6 +6904,7 @@ describe('useSessionManager', () => {
         cwd: '/workspace',
         env: {},
         enableAgentBridge: true,
+        nativeTransport: false,
       })
       expect(session.panes).toHaveLength(2)
       expect(session.panes[0]).toMatchObject({
@@ -7306,6 +7309,7 @@ describe('useSessionManager', () => {
       cwd: '/Users/x/proj',
       env: {},
       enableAgentBridge: true,
+      nativeTransport: false,
     })
 
     expect(service.write).toHaveBeenCalledWith({

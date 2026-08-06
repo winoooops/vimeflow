@@ -227,6 +227,7 @@ export class DesktopTerminalService implements ITerminalService {
       shell: params.shell,
       env: params.env,
       enableAgentBridge: params.enableAgentBridge ?? false,
+      nativeTransport: params.nativeTransport ?? false,
       ephemeral: params.ephemeral ?? false,
     }
 

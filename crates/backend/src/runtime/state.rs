@@ -1436,6 +1436,7 @@ mod tests {
                 shell: None,
                 env: None,
                 enable_agent_bridge: false,
+                native_transport: false,
                 ephemeral: true,
             })
             .await
