@@ -2,8 +2,8 @@
 id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
-last_updated: 2026-07-31
-ref_count: 28
+last_updated: 2026-08-06
+ref_count: 29
 ---
 
 # Derived State Consistency
@@ -505,3 +505,16 @@ base data is technically "correct."
   regression test for a running row completing and reordering to the top without
   any inserted row.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Notification-only session island retained a negative batch start
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/SessionIsland.tsx`
+- **Finding:** Allowing notification chrome with zero open sessions invalidated
+  pagination's former non-empty-list invariant. The computed maximum became
+  negative and remained cached, hiding later open-session indicators while a
+  completed session stayed selected.
+- **Fix:** Clamped the maximum batch start to zero and added a rerender
+  regression from a completed-only notification state to newly open sessions.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

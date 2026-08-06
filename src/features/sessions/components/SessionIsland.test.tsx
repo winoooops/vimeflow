@@ -109,6 +109,54 @@ describe('SessionIsland', () => {
     ).toBeInTheDocument()
   })
 
+  test('shows open sessions added after a notification-only state', () => {
+    const notifications = {
+      records: [
+        {
+          id: 'notification-1',
+          sessionId: 'recent',
+          ptyId: 'pty-recent',
+          reason: 'turn-complete' as const,
+          title: 'Turn complete',
+          occurredAt: 1,
+          read: false,
+        },
+      ],
+      onOpen: vi.fn(),
+      onDismiss: vi.fn(),
+      onMarkAllRead: vi.fn(),
+      onClear: vi.fn(),
+    }
+
+    const { rerender } = render(
+      <SessionIsland
+        sessions={[recentSession()]}
+        activeSessionId="recent"
+        displayMode="numbers"
+        onSessionSelect={vi.fn()}
+        notifications={notifications}
+      />
+    )
+
+    rerender(
+      <SessionIsland
+        sessions={[...sessions(2), recentSession()]}
+        activeSessionId="recent"
+        displayMode="numbers"
+        onSessionSelect={vi.fn()}
+        notifications={notifications}
+      />
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Switch to session 1: Session 1' })
+    ).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: 'Switch to session 2: Session 2' })
+    ).toBeInTheDocument()
+  })
+
   test('keeps sidebar order, excludes Recent, and delegates selection', async () => {
     const onSessionSelect = vi.fn()
     const ordered = [session(3), recentSession(), session(1), session(2)]

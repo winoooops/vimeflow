@@ -288,6 +288,11 @@ pub fn generate_bridge_files(
          tool_name=$(printf '%s' \"$payload\" | sed -n 's/.*\"tool_name\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)\n\
          tool_use_id=$(printf '%s' \"$payload\" | sed -n 's/.*\"tool_use_id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)\n\
          session_id=$(printf '%s' \"$payload\" | sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)\n\
+         error_details=\n\
+         if [ \"$hook_event_name\" = \"StopFailure\" ]; then\n\
+           error_details=$(printf '%s' \"$payload\" | sed -n 's/.*\"error_details\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)\n\
+           [ -n \"$error_details\" ] || error_details=$(printf '%s' \"$payload\" | sed -n 's/.*\"error\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' | head -n 1)\n\
+         fi\n\
          bound_field() {{ printf '%.512s' \"$1\"; }}\n\
          escape_json() {{ bound_field \"$1\" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/\"/\\\\\"/g'; }}\n\
          hook_event_name=$(escape_json \"${{hook_event_name:-Unknown}}\")\n\
@@ -295,11 +300,13 @@ pub fn generate_bridge_files(
          tool_name=$(escape_json \"$tool_name\")\n\
          tool_use_id=$(escape_json \"$tool_use_id\")\n\
          session_id=$(escape_json \"$session_id\")\n\
+         error_details=$(escape_json \"$error_details\")\n\
          printf '{{\"hook_event_name\":\"%s\"' \"$hook_event_name\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
          [ -n \"$transcript_path\" ] && printf ',\"transcript_path\":\"%s\"' \"$transcript_path\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
          [ -n \"$tool_name\" ] && printf ',\"tool_name\":\"%s\"' \"$tool_name\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
          [ -n \"$tool_use_id\" ] && printf ',\"tool_use_id\":\"%s\"' \"$tool_use_id\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
          [ -n \"$session_id\" ] && printf ',\"session_id\":\"%s\"' \"$session_id\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
+         [ -n \"$error_details\" ] && printf ',\"error_details\":\"%s\"' \"$error_details\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
          printf ',\"vimeflow_minimized\":true}}\\n' >> \"$VIMEFLOW_ATTENTION_FILE\"\n",
         session_id = session_id,
     );
@@ -729,6 +736,57 @@ mod tests {
         assert!(!written.contains("do not persist"));
         assert!(!written.contains("line one"));
         assert!(!written.trim().contains('\n'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attention_hook_keeps_only_bounded_stop_failure_details() {
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let files = generate_bridge_files(
+            tmp.path().to_str().unwrap(),
+            "session-hooks",
+            None,
+            &[],
+            true,
+        )
+        .expect("generate bridge files");
+        let mut child = Command::new(&files.attention_script_path)
+            .env("VIMEFLOW_ATTENTION_FILE", &files.attention_file_path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn attention hook");
+        let error_details = format!("429 Too Many Requests: {}", "x".repeat(600));
+        let payload = serde_json::json!({
+            "session_id": "claude-session",
+            "transcript_path": "/Users/me/.claude/projects/s/transcript.jsonl",
+            "cwd": "/Users/me/project",
+            "hook_event_name": "StopFailure",
+            "error": "rate_limit",
+            "error_details": error_details,
+            "last_assistant_message": "API Error: Rate limit reached",
+            "api_key": "sk-live-secret",
+        })
+        .to_string();
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(payload.as_bytes())
+            .expect("write hook payload");
+        assert!(child.wait().expect("wait hook").success());
+
+        let written = fs::read_to_string(&files.attention_file_path).expect("attention file");
+        let record: serde_json::Value = serde_json::from_str(written.trim()).expect("record JSON");
+        assert_eq!(
+            record,
+            serde_json::json!({
+                "hook_event_name": "StopFailure",
+                "transcript_path": "/Users/me/.claude/projects/s/transcript.jsonl",
+                "session_id": "claude-session",
+                "error_details": error_details[..512].to_string(),
+                "vimeflow_minimized": true,
+            })
+        );
     }
 
     #[cfg(unix)]

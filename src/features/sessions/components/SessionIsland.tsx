@@ -98,8 +98,10 @@ export const SessionIsland = ({
     Math.min(SESSION_BATCH_SIZE, maxVisibleSessions)
   )
 
-  const maxBatchStart =
+  const maxBatchStart = Math.max(
+    0,
     Math.floor((openSessions.length - 1) / batchSize) * batchSize
+  )
 
   if (activeIndex >= 0) {
     // The island is paginated into stable batches once the session list exceeds

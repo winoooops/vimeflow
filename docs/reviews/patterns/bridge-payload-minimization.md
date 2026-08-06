@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-08-06
-ref_count: 5
+ref_count: 6
 ---
 
 # Bridge Payload Minimization
@@ -67,3 +67,17 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
 - **Finding:** The generated Claude attention hook appended raw stdin for payloads below its size threshold, so unrelated prompt, body, and credential-shaped fields could enter the durable hook transport.
 - **Fix:** Rebuilt the hook record from explicit bounded routing fields only and added a regression test proving secret-shaped and body fields are omitted from the JSONL transport.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 7. Claude StopFailure minimization dropped provider details
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** The generated attention hook allowlisted routing metadata but
+  omitted every provider error field, so StopFailure consumers could never
+  receive the actionable failure body they were built to decode.
+- **Fix:** Allowlisted one bounded, escaped `error_details` value for
+  StopFailure only, with the provider error code as a fallback. Added a
+  script-level regression that executes the hook and compares the complete
+  minimized JSONL record.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
