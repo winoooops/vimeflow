@@ -24,6 +24,7 @@ import type {
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
 import { ProgressTracker } from './progressTracker'
+import { shouldUseNativeGhostty } from '../nativeGhosttyClient'
 
 /**
  * Desktop terminal service — bridges ITerminalService to backend IPC commands and events.
@@ -228,7 +229,7 @@ export class DesktopTerminalService implements ITerminalService {
       shell: params.shell,
       env: params.env,
       enableAgentBridge: params.enableAgentBridge ?? false,
-      nativeTransport: params.nativeTransport ?? false,
+      nativeTransport: params.nativeTransport ?? shouldUseNativeGhostty(),
       ephemeral: params.ephemeral ?? false,
     }
 

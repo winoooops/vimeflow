@@ -1,3 +1,4 @@
+// cspell:ignore Ghostty
 import {
   describe,
   test,
@@ -9,6 +10,12 @@ import {
 } from 'vitest'
 import { DesktopTerminalService } from './desktopTerminalService'
 import { invoke, listen } from '../../../lib/backend'
+
+const mockShouldUseNativeGhostty = vi.hoisted(() => vi.fn(() => false))
+
+vi.mock('../nativeGhosttyClient', () => ({
+  shouldUseNativeGhostty: mockShouldUseNativeGhostty,
+}))
 
 // Mock backend bridge — capture listener callbacks for testing.
 type EventCallback = (payload: unknown) => void
@@ -61,6 +68,7 @@ describe('DesktopTerminalService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockShouldUseNativeGhostty.mockReturnValue(false)
     eventListeners.clear()
     service = new DesktopTerminalService()
   })
@@ -163,9 +171,31 @@ describe('DesktopTerminalService', () => {
       })
     })
 
-    test('spawn defaults native transport to false', async () => {
+    test('spawn defaults native transport to false for xterm', async () => {
       mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
       await service.spawn({ cwd: '/repo' })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ nativeTransport: false }),
+      })
+    })
+
+    test('spawn defaults native transport to the selected renderer', async () => {
+      mockShouldUseNativeGhostty.mockReturnValue(true)
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
+
+      await service.spawn({ cwd: '/repo' })
+
+      expect(invoke).toHaveBeenCalledWith('spawn_pty', {
+        request: expect.objectContaining({ nativeTransport: true }),
+      })
+    })
+
+    test('spawn preserves an explicit xterm transport request', async () => {
+      mockShouldUseNativeGhostty.mockReturnValue(true)
+      mockInvokeOnce({ id: 's1', pid: 1, cwd: '/repo' })
+
+      await service.spawn({ cwd: '/repo', nativeTransport: false })
 
       expect(invoke).toHaveBeenCalledWith('spawn_pty', {
         request: expect.objectContaining({ nativeTransport: false }),

@@ -78,7 +78,7 @@ export interface PTYSpawnParams {
    * created a `.vimeflow/sessions/` tree that showed up in `git status`.
    */
   enableAgentBridge?: boolean
-  /** Whether this PTY is intended for the native renderer. Defaults to false. */
+  /** Whether this PTY is intended for the native renderer. Defaults to the selected renderer. */
   nativeTransport?: boolean
   /** Ephemeral (burner) PTY: skip the session cache and the agent-bridge dir. */
   ephemeral?: boolean
