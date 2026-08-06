@@ -1337,6 +1337,48 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].agentPhase).toBe('running')
   })
 
+  test('notification uses agent identity observed before pane restore', async () => {
+    const service = createMockService()
+    let resolveListSessions: (value: SessionList) => void = vi.fn()
+    service.listSessions = vi.fn(
+      () =>
+        new Promise<SessionList>((resolve) => {
+          resolveListSessions = resolve
+        })
+    )
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(statusListener()).toBeDefined())
+    await waitFor(() => expect(getNotificationCallback()).toBeDefined())
+
+    act(() => {
+      statusListener()?.(
+        agentStatusEvent({ sessionId: 'a', agentSessionId: 'agent-current' })
+      )
+      resolveListSessions(aliveSession('a'))
+    })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBeUndefined()
+
+    act(() => {
+      getNotificationCallback()?.({
+        ptyId: 'a',
+        agentSessionId: 'agent-current',
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(1),
+        dedupeKey: 'turn-1',
+      })
+    })
+
+    expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    expect(result.current.sessions[0].panes[0].agentPhase).toBe('idle')
+  })
+
   test('a delayed Claude Stop cannot settle a newer running turn', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))

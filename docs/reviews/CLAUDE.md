@@ -61,7 +61,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Documentation Accuracy](patterns/documentation-accuracy.md)                                         | code-quality       | 107      | 99   | 2026-08-05   |
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 104      | 92   | 2026-08-06   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
-| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 7        | 5    | 2026-08-06   |
+| [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 8        | 6    | 2026-08-06   |
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 117      | 106  | 2026-08-06   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |

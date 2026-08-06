@@ -3,7 +3,7 @@ id: event-identity-guard
 category: backend
 created: 2026-06-11
 last_updated: 2026-08-06
-ref_count: 5
+ref_count: 6
 ---
 
 # Event Identity Guard
@@ -91,4 +91,18 @@ Events that carry an identity field for deduplication, stale-event rejection, or
 - **Fix:** Made notification identity non-nullable, captured Claude hook session
   IDs, initialized Codex registrations from `session_meta`, suppressed emission
   until identity exists, and required exact identity matches in both consumers.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 8. Pane hydration lag dropped a current notification identity
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** A notification arriving after the backend emitted agent identity
+  but before the matching pane state hydrated required the pane's delayed React
+  identity and permanently discarded the current completion.
+- **Fix:** Compared notifications with the synchronously observed per-PTY
+  identity first, retaining the hydrated pane identity only as the restore
+  fallback. Added a startup-order regression that observes status identity
+  before pane restore and completion afterward.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

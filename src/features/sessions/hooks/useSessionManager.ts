@@ -1028,10 +1028,15 @@ export const useSessionManager = (
                 const latestRunningAt = latestAgentRunningAtRef.current.get(
                   payload.ptyId
                 )
+
+                const currentAgentSessionId =
+                  agentSessionIdsRef.current.get(payload.ptyId) ??
+                  pane.agentSessionId
+
                 if (
                   pane.status !== 'running' ||
-                  pane.agentSessionId === undefined ||
-                  payload.agentSessionId !== pane.agentSessionId ||
+                  currentAgentSessionId === undefined ||
+                  payload.agentSessionId !== currentAgentSessionId ||
                   (latestRunningAt !== undefined &&
                     Number(payload.occurredAt) < latestRunningAt)
                 ) {
