@@ -83,7 +83,6 @@ export interface NotificationIslandModel {
   readonly coalescedCount: number
   readonly freshId: string | null
   readonly panelOpen: boolean
-  readonly panelFocus: 'dialog' | 'dialog-unfocused'
   readonly panelClosing: boolean
   readonly panelAnchor: PanelAnchorPoint | null
   readonly nativeOverlayActive: boolean
@@ -187,7 +186,6 @@ export const useNotificationIslandStage = ({
   const lastToastRef = useRef<ToastDisplay | null>(null)
   const openTimerRef = useRef<number | null>(null)
   const panelExitTimerRef = useRef<number | null>(null)
-  const focusPanelOnOpenRef = useRef(false)
   const wasPanelOpenRef = useRef(false)
   const restoreBellFocusRef = useRef(true)
   const seenIdsRef = useRef(new Set(visibleRecords.map(({ id }) => id)))
@@ -404,7 +402,6 @@ export const useNotificationIslandStage = ({
 
   const openPanel = useCallback((): void => {
     cancelPanelExit()
-    focusPanelOnOpenRef.current = toastOwnsFocus()
 
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect !== undefined) {
@@ -420,7 +417,7 @@ export const useNotificationIslandStage = ({
 
     hideToast()
     setPanelOpen(true)
-  }, [cancelPanelExit, hideToast, toastOwnsFocus])
+  }, [cancelPanelExit, hideToast])
 
   const togglePanel = useCallback((): void => {
     closeToast()
@@ -615,7 +612,6 @@ export const useNotificationIslandStage = ({
     coalescedCount,
     freshId,
     panelOpen,
-    panelFocus: focusPanelOnOpenRef.current ? 'dialog' : 'dialog-unfocused',
     panelClosing,
     panelAnchor,
     nativeOverlayActive,

@@ -106,7 +106,6 @@ export const NotificationIsland = ({
         offset={0}
         width={NOTIFICATION_PANEL_WIDTH_PX}
         aria-label="Notification center"
-        focus={island.panelFocus}
         // The island restores bell focus itself (with focusVisible: false),
         // so the focus manager must not also refocus on close — its plain
         // focus() would paint the keyboard focus ring after an Escape exit.

@@ -560,16 +560,22 @@ describe('NotificationIsland', () => {
     ).toHaveClass('z-50')
   })
 
-  test('does not move focus into the panel when it opens', async () => {
+  test('moves bell focus into the notification panel when it opens', async () => {
     render(<NotificationIsland {...props([notification('need')])} />)
 
-    const bell = screen.getByRole('button', { name: 'Notifications, 1 unread' })
-    await userEvent.click(bell)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Notifications, 1 unread' })
+    )
 
     expect(
       screen.getByRole('dialog', { name: 'Notification center' })
     ).toBeInTheDocument()
-    expect(bell).toHaveFocus()
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Mark all read (1)' })
+      ).toHaveFocus()
+    )
   })
 
   test('closes the panel from the header close button through the exit beat', async () => {
@@ -689,9 +695,6 @@ describe('NotificationIsland', () => {
     // Escape-close path is under test.
     focusSpy.mockClear()
 
-    // fireEvent, not userEvent.keyboard: the modal focus manager inerts the
-    // island subtree while the panel is open, and userEvent refuses to send
-    // keys to an inert focused element (a real browser still delivers Esc).
     fireEvent.keyDown(document, { key: 'Escape' })
 
     await waitFor(() =>
