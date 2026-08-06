@@ -3,7 +3,7 @@ id: resource-cleanup
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-06
-ref_count: 29
+ref_count: 30
 ---
 
 # Resource Cleanup
@@ -396,3 +396,17 @@ causes listener accumulation and duplicate event handling.
 - **Finding:** `stop_agent_watcher` is used when the active pane changes, so coupling notification cleanup to that command removed the lightweight watcher that must keep observing background panes. A completion appended after the stop returned was then missed permanently because notification registration resumes at EOF.
 - **Fix:** Kept notification registration out of the ordinary full-watcher stop path; PTY teardown and source replacement retain ownership of notification cleanup. Replaced the inverse lifecycle test with a regression that appends a Codex completion after the awaited stop and verifies the background notification is emitted.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Launcher-owned Kimi watchers must stop after turn settlement
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** A Kimi watcher retained to deliver background completion stayed in
+  the launcher-owned set after its identity-matched completion moved the pane
+  to idle, leaving transcript and relocation resources running until PTY exit.
+- **Fix:** Let the existing session cleanup effect release background Kimi
+  ownership on an identity-validated idle phase while preserving ownership
+  through startup and active work. Added coverage that rejects a stale idle
+  event and stops on the matching settlement.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

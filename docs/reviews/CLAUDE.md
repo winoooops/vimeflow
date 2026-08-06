@@ -49,10 +49,10 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
 | [Fixed-Position Portals](patterns/fixed-position-portals.md)                                         | react-patterns     | 2        | 1    | 2026-06-22   |
-| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 38       | 29   | 2026-08-06   |
+| [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 38       | 30   | 2026-08-06   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 17       | 14   | 2026-07-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 42       | 34   | 2026-08-06   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 43       | 35   | 2026-08-06   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 10       | 6    | 2026-08-06   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 15       | 6    | 2026-08-06   |

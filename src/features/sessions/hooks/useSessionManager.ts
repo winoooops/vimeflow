@@ -21,7 +21,6 @@ import type {
 import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
-import { shouldUseNativeGhostty } from '../../terminal/nativeGhosttyClient'
 import {
   PaneLayoutRegistry,
   isCustomPaneLayoutId,
@@ -623,12 +622,13 @@ export const useSessionManager = (
               isShellPane(pane) &&
               pane.ptyId === ptyId &&
               pane.agentType === 'kimi' &&
+              pane.agentPhase !== 'idle' &&
               !isTerminalStatus(pane.status)
           )
         )
 
       // Kimi has no notification-only watcher, so the launcher watcher owns
-      // background completion delivery until the pane exits or is reclassified.
+      // background completion delivery until the active turn settles.
       if (backgroundKimiOwnsWatcher) {
         return
       }
@@ -1353,7 +1353,8 @@ export const useSessionManager = (
       if (
         pane === undefined ||
         isTerminalStatus(pane.status) ||
-        pane.agentType === 'generic'
+        pane.agentType === 'generic' ||
+        pane.agentPhase === 'idle'
       ) {
         releaseAutoStartedAgentWatcher(ptyId)
       }
@@ -1510,7 +1511,6 @@ export const useSessionManager = (
                     cwd: requestedCwd,
                     env: {},
                     enableAgentBridge: true,
-                    nativeTransport: shouldUseNativeGhostty(),
                   })
             )
           )
@@ -2225,7 +2225,6 @@ export const useSessionManager = (
             cwd: spawnCwd,
             env: {},
             enableAgentBridge: true,
-            nativeTransport: shouldUseNativeGhostty(),
           })
 
           const fresh = sessionsRef.current.find((s) => s.id === sessionId)
@@ -2515,7 +2514,6 @@ export const useSessionManager = (
             cwd: oldPane.cwd,
             env: {},
             enableAgentBridge: true,
-            nativeTransport: shouldUseNativeGhostty(),
           })
         } catch (err) {
           log.warn('restartPane: spawn failed; old pane preserved', err)

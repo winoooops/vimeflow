@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-08-06
-ref_count: 34
+ref_count: 35
 ---
 
 # Derived State Consistency
@@ -567,4 +567,19 @@ base data is technically "correct."
 - **Fix:** Restored the conservative false default and kept native identity an
   explicit spawn choice. Updated unit and E2E coverage to require no renderer
   identity when attachment has not been confirmed.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 43. Workspace spawns reintroduced unconfirmed Ghostty identity
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Final create, add, and restart paths explicitly derived
+  `nativeTransport` from process-wide preload availability, bypassing the
+  conservative service default. A later native attach failure could therefore
+  leave an xterm fallback PTY advertising immutable Ghostty identity.
+- **Fix:** Removed the speculative flag from all workspace spawn paths so the
+  service keeps renderer-neutral identity until a caller has authoritative
+  attachment evidence. Restored unit and E2E expectations for the neutral
+  environment.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)
