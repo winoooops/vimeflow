@@ -18,6 +18,70 @@ const BRIDGE_WORKSPACES_DIR: &str = "workspaces";
 const BRIDGE_SESSIONS_DIR: &str = "sessions";
 const MAX_HOOK_PAYLOAD_BYTES: usize = 256 * 1024;
 const MAX_HOOK_TRANSCRIPT_PATH_JSON_BYTES: usize = 514;
+const HOOK_SESSION_ID_AWK: &str = r#"{
+    json = json $0
+}
+END {
+    depth = 0
+    size = length(json)
+    for (i = 1; i <= size; i++) {
+        character = substr(json, i, 1)
+        if (character == "\"") {
+            string_depth = depth
+            start = i + 1
+            escaped = 0
+            for (i++; i <= size; i++) {
+                character = substr(json, i, 1)
+                if (escaped) {
+                    escaped = 0
+                } else if (character == "\\") {
+                    escaped = 1
+                } else if (character == "\"") {
+                    break
+                }
+            }
+            if (i > size) {
+                exit
+            }
+            if (string_depth != 1 || substr(json, start, i - start) != "session_id") {
+                continue
+            }
+            for (i++; i <= size && substr(json, i, 1) ~ /[[:space:]]/; i++) {}
+            if (substr(json, i, 1) != ":") {
+                continue
+            }
+            for (i++; i <= size && substr(json, i, 1) ~ /[[:space:]]/; i++) {}
+            if (substr(json, i, 1) != "\"") {
+                exit
+            }
+            start = i + 1
+            escaped = 0
+            for (i++; i <= size; i++) {
+                character = substr(json, i, 1)
+                if (escaped) {
+                    escaped = 0
+                } else if (character == "\\") {
+                    escaped = 1
+                } else if (character == "\"") {
+                    break
+                }
+            }
+            if (i > size) {
+                exit
+            }
+            session_id = substr(json, start, i - start)
+            if (session_id ~ /^[A-Za-z0-9_-]+$/) {
+                print substr(session_id, 1, 256)
+            }
+            exit
+        } else if (character == "{" || character == "[") {
+            depth++
+        } else if (character == "}" || character == "]") {
+            depth--
+        }
+    }
+}
+"#;
 // BSD date lacks fractional seconds; JXA provides native millisecond precision
 // so rapid follow-up turns remain correctly ordered on macOS.
 #[cfg(target_os = "macos")]
@@ -262,6 +326,7 @@ pub fn generate_bridge_files(
     let settings_path = dir.join("settings.json");
     let status_file_path = dir.join("status.json");
     let attention_file_path = session_attention_file(&status_file_path);
+    let hook_session_id_parser_path = dir.join("hook-session-id.awk");
     let shell_init_path = dir.join("init.sh");
     let zsh_env_path = dir.join(".zshenv");
     let zsh_rc_path = dir.join(".zshrc");
@@ -285,6 +350,8 @@ pub fn generate_bridge_files(
     // watcher already has its cursor at EOF and never replays old records.
     fs::File::create(&attention_file_path)
         .map_err(|e| format!("failed to create attention event file: {}", e))?;
+    fs::write(&hook_session_id_parser_path, HOOK_SESSION_ID_AWK)
+        .map_err(|e| format!("failed to write hook session ID parser: {}", e))?;
 
     fs::create_dir_all(&shim_dir_path)
         .map_err(|e| format!("failed to create claude shim directory: {}", e))?;
@@ -328,14 +395,15 @@ pub fn generate_bridge_files(
         let mut record_prefix = record.to_string();
         record_prefix.pop();
         record_prefix.push_str(",\"session_id\":\"");
+        let session_id_parser = shell_quote_path(&hook_session_id_parser_path.to_string_lossy());
         let command = if preserve_transcript_path {
             format!(
-                r#"LC_ALL=C; export LC_ALL; payload=$(/usr/bin/head -c {MAX_HOOK_PAYLOAD_BYTES}); /bin/cat >/dev/null; session_id=$(printf '%s' "$payload" | /usr/bin/sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_-]*\)".*/\1/p' | /usr/bin/head -n 1); case "$session_id" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' "$session_id"); transcript_path=$(printf '%s' "$payload" | /usr/bin/sed -nE 's/.*"transcript_path"[[:space:]]*:[[:space:]]*("([^"\\]|\\(["\\/bfnrt]|u[[:xdigit:]]{{4}}))*").*/\1/p' | /usr/bin/head -n 1); transcript_field=''; case "$transcript_path" in '"'/*.jsonl'"') [ "${{#transcript_path}}" -le {MAX_HOOK_TRANSCRIPT_PATH_JSON_BYTES} ] && transcript_field=',"transcript_path":'"$transcript_path" ;; esac; printf '%s%s%s%s%s%s%s\n' {} "$session_id" '"' "$transcript_field" ',"timestamp":"' "$({HOOK_TIMESTAMP_COMMAND})" '"}}' >> "$VIMEFLOW_ATTENTION_FILE""#,
+                r#"LC_ALL=C; export LC_ALL; payload=$(/usr/bin/head -c {MAX_HOOK_PAYLOAD_BYTES}); /bin/cat >/dev/null; session_id=$(printf '%s' "$payload" | /usr/bin/awk -f {session_id_parser}); case "$session_id" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; transcript_path=$(printf '%s' "$payload" | /usr/bin/sed -nE 's/.*"transcript_path"[[:space:]]*:[[:space:]]*("([^"\\]|\\(["\\/bfnrt]|u[[:xdigit:]]{{4}}))*").*/\1/p' | /usr/bin/head -n 1); transcript_field=''; case "$transcript_path" in '"'/*.jsonl'"') [ "${{#transcript_path}}" -le {MAX_HOOK_TRANSCRIPT_PATH_JSON_BYTES} ] && transcript_field=',"transcript_path":'"$transcript_path" ;; esac; printf '%s%s%s%s%s%s%s\n' {} "$session_id" '"' "$transcript_field" ',"timestamp":"' "$({HOOK_TIMESTAMP_COMMAND})" '"}}' >> "$VIMEFLOW_ATTENTION_FILE""#,
                 shell_quote_path(&record_prefix),
             )
         } else {
             format!(
-                "LC_ALL=C; export LC_ALL; payload=$(/usr/bin/head -c {MAX_HOOK_PAYLOAD_BYTES}); /bin/cat >/dev/null; session_id=$(printf '%s' \"$payload\" | /usr/bin/sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9_-]*\\)\".*/\\1/p' | /usr/bin/head -n 1); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' \"$session_id\"); printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
+                "LC_ALL=C; export LC_ALL; payload=$(/usr/bin/head -c {MAX_HOOK_PAYLOAD_BYTES}); /bin/cat >/dev/null; session_id=$(printf '%s' \"$payload\" | /usr/bin/awk -f {session_id_parser}); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
                 shell_quote_path(&record_prefix),
             )
         };
@@ -672,6 +740,7 @@ mod tests {
         let transcript_path = "/Users/me/.claude/projects/quoted \"project\"/back\\slash.jsonl";
         let payload = serde_json::json!({
             "session_id": "claude-session",
+            "tool_input": { "session_id": "nested-session" },
             "transcript_path": transcript_path,
             "api_key": "sk-live-secret",
             "prompt": "do not persist",
