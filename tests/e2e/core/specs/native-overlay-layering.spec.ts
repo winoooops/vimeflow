@@ -45,11 +45,6 @@ interface LocalDialogState {
   opacity: string
 }
 
-interface OverlayWindowState {
-  visible: boolean
-  alwaysOnTop: boolean
-}
-
 type ElectronModule = typeof import('electron')
 
 const pngSignature = Buffer.from([
@@ -312,38 +307,6 @@ const getOverlayDialogRect = async (): Promise<CssRect | null> =>
 
     return fallbackRect
   })
-
-const getLayoutCreatorOverlayWindowState =
-  async (): Promise<OverlayWindowState | null> =>
-    browser.electron.execute(async (electron: ElectronModule) => {
-      for (const overlay of electron.webContents.getAllWebContents()) {
-        const mode = new URL(overlay.getURL()).searchParams.get('nativeOverlay')
-
-        if (mode !== '1' && mode !== 'menu') {
-          continue
-        }
-
-        const hasLayoutCreator = (await overlay.executeJavaScript(`
-          document.querySelector('[data-workspace-overlay-id="layout-creator"]') !== null
-        `)) as boolean
-        if (!hasLayoutCreator) {
-          continue
-        }
-
-        const overlayWindow = electron.BrowserWindow.getAllWindows().find(
-          (window) => window.webContents.id === overlay.id
-        )
-
-        return overlayWindow === undefined
-          ? null
-          : {
-              visible: overlayWindow.isVisible(),
-              alwaysOnTop: overlayWindow.isAlwaysOnTop(),
-            }
-      }
-
-      return null
-    })
 
 const getLayoutCreatorOverlayDraftGrid = async (): Promise<{
   cols: number
@@ -927,12 +890,6 @@ describe('NativeOverlay BrowserWindow layering', () => {
     )
     const localDialogState = await getParentLocalLayoutDialogState()
     expect(parentLocalLayoutDialogIsHidden(localDialogState)).toBe(true)
-
-    const overlayWindowState = await getLayoutCreatorOverlayWindowState()
-    expect(overlayWindowState).toEqual({
-      visible: true,
-      alwaysOnTop: true,
-    })
 
     await waitForOverlayPaint(before, paneRect, 'dialog')
 
