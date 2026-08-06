@@ -49,6 +49,10 @@ test-results/
 # Generated Rust -> TypeScript IPC bindings
 /src/bindings/*.ts
 !/src/bindings/index.ts
+!/src/bindings/AgentNotificationEvent.ts
+!/src/bindings/AgentNotificationReason.ts
+!/src/bindings/PtyProgressEvent.ts
+!/src/bindings/PtyProgressState.ts
 
 # Logs
 logs/
