@@ -7,9 +7,9 @@ export type AgentNotificationEvent = {
    */
   ptyId: string
   /**
-   * Provider session identity when the live stream exposes it.
+   * Provider session identity used to reject stale events after a rebind.
    */
-  agentSessionId: string | null
+  agentSessionId: string
   reason: AgentNotificationReason
   title: string
   body: string | null

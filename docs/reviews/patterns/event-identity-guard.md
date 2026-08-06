@@ -3,7 +3,7 @@ id: event-identity-guard
 category: backend
 created: 2026-06-11
 last_updated: 2026-08-06
-ref_count: 4
+ref_count: 5
 ---
 
 # Event Identity Guard
@@ -75,4 +75,20 @@ Events that carry an identity field for deduplication, stale-event rejection, or
 - **Fix:** Record the latest running timestamp for every agent, reject older
   completions before scheduling, and cancel pending completion timers on a new
   running edge. Added a focused delayed-Claude regression.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 7. Missing notification identity acted as a wildcard after agent replacement
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`,
+  `crates/backend/src/agent/adapter/claude_code/bridge.rs`,
+  `src/features/sessions/hooks/useAgentNotificationProducers.ts`,
+  `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Notification consumers treated `agentSessionId: null` as current,
+  so a delayed completion, error, or attention event from a replaced agent could
+  mutate or notify the replacement pane sharing the same PTY.
+- **Fix:** Made notification identity non-nullable, captured Claude hook session
+  IDs, initialized Codex registrations from `session_meta`, suppressed emission
+  until identity exists, and required exact identity matches in both consumers.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

@@ -593,8 +593,8 @@ pub enum AgentNotificationReason {
 pub struct AgentNotificationEvent {
     /// PTY session ID. The renderer resolves its owning workspace session.
     pub pty_id: String,
-    /// Provider session identity when the live stream exposes it.
-    pub agent_session_id: Option<String>,
+    /// Provider session identity used to reject stale events after a rebind.
+    pub agent_session_id: String,
     pub reason: AgentNotificationReason,
     pub title: String,
     pub body: Option<String>,

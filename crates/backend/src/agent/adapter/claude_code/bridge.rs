@@ -325,12 +325,12 @@ pub fn generate_bridge_files(
     let signal_hook = |record: serde_json::Value| {
         let mut record_prefix = record.to_string();
         record_prefix.pop();
-        record_prefix.push_str(",\"timestamp\":\"");
+        record_prefix.push_str(",\"session_id\":\"");
         serde_json::json!({
             "hooks": [{
                 "type": "command",
                 "command": format!(
-                    "printf '%s%s%s\\n' {} \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
+                    "session_id=$(/usr/bin/sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9_-]*\\)\".*/\\1/p' | /usr/bin/head -n 1); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' \"$session_id\"); printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
                     shell_quote_path(&record_prefix),
                 )
             }]
@@ -366,8 +366,8 @@ pub fn generate_bridge_files(
                     }))["hooks"][0]["command"]
                 }]
             }],
-            // Deliberately title-only: without a bundled JSON parser, the hook
-            // must discard stdin rather than persist sensitive raw payloads.
+            // Deliberately title-only: retain the safe session identity while
+            // discarding sensitive failure details from hook stdin.
             "StopFailure": [signal_hook(serde_json::json!({
                 "hook_event_name": "StopFailure",
                 "vimeflow_minimized": true,
@@ -674,10 +674,28 @@ mod tests {
                 .stdin
                 .as_mut()
                 .expect("stdin")
-                .write_all(br#"{"api_key":"sk-live-secret","prompt":"do not persist"}"#)
+                .write_all(
+                    br#"{"session_id":"claude-session","api_key":"sk-live-secret","prompt":"do not persist"}"#,
+                )
                 .expect("write untrusted hook payload");
             assert!(child.wait().expect("wait hook").success());
         }
+
+        let mut child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(commands[1])
+            .env("PATH", tmp.path())
+            .env("VIMEFLOW_ATTENTION_FILE", &files.attention_file_path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn identity-free hook");
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(br#"{"api_key":"sk-live-secret","prompt":"do not persist"}"#)
+            .expect("write identity-free payload");
+        assert!(child.wait().expect("wait identity-free hook").success());
 
         let mut records = fs::read_to_string(&files.attention_file_path)
             .expect("attention file")
@@ -698,23 +716,28 @@ mod tests {
             vec![
                 serde_json::json!({
                     "hook_event_name": "UserPromptSubmit",
+                    "session_id": "claude-session",
                     "vimeflow_minimized": true,
                 }),
                 serde_json::json!({
                     "hook_event_name": "Stop",
+                    "session_id": "claude-session",
                     "vimeflow_minimized": true,
                 }),
                 serde_json::json!({
                     "hook_event_name": "PermissionRequest",
+                    "session_id": "claude-session",
                     "vimeflow_minimized": true,
                 }),
                 serde_json::json!({
                     "hook_event_name": "PreToolUse",
                     "tool_name": "AskUserQuestion",
+                    "session_id": "claude-session",
                     "vimeflow_minimized": true,
                 }),
                 serde_json::json!({
                     "hook_event_name": "StopFailure",
+                    "session_id": "claude-session",
                     "vimeflow_minimized": true,
                 }),
             ]

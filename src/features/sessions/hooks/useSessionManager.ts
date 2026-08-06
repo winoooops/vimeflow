@@ -1031,8 +1031,7 @@ export const useSessionManager = (
                 if (
                   pane.status !== 'running' ||
                   pane.agentSessionId === undefined ||
-                  (payload.agentSessionId !== null &&
-                    payload.agentSessionId !== pane.agentSessionId) ||
+                  payload.agentSessionId !== pane.agentSessionId ||
                   (latestRunningAt !== undefined &&
                     Number(payload.occurredAt) < latestRunningAt)
                 ) {

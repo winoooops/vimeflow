@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -182,6 +182,10 @@ impl Registration {
         source_path: PathBuf,
         cursor: u64,
     ) -> Self {
+        let agent_session_id = (provider == NotificationProvider::Codex)
+            .then(|| codex_session_id_at_source(&source_path))
+            .flatten();
+
         Self {
             pty_id,
             pty_generation,
@@ -190,7 +194,7 @@ impl Registration {
             cursor,
             partial_line: Vec::new(),
             dropping_oversize_line: false,
-            agent_session_id: None,
+            agent_session_id,
             turn_active: false,
             turn_id: None,
             notification_body: None,
@@ -1012,6 +1016,19 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
     }
 }
 
+fn codex_session_id_at_source(path: &Path) -> Option<String> {
+    let mut line = Vec::new();
+    let mut reader = BufReader::new(File::open(path).ok()?).take(MAX_PARTIAL_LINE_BYTES as u64);
+    reader.read_until(b'\n', &mut line).ok()?;
+
+    match classify_codex(&line).ok()? {
+        ClassifiedSignal::Session(agent_session_id) if !agent_session_id.is_empty() => {
+            Some(bound_provider_identifier(agent_session_id))
+        }
+        _ => None,
+    }
+}
+
 #[derive(Deserialize)]
 struct ClaudeEnvelope {
     #[serde(rename = "type")]
@@ -1407,6 +1424,17 @@ fn apply_signal(
                     .replay_suppressions += 1;
                 return;
             }
+            let Some(current_agent_session_id) = registration
+                .agent_session_id
+                .clone()
+                .filter(|agent_session_id| !agent_session_id.is_empty())
+            else {
+                diagnostics
+                    .lock()
+                    .expect("notification diagnostics mutex poisoned")
+                    .replay_suppressions += 1;
+                return;
+            };
             let Some(prepared_dedupe_key) =
                 prepare_opencode_notification(registration, reason, dedupe_key, diagnostics)
             else {
@@ -1447,7 +1475,7 @@ fn apply_signal(
 
             let event = AgentNotificationEvent {
                 pty_id: registration.pty_id.clone(),
-                agent_session_id: registration.agent_session_id.clone(),
+                agent_session_id: current_agent_session_id,
                 reason,
                 title: notification_title(registration.provider, reason).to_string(),
                 body,
@@ -1580,11 +1608,14 @@ pub(crate) fn emit_kimi_completion(
     event_id: Option<&str>,
     body: Option<String>,
 ) {
+    if agent_session_id.is_empty() {
+        return;
+    }
+
     let reason = AgentNotificationReason::TurnComplete;
     let event = AgentNotificationEvent {
         pty_id: pty_id.to_string(),
-        agent_session_id: (!agent_session_id.is_empty())
-            .then(|| bound_provider_identifier(agent_session_id.to_string())),
+        agent_session_id: bound_provider_identifier(agent_session_id.to_string()),
         reason,
         title: "Kimi finished".to_string(),
         body,
@@ -1685,6 +1716,66 @@ mod tests {
     use std::io::Write;
 
     use crate::runtime::event_sink::FakeEventSink;
+
+    #[test]
+    fn codex_registration_reads_existing_session_identity() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("rollout.jsonl");
+        std::fs::write(
+            &source,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-a\"}}\n",
+        )
+        .expect("seed rollout");
+
+        let registration = Registration::new(
+            "pty-a".to_string(),
+            1,
+            NotificationProvider::Codex,
+            source,
+            0,
+        );
+
+        assert_eq!(registration.agent_session_id.as_deref(), Some("agent-a"));
+    }
+
+    #[test]
+    fn notification_without_agent_identity_is_suppressed() {
+        let mut registration = Registration::new(
+            "pty-claude".to_string(),
+            1,
+            NotificationProvider::ClaudeCode,
+            PathBuf::from("attention.jsonl"),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+
+        apply_signal(
+            &mut registration,
+            ClassifiedSignal::Notification {
+                reason: AgentNotificationReason::AgentError,
+                occurred_at: 1,
+                dedupe_key: None,
+                turn_id: None,
+                agent_session_id: None,
+                body: None,
+                transcript_path: None,
+                requires_active_turn: false,
+                ends_turn: true,
+            },
+            &diagnostics,
+            &sink,
+        );
+
+        assert_eq!(sink.count("agent-notification"), 0);
+        assert_eq!(
+            diagnostics
+                .lock()
+                .expect("notification diagnostics mutex poisoned")
+                .replay_suppressions,
+            1
+        );
+    }
 
     #[test]
     fn same_source_registration_rebinds_to_replacement_pty_generation() {
@@ -1989,7 +2080,7 @@ mod tests {
         apply_signal(
             &mut registration,
             classify_claude(
-                br#"{"hook_event_name":"StopFailure","error_details":"not persisted"}"#,
+                br#"{"hook_event_name":"StopFailure","session_id":"claude-session","error_details":"not persisted"}"#,
             )
             .expect("valid Claude hook"),
             &diagnostics,
@@ -2082,6 +2173,7 @@ mod tests {
             PathBuf::from("attention.jsonl"),
             0,
         );
+        registration.agent_session_id = Some("claude-session".to_string());
         registration.notification_body = Some(transcript_body);
         let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
         let sink = FakeEventSink::new();
@@ -2452,8 +2544,8 @@ mod tests {
         let cases = [
             (
                 NotificationProvider::ClaudeCode,
-                r#"{"hook_event_name":"UserPromptSubmit"}"#,
-                r#"{"hook_event_name":"Stop"}"#,
+                r#"{"hook_event_name":"UserPromptSubmit","session_id":"claude-session"}"#,
+                r#"{"hook_event_name":"Stop","session_id":"claude-session"}"#,
                 "Claude finished",
             ),
             (
@@ -2506,8 +2598,16 @@ mod tests {
             .append(true)
             .open(source)
             .expect("open hook stream");
-        writeln!(file, r#"{{"hook_event_name":"UserPromptSubmit"}}"#).expect("append turn start");
-        writeln!(file, r#"{{"hook_event_name":"Stop"}}"#).expect("append stop");
+        writeln!(
+            file,
+            r#"{{"hook_event_name":"UserPromptSubmit","session_id":"claude-session"}}"#
+        )
+        .expect("append turn start");
+        writeln!(
+            file,
+            r#"{{"hook_event_name":"Stop","session_id":"claude-session"}}"#
+        )
+        .expect("append stop");
         file.flush().expect("flush hook stream");
 
         scan_source(&mut registration, &diagnostics, &sink).expect("scan hook stream");
@@ -2682,6 +2782,7 @@ mod tests {
             source.clone(),
             0,
         );
+        registration.agent_session_id = Some("agent-codex".to_string());
         let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
         let sink = FakeEventSink::new();
         let mut file = std::fs::OpenOptions::new()

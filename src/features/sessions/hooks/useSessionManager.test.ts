@@ -1302,7 +1302,7 @@ describe('useSessionManager', () => {
 
       getNotificationCallback()?.({
         ptyId: 'a',
-        agentSessionId: null,
+        agentSessionId: 'agent-current',
         reason: 'turn-complete',
         title: 'Codex finished',
         body: null,
@@ -1358,7 +1358,7 @@ describe('useSessionManager', () => {
 
       getNotificationCallback()?.({
         ptyId: 'a',
-        agentSessionId: null,
+        agentSessionId: 'claude-old',
         reason: 'turn-complete',
         title: 'Claude finished',
         body: null,

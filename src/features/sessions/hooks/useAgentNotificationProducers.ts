@@ -55,11 +55,8 @@ const isBackgroundTarget = (
   target.session.id !== activeSessionId ||
   findActivePane(target.session)?.ptyId !== target.pane.ptyId
 
-const isCurrentAgent = (
-  target: TargetPane,
-  agentSessionId: string | null
-): boolean =>
-  agentSessionId === null || target.pane.agentSessionId === agentSessionId
+const isCurrentAgent = (target: TargetPane, agentSessionId: string): boolean =>
+  target.pane.agentSessionId === agentSessionId
 
 export const useAgentNotificationProducers = ({
   sessions,
@@ -99,7 +96,7 @@ export const useAgentNotificationProducers = ({
     const scheduleTurnComplete = (
       ptyId: string,
       candidate: {
-        readonly agentSessionId: string | null
+        readonly agentSessionId: string
         readonly title: string
         readonly body?: string
         readonly occurredAt: number
