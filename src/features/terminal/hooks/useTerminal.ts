@@ -418,6 +418,7 @@ export const useTerminal = (options: UseTerminalOptions): UseTerminalReturn => {
             (typeof process !== 'undefined' ? process.env.SHELL : undefined),
           cwd: effectiveCwd,
           env: env ?? {},
+          nativeTransport: false,
         })
 
         if (!isMountedRef.current) {

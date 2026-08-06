@@ -25,7 +25,7 @@ const readTerminal = async (ptyId: string): Promise<string> =>
   )) ?? ''
 
 describe('e2e pane environment', () => {
-  it('avoids unconfirmed renderer identity and scrubs color-disabling variables', async () => {
+  it('scopes terminal identity to native transport and scrubs color-disabling variables', async () => {
     await (
       await $('[data-testid="terminal-pane"]')
     ).waitForDisplayed({ timeout: 20_000 })
@@ -73,6 +73,8 @@ describe('e2e pane environment', () => {
     expect(marker).toContain('T=xterm-256color')
     expect(marker).toContain('NC=unset')
     expect(marker).toContain('FC=unset')
-    expect(marker).toContain('TP=unset TPV=unset')
+    expect(marker).toContain(
+      nativeTransport ? 'TP=ghostty TPV=1.3.2' : 'TP=unset TPV=unset'
+    )
   })
 })

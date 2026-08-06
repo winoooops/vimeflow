@@ -21,6 +21,7 @@ import type {
 import { invoke, listen, type UnlistenFn } from '../../../lib/backend'
 import { isDesktop } from '../../../lib/environment'
 import type { ITerminalService } from '../../terminal/services/terminalService'
+import { shouldUseNativeGhostty } from '../../terminal/nativeGhosttyClient'
 import {
   PaneLayoutRegistry,
   isCustomPaneLayoutId,
@@ -1508,6 +1509,7 @@ export const useSessionManager = (
                     cwd: requestedCwd,
                     env: {},
                     enableAgentBridge: true,
+                    nativeTransport: shouldUseNativeGhostty(),
                   })
             )
           )
@@ -2221,6 +2223,7 @@ export const useSessionManager = (
             cwd: spawnCwd,
             env: {},
             enableAgentBridge: true,
+            nativeTransport: shouldUseNativeGhostty(),
           })
 
           const fresh = sessionsRef.current.find((s) => s.id === sessionId)
@@ -2509,6 +2512,7 @@ export const useSessionManager = (
             cwd: oldPane.cwd,
             env: {},
             enableAgentBridge: true,
+            nativeTransport: shouldUseNativeGhostty(),
           })
         } catch (err) {
           log.warn('restartPane: spawn failed; old pane preserved', err)

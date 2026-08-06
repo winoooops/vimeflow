@@ -86,6 +86,7 @@ describe('useTerminal', () => {
         shell: typeof process !== 'undefined' ? process.env.SHELL : undefined, // Uses process.env.SHELL if available, undefined otherwise
         cwd: '/home/user',
         env: expect.any(Object),
+        nativeTransport: false,
       })
       expect(result.current.status).toBe('running')
       expect(result.current.session).toBeDefined()
@@ -438,6 +439,7 @@ describe('useTerminal', () => {
         shell: undefined, // Should be undefined, not '/bin/bash'
         cwd: '/home/user',
         env: expect.any(Object),
+        nativeTransport: false,
       })
     })
 
@@ -460,6 +462,7 @@ describe('useTerminal', () => {
         shell: '/bin/zsh',
         cwd: '/home/user',
         env: expect.any(Object),
+        nativeTransport: false,
       })
     })
   })
@@ -481,6 +484,7 @@ describe('useTerminal', () => {
         shell: typeof process !== 'undefined' ? process.env.SHELL : undefined, // Uses process.env.SHELL if available
         cwd: '/home/user',
         env: customEnv,
+        nativeTransport: false,
       })
     })
   })
