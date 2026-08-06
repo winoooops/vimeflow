@@ -3,7 +3,7 @@ id: bridge-payload-minimization
 category: security
 created: 2026-06-20
 last_updated: 2026-08-06
-ref_count: 7
+ref_count: 8
 ---
 
 # Bridge Payload Minimization
@@ -80,4 +80,13 @@ Agent bridge plugins sit on high-volume event streams that can carry raw tool in
   StopFailure only, with the provider error code as a fallback. Added a
   script-level regression that executes the hook and compares the complete
   minimized JSONL record.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 8. Claude failure-body decoder outlived the safe hook payload
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** Replacing the generated Node parser with dependency-free constant hook records made `StopFailure` error fields unreachable, while the notification decoder and design contract still promised an actionable failure body.
+- **Fix:** Explicitly adopted a title-only Claude failure contract, removed the unreachable decoder fields, and kept the generated hook's untrusted stdin discarded. Added a decoder regression proving even error-shaped input cannot become a persisted notification body.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

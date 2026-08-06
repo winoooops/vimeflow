@@ -1271,6 +1271,22 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn kimi_uses_its_relocation_aware_transcript_for_notifications() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::Kimi);
+
+        state
+            .register_agent_notification_watcher("pty-1")
+            .await
+            .expect("Kimi does not require a second source watcher");
+
+        assert_eq!(
+            state.agent_notifications.diagnostics().active_registrations,
+            0,
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn stop_agent_watcher_keeps_background_notifications_alive() {
         let (state, sink) = BackendState::with_fake_sink();
         seed_live_agent(&state, AgentType::Codex);

@@ -37,7 +37,6 @@ const MAX_PROVIDER_IDENTIFIER_CHARS: usize = 256;
 pub(crate) enum NotificationProvider {
     ClaudeCode,
     Codex,
-    Kimi,
     OpenCode,
 }
 
@@ -46,7 +45,9 @@ impl NotificationProvider {
         match agent_type {
             AgentType::ClaudeCode => Some(Self::ClaudeCode),
             AgentType::Codex => Some(Self::Codex),
-            AgentType::Kimi => Some(Self::Kimi),
+            // Kimi's transcript supervisor can relocate between wires; its
+            // decoder emits completion notifications from the live source.
+            AgentType::Kimi => None,
             AgentType::Opencode => Some(Self::OpenCode),
             _ => None,
         }
@@ -846,7 +847,6 @@ fn finish_line(
         .records_scanned += 1;
     let classified = match registration.provider {
         NotificationProvider::Codex => classify_codex(&line),
-        NotificationProvider::Kimi => classify_kimi(&line),
         NotificationProvider::OpenCode => classify_opencode(&line),
         NotificationProvider::ClaudeCode => classify_claude(&line),
     };
@@ -1022,9 +1022,6 @@ struct ClaudeEnvelope {
     tool_use_id: Option<String>,
     session_id: Option<String>,
     transcript_path: Option<String>,
-    #[serde(default)]
-    error: Value,
-    error_details: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1061,16 +1058,13 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             "StopFailure" => (AgentNotificationReason::AgentError, false, true),
             _ => return Ok(ClassifiedSignal::Irrelevant),
         };
-        let body = matches!(reason, AgentNotificationReason::AgentError)
-            .then(|| provider_error_body(&envelope.error, envelope.error_details.as_deref()))
-            .flatten();
         return Ok(ClassifiedSignal::Notification {
             reason,
             occurred_at,
             dedupe_key: envelope.tool_use_id,
             turn_id: None,
             agent_session_id: envelope.session_id,
-            body,
+            body: None,
             transcript_path: envelope.transcript_path,
             requires_active_turn,
             ends_turn,
@@ -1197,84 +1191,6 @@ fn claude_message_text(content: &Value) -> Option<String> {
         .join("\n");
 
     (!text.is_empty()).then_some(text)
-}
-
-#[derive(Deserialize)]
-struct KimiEnvelope {
-    #[serde(rename = "type")]
-    record_type: String,
-    time: Option<u64>,
-    origin: Option<KimiOrigin>,
-    event: Option<KimiEvent>,
-}
-
-#[derive(Deserialize)]
-struct KimiOrigin {
-    kind: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct KimiEvent {
-    #[serde(rename = "type")]
-    kind: Option<String>,
-    uuid: Option<String>,
-    #[serde(rename = "turnId")]
-    turn_id: Option<String>,
-    #[serde(rename = "finishReason")]
-    finish_reason: Option<String>,
-    part: Option<KimiPart>,
-}
-
-#[derive(Deserialize)]
-struct KimiPart {
-    #[serde(rename = "type")]
-    kind: Option<String>,
-    text: Option<String>,
-}
-
-fn classify_kimi(line: &[u8]) -> Result<ClassifiedSignal, ()> {
-    let envelope: KimiEnvelope = serde_json::from_slice(line).map_err(|_| ())?;
-    if envelope.record_type == "turn.prompt"
-        && envelope.origin.and_then(|origin| origin.kind).as_deref() == Some("user")
-    {
-        return Ok(ClassifiedSignal::TurnStarted {
-            turn_id: None,
-            agent_session_id: None,
-        });
-    }
-
-    let Some(event) = envelope.event else {
-        return Ok(ClassifiedSignal::Irrelevant);
-    };
-    if envelope.record_type == "context.append_loop_event"
-        && event.kind.as_deref() == Some("content.part")
-        && event.part.as_ref().and_then(|part| part.kind.as_deref()) == Some("text")
-    {
-        return Ok(event
-            .part
-            .and_then(|part| part.text)
-            .filter(|text| !text.is_empty())
-            .map(ClassifiedSignal::AssistantText)
-            .unwrap_or(ClassifiedSignal::Irrelevant));
-    }
-    if envelope.record_type != "context.append_loop_event"
-        || event.kind.as_deref() != Some("step.end")
-        || event.finish_reason.as_deref() != Some("end_turn")
-    {
-        return Ok(ClassifiedSignal::Irrelevant);
-    }
-
-    Ok(ClassifiedSignal::Notification {
-        reason: AgentNotificationReason::TurnComplete,
-        occurred_at: envelope.time.unwrap_or_else(now_millis),
-        dedupe_key: event.uuid.map(|id| format!("turn:{id}")),
-        turn_id: event.turn_id,
-        agent_session_id: None,
-        body: None,
-        transcript_path: None,
-        requires_active_turn: false,
-        ends_turn: true,
-    })
 }
 
 #[derive(Deserialize)]
@@ -1620,7 +1536,7 @@ fn flush_stale_pending_opencode_idle(
     }
 }
 
-fn normalize_notification_body(message: &str) -> Option<String> {
+pub(crate) fn normalize_notification_body(message: &str) -> Option<String> {
     let normalized = message
         .lines()
         .map(str::trim)
@@ -1652,6 +1568,32 @@ fn normalize_notification_body(message: &str) -> Option<String> {
     }
 
     Some(body)
+}
+
+pub(crate) fn emit_kimi_completion(
+    events: &dyn EventSink,
+    pty_id: &str,
+    agent_session_id: &str,
+    occurred_at: Option<u64>,
+    event_id: Option<&str>,
+    body: Option<String>,
+) {
+    let reason = AgentNotificationReason::TurnComplete;
+    let event = AgentNotificationEvent {
+        pty_id: pty_id.to_string(),
+        agent_session_id: (!agent_session_id.is_empty())
+            .then(|| bound_provider_identifier(agent_session_id.to_string())),
+        reason,
+        title: "Kimi finished".to_string(),
+        body,
+        occurred_at: occurred_at.unwrap_or_else(now_millis),
+        dedupe_key: event_id.map(|id| bound_provider_identifier(format!("turn:{id}"))),
+    };
+    if let Err(error) =
+        serialize_event(&event).and_then(|payload| events.emit_json("agent-notification", payload))
+    {
+        log::warn!("failed to emit Kimi completion notification: {error}");
+    }
 }
 
 fn provider_error_body(error: &Value, fallback: Option<&str>) -> Option<String> {
@@ -1700,14 +1642,6 @@ fn notification_title(
             "Codex has a question"
         }
         (NotificationProvider::Codex, AgentNotificationReason::AgentError) => "Codex failed",
-        (NotificationProvider::Kimi, AgentNotificationReason::TurnComplete) => "Kimi finished",
-        (NotificationProvider::Kimi, AgentNotificationReason::ApprovalRequested) => {
-            "Kimi needs approval"
-        }
-        (NotificationProvider::Kimi, AgentNotificationReason::QuestionRequested) => {
-            "Kimi has a question"
-        }
-        (NotificationProvider::Kimi, AgentNotificationReason::AgentError) => "Kimi failed",
         (NotificationProvider::OpenCode, AgentNotificationReason::TurnComplete) => {
             "OpenCode finished"
         }
@@ -1827,37 +1761,6 @@ mod tests {
                 ..
             } if key == "request-1"
         ));
-    }
-
-    #[test]
-    fn kimi_classifier_maps_real_wire_end_turn() {
-        let fixture = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/agent/adapter/kimi/fixtures/sample_wire.jsonl"
-        ));
-        let mut starts = 0;
-        let mut completions = Vec::new();
-
-        for line in fixture.lines() {
-            match classify_kimi(line.as_bytes()).expect("valid Kimi wire record") {
-                ClassifiedSignal::TurnStarted { .. } => starts += 1,
-                ClassifiedSignal::Notification {
-                    reason: AgentNotificationReason::TurnComplete,
-                    occurred_at,
-                    dedupe_key,
-                    ..
-                } => completions.push((occurred_at, dedupe_key)),
-                _ => {}
-            }
-        }
-
-        assert_eq!(starts, 1);
-        assert_eq!(completions.len(), 1);
-        assert_eq!(completions[0].0, 1_781_345_365_638);
-        assert_eq!(
-            completions[0].1.as_deref(),
-            Some("turn:6eeeb415-2667-482d-a5b4-53e283346c94")
-        );
     }
 
     #[test]
@@ -2019,46 +1922,31 @@ mod tests {
     }
 
     #[test]
-    fn claude_stop_failure_emits_bounded_provider_error_details() {
-        let cases = [
-            (
-                serde_json::json!({
-                    "hook_event_name": "StopFailure",
-                    "error": { "message": "界".repeat(81) },
-                }),
-                format!("{}…", "界".repeat(79)),
-            ),
-            (
-                serde_json::json!({
-                    "hook_event_name": "StopFailure",
-                    "error_details": "hook process exited",
-                }),
-                "hook process exited".to_string(),
-            ),
-        ];
+    fn claude_stop_failure_is_deliberately_title_only() {
+        let mut registration = Registration::new(
+            "pty-claude".to_string(),
+            1,
+            NotificationProvider::ClaudeCode,
+            PathBuf::from("attention.jsonl"),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
 
-        for (line, expected_body) in cases {
-            let mut registration = Registration::new(
-                "pty-claude".to_string(),
-                1,
-                NotificationProvider::ClaudeCode,
-                PathBuf::from("attention.jsonl"),
-                0,
-            );
-            let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
-            let sink = FakeEventSink::new();
+        apply_signal(
+            &mut registration,
+            classify_claude(
+                br#"{"hook_event_name":"StopFailure","error_details":"not persisted"}"#,
+            )
+            .expect("valid Claude hook"),
+            &diagnostics,
+            &sink,
+        );
 
-            apply_signal(
-                &mut registration,
-                classify_claude(line.to_string().as_bytes()).expect("valid Claude hook"),
-                &diagnostics,
-                &sink,
-            );
-
-            let payload = sink.recorded()[0].1.clone();
-            assert_eq!(payload["reason"], "agent-error");
-            assert_eq!(payload["body"], expected_body);
-        }
+        let payload = sink.recorded()[0].1.clone();
+        assert_eq!(payload["reason"], "agent-error");
+        assert_eq!(payload["title"], "Claude failed");
+        assert!(payload["body"].is_null());
     }
 
     #[test]
@@ -2095,8 +1983,7 @@ mod tests {
         );
         let latest_line =
             "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"tail\"}],\"stop_reason\":\"end_turn\"}}\n";
-        std::fs::write(&transcript, format!("{old_line}{latest_line}"))
-            .expect("write transcript");
+        std::fs::write(&transcript, format!("{old_line}{latest_line}")).expect("write transcript");
         let mut cursor = 0;
 
         assert_eq!(
@@ -2517,12 +2404,6 @@ mod tests {
                 "Claude finished",
             ),
             (
-                NotificationProvider::Kimi,
-                r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#,
-                r#"{"type":"context.append_loop_event","event":{"type":"step.end","finishReason":"end_turn"}}"#,
-                "Kimi finished",
-            ),
-            (
                 NotificationProvider::OpenCode,
                 r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
                 r#"{"v":1,"ts":2,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
@@ -2582,52 +2463,6 @@ mod tests {
         assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
         assert_eq!(sink.recorded()[0].1["title"], "Claude finished");
         assert!(sink.recorded()[0].1["body"].is_null());
-    }
-
-    #[test]
-    fn kimi_completion_uses_the_latest_assistant_text_part() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let source = temp.path().join("wire.jsonl");
-        std::fs::write(&source, "").expect("create wire");
-        let mut registration = Registration::new(
-            "pty-kimi".to_string(),
-            1,
-            NotificationProvider::Kimi,
-            source.clone(),
-            0,
-        );
-        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
-        let sink = FakeEventSink::new();
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(source)
-            .expect("open wire");
-        writeln!(
-            file,
-            r#"{{"type":"turn.prompt","origin":{{"kind":"user"}}}}"#
-        )
-        .expect("append prompt");
-        writeln!(
-            file,
-            r#"{{"type":"context.append_loop_event","event":{{"type":"content.part","part":{{"type":"text","text":"I will inspect the repository"}}}}}}"#
-        )
-        .expect("append text");
-        writeln!(
-            file,
-            r#"{{"type":"context.append_loop_event","event":{{"type":"content.part","part":{{"type":"text","text":"PR #43 is ready for review"}}}}}}"#
-        )
-        .expect("append final text");
-        writeln!(
-            file,
-            r#"{{"type":"context.append_loop_event","event":{{"type":"step.end","finishReason":"end_turn"}}}}"#
-        )
-        .expect("append completion");
-        file.flush().expect("flush wire");
-
-        scan_source(&mut registration, &diagnostics, &sink).expect("scan wire");
-
-        assert_eq!(sink.count("agent-notification"), 1);
-        assert_eq!(sink.recorded()[0].1["body"], "PR #43 is ready for review");
     }
 
     #[test]

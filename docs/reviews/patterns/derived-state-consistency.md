@@ -3,7 +3,7 @@ id: derived-state-consistency
 category: code-quality
 created: 2026-06-07
 last_updated: 2026-08-06
-ref_count: 30
+ref_count: 31
 ---
 
 # Derived State Consistency
@@ -517,4 +517,13 @@ base data is technically "correct."
   completed session stayed selected.
 - **Fix:** Clamped the maximum batch start to zero and added a rerender
   regression from a completed-only notification state to newly open sessions.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 39. Kimi notification source stayed on the attachment-time wire
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** The lightweight notification watcher copied Kimi's initial wire path, but the full transcript supervisor can relocate to a delayed or resumed session without updating that copy, so later completions were missed.
+- **Fix:** Made Kimi's relocation-aware transcript decoder the sole completion producer and skipped the fixed-path notification registration. Added a regression that relocates from an old wire, suppresses replay, and emits one live completion from the new wire.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

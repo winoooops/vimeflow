@@ -356,6 +356,8 @@ pub fn generate_bridge_files(
                     }))["hooks"][0]["command"]
                 }]
             }],
+            // Deliberately title-only: without a bundled JSON parser, the hook
+            // must discard stdin rather than persist sensitive raw payloads.
             "StopFailure": [signal_hook(serde_json::json!({
                 "hook_event_name": "StopFailure",
                 "vimeflow_minimized": true,

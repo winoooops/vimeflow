@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-06
-ref_count: 103
+ref_count: 104
 ---
 
 # Async Race Conditions

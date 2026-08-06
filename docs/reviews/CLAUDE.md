@@ -52,7 +52,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Resource Cleanup](patterns/resource-cleanup.md)                                                     | react-patterns     | 38       | 29   | 2026-08-06   |
 | [Cross-Platform Paths](patterns/cross-platform-paths.md)                                             | cross-platform     | 17       | 14   | 2026-07-30   |
 | [Debug Artifacts](patterns/debug-artifacts.md)                                                       | code-quality       | 7        | 0    | 2026-06-11   |
-| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 38       | 30   | 2026-08-06   |
+| [Derived State Consistency](patterns/derived-state-consistency.md)                                   | code-quality       | 39       | 31   | 2026-08-06   |
 | [Generated Artifacts](patterns/generated-artifacts.md)                                               | code-quality       | 9        | 6    | 2026-06-12   |
 | [Generated Shell Scripts](patterns/generated-shell-scripts.md)                                       | backend            | 10       | 5    | 2026-08-06   |
 | [Hot-Path Caching](patterns/hot-path-caching.md)                                                     | backend            | 15       | 6    | 2026-08-06   |
@@ -62,14 +62,14 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 104      | 92   | 2026-08-06   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 4        | 2    | 2026-08-05   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 116      | 103  | 2026-08-06   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 116      | 104  | 2026-08-06   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 6        | 4    | 2026-08-05   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
-| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 7        | 7    | 2026-08-06   |
+| [Bridge Payload Minimization](patterns/bridge-payload-minimization.md)                               | security           | 8        | 8    | 2026-08-06   |
 | [IPC Sender Validation](patterns/ipc-sender-validation.md)                                           | security           | 1        | 1    | 2026-06-30   |
 | [IPC Trust Boundary](patterns/ipc-trust-boundary.md)                                                 | security           | 3        | 3    | 2026-07-30   |
 | [IPC Resource Bounds](patterns/ipc-resource-bounds.md)                                               | security           | 23       | 13   | 2026-08-05   |
@@ -80,7 +80,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 30       | 13   | 2026-07-14   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 56       | 58   | 2026-08-06   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 56       | 59   | 2026-08-06   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 2        | 1    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |

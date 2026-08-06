@@ -117,6 +117,10 @@ pub(super) struct KimiLoopEventDto {
     #[serde(rename = "type", default, deserialize_with = "lenient_string")]
     pub type_tag: Option<String>,
 
+    /// Provider event identity used to deduplicate completion notifications.
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub uuid: Option<String>,
+
     /// `tool.call` / `tool.result` correlation id.
     #[serde(default, rename = "toolCallId", deserialize_with = "lenient_string")]
     pub tool_call_id: Option<String>,
