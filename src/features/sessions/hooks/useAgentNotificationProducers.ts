@@ -12,6 +12,7 @@ interface AgentNotificationProducerOptions {
   readonly sessions: readonly Session[]
   readonly activeSessionId: string | null
   readonly publish: (input: NotificationInput) => void
+  readonly getAgentSessionId: (ptyId: string) => string | undefined
 }
 
 interface TargetPane {
@@ -55,17 +56,24 @@ const isBackgroundTarget = (
   target.session.id !== activeSessionId ||
   findActivePane(target.session)?.ptyId !== target.pane.ptyId
 
-const isCurrentAgent = (target: TargetPane, agentSessionId: string): boolean =>
-  target.pane.agentSessionId === agentSessionId
+const isCurrentAgent = (
+  target: TargetPane,
+  agentSessionId: string,
+  getAgentSessionId: (ptyId: string) => string | undefined
+): boolean =>
+  (getAgentSessionId(target.pane.ptyId) ?? target.pane.agentSessionId) ===
+  agentSessionId
 
 export const useAgentNotificationProducers = ({
   sessions,
   activeSessionId,
   publish,
+  getAgentSessionId,
 }: AgentNotificationProducerOptions): void => {
   const sessionsRef = useRef(sessions)
   const activeSessionIdRef = useRef(activeSessionId)
   const publishRef = useRef(publish)
+  const getAgentSessionIdRef = useRef(getAgentSessionId)
 
   const phasesRef = useRef(
     new Map<string, Pick<AgentLifecycleEvent, 'agentSessionId' | 'phase'>>()
@@ -73,6 +81,7 @@ export const useAgentNotificationProducers = ({
   sessionsRef.current = sessions
   activeSessionIdRef.current = activeSessionId
   publishRef.current = publish
+  getAgentSessionIdRef.current = getAgentSessionId
 
   useEffect(() => {
     let cancelled = false
@@ -128,7 +137,11 @@ export const useAgentNotificationProducers = ({
             (phase?.phase !== 'idle' ||
               phase.agentSessionId !== candidate.agentSessionId)) ||
           target === undefined ||
-          !isCurrentAgent(target, candidate.agentSessionId) ||
+          !isCurrentAgent(
+            target,
+            candidate.agentSessionId,
+            getAgentSessionIdRef.current
+          ) ||
           !isBackgroundTarget(target, activeSessionIdRef.current)
         ) {
           return
@@ -190,8 +203,11 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.sessionId)
         if (
           target === undefined ||
-          (target.pane.agentSessionId !== undefined &&
-            target.pane.agentSessionId !== payload.agentSessionId)
+          !isCurrentAgent(
+            target,
+            payload.agentSessionId,
+            getAgentSessionIdRef.current
+          )
         ) {
           return
         }
@@ -234,7 +250,11 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.ptyId)
         if (
           target === undefined ||
-          !isCurrentAgent(target, payload.agentSessionId)
+          !isCurrentAgent(
+            target,
+            payload.agentSessionId,
+            getAgentSessionIdRef.current
+          )
         ) {
           return
         }

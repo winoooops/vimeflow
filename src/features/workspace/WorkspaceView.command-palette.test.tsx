@@ -332,6 +332,7 @@ describe('WorkspaceView - Command Palette Integration', () => {
       updatePaneAgentType: vi.fn(),
       recordPaneAgentLauncher: vi.fn(),
       invalidatePaneAgentSession: vi.fn(),
+      getAgentSessionId: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),

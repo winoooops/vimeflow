@@ -395,6 +395,7 @@ const WorkspaceViewContent = (): ReactElement => {
     updatePaneAgentType,
     recordPaneAgentLauncher,
     invalidatePaneAgentSession,
+    getAgentSessionId,
     updateBrowserPaneUrl,
     setSessionActivePane,
     setSessionLayout,
@@ -414,6 +415,7 @@ const WorkspaceViewContent = (): ReactElement => {
     sessions,
     activeSessionId,
     publish: notificationCenter.publish,
+    getAgentSessionId,
   })
 
   const liveNotificationPaneKeys = useMemo(

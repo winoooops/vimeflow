@@ -335,7 +335,7 @@ pub fn generate_bridge_files(
             )
         } else {
             format!(
-                "session_id=$(/usr/bin/sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9_-]*\\)\".*/\\1/p' | /usr/bin/head -n 1); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' \"$session_id\"); printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
+                "LC_ALL=C; export LC_ALL; payload=$(/usr/bin/head -c {MAX_HOOK_PAYLOAD_BYTES}); /bin/cat >/dev/null; session_id=$(printf '%s' \"$payload\" | /usr/bin/sed -n 's/.*\"session_id\"[[:space:]]*:[[:space:]]*\"\\([A-Za-z0-9_-]*\\)\".*/\\1/p' | /usr/bin/head -n 1); case \"$session_id\" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac; session_id=$(printf '%.256s' \"$session_id\"); printf '%s%s%s%s%s\\n' {} \"$session_id\" '\",\"timestamp\":\"' \"$({HOOK_TIMESTAMP_COMMAND})\" '\"}}' >> \"$VIMEFLOW_ATTENTION_FILE\"",
                 shell_quote_path(&record_prefix),
             )
         };
@@ -696,6 +696,29 @@ mod tests {
                 .expect("write untrusted hook payload");
             assert!(child.wait().expect("wait hook").success());
         }
+
+        let mut child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(commands[0])
+            .current_dir(tmp.path())
+            .env("PATH", tmp.path())
+            .env("VIMEFLOW_ATTENTION_FILE", &files.attention_file_path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn oversized attention hook");
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(
+                format!(
+                    r#"{{"prompt":"{}","session_id":"oversized-session"}}"#,
+                    "x".repeat(MAX_HOOK_PAYLOAD_BYTES)
+                )
+                .as_bytes(),
+            )
+            .expect("write oversized hook payload");
+        assert!(child.wait().expect("wait oversized hook").success());
 
         let mut child = Command::new("/bin/sh")
             .arg("-c")

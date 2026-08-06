@@ -202,6 +202,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       updatePaneAgentType: vi.fn(),
       recordPaneAgentLauncher: vi.fn(),
       invalidatePaneAgentSession: vi.fn(),
+      getAgentSessionId: vi.fn(),
       updateSessionCwd: vi.fn(),
       updateSessionAgentType: vi.fn(),
       restoreData: new Map(),

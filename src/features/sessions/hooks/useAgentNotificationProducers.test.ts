@@ -95,6 +95,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -126,6 +127,62 @@ describe('useAgentNotificationProducers', () => {
     })
   })
 
+  test('uses observed status identity before pane restoration hydrates', async () => {
+    installBridge()
+    const publish = vi.fn()
+    const agentSessionIds = new Map<string, string>()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', {
+            agentType: 'codex',
+            agentSessionId: undefined,
+          }),
+        ],
+        activeSessionId: 'active',
+        publish,
+        getAgentSessionId: (ptyId) => agentSessionIds.get(ptyId),
+      })
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'agent-error',
+        title: 'Unverified Codex failed',
+        body: null,
+        occurredAt: BigInt(41),
+        dedupeKey: 'error:41',
+      })
+
+      agentSessionIds.set('pty-background', 'agent-background')
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-background',
+        agentSessionId: 'agent-background',
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'turn-complete',
+        title: 'Codex finished',
+      })
+    )
+  })
+
   test('ignores a stale event after the pane agent is replaced', async () => {
     installBridge()
     const publish = vi.fn()
@@ -139,6 +196,7 @@ describe('useAgentNotificationProducers', () => {
         sessions: [session('active', 'pty-active'), background],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -199,6 +257,7 @@ describe('useAgentNotificationProducers', () => {
         sessions: [session('active', 'pty-active'), background],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -246,6 +305,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -290,6 +350,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -346,6 +407,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -396,6 +458,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -444,6 +507,7 @@ describe('useAgentNotificationProducers', () => {
         sessions: [session('active', 'pty-active'), background],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -501,6 +565,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -534,6 +599,7 @@ describe('useAgentNotificationProducers', () => {
           ],
           activeSessionId: 'active',
           publish,
+          getAgentSessionId: () => undefined,
         })
       )
 
@@ -556,6 +622,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId: 'active',
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -586,6 +653,7 @@ describe('useAgentNotificationProducers', () => {
         ],
         activeSessionId,
         publish,
+        getAgentSessionId: () => undefined,
       })
     )
 
@@ -624,6 +692,7 @@ describe('useAgentNotificationProducers', () => {
           ],
           activeSessionId: 'active',
           publish,
+          getAgentSessionId: () => undefined,
         })
       )
 
@@ -670,6 +739,7 @@ describe('useAgentNotificationProducers', () => {
           ],
           activeSessionId: 'active',
           publish,
+          getAgentSessionId: () => undefined,
         })
       )
 

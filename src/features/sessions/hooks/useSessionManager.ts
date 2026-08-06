@@ -162,6 +162,7 @@ export interface SessionManager {
     agentSessionId: string | null,
     tokenTotal: number | null
   ) => void
+  getAgentSessionId: (ptyId: string) => string | undefined
   appendPaneCacheReading: (
     sessionId: string,
     paneId: string,
@@ -477,6 +478,12 @@ export const useSessionManager = (
   // previous agent run that share the same ptyId but a different agentSessionId
   // (Codex P2 finding on PR #421).
   const agentSessionIdsRef = useRef(new Map<string, string>())
+
+  const getAgentSessionId = useCallback(
+    (ptyId: string): string | undefined =>
+      agentSessionIdsRef.current.get(ptyId),
+    []
+  )
   const latestAgentRunningAtRef = useRef(new Map<string, number>())
 
   const invalidatedAgentSessionsRef = useRef(
@@ -3286,6 +3293,7 @@ export const useSessionManager = (
     updatePaneAgentType,
     recordPaneAgentLauncher,
     invalidatePaneAgentSession,
+    getAgentSessionId,
     updateBrowserPaneUrl,
     updateSessionCwd,
     updateSessionAgentType,
