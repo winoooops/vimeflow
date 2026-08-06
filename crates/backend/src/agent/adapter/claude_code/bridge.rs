@@ -301,13 +301,14 @@ pub fn generate_bridge_files(
          tool_use_id=$(escape_json \"$tool_use_id\")\n\
          session_id=$(escape_json \"$session_id\")\n\
          error_details=$(escape_json \"$error_details\")\n\
-         printf '{{\"hook_event_name\":\"%s\"' \"$hook_event_name\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
-         [ -n \"$transcript_path\" ] && printf ',\"transcript_path\":\"%s\"' \"$transcript_path\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
-         [ -n \"$tool_name\" ] && printf ',\"tool_name\":\"%s\"' \"$tool_name\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
-         [ -n \"$tool_use_id\" ] && printf ',\"tool_use_id\":\"%s\"' \"$tool_use_id\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
-         [ -n \"$session_id\" ] && printf ',\"session_id\":\"%s\"' \"$session_id\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
-         [ -n \"$error_details\" ] && printf ',\"error_details\":\"%s\"' \"$error_details\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n\
-         printf ',\"vimeflow_minimized\":true}}\\n' >> \"$VIMEFLOW_ATTENTION_FILE\"\n",
+         record=\"{{\\\"hook_event_name\\\":\\\"$hook_event_name\\\"\"\n\
+         [ -n \"$transcript_path\" ] && record=\"$record,\\\"transcript_path\\\":\\\"$transcript_path\\\"\"\n\
+         [ -n \"$tool_name\" ] && record=\"$record,\\\"tool_name\\\":\\\"$tool_name\\\"\"\n\
+         [ -n \"$tool_use_id\" ] && record=\"$record,\\\"tool_use_id\\\":\\\"$tool_use_id\\\"\"\n\
+         [ -n \"$session_id\" ] && record=\"$record,\\\"session_id\\\":\\\"$session_id\\\"\"\n\
+         [ -n \"$error_details\" ] && record=\"$record,\\\"error_details\\\":\\\"$error_details\\\"\"\n\
+         record=\"$record,\\\"vimeflow_minimized\\\":true}}\"\n\
+         printf '%s\\n' \"$record\" >> \"$VIMEFLOW_ATTENTION_FILE\"\n",
         session_id = session_id,
     );
     write_executable_script(&attention_script_path, &attention_script_content)
@@ -686,6 +687,61 @@ mod tests {
             fs::read_to_string(&files.attention_file_path).expect("attention file"),
             "{\"hook_event_name\":\"PermissionRequest\",\"vimeflow_minimized\":true}\n"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_attention_hooks_append_complete_json_lines() {
+        const HOOK_COUNT: usize = 32;
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let files = generate_bridge_files(
+            tmp.path().to_str().unwrap(),
+            "session-hooks",
+            None,
+            &[],
+            true,
+        )
+        .expect("generate bridge files");
+        let payload = serde_json::json!({
+            "hook_event_name": "StopFailure",
+            "transcript_path": "/Users/me/.claude/projects/s/transcript.jsonl",
+            "tool_name": "Bash",
+            "tool_use_id": "tool-1",
+            "session_id": "claude-session",
+            "error_details": "x".repeat(512),
+        })
+        .to_string();
+        let mut children = (0..HOOK_COUNT)
+            .map(|_| {
+                Command::new(&files.attention_script_path)
+                    .env("VIMEFLOW_ATTENTION_FILE", &files.attention_file_path)
+                    .stdin(Stdio::piped())
+                    .spawn()
+                    .expect("spawn attention hook")
+            })
+            .collect::<Vec<_>>();
+
+        for child in &mut children {
+            child
+                .stdin
+                .take()
+                .expect("stdin")
+                .write_all(payload.as_bytes())
+                .expect("write hook payload");
+        }
+        for mut child in children {
+            assert!(child.wait().expect("wait hook").success());
+        }
+
+        let written = fs::read_to_string(&files.attention_file_path).expect("attention file");
+        let lines = written.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), HOOK_COUNT);
+        for line in lines {
+            serde_json::from_str::<serde_json::Value>(line).expect("complete hook record");
+        }
+        let script = fs::read_to_string(&files.attention_script_path).expect("attention script");
+        assert_eq!(script.matches(">> \"$VIMEFLOW_ATTENTION_FILE\"").count(), 1);
     }
 
     #[cfg(unix)]
