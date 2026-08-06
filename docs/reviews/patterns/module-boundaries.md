@@ -2,8 +2,8 @@
 id: module-boundaries
 category: code-quality
 created: 2026-04-30
-last_updated: 2026-07-29
-ref_count: 9
+last_updated: 2026-08-05
+ref_count: 10
 ---
 
 # Module Boundaries
@@ -257,3 +257,22 @@ Don't widen the coupling by adding a second importer.
   layout contract so `src/components/base/floating/nativeOverlay.ts` no longer
   depends on terminal modules.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 23. Lightweight Codex notification classifier omitted a full-decoder request type
+
+- **Source:** local-codex | PR #785 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** The full Codex transcript decoder recognized
+  `response_item/function_call/request_permissions`, but the lightweight
+  notification classifier only recognized its `request_user_input` sibling.
+  Because the frontend treats the lightweight watcher as authoritative for
+  Codex notifications, background permission requests produced no user-visible
+  alert.
+- **Fix:** Added `request_permissions` to the existing function-call classifier
+  as `ApprovalRequested`, using `call_id` as the dedupe key. Extended the
+  notification-worker regression to assert the emitted reason, body, and dedupe
+  key for the exact record shape. Kept the change local because the two decoders
+  produce different event contracts; a shared classifier can wait until more
+  protocol mappings demonstrably drift.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

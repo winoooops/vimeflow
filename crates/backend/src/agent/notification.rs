@@ -907,11 +907,15 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
 
     if envelope.record_type == "response_item"
         && envelope.payload.kind.as_deref() == Some("function_call")
-        && envelope.payload.name.as_deref() == Some("request_user_input")
     {
+        let reason = match envelope.payload.name.as_deref() {
+            Some("request_user_input") => AgentNotificationReason::QuestionRequested,
+            Some("request_permissions") => AgentNotificationReason::ApprovalRequested,
+            _ => return Ok(ClassifiedSignal::Irrelevant),
+        };
         let key = envelope.payload.call_id;
         return Ok(ClassifiedSignal::Notification {
-            reason: AgentNotificationReason::QuestionRequested,
+            reason,
             occurred_at,
             dedupe_key: key,
             turn_id: None,
@@ -2634,7 +2638,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_attention_includes_the_next_action() {
+    fn semantic_attention_includes_next_actions() {
         let temp = tempfile::tempdir().expect("tempdir");
         let source = temp.path().join("rollout.jsonl");
         std::fs::write(&source, "").expect("create rollout");
@@ -2651,16 +2655,20 @@ mod tests {
             .append(true)
             .open(source)
             .expect("open rollout");
-        writeln!(
-            file,
-            r#"{{"type":"response_item","payload":{{"type":"function_call","name":"request_user_input","call_id":"q1"}}}}"#
-        )
-        .expect("append question");
+        for line in [
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"q1"}}"#,
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"request_permissions","call_id":"approval-3"}}"#,
+        ] {
+            writeln!(file, "{line}").expect("append attention request");
+        }
         file.flush().expect("flush rollout");
 
         scan_source(&mut registration, &diagnostics, &sink).expect("scan rollout");
 
-        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.count("agent-notification"), 2);
         assert_eq!(sink.recorded()[0].1["body"], "Awaiting your response");
+        assert_eq!(sink.recorded()[1].1["reason"], "approval-requested");
+        assert_eq!(sink.recorded()[1].1["body"], "Awaiting your approval");
+        assert_eq!(sink.recorded()[1].1["dedupeKey"], "approval-3");
     }
 }
