@@ -610,13 +610,20 @@ impl BackendState {
         )
         .await?;
 
+        self.register_agent_notification_watcher(&session_id)
+            .await?;
+
+        Ok(changed)
+    }
+
+    async fn register_agent_notification_watcher(&self, session_id: &str) -> Result<(), String> {
         let agent_type = self
             .agents
-            .agent_type_for_pty(&session_id)
+            .agent_type_for_pty(session_id)
             .ok_or_else(|| format!("agent watcher missing after start: {session_id}"))?;
         if let (Some(provider), Some(mut source_path)) = (
             NotificationProvider::from_agent_type(agent_type),
-            self.agents.current_status_path(&session_id),
+            self.agents.current_status_path(session_id),
         ) {
             if provider == NotificationProvider::ClaudeCode {
                 source_path = crate::agent::adapter::claude_code::bridge::session_attention_file(
@@ -624,21 +631,21 @@ impl BackendState {
                 );
             }
             let notifications = self.agent_notifications.clone();
-            let notification_session_id = session_id.clone();
-            if let Err(error) = tokio::task::spawn_blocking(move || {
+            let notification_session_id = session_id.to_string();
+            tokio::task::spawn_blocking(move || {
                 notifications.register(notification_session_id, provider, source_path)
             })
             .await
             .map_err(|error| format!("notification registration task panicked: {error}"))
             .and_then(|result| result)
-            {
-                log::warn!(
+            .map_err(|error| {
+                format!(
                     "notification watcher registration failed for {session_id} ({provider:?}): {error}"
-                );
-            }
+                )
+            })?;
         }
 
-        Ok(changed)
+        Ok(())
     }
 
     pub async fn stop_agent_watcher(&self, session_id: String) -> Result<(), String> {
@@ -1244,6 +1251,23 @@ mod tests {
         let diagnostics = state.agent_notifications.diagnostics();
         assert!(diagnostics.worker_alive);
         assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn agent_notification_registration_failure_is_propagated() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::Codex);
+
+        let error = state
+            .register_agent_notification_watcher("pty-1")
+            .await
+            .expect_err("missing notification source should reject attachment");
+
+        assert!(error.contains("notification watcher registration failed"));
+        assert_eq!(
+            state.agent_notifications.diagnostics().active_registrations,
+            0
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

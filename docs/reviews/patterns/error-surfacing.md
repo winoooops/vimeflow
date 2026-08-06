@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-08-05
-ref_count: 57
+last_updated: 2026-08-06
+ref_count: 58
 ---
 
 # Error Surfacing
@@ -577,4 +577,13 @@ failed" must mean the editor shows the original file, not the requested one.
 - **File:** `crates/backend/src/agent/notification.rs`
 - **Finding:** Claude StopFailure and OpenCode session.error notification DTOs omitted provider error fields, leaving OpenCode alerts empty and allowing Claude errors to display an unrelated completed transcript response.
 - **Fix:** Decode both provider error shapes through the bounded notification-body normalizer and restrict Claude transcript recovery to successful completion notifications. Added payload regressions for both providers.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 56. Notification watcher registration failure was reported as successful attachment
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`
+- **Finding:** `start_agent_watcher` logged notification registration failures but still returned success, preventing the frontend's existing bounded retry loops from reattaching semantic notification producers.
+- **Fix:** Propagate worker startup and registration errors through the IPC result while leaving the full watcher available for an idempotent retry. Added a focused regression for an invalid notification source.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

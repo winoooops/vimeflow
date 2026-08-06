@@ -3,7 +3,7 @@ id: generated-shell-scripts
 category: backend
 created: 2026-06-02
 last_updated: 2026-08-06
-ref_count: 4
+ref_count: 5
 ---
 
 # Generated Shell Scripts
@@ -101,3 +101,12 @@ end to avoid leaking ephemeral artifacts.
 - **Finding:** The generated `attention.sh` appended Claude Stop-hook stdin verbatim. Large final assistant messages could push one JSONL record over the notification watcher's per-line cap, causing the whole completion event to be discarded.
 - **Fix:** Bound the generated script output. Normal hook payloads pass through unchanged; oversized payloads are compacted to the hook name plus transcript path so the watcher can still emit completion and recover the body from Claude's transcript.
 - **Commit:** same commit as this entry
+
+### 10. Generated Claude attention hook required an unbundled Node executable
+
+- **Source:** local-codex | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** The generated attention hook used `#!/usr/bin/env node`, but packaged Vimeflow does not ship a `node` executable or add one to PATH, so every semantic Claude hook failed on hosts without a system Node installation.
+- **Fix:** Removed the generated parser and emitted minimized constant JSON records directly from Claude's event-specific shell commands. Added a regression that runs every hook with PATH restricted to a temp directory and verifies untrusted stdin is not persisted.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
