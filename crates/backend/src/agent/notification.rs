@@ -927,8 +927,13 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         }
         Some("exec_approval_request")
         | Some("apply_patch_approval_request")
-        | Some("request_permissions") => {
-            let key = envelope.payload.approval_id.or(envelope.payload.call_id);
+        | Some("request_permissions")
+        | Some("request_user_input") => {
+            let key = envelope
+                .payload
+                .approval_id
+                .or(envelope.payload.request_id)
+                .or(envelope.payload.call_id);
             Ok(ClassifiedSignal::Notification {
                 reason: AgentNotificationReason::ApprovalRequested,
                 occurred_at,
@@ -1746,6 +1751,31 @@ mod tests {
                 ClassifiedSignal::OpenCodeStatusIdle { .. } => "opencode-status-idle",
             };
             assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn codex_classifier_maps_event_user_input_to_approval() {
+        for (line, expected_key) in [
+            (
+                br#"{"type":"event_msg","payload":{"type":"request_user_input","request_id":"question-1"}}"#
+                    .as_slice(),
+                "question-1",
+            ),
+            (
+                br#"{"type":"event_msg","payload":{"type":"request_user_input","call_id":"question-2"}}"#
+                    .as_slice(),
+                "question-2",
+            ),
+        ] {
+            match classify_codex(line).expect("valid Codex envelope") {
+                ClassifiedSignal::Notification {
+                    reason: AgentNotificationReason::ApprovalRequested,
+                    dedupe_key: Some(key),
+                    ..
+                } => assert_eq!(key, expected_key),
+                _ => panic!("expected approval notification"),
+            }
         }
     }
 

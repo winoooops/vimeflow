@@ -1333,6 +1333,34 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].agentPhase).toBe('running')
   })
 
+  test('notification-only completion ends an unbound running turn', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getNotificationCallback()).toBeDefined())
+
+    expect(result.current.sessions[0].panes[0].agentSessionId).toBeUndefined()
+
+    act(() => {
+      getNotificationCallback()?.({
+        ptyId: 'a',
+        agentSessionId: null,
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(1),
+        dedupeKey: 'turn-1',
+      })
+    })
+
+    expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    expect(result.current.sessions[0].status).toBe('idle')
+  })
+
   test('adding a browser pane keeps an idle shell session idle', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))

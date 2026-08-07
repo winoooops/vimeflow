@@ -1043,8 +1043,8 @@ export const useSessionManager = (
                 const pane = session.panes[idx]
                 if (
                   pane.status !== 'running' ||
-                  pane.agentSessionId === undefined ||
-                  (payload.agentSessionId !== null &&
+                  (pane.agentSessionId !== undefined &&
+                    payload.agentSessionId !== null &&
                     payload.agentSessionId !== pane.agentSessionId)
                 ) {
                   return session
