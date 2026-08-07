@@ -92,20 +92,23 @@ export class TerminalAttentionScanner {
       }
 
       this.pending = this.pending.slice(oscStart)
-      const terminator = findOscTerminator(this.pending)
-      if (terminator === undefined) {
+      const boundary = findOscBoundary(this.pending)
+      if (boundary === undefined) {
         if (this.pending.length > MAX_PENDING_BYTES) {
-          if (this.pending.startsWith('\x1b]9;4;')) {
-            this.discardingOsc = true
-            this.discardEscape = this.pending.endsWith('\x1b')
-          }
+          this.discardingOsc = true
+          this.discardEscape = this.pending.endsWith('\x1b')
           this.pending = ''
         }
 
         break
       }
 
-      const payload = this.pending.slice(2, terminator.index)
+      if (boundary.length === 0) {
+        this.pending = this.pending.slice(boundary.index)
+        continue
+      }
+
+      const payload = this.pending.slice(2, boundary.index)
       const separator = payload.indexOf(';')
 
       const identifier =
@@ -119,7 +122,7 @@ export class TerminalAttentionScanner {
         attention.push(body)
       }
 
-      this.pending = this.pending.slice(terminator.index + terminator.length)
+      this.pending = this.pending.slice(boundary.index + boundary.length)
     }
 
     return attention
@@ -141,7 +144,11 @@ export class TerminalAttentionScanner {
 
           return data.slice(index + 1)
         }
-        this.discardEscape = character === '\x1b'
+
+        this.discardingOsc = false
+        this.discardEscape = false
+
+        return index === 0 ? `\x1b${data}` : data.slice(index - 1)
       } else if (character === '\x07') {
         this.discardingOsc = false
 
@@ -155,18 +162,32 @@ export class TerminalAttentionScanner {
   }
 }
 
-/** Locate either valid OSC terminator: BEL or the two-byte ST sequence. */
-const findOscTerminator = (
+/** Locate an OSC terminator or an escape that aborts the current frame. */
+const findOscBoundary = (
   value: string
-): { readonly index: number; readonly length: number } | undefined => {
-  const bell = value.indexOf('\x07', 2)
-  const stringTerminator = value.indexOf('\x1b\\', 2)
-  if (bell === -1 && stringTerminator === -1) {
-    return undefined
-  }
-  if (bell !== -1 && (stringTerminator === -1 || bell < stringTerminator)) {
-    return { index: bell, length: 1 }
+): { readonly index: number; readonly length: 0 | 1 | 2 } | undefined => {
+  for (let index = 2; index < value.length; index += 1) {
+    const character = value[index]
+    if (character === '\x07') {
+      return { index, length: 1 }
+    }
+    if (character !== '\x1b') {
+      continue
+    }
+    if (index + 1 === value.length) {
+      return undefined
+    }
+
+    const next = value[index + 1]
+    if (next === '\\') {
+      return { index, length: 2 }
+    }
+    if (next === '\x07') {
+      return { index: index + 1, length: 1 }
+    }
+
+    return { index, length: 0 }
   }
 
-  return { index: stringTerminator, length: 2 }
+  return undefined
 }
