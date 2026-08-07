@@ -225,15 +225,49 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          if gh release view nightly >/dev/null 2>&1; then
-            gh release delete nightly --cleanup-tag --yes
-          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" >/dev/null 2>&1; then
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly"
-          fi
+          candidate_tag="nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          previous_tag="${candidate_tag}-previous"
 
-          gh release create nightly nightly-assets/* \
+          gh release create "$candidate_tag" nightly-assets/* \
             --target "$GITHUB_SHA" \
             --title 'nightly' \
             --notes-file "$RUNNER_TEMP/nightly-release.md" \
             --prerelease \
             --latest=false
+
+          if gh release view nightly >/dev/null 2>&1; then
+            previous_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" --jq '.object.sha')
+            rollback() {
+              if ! gh release view nightly >/dev/null 2>&1 && gh release view "$previous_tag" >/dev/null 2>&1; then
+                if gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
+                  -f sha="$previous_sha" \
+                  -F force=true; then
+                  gh release edit "$previous_tag" --tag nightly --verify-tag || true
+                fi
+              fi
+            }
+            trap rollback ERR
+
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${previous_tag}" \
+              -f sha="$previous_sha"
+            gh release edit nightly --tag "$previous_tag" --verify-tag
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
+              -f sha="$GITHUB_SHA" \
+              -F force=true
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref='refs/tags/nightly' \
+              -f sha="$GITHUB_SHA"
+          fi
+
+          gh release edit "$candidate_tag" --tag nightly --verify-tag
+          trap - ERR
+
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${candidate_tag}"
+          if gh release view "$previous_tag" >/dev/null 2>&1; then
+            gh release delete "$previous_tag" --cleanup-tag --yes
+          fi
