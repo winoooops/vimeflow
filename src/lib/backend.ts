@@ -270,12 +270,8 @@ export const invoke = async <T>(
   try {
     const result = await requireBridge().invoke<T>(method, args)
 
-    if (sessionId !== undefined) {
-      if (method === 'start_agent_watcher') {
-        availableAgentNotificationWatcherPtyIds.add(sessionId)
-      } else if (method === 'stop_agent_watcher') {
-        availableAgentNotificationWatcherPtyIds.delete(sessionId)
-      }
+    if (method === 'start_agent_watcher' && sessionId !== undefined) {
+      availableAgentNotificationWatcherPtyIds.add(sessionId)
     }
 
     return result

@@ -76,6 +76,15 @@ describe('backend (window.vimeflow bridge)', () => {
     expect(isAgentNotificationWatcherAvailable('pty-1')).toBe(false)
   })
 
+  test('preserves normalized notification watcher availability after full-watcher stop', async () => {
+    mockInvoke.mockResolvedValue(undefined)
+
+    await invoke('start_agent_watcher', { sessionId: 'pty-1' })
+    await invoke('stop_agent_watcher', { sessionId: 'pty-1' })
+
+    expect(isAgentNotificationWatcherAvailable('pty-1')).toBe(true)
+  })
+
   test('renameAgentSession wraps structured backend errors', async () => {
     mockInvoke.mockRejectedValueOnce({
       message: 'no live agent in pty pty-1 to rename',
