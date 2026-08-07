@@ -24,21 +24,26 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: .
+
+      - name: Test release publisher
+        run: .github/scripts/publish-nightly-release.test.sh
 
       - name: Install dependencies
         run: npm ci
@@ -65,19 +70,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: .
           shared-key: nightly-linux-x64
@@ -99,7 +106,7 @@ jobs:
           file squashfs-root/resources/bin/vimeflow-backend | grep -q 'x86-64'
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nightly-linux-x64
           path: release/*.AppImage
@@ -113,19 +120,21 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: .
           shared-key: nightly-macos-arm64
@@ -146,7 +155,7 @@ jobs:
           file release/mac-arm64/Vimeflow.app/Contents/Resources/bin/vimeflow-backend | grep -q 'arm64'
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nightly-macos-arm64
           path: release/*.dmg
@@ -160,7 +169,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Download installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: nightly-*
           path: nightly-assets
@@ -176,7 +185,7 @@ jobs:
           sha256sum --check SHA256SUMS
 
       - name: Upload verified release assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nightly-release-assets
           path: nightly-assets/*
@@ -194,14 +203,17 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Checkout release publisher
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
       - name: Download verified release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: nightly-release-assets
           path: nightly-assets
 
       - name: Attest installer provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-checksums: nightly-assets/SHA256SUMS
 
@@ -224,80 +236,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
-        run: |
-          candidate_tag="nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          previous_tag="${candidate_tag}-previous"
-          previous_sha=''
-          nightly_ref_changed=false
-
-          set_nightly_ref() {
-            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" >/dev/null 2>&1; then
-              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
-                -f sha="$1" \
-                -F force=true
-            else
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref='refs/tags/nightly' \
-                -f sha="$1"
-            fi
-          }
-
-          cleanup() {
-            status=$?
-            trap - EXIT
-            set +e
-
-            canonical_release_exists=false
-            if gh release view nightly >/dev/null 2>&1; then
-              canonical_release_exists=true
-            elif [ -n "$previous_sha" ] && gh release view "$previous_tag" >/dev/null 2>&1; then
-              if set_nightly_ref "$previous_sha" && \
-                gh release edit "$previous_tag" --tag nightly --verify-tag; then
-                canonical_release_exists=true
-              else
-                status=1
-              fi
-            elif [ "$nightly_ref_changed" = true ] && \
-              gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" >/dev/null 2>&1; then
-              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" || status=1
-            fi
-
-            if gh release view "$candidate_tag" >/dev/null 2>&1; then
-              gh release delete "$candidate_tag" --cleanup-tag --yes || status=1
-            fi
-            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${candidate_tag}" >/dev/null 2>&1; then
-              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${candidate_tag}" || status=1
-            fi
-
-            if [ "$canonical_release_exists" = true ]; then
-              if gh release view "$previous_tag" >/dev/null 2>&1; then
-                gh release delete "$previous_tag" --cleanup-tag --yes || status=1
-              fi
-              if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${previous_tag}" >/dev/null 2>&1; then
-                gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${previous_tag}" || status=1
-              fi
-            fi
-
-            exit "$status"
-          }
-          trap cleanup EXIT
-
-          gh release create "$candidate_tag" nightly-assets/* \
-            --target "$GITHUB_SHA" \
-            --title 'nightly' \
-            --notes-file "$RUNNER_TEMP/nightly-release.md" \
-            --prerelease \
-            --latest=false
-
-          if gh release view nightly >/dev/null 2>&1; then
-            previous_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" --jq '.object.sha')
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${previous_tag}" \
-              -f sha="$previous_sha"
-            gh release edit nightly --tag "$previous_tag" --verify-tag
-          fi
-
-          set_nightly_ref "$GITHUB_SHA"
-          nightly_ref_changed=true
-
-          gh release edit "$candidate_tag" --tag nightly --verify-tag
+        run: .github/scripts/publish-nightly-release.sh

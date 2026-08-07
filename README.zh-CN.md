@@ -209,11 +209,17 @@ attestation 还可验证文件确实由本仓库的 nightly 工作流构建：
 ```bash
 # macOS（在下载目录中运行）
 grep '\.dmg$' SHA256SUMS | shasum -a 256 -c -
-gh attestation verify ./vimeflow-*.dmg -R winoooops/vimeflow
+gh attestation verify ./vimeflow-*.dmg \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
 
 # Linux（在下载目录中运行）
 grep '\.AppImage$' SHA256SUMS | sha256sum -c -
-gh attestation verify ./vimeflow-*.AppImage -R winoooops/vimeflow
+gh attestation verify ./vimeflow-*.AppImage \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
 ```
 
 验证 attestation 需要安装 [GitHub CLI](https://cli.github.com/)。任一检查失败时，

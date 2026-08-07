@@ -214,11 +214,17 @@ this repository's nightly workflow:
 ```bash
 # macOS (run in the download directory)
 grep '\.dmg$' SHA256SUMS | shasum -a 256 -c -
-gh attestation verify ./vimeflow-*.dmg -R winoooops/vimeflow
+gh attestation verify ./vimeflow-*.dmg \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
 
 # Linux (run in the download directory)
 grep '\.AppImage$' SHA256SUMS | sha256sum -c -
-gh attestation verify ./vimeflow-*.AppImage -R winoooops/vimeflow
+gh attestation verify ./vimeflow-*.AppImage \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
 ```
 
 Attestation verification requires the
