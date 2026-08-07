@@ -8,6 +8,10 @@ import {
   clearStatusSnapshots,
   readStatusSeenToolUseIds,
 } from '../utils/statusSnapshotStore'
+import {
+  releaseAgentWatcher,
+  retainAgentWatcher,
+} from '../utils/agentWatcherOwnership'
 import { useAgentStatus } from './useAgentStatus'
 
 type EventCallback<T = unknown> = (payload: T) => void
@@ -84,6 +88,7 @@ describe('useAgentStatus', () => {
   })
 
   afterEach(() => {
+    releaseAgentWatcher('pty-session-1')
     vi.useRealTimers()
     vi.unstubAllGlobals()
   })
@@ -315,6 +320,23 @@ describe('useAgentStatus', () => {
     expect(result.current.isActive).toBe(false)
     expect(result.current.agentType).toBeNull()
     expect(result.current.sessionId).toBe('session-2')
+  })
+
+  test('keeps a retained watcher running when its pane becomes inactive', () => {
+    retainAgentWatcher('pty-session-1')
+
+    const { rerender, unmount } = renderHook(
+      ({ id }: { id: string | null }) => useAgentStatus(id),
+      { initialProps: { id: 'session-1' } }
+    )
+
+    rerender({ id: 'session-2' })
+
+    expect(invoke).not.toHaveBeenCalledWith('stop_agent_watcher', {
+      sessionId: 'pty-session-1',
+    })
+
+    unmount()
   })
 
   test('restores a cached status snapshot when switching back to a pane', async () => {

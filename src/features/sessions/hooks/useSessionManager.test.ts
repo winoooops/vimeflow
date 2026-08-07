@@ -29,6 +29,7 @@ import {
 } from '../workspaceLayoutBridge'
 import { DEFAULT_BROWSER_URL } from '../../browser/types'
 import { createBrowserPane } from '../../browser/browserBridge'
+import { isAgentWatcherRetained } from '../../agent-status/utils/agentWatcherOwnership'
 import type { PaneLayoutDefinition } from '../../terminal/layout-registry'
 import { DEFAULT_SETTINGS } from '../../settings/store/settingsDefaults'
 
@@ -2283,12 +2284,11 @@ describe('useSessionManager', () => {
     )
   })
 
-  test('keeps an auto-started Kimi watcher after a background pane captures identity', async () => {
+  test('keeps an auto-started Kimi watcher after its active pane moves to the background', async () => {
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
       persistedWorkspace(
         [
           persistedShellPane({
-            active: false,
             ptyId: 'pty-kimi-old',
             cwd: '/home/will/proj',
             agentType: 'kimi',
@@ -2296,6 +2296,7 @@ describe('useSessionManager', () => {
           persistedShellPane({
             paneId: 'p1',
             paneIndex: 1,
+            active: false,
             ptyId: 'pty-codex-old',
             cwd: '/home/will/proj',
             agentSessionId: 'codex-conversation',
@@ -2347,11 +2348,16 @@ describe('useSessionManager', () => {
       )
     )
 
+    act(() => result.current.setSessionActivePane('ws-shell', 'p1'))
+    expect(result.current.sessions[0].panes[0].active).toBe(false)
+    expect(isAgentWatcherRetained('pty-kimi-new')).toBe(true)
+
     expect(mockInvoke).not.toHaveBeenCalledWith('stop_agent_watcher', {
       sessionId: 'pty-kimi-new',
     })
 
     unmount()
+    expect(isAgentWatcherRetained('pty-kimi-new')).toBe(false)
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith('stop_agent_watcher', {
         sessionId: 'pty-kimi-new',

@@ -11,6 +11,7 @@ import {
   createDefaultAgentStatus,
   mapDetectedAgentType,
 } from '../utils/agentStatusModel'
+import { isAgentWatcherRetained } from '../utils/agentWatcherOwnership'
 import type {
   AgentCwdEvent,
   AgentDetectedEvent,
@@ -158,6 +159,10 @@ const stopWatchers = async (
 ): Promise<void> => {
   const ptyId =
     knownPtyId ?? getPtySessionId(workspaceSessionId) ?? workspaceSessionId
+  if (isAgentWatcherRetained(ptyId)) {
+    return
+  }
+
   try {
     await invoke('stop_agent_watcher', { sessionId: ptyId })
   } catch {

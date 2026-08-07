@@ -61,6 +61,10 @@ import {
 } from '../utils/cacheHistoryStore'
 import { pushCacheReading } from '../../agent-status/utils/cacheRate'
 import type { AgentStatusEvent } from '../../agent-status/types'
+import {
+  releaseAgentWatcher,
+  retainAgentWatcher,
+} from '../../agent-status/utils/agentWatcherOwnership'
 import { isShellPane } from '../utils/paneKind'
 import { commandToPane } from '../utils/commandToPane'
 import { deriveSessionName } from '../utils/sessionPaths'
@@ -609,15 +613,12 @@ export const useSessionManager = (
 
       // Kimi has no notification-only watcher: its relocation-following full
       // supervisor is the authoritative completion producer.
-      if (
-        pane?.agentType === 'kimi' &&
-        !activePaneOwnsWatcher &&
-        !isTerminalStatus(pane.status)
-      ) {
+      if (pane?.agentType === 'kimi' && !isTerminalStatus(pane.status)) {
         return
       }
 
       autoStartedAgentWatcherPtyIds.current.delete(ptyId)
+      releaseAgentWatcher(ptyId)
       if (activePaneOwnsWatcher) {
         return
       }
@@ -1303,6 +1304,7 @@ export const useSessionManager = (
 
       for (const ptyId of autoStartedWatcherPtyIds) {
         autoStartedWatcherPtyIds.delete(ptyId)
+        releaseAgentWatcher(ptyId)
         void stopAgentWatcher(ptyId)
       }
     }
@@ -1391,6 +1393,9 @@ export const useSessionManager = (
           }
 
           autoStartedAgentWatcherPtyIds.current.add(ptyId)
+          if (agentType === 'kimi') {
+            retainAgentWatcher(ptyId)
+          }
           if (
             agentSessionIdsRef.current.has(ptyId) ||
             currentPane.agentSessionId !== undefined

@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-07
-ref_count: 8
+ref_count: 9
 ---
 
 # Authoritative Completion Guard
@@ -200,4 +200,19 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Fix:** Retain the auto-start ownership while a live Kimi pane is in the
   background, and add a regression proving its first status snapshot does not
   issue `stop_agent_watcher`.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 14. Active Kimi ownership was dropped before a pane switch
+
+- **Source:** github-codex-connector | PR #788 follow-up | 2026-08-07
+- **Severity:** P1 / HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** When an active Kimi pane captured its agent identity, the
+  auto-start owner was released because the active status hook temporarily
+  owned the watcher. Switching panes then made that hook stop Kimi's only full
+  transcript watcher, dropping authoritative completion and idle events.
+- **Fix:** Track manager-retained watchers by PTY, retain Kimi ownership as soon
+  as its watcher auto-starts, and make active-hook cleanup defer to that owner
+  until manager terminal or unmount cleanup stops it. Added regressions for the
+  ownership handoff and active-to-background pane switch.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
