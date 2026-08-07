@@ -2,10 +2,12 @@
 import { useEffect, useRef, type DragEvent, type ReactElement } from 'react'
 import { Chip } from '@/components/Chip'
 import { AgentGlyph } from '@/components/AgentGlyph'
+import { ProgressBar } from '@/components/ProgressBar'
 import type { Agent } from '@/agents/registry'
 import type { Session } from '@/features/sessions/types'
 import type { BurnerPlacement } from '@/features/terminal/hooks/useBurnerTerminals'
 import { register, unregister } from '@/features/terminal/paneHeaderRefs'
+import type { PtyProgress } from '@/features/terminal/types'
 import { HeaderActions } from './HeaderActions'
 
 export interface HeaderProps {
@@ -16,6 +18,7 @@ export interface HeaderProps {
   autoCollapsed?: boolean
   hideCollapseToggle?: boolean
   ptyId: string
+  progress?: PtyProgress
   paneAgentTitle?: string
   paneUserLabel?: string
   shortcutHint?: string
@@ -47,6 +50,7 @@ export const Header = ({
   autoCollapsed = false,
   hideCollapseToggle = false,
   ptyId,
+  progress = undefined,
   paneAgentTitle = undefined,
   paneUserLabel = undefined,
   shortcutHint = undefined,
@@ -65,6 +69,33 @@ export const Header = ({
   onHeaderDragEnd = undefined,
 }: HeaderProps): ReactElement => {
   const titleRef = useRef<HTMLSpanElement | null>(null)
+
+  const isDeterminate =
+    progress !== undefined &&
+    progress.state !== 'indeterminate' &&
+    progress.value !== null
+
+  const shouldPulse =
+    progress !== undefined && !isDeterminate && progress.state !== 'paused'
+
+  // Working with unknown duration: bright blue segment sliding across the
+  // header-bottom track (prototype contract), not a full-width pulse.
+  const isSliding = shouldPulse && progress.state !== 'error'
+
+  const progressValueText =
+    progress === undefined
+      ? undefined
+      : progress.state === 'error'
+        ? progress.value === null
+          ? 'Error'
+          : `Error, ${progress.value}%`
+        : progress.state === 'paused'
+          ? progress.value === null
+            ? 'Paused'
+            : `Paused, ${progress.value}%`
+          : progress.value === null || progress.state === 'indeterminate'
+            ? 'In progress'
+            : `${progress.value}% complete`
 
   // The pane clips the header's top corners (rounded) but its bottom sits
   // mid-pane and stays square, so the native drag snapshot reads as a slab.
@@ -92,7 +123,7 @@ export const Header = ({
   return (
     <div
       data-testid="terminal-pane-header"
-      className={`flex shrink-0 select-none items-center border-b border-outline-variant/[0.18] font-mono text-[10.5px] ${
+      className={`relative flex shrink-0 select-none items-center border-b border-outline-variant/[0.18] font-mono text-[10.5px] ${
         isActive ? 'bg-primary-container/15' : ''
       } gap-1.5 px-2 py-1`}
     >
@@ -158,6 +189,38 @@ export const Header = ({
           burnerOutOfSync={burnerOutOfSync}
         />
       </div>
+
+      {progress !== undefined && (
+        <ProgressBar
+          label="Terminal progress"
+          value={isDeterminate ? (progress.value ?? undefined) : undefined}
+          tone={
+            progress.state === 'error'
+              ? 'error'
+              : progress.state === 'paused'
+                ? 'warning'
+                : 'secondary'
+          }
+          height="hairline"
+          radius="none"
+          aria-valuetext={progressValueText}
+          className="pointer-events-none absolute inset-x-0 bottom-0 bg-transparent"
+          fillClassName={`${
+            isDeterminate
+              ? 'transition-[width] duration-200 motion-reduce:transition-none'
+              : ''
+          } ${isSliding ? 'vf-pane-progress-indeterminate' : ''} ${
+            shouldPulse && progress.state === 'error'
+              ? 'animate-pulse motion-reduce:animate-none'
+              : ''
+          }`}
+          fillStyle={{
+            ...(isDeterminate ? {} : { width: isSliding ? '32%' : '100%' }),
+          }}
+          fillTestId="terminal-pane-progress-fill"
+          trackTestId="terminal-pane-progress"
+        />
+      )}
     </div>
   )
 }

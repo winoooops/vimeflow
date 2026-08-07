@@ -1,4 +1,12 @@
-import { describe, test, expect, beforeEach, vi, type Mock } from 'vitest'
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+  type Mock,
+} from 'vitest'
 import { DesktopTerminalService } from './desktopTerminalService'
 import { invoke, listen } from '../../../lib/backend'
 
@@ -104,6 +112,7 @@ describe('DesktopTerminalService', () => {
       await service.spawn({ cwd: '/' })
 
       expect(eventListeners.has('pty-data')).toBe(true)
+      expect(eventListeners.has('pty-progress')).toBe(true)
       expect(eventListeners.has('pty-exit')).toBe(true)
       expect(eventListeners.has('pty-error')).toBe(true)
       expect(eventListeners.has('burner-foreground')).toBe(true)
@@ -342,6 +351,7 @@ describe('DesktopTerminalService', () => {
       })
 
       expect(eventListeners.get('pty-data')).toHaveLength(1)
+      expect(eventListeners.get('pty-progress')).toHaveLength(1)
       expect(eventListeners.get('pty-exit')).toHaveLength(1)
       expect(eventListeners.get('pty-error')).toHaveLength(1)
     })
@@ -433,6 +443,177 @@ describe('DesktopTerminalService', () => {
     })
   })
 
+  describe('progress state', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    test('stores a backend progress event and publishes the current value', async () => {
+      const callback = vi.fn()
+      await service.onProgress(callback)
+
+      expect(service.getProgress('pty-a')).toBeUndefined()
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'normal',
+        value: 42,
+      })
+
+      expect(service.getProgress('pty-a')).toEqual({
+        state: 'normal',
+        value: 42,
+      })
+
+      expect(callback).toHaveBeenCalledWith('pty-a', {
+        state: 'normal',
+        value: 42,
+      })
+    })
+
+    test('refreshes an identical keepalive without notifying subscribers again', async () => {
+      const callback = vi.fn()
+      await service.onProgress(callback)
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'indeterminate',
+        value: null,
+      })
+      vi.advanceTimersByTime(10_000)
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'indeterminate',
+        value: null,
+      })
+
+      expect(callback).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(14_999)
+      expect(service.getProgress('pty-a')).toEqual({
+        state: 'indeterminate',
+        value: null,
+      })
+
+      vi.advanceTimersByTime(1)
+      expect(service.getProgress('pty-a')).toBeUndefined()
+      expect(callback).toHaveBeenLastCalledWith('pty-a', undefined)
+    })
+
+    test('remove cancels the timer and only notifies when state existed', async () => {
+      const callback = vi.fn()
+      await service.onProgress(callback)
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'paused',
+        value: 70,
+      })
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'remove',
+        value: null,
+      })
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'remove',
+        value: null,
+      })
+      vi.advanceTimersByTime(15_000)
+
+      expect(service.getProgress('pty-a')).toBeUndefined()
+      expect(callback).toHaveBeenCalledTimes(2)
+      expect(callback).toHaveBeenLastCalledWith('pty-a', undefined)
+    })
+
+    test('keeps two PTY timers independent', async () => {
+      const callback = vi.fn()
+      await service.onProgress(callback)
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'normal',
+        value: 20,
+      })
+      vi.advanceTimersByTime(5_000)
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-b',
+        state: 'error',
+        value: 85,
+      })
+      vi.advanceTimersByTime(10_000)
+
+      expect(service.getProgress('pty-a')).toBeUndefined()
+      expect(service.getProgress('pty-b')).toEqual({
+        state: 'error',
+        value: 85,
+      })
+    })
+
+    test('clears progress before publishing PTY exit', async () => {
+      const order: string[] = []
+      await service.onProgress((_sessionId, progress) => {
+        if (progress === undefined) {
+          order.push('progress-clear')
+        }
+      })
+      await service.onExit(() => order.push('exit'))
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'normal',
+        value: 55,
+      })
+      emitDesktopEvent('pty-exit', { sessionId: 'pty-a', code: 0 })
+
+      expect(order).toEqual(['progress-clear', 'exit'])
+      expect(service.getProgress('pty-a')).toBeUndefined()
+      vi.advanceTimersByTime(15_000)
+      expect(order).toEqual(['progress-clear', 'exit'])
+    })
+
+    test('unsubscribe, initialization failure, and dispose leave no callbacks or timers', async () => {
+      const callback = vi.fn()
+      const unsubscribe = await service.onProgress(callback)
+      unsubscribe()
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'normal',
+        value: 10,
+      })
+      expect(callback).not.toHaveBeenCalled()
+
+      const listenMock = vi.mocked(listen)
+      const originalImpl = listenMock.getMockImplementation()
+      const failedCallback = vi.fn()
+      const failedService = new DesktopTerminalService()
+      listenMock.mockRejectedValueOnce(new Error('listener unavailable'))
+      await expect(failedService.onProgress(failedCallback)).rejects.toThrow(
+        'listener unavailable'
+      )
+
+      if (originalImpl) {
+        listenMock.mockImplementation(originalImpl)
+      }
+      await failedService.onProgress(vi.fn())
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-b',
+        state: 'normal',
+        value: 30,
+      })
+      expect(failedCallback).not.toHaveBeenCalled()
+
+      failedService.dispose()
+      vi.advanceTimersByTime(15_000)
+      expect(failedService.getProgress('pty-b')).toBeUndefined()
+    })
+  })
+
   describe('dispose', () => {
     test('clears all callbacks and listeners', async () => {
       const callback = vi.fn()
@@ -499,11 +680,13 @@ describe('DesktopTerminalService', () => {
 
         expect(unlistenCalls).toEqual([
           'pty-data',
+          'pty-progress',
           'pty-exit',
           'pty-error',
           'burner-foreground',
         ])
         expect(eventListeners.get('pty-data')).toEqual([])
+        expect(eventListeners.get('pty-progress')).toEqual([])
         expect(eventListeners.get('pty-exit')).toEqual([])
         expect(eventListeners.get('pty-error')).toEqual([])
         expect(eventListeners.get('burner-foreground')).toEqual([])
