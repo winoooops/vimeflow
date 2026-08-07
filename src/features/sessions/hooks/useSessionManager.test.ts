@@ -2521,7 +2521,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].active).toBe(true)
   })
 
-  test('lazily hydrates an inactive workspace once across rapid tab switches', async () => {
+  test('retains an exact-id Kimi watcher across lazy hydration and tab switches', async () => {
     vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce({
       sessions: [
         {
@@ -2566,7 +2566,7 @@ describe('useSessionManager', () => {
     const service = createMockService()
     service.spawn = vi.fn().mockReturnValue(spawn)
 
-    const { result } = renderHook(() =>
+    const { result, unmount } = renderHook(() =>
       useSessionManager(service, { autoCreateOnEmpty: false })
     )
 
@@ -2603,6 +2603,13 @@ describe('useSessionManager', () => {
       sessionId: 'pty-lazy-new',
       data: "kimi --session 'kimi-session'\r",
     })
+
+    act(() => result.current.setActiveSessionId('ws-active'))
+    expect(result.current.activeSessionId).toBe('ws-active')
+    expect(isAgentWatcherRetained('pty-lazy-new')).toBe(true)
+
+    unmount()
+    expect(isAgentWatcherRetained('pty-lazy-new')).toBe(false)
   })
 
   test('kills a failed resume PTY and lets explicit Restart retry the placeholder', async () => {

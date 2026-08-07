@@ -2723,6 +2723,15 @@ export const useSessionManager = (
         unregisterPtySession(oldPane.ptyId)
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
+        if (
+          isDesktop() &&
+          replacementAgentSessionId !== undefined &&
+          oldPane.agentType === 'kimi'
+        ) {
+          autoStartedAgentWatcherPtyIds.current.add(result.sessionId)
+          retainAgentWatcher(result.sessionId)
+        }
+
         if (resumeCommand !== null && oldPane.agentSessionId === undefined) {
           void attachAgentWatcher(result.sessionId, oldPane.agentType)
         }
