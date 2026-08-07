@@ -24,6 +24,7 @@ import type { Session } from '../../types'
 
 const TOAST_DWELL_MS = 4000
 const TOAST_WIDTH_PX = 380
+const MAX_NOTIFICATION_SESSION_NAME_LENGTH = 160
 
 export const NOTIFICATION_PANEL_WIDTH_PX = 440
 
@@ -435,7 +436,13 @@ export const useNotificationIslandStage = ({
         kind: 'dialog',
         dialog: 'notification-center',
         ariaLabel: 'Notification center',
-        items: [...panelItems],
+        items: panelItems.map((item) => ({
+          ...item,
+          sessionName: item.sessionName.slice(
+            0,
+            MAX_NOTIFICATION_SESSION_NAME_LENGTH
+          ),
+        })),
         actions: {
           markAllRead: 'notification:mark-all-read',
           clear: 'notification:clear',

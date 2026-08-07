@@ -603,7 +603,11 @@ describe('NotificationIsland', () => {
     vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
     setNavigatorPlatform('MacIntel')
     const bridge = installNativeOverlayBridge()
-    const handlers = props([notification('need')])
+
+    const handlers = {
+      ...props([notification('need')]),
+      sessions: [session('session-1', 'x'.repeat(161))],
+    }
 
     render(<NotificationIsland {...handlers} />)
 
@@ -634,6 +638,7 @@ describe('NotificationIsland', () => {
           {
             id: 'need',
             agentId: 'claude',
+            sessionName: 'x'.repeat(160),
             openActionId: 'notification:open:need',
             dismissActionId: 'notification:dismiss:need',
           },
