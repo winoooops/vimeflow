@@ -824,6 +824,7 @@ struct CodexPayload {
     request_id: Option<String>,
     name: Option<String>,
     last_agent_message: Option<String>,
+    reason: Option<String>,
 }
 
 enum ClassifiedSignal {
@@ -836,6 +837,9 @@ enum ClassifiedSignal {
     TurnStarted {
         turn_id: Option<String>,
         agent_session_id: Option<String>,
+    },
+    TurnEnded {
+        turn_id: Option<String>,
     },
     Notification {
         reason: AgentNotificationReason,
@@ -900,6 +904,9 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         }),
         Some(kind @ ("task_complete" | "turn_aborted")) => {
             let turn_id = envelope.payload.turn_id;
+            if kind == "turn_aborted" && envelope.payload.reason.as_deref() == Some("interrupted") {
+                return Ok(ClassifiedSignal::TurnEnded { turn_id });
+            }
             Ok(ClassifiedSignal::Notification {
                 reason: if kind == "task_complete" {
                     AgentNotificationReason::TurnComplete
@@ -1393,6 +1400,22 @@ fn apply_signal(
             registration.turn_id = turn_id;
             registration.notification_body = None;
         }
+        ClassifiedSignal::TurnEnded { turn_id } => {
+            let mismatched_turn = registration.turn_id.is_some()
+                && turn_id.is_some()
+                && registration.turn_id != turn_id;
+            if mismatched_turn {
+                diagnostics
+                    .lock()
+                    .expect("notification diagnostics mutex poisoned")
+                    .replay_suppressions += 1;
+                return;
+            }
+            registration.turn_active = false;
+            registration.turn_id = None;
+            registration.notification_body = None;
+            registration.pending_opencode_idle = None;
+        }
         ClassifiedSignal::Notification {
             reason,
             occurred_at,
@@ -1683,7 +1706,7 @@ mod tests {
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#,
-                "agent-error",
+                "turn-ended",
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"exec_approval_request","approval_id":"a1"}}"#,
@@ -1710,6 +1733,7 @@ mod tests {
         for (line, expected) in cases {
             let actual = match classify_codex(line.as_bytes()).expect("valid Codex envelope") {
                 ClassifiedSignal::TurnStarted { .. } => "started",
+                ClassifiedSignal::TurnEnded { .. } => "turn-ended",
                 ClassifiedSignal::Notification { reason, .. } => match reason {
                     AgentNotificationReason::TurnComplete => "turn-complete",
                     AgentNotificationReason::ApprovalRequested => "approval-requested",
@@ -1723,6 +1747,31 @@ mod tests {
             };
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn codex_interrupted_turn_settles_without_notification() {
+        let mut registration = Registration::new(
+            "pty-a".to_string(),
+            1,
+            NotificationProvider::Codex,
+            PathBuf::new(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+
+        for line in [
+            r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#,
+        ] {
+            let signal = classify_codex(line.as_bytes()).expect("valid Codex envelope");
+            apply_signal(&mut registration, signal, &diagnostics, &sink);
+        }
+
+        assert!(!registration.turn_active);
+        assert!(registration.turn_id.is_none());
+        assert_eq!(sink.count("agent-notification"), 0);
     }
 
     #[test]
