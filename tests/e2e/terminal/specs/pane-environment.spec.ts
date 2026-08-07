@@ -54,7 +54,10 @@ describe('e2e pane environment', () => {
     )
 
     await browser.waitUntil(
-      async () => (await readTerminal(ptyId)).includes('E2E-ENV CT='),
+      async () =>
+        (await readTerminal(ptyId))
+          .split('\n')
+          .some((line) => line.includes('E2E-ENV CT=') && !line.includes('${')),
       {
         timeout: 10_000,
         interval: 250,
