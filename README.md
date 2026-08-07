@@ -185,16 +185,76 @@ Everything above works on Linux as well, with one difference: terminals use xter
 
 ## Current Support
 
-Vimeflow currently supports **version 0.1.0 from source code only**.
+Vimeflow supports **version 0.1.0 from source**. The nightly workflow is
+configured to build unsigned installers from the latest successful
+default-branch commit.
 
 - Supported release line: `0.1.0`
-- Supported packaged targets: Linux x64 AppImage and macOS arm64 DMG built locally from source
+- Supported packaged targets: Linux x64 AppImage and macOS arm64 DMG, built locally or by nightly CI
 - Desktop runtime: Electron 42 + Rust sidecar over LSP-framed JSON IPC
 - Terminal runtime: built-in native Ghostty via `libghostty-spm` for packaged macOS arm64, with xterm.js kept as the Linux/dev fallback
 - Agent observability: Claude Code, Codex CLI, Kimi Code, and OpenCode
-- Not yet supported: hosted binary releases, Windows packaging, production signing/notarization, or auto-update
+- Nightly release target: one rolling [`nightly` prerelease](https://github.com/winoooops/vimeflow/releases/tag/nightly), published only when both platforms and the release checks pass
+- Not yet supported: stable binary releases, Windows packaging, production signing/notarization, or auto-update
 
 Packaging is host-specific: build the Linux x64 AppImage on Linux x64, and build the macOS arm64 DMG on an Apple Silicon Mac.
+
+## Install a Nightly Build
+
+Download your platform's installer and `SHA256SUMS` from the rolling
+[`nightly` release](https://github.com/winoooops/vimeflow/releases/tag/nightly).
+Nightlies are experimental snapshots: they are not signed or notarized, do not
+auto-update, and are replaced after the next successful nightly run. The
+release notes identify the exact source commit and workflow run.
+
+Verify the downloaded file before opening it. SHA-256 detects a damaged or
+changed download; the GitHub attestation also verifies that the file came from
+this repository's nightly workflow:
+
+```bash
+# macOS (run in the download directory)
+grep '\.dmg$' SHA256SUMS | shasum -a 256 -c -
+gh attestation verify ./vimeflow-*.dmg \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
+
+# Linux (run in the download directory)
+grep '\.AppImage$' SHA256SUMS | sha256sum -c -
+gh attestation verify ./vimeflow-*.AppImage \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
+```
+
+Attestation verification requires the
+[GitHub CLI](https://cli.github.com/). Do not run an installer if either check
+fails.
+
+### Install on macOS
+
+Open the DMG and drag Vimeflow to **Applications**. Because the app has not yet
+been signed or notarized with Apple, first launch it by Control-clicking
+**Vimeflow** in Applications, choosing **Open**, then confirming **Open**. If
+Gatekeeper still blocks that verified copy, remove quarantine from that app
+only and open it again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Vimeflow.app
+```
+
+### Install on Linux
+
+Make the AppImage executable and run it:
+
+```bash
+chmod +x ./vimeflow-*.AppImage
+./vimeflow-*.AppImage
+```
+
+If `libfuse2` is unavailable, use `--appimage-extract-and-run`. Use
+`--no-sandbox` only if Chromium reports that the host sandbox cannot start;
+that fallback disables Chromium's process sandbox.
 
 ## Build and Run from Source
 
@@ -239,7 +299,7 @@ Build the arm64 DMG:
 npm run electron:build            # or: npm run electron:build:mac:arm64
 ```
 
-The DMG lands at `release/vimeflow-*-arm64.dmg`. It bundles the native Ghostty parent runtime, is intended for local source builds, and is not notarized.
+The DMG lands at `release/vimeflow-*-arm64.dmg`. It bundles the native Ghostty parent runtime and is not signed or notarized.
 
 ### Linux
 
@@ -265,14 +325,17 @@ Then run it:
 
 ```bash
 chmod +x release/vimeflow-*.AppImage
-./release/vimeflow-*.AppImage --no-sandbox
+./release/vimeflow-*.AppImage
 ```
 
 If the host does not provide `libfuse2`, use AppImage's extract-and-run fallback:
 
 ```bash
-./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
+./release/vimeflow-*.AppImage --appimage-extract-and-run
 ```
+
+Add `--no-sandbox` only if Chromium reports that the host sandbox cannot
+start.
 
 ## Use Vimeflow
 

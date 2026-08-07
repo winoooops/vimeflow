@@ -185,16 +185,69 @@ The Lens 主题系统内置了多套主题 —— **Catppuccin**（默认深色�
 
 ## 当前支持范围
 
-Vimeflow 目前**仅支持从源码构建和使用 0.1.0 版本**。
+Vimeflow 支持**从源码构建 0.1.0 版本**。Nightly 工作流已配置为从默认分支最新的成功提交构建未签名安装包。
 
 - 支持的版本线：`0.1.0`
-- 支持的打包目标：在本地从源码构建 Linux x64 AppImage 和 macOS arm64 DMG
+- 支持的打包目标：Linux x64 AppImage 和 macOS arm64 DMG，可在本地或 nightly CI 中构建
 - 桌面运行时：Electron 42 + Rust sidecar，通过 LSP 帧格式的 JSON IPC 通信
 - 终端运行时：macOS arm64 打包版本内嵌基于 `libghostty-spm` 的原生 Ghostty；Linux 与开发回退路径使用 xterm.js
 - 代理可观测性：Claude Code、Codex CLI、Kimi Code 和 OpenCode
-- 暂不支持：托管二进制发布、Windows 打包、生产签名/公证、自动更新
+- Nightly 发布目标：滚动更新的 [`nightly` 预发布版](https://github.com/winoooops/vimeflow/releases/tag/nightly)，仅在两个平台和发布检查全部通过后发布
+- 暂不支持：稳定版二进制发布、Windows 打包、生产签名/公证、自动更新
 
 打包与主机平台绑定：Linux x64 AppImage 需要在 Linux x64 主机上构建，macOS arm64 DMG 需要在 Apple Silicon Mac 上构建。
+
+## 安装 Nightly 版本
+
+请从滚动更新的 [`nightly` 发布页](https://github.com/winoooops/vimeflow/releases/tag/nightly)
+下载对应平台的安装包和 `SHA256SUMS`。Nightly 是实验性快照：尚未签名或公证、
+不会自动更新，并会在下一次 nightly 成功后被替换。发布说明会列出准确的源码提交和工作流运行记录。
+
+打开安装包前请先验证下载文件。SHA-256 可检测下载损坏或文件被修改；GitHub
+attestation 还可验证文件确实由本仓库的 nightly 工作流构建：
+
+```bash
+# macOS（在下载目录中运行）
+grep '\.dmg$' SHA256SUMS | shasum -a 256 -c -
+gh attestation verify ./vimeflow-*.dmg \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
+
+# Linux（在下载目录中运行）
+grep '\.AppImage$' SHA256SUMS | sha256sum -c -
+gh attestation verify ./vimeflow-*.AppImage \
+  -R winoooops/vimeflow \
+  --signer-workflow winoooops/vimeflow/.github/workflows/nightly-release.yml \
+  --source-ref refs/heads/main
+```
+
+验证 attestation 需要安装 [GitHub CLI](https://cli.github.com/)。任一检查失败时，
+请勿运行安装包。
+
+### 在 macOS 上安装
+
+打开 DMG，将 Vimeflow 拖入 **Applications（应用程序）**。由于应用尚未使用
+Apple 证书签名或公证，首次启动时请在 Applications 中按住 Control 点击
+**Vimeflow**，选择**打开**，然后再次确认**打开**。如果 Gatekeeper 仍阻止这个
+已经验证过的副本，请只移除该应用的隔离属性，然后重新打开：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Vimeflow.app
+```
+
+### 在 Linux 上安装
+
+为 AppImage 添加执行权限，然后运行：
+
+```bash
+chmod +x ./vimeflow-*.AppImage
+./vimeflow-*.AppImage
+```
+
+如果系统缺少 `libfuse2`，请使用 `--appimage-extract-and-run`。仅当 Chromium
+报告主机 sandbox 无法启动时才使用 `--no-sandbox`；该回退方式会禁用 Chromium
+进程 sandbox。
 
 ## 从源码构建和运行
 
@@ -239,7 +292,7 @@ npm run electron:dev
 npm run electron:build            # 或：npm run electron:build:mac:arm64
 ```
 
-DMG 会输出到 `release/vimeflow-*-arm64.dmg`。它会打包原生 Ghostty parent runtime，面向本地源码构建，尚未公证。
+DMG 会输出到 `release/vimeflow-*-arm64.dmg`。它会打包原生 Ghostty parent runtime，尚未签名或公证。
 
 ### Linux
 
@@ -265,14 +318,16 @@ npm run electron:build            # 或：npm run electron:build:linux:x64
 
 ```bash
 chmod +x release/vimeflow-*.AppImage
-./release/vimeflow-*.AppImage --no-sandbox
+./release/vimeflow-*.AppImage
 ```
 
 如果主机缺少 `libfuse2`，使用 AppImage 的 extract-and-run 回退方式：
 
 ```bash
-./release/vimeflow-*.AppImage --appimage-extract-and-run --no-sandbox
+./release/vimeflow-*.AppImage --appimage-extract-and-run
 ```
+
+仅当 Chromium 报告主机 sandbox 无法启动时才添加 `--no-sandbox`。
 
 ## 使用 Vimeflow
 

@@ -1,0 +1,239 @@
+name: Nightly Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-release-${{ github.event.pull_request.number || github.repository }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Release checks
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: .
+
+      - name: Test release publisher
+        run: .github/scripts/publish-nightly-release.test.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Run backend tests serially
+        run: cargo test --manifest-path crates/backend/Cargo.toml -- --test-threads=1
+
+  build-linux:
+    name: Build Linux x64 AppImage
+    needs: [checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: .
+          shared-key: nightly-linux-x64
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AppImage
+        run: npm run electron:build:linux:x64
+
+      - name: Verify AppImage contents
+        shell: bash
+        run: |
+          test "$(find release -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
+          appimage_path=$(find release -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+          file "$appimage_path" | grep -q 'x86-64'
+          chmod +x "$appimage_path"
+          "$appimage_path" --appimage-extract >/dev/null
+          file squashfs-root/resources/bin/vimeflow-backend | grep -q 'x86-64'
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-linux-x64
+          path: release/*.AppImage
+          if-no-files-found: error
+          retention-days: 1
+
+  build-macos:
+    name: Build macOS arm64 DMG
+    needs: [checks]
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: .
+          shared-key: nightly-macos-arm64
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build DMG
+        run: npm run electron:build:mac:arm64
+
+      - name: Verify DMG contents
+        shell: bash
+        run: |
+          test "$(find release -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 1
+          dmg_path=$(find release -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          hdiutil verify "$dmg_path"
+          file release/mac-arm64/Vimeflow.app/Contents/MacOS/Vimeflow | grep -q 'arm64'
+          file release/mac-arm64/Vimeflow.app/Contents/Resources/bin/vimeflow-backend | grep -q 'arm64'
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-macos-arm64
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 1
+
+  prepare-release:
+    name: Prepare release assets
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: nightly-*
+          path: nightly-assets
+          merge-multiple: true
+
+      - name: Generate and verify checksums
+        shell: bash
+        run: |
+          test "$(find nightly-assets -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
+          test "$(find nightly-assets -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 1
+          cd nightly-assets
+          sha256sum -- *.AppImage *.dmg | sort -k2 > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-release-assets
+          path: nightly-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish rolling nightly prerelease
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: [prepare-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout release publisher
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download verified release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nightly-release-assets
+          path: nightly-assets
+
+      - name: Attest installer provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-checksums: nightly-assets/SHA256SUMS
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          build_time=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          {
+            echo 'Automated nightly build from the latest default-branch commit.'
+            echo
+            echo "- Source: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+            echo "- Built: ${build_time}"
+            echo "- Workflow: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo 'These installers are unsigned and the macOS build is not notarized. Verify SHA256SUMS and the GitHub artifact attestation before running them.'
+          } > "$RUNNER_TEMP/nightly-release.md"
+
+      - name: Publish rolling prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: .github/scripts/publish-nightly-release.sh
