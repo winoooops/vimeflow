@@ -73,6 +73,7 @@ interface HarnessProps {
   newSessionDialogOpen?: boolean
   burnerTerminalOpen?: boolean
   sessionSwitcherOpen?: boolean
+  notificationPanelOpen?: boolean
   paneRenameOpen?: boolean
   dragOverlayOpen?: boolean
   dockDragOverlayOpen?: boolean
@@ -87,6 +88,7 @@ const Harness = ({
   newSessionDialogOpen = false,
   burnerTerminalOpen = false,
   sessionSwitcherOpen = false,
+  notificationPanelOpen = false,
   paneRenameOpen = false,
   dragOverlayOpen = false,
   dockDragOverlayOpen = false,
@@ -101,6 +103,7 @@ const Harness = ({
       newSessionDialogOpen={newSessionDialogOpen}
       burnerTerminalOpen={burnerTerminalOpen}
       sessionSwitcherOpen={sessionSwitcherOpen}
+      notificationPanelOpen={notificationPanelOpen}
       paneRenameOpen={paneRenameOpen}
       dragOverlayOpen={dragOverlayOpen}
       dockDragOverlayOpen={dockDragOverlayOpen}
@@ -125,6 +128,12 @@ describe('WorkspaceOverlayRegistrations', () => {
 
     await waitFor(() =>
       expect(nativeSurfaceStatus()).toHaveTextContent(/^command-palette$/u)
+    )
+
+    rerender(<Harness notificationPanelOpen />)
+
+    await waitFor(() =>
+      expect(nativeSurfaceStatus()).toHaveTextContent(/^notification-panel$/u)
     )
 
     rerender(

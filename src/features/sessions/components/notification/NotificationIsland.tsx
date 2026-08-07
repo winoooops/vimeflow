@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import { useLayoutEffect, type ReactElement, type ReactNode } from 'react'
 import { Popover } from '@/components/Popover'
 import type { NotificationRecord } from '../../hooks/useNotificationCenter'
 import type { Session } from '../../types'
@@ -27,6 +27,7 @@ interface NotificationIslandProps {
   readonly onDismiss: (id: string) => void
   readonly onMarkAllRead: () => void
   readonly onClear: () => void
+  readonly onLocalPanelOpenChange?: (open: boolean) => void
   readonly children: ReactNode
 }
 
@@ -41,6 +42,7 @@ export const NotificationIsland = ({
   onDismiss,
   onMarkAllRead,
   onClear,
+  onLocalPanelOpenChange = undefined,
   children,
 }: NotificationIslandProps): ReactElement => {
   const island = useNotificationIslandStage({
@@ -51,6 +53,12 @@ export const NotificationIsland = ({
     onMarkAllRead,
     onClear,
   })
+
+  useLayoutEffect(() => {
+    onLocalPanelOpenChange?.(island.panelOpen && !island.nativeOverlayActive)
+
+    return (): void => onLocalPanelOpenChange?.(false)
+  }, [island.nativeOverlayActive, island.panelOpen, onLocalPanelOpenChange])
 
   return (
     <>

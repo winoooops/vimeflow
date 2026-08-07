@@ -410,6 +410,7 @@ const WorkspaceViewContent = (): ReactElement => {
     onActivationRolledBack: () => activationRollbackFocusRef.current(),
   })
   const notificationCenter = useNotificationCenter()
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   useAgentNotificationProducers({
     sessions,
     activeSessionId,
@@ -3220,6 +3221,7 @@ const WorkspaceViewContent = (): ReactElement => {
         newSessionDialogOpen={newSessionDialog.open}
         burnerTerminalOpen={hasVisibleBurner}
         sessionSwitcherOpen={sessionSwitcher.open}
+        notificationPanelOpen={notificationPanelOpen}
         paneRenameOpen={paneRenameNode !== null}
         layoutCreatorOpen={layoutCreatorOpen}
         dragOverlayOpen={isDragging}
@@ -3485,6 +3487,7 @@ const WorkspaceViewContent = (): ReactElement => {
               onDismiss: notificationCenter.dismiss,
               onMarkAllRead: notificationCenter.markAllRead,
               onClear: notificationCenter.clear,
+              onLocalPanelOpenChange: setNotificationPanelOpen,
             }}
           />
           <span className="min-w-[10px] flex-1" />
