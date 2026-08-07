@@ -43,6 +43,8 @@ const AGENT_LIFECYCLE_PROGRESS = {
   value: null,
 } as const
 
+const nativeProgressTurnByPty = new Map<string, string>()
+
 const INTERACTIVE_TARGET_SELECTOR = [
   'button',
   'a[href]',
@@ -329,35 +331,43 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       isSessionVisible && !isAwaitingRestart
     )
 
-    // Once native OSC progress appears, it owns the rest of this agent turn;
-    // its remove event must not uncover the lifecycle fallback.
-    const progressOwnerRef = useRef<{
-      agentSessionId: string | undefined
-      running: boolean
-      native: boolean
-    }>({ agentSessionId: undefined, running: false, native: false })
-
     const lifecycleProgressActive =
       pane.agentSessionId !== undefined &&
       pane.agentType !== 'generic' &&
       pane.agentPhase === 'running' &&
       pane.status === 'running'
 
-    const sameAgentTurn =
-      lifecycleProgressActive &&
-      progressOwnerRef.current.running &&
-      progressOwnerRef.current.agentSessionId === pane.agentSessionId
+    const nativeProgressTurn = nativeProgressTurnByPty.get(pane.ptyId)
 
     const nativeOwnsTurn =
       lifecycleProgressActive &&
-      (progress !== undefined ||
-        (sameAgentTurn && progressOwnerRef.current.native))
+      (progress !== undefined || nativeProgressTurn === pane.agentSessionId)
 
-    progressOwnerRef.current = {
-      agentSessionId: pane.agentSessionId,
-      running: lifecycleProgressActive,
-      native: nativeOwnsTurn,
-    }
+    useEffect(() => {
+      if (
+        lifecycleProgressActive &&
+        progress !== undefined &&
+        pane.agentSessionId !== undefined
+      ) {
+        nativeProgressTurnByPty.set(pane.ptyId, pane.agentSessionId)
+
+        return
+      }
+
+      if (
+        !lifecycleProgressActive ||
+        (nativeProgressTurn !== undefined &&
+          nativeProgressTurn !== pane.agentSessionId)
+      ) {
+        nativeProgressTurnByPty.delete(pane.ptyId)
+      }
+    }, [
+      lifecycleProgressActive,
+      nativeProgressTurn,
+      pane.agentSessionId,
+      pane.ptyId,
+      progress,
+    ])
 
     const effectiveProgress =
       progress ??

@@ -480,7 +480,7 @@ describe('TerminalPane index', () => {
     ).toHaveAttribute('aria-valuetext', 'In progress')
   })
 
-  test('native progress owns its turn and remove does not reveal fallback', () => {
+  test('native progress owns its turn across remove and remount', () => {
     let nativeProgress: PtyProgress | undefined
 
     usePtyProgressSpy.mockImplementation(() => nativeProgress)
@@ -492,7 +492,7 @@ describe('TerminalPane index', () => {
       status: 'running' as const,
     }
 
-    const { rerender } = render(
+    const { rerender, unmount } = render(
       <TerminalPane {...baseProps} pane={runningPane} />
     )
 
@@ -510,7 +510,15 @@ describe('TerminalPane index', () => {
     rerender(<TerminalPane {...baseProps} pane={runningPane} />)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
 
-    rerender(
+    unmount()
+
+    const { rerender: rerenderRemounted } = render(
+      <TerminalPane {...baseProps} pane={runningPane} />
+    )
+
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerenderRemounted(
       <TerminalPane
         {...baseProps}
         pane={{ ...runningPane, agentPhase: 'awaiting', status: 'awaiting' }}
@@ -518,7 +526,7 @@ describe('TerminalPane index', () => {
     )
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
 
-    rerender(<TerminalPane {...baseProps} pane={runningPane} />)
+    rerenderRemounted(<TerminalPane {...baseProps} pane={runningPane} />)
     expect(
       screen.getByRole('progressbar', { name: 'Terminal progress' })
     ).toHaveAttribute('aria-valuetext', 'In progress')

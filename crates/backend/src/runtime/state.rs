@@ -572,24 +572,52 @@ impl BackendState {
         )
         .await?;
 
-        let agent_type = self
-            .agents
-            .agent_type_for_pty(&session_id)
-            .ok_or_else(|| format!("agent watcher missing after start: {session_id}"))?;
-        if let (Some(provider), Some(mut source_path)) = (
-            NotificationProvider::from_agent_type(agent_type),
-            self.agents.current_status_path(&session_id),
-        ) {
-            if provider == NotificationProvider::ClaudeCode {
-                source_path = crate::agent::adapter::claude_code::bridge::session_attention_file(
-                    &source_path,
-                );
-            }
-            self.agent_notifications
-                .register(session_id.clone(), provider, source_path)?;
-        }
+        self.complete_agent_watcher_start(&session_id).await?;
 
         Ok(changed)
+    }
+
+    async fn complete_agent_watcher_start(&self, session_id: &str) -> Result<(), String> {
+        let registration = (|| {
+            let agent_type = self
+                .agents
+                .agent_type_for_pty(session_id)
+                .ok_or_else(|| format!("agent watcher missing after start: {session_id}"))?;
+            if let (Some(provider), Some(mut source_path)) = (
+                NotificationProvider::from_agent_type(agent_type),
+                self.agents.current_status_path(session_id),
+            ) {
+                if provider == NotificationProvider::ClaudeCode {
+                    source_path =
+                        crate::agent::adapter::claude_code::bridge::session_attention_file(
+                            &source_path,
+                        );
+                }
+                self.agent_notifications
+                    .register(session_id.to_string(), provider, source_path)?;
+            }
+
+            Ok(())
+        })();
+
+        let Err(error) = registration else {
+            return Ok(());
+        };
+
+        self.agent_notifications.stop(session_id);
+        crate::agent::adapter::stop_agent_watcher_inner(
+            self.pty.clone(),
+            self.agents.clone(),
+            self.transcripts.clone(),
+            self.events.clone(),
+            session_id.to_string(),
+        )
+        .await
+        .map_err(|cleanup_error| {
+            format!("{error}; failed to roll back agent watcher: {cleanup_error}")
+        })?;
+
+        Err(error)
     }
 
     pub async fn stop_agent_watcher(&self, session_id: String) -> Result<(), String> {
@@ -1158,6 +1186,20 @@ mod tests {
         let diagnostics = state.agent_notifications.diagnostics();
         assert!(diagnostics.worker_alive);
         assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[tokio::test]
+    async fn notification_registration_error_rolls_back_full_watcher() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::Codex);
+
+        let error = state
+            .complete_agent_watcher_start("pty-1")
+            .await
+            .expect_err("missing notification source should fail registration");
+
+        assert!(error.starts_with("canonicalize notification source:"));
+        assert!(!state.agents.contains("pty-1"));
     }
 
     /// The consent IPC round-trips through `BackendState`: set persists +
