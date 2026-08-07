@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   AgentRenameError,
+  isAgentNotificationWatcherAvailable,
   invoke,
   listen,
   listenCommandPaletteToggle,
@@ -58,6 +59,21 @@ describe('backend (window.vimeflow bridge)', () => {
     await expect(invoke('git_status', { cwd: '/x' })).rejects.toBe(
       'sidecar error'
     )
+  })
+
+  test('tracks normalized notification watcher availability from watcher commands', async () => {
+    mockInvoke.mockResolvedValueOnce(true)
+
+    await invoke('start_agent_watcher', { sessionId: 'pty-1' })
+
+    expect(isAgentNotificationWatcherAvailable('pty-1')).toBe(true)
+
+    mockInvoke.mockRejectedValueOnce('watch failed')
+
+    await expect(
+      invoke('start_agent_watcher', { sessionId: 'pty-1' })
+    ).rejects.toBe('watch failed')
+    expect(isAgentNotificationWatcherAvailable('pty-1')).toBe(false)
   })
 
   test('renameAgentSession wraps structured backend errors', async () => {

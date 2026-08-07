@@ -23,6 +23,7 @@ const MAX_PARTIAL_LINE_BYTES: usize = 256 * 1024;
 const READ_BUFFER_BYTES: usize = 64 * 1024;
 const RECENT_DEDUPE_KEYS: usize = 128;
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(3);
+const OPENCODE_IDLE_GRACE: Duration = Duration::from_secs(1);
 const MAX_NOTIFICATION_BODY_CHARS: usize = 80;
 const MAX_DEDUPE_KEY_CHARS: usize = 256;
 /// First-lookup scan bound for Claude rollout transcripts, which can run
@@ -139,6 +140,7 @@ struct Registration {
 struct PendingOpenCodeIdle {
     occurred_at: u64,
     agent_session_id: Option<String>,
+    observed_at: Instant,
 }
 
 impl Registration {
@@ -718,6 +720,7 @@ fn scan_source(
         return Ok(());
     }
     if length == registration.cursor {
+        flush_expired_opencode_idle(registration, diagnostics, events);
         return Ok(());
     }
 
@@ -754,7 +757,7 @@ fn scan_source(
         }
     }
 
-    flush_pending_opencode_idle(registration, diagnostics, events);
+    flush_expired_opencode_idle(registration, diagnostics, events);
 
     Ok(())
 }
@@ -1375,6 +1378,7 @@ fn apply_signal(
             registration.pending_opencode_idle = Some(PendingOpenCodeIdle {
                 occurred_at,
                 agent_session_id,
+                observed_at: Instant::now(),
             });
         }
         ClassifiedSignal::TurnStarted {
@@ -1486,6 +1490,20 @@ fn flush_pending_opencode_idle(
             diagnostics,
             events,
         );
+    }
+}
+
+fn flush_expired_opencode_idle(
+    registration: &mut Registration,
+    diagnostics: &Arc<Mutex<MutableDiagnostics>>,
+    events: &dyn EventSink,
+) {
+    if registration
+        .pending_opencode_idle
+        .as_ref()
+        .is_some_and(|pending| pending.observed_at.elapsed() >= OPENCODE_IDLE_GRACE)
+    {
+        flush_pending_opencode_idle(registration, diagnostics, events);
     }
 }
 
@@ -2134,7 +2152,7 @@ mod tests {
             (
                 NotificationProvider::OpenCode,
                 r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
-                r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+                r#"{"v":1,"ts":2,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
                 "turn-complete",
                 "OpenCode finished",
                 None,
@@ -2342,21 +2360,30 @@ mod tests {
         for line in [
             r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
             r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
-            r#"{"v":1,"ts":3,"kind":"event","type":"assistant.text","data":{"sessionID":"ses1","text":"PR #44 is ready for review"}}"#,
-            r#"{"v":1,"ts":4,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
         ] {
             writeln!(file, "{line}").expect("append bridge line");
         }
         file.flush().expect("flush bridge stream");
 
-        scan_source(&mut registration, &diagnostics, &sink).expect("scan bridge stream");
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan status idle");
+        assert_eq!(sink.count("agent-notification"), 0);
+
+        for line in [
+            r#"{"v":1,"ts":3,"kind":"event","type":"assistant.text","data":{"sessionID":"ses1","text":"PR #44 is ready for review"}}"#,
+            r#"{"v":1,"ts":4,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+        ] {
+            writeln!(file, "{line}").expect("append companion record");
+        }
+        file.flush().expect("flush companion records");
+
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan companion records");
 
         assert_eq!(sink.count("agent-notification"), 1);
         assert_eq!(sink.recorded()[0].1["body"], "PR #44 is ready for review");
     }
 
     #[test]
-    fn opencode_status_idle_completes_without_assistant_text() {
+    fn opencode_status_idle_completes_after_grace_without_assistant_text() {
         let temp = tempfile::tempdir().expect("tempdir");
         let source = temp.path().join("session.jsonl");
         std::fs::write(&source, "").expect("create bridge stream");
@@ -2382,6 +2409,15 @@ mod tests {
         file.flush().expect("flush bridge stream");
 
         scan_source(&mut registration, &diagnostics, &sink).expect("scan bridge stream");
+
+        assert_eq!(sink.count("agent-notification"), 0);
+
+        registration
+            .pending_opencode_idle
+            .as_mut()
+            .expect("pending idle")
+            .observed_at = Instant::now() - OPENCODE_IDLE_GRACE;
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan after grace");
 
         assert_eq!(sink.count("agent-notification"), 1);
         assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");

@@ -585,14 +585,8 @@ impl BackendState {
                     &source_path,
                 );
             }
-            if let Err(error) =
-                self.agent_notifications
-                    .register(session_id.clone(), provider, source_path)
-            {
-                log::warn!(
-                    "notification watcher registration failed for {session_id} ({provider:?}): {error}"
-                );
-            }
+            self.agent_notifications
+                .register(session_id.clone(), provider, source_path)?;
         }
 
         Ok(changed)

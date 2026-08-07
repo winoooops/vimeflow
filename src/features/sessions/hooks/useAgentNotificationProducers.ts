@@ -4,7 +4,11 @@ import type {
   AgentLifecycleEvent,
   AgentNotificationEvent,
 } from '@/bindings'
-import { listen, type UnlistenFn } from '@/lib/backend'
+import {
+  isAgentNotificationWatcherAvailable,
+  listen,
+  type UnlistenFn,
+} from '@/lib/backend'
 import { isDesktop } from '@/lib/environment'
 import { subscribeTerminalAttention } from '@/features/terminal/notifications'
 import type { NotificationInput } from './useNotificationCenter'
@@ -169,7 +173,8 @@ export const useAgentNotificationProducers = ({
       const target = findTarget(sessionsRef.current, payload.ptyId)
       if (
         target === undefined ||
-        SEMANTIC_ATTENTION_AGENT_TYPES.has(target.pane.agentType) ||
+        (SEMANTIC_ATTENTION_AGENT_TYPES.has(target.pane.agentType) &&
+          isAgentNotificationWatcherAvailable(payload.ptyId)) ||
         !isBackgroundTarget(target, activeSessionIdRef.current)
       ) {
         return
@@ -220,7 +225,8 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.sessionId)
         if (
           target === undefined ||
-          NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType) ||
+          (NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType) &&
+            isAgentNotificationWatcherAvailable(payload.sessionId)) ||
           (target.pane.agentSessionId !== undefined &&
             target.pane.agentSessionId !== payload.agentSessionId)
         ) {
@@ -304,7 +310,8 @@ export const useAgentNotificationProducers = ({
         const target = findTarget(sessionsRef.current, payload.ptyId)
         if (
           target === undefined ||
-          NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType)
+          (NOTIFICATION_ONLY_AGENT_TYPES.has(target.pane.agentType) &&
+            isAgentNotificationWatcherAvailable(payload.ptyId))
         ) {
           return
         }

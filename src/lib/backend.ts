@@ -147,6 +147,7 @@ interface BackendEventSubscription {
 }
 
 const backendEventSubscriptions = new Map<string, BackendEventSubscription>()
+const availableAgentNotificationWatcherPtyIds = new Set<string>()
 
 /**
  * Test-only helper: clears the module-level backend event subscription
@@ -155,7 +156,11 @@ const backendEventSubscriptions = new Map<string, BackendEventSubscription>()
  */
 export const __resetBackendEventSubscriptions = (): void => {
   backendEventSubscriptions.clear()
+  availableAgentNotificationWatcherPtyIds.clear()
 }
+
+export const isAgentNotificationWatcherAvailable = (ptyId: string): boolean =>
+  availableAgentNotificationWatcherPtyIds.has(ptyId)
 
 export const __dispatchBackendEventForE2e = (
   event: string,
@@ -258,7 +263,29 @@ const detachBackendEventCallback = (
 export const invoke = async <T>(
   method: string,
   args?: Record<string, unknown>
-): Promise<T> => requireBridge().invoke<T>(method, args)
+): Promise<T> => {
+  const sessionId =
+    typeof args?.sessionId === 'string' ? args.sessionId : undefined
+
+  try {
+    const result = await requireBridge().invoke<T>(method, args)
+
+    if (sessionId !== undefined) {
+      if (method === 'start_agent_watcher') {
+        availableAgentNotificationWatcherPtyIds.add(sessionId)
+      } else if (method === 'stop_agent_watcher') {
+        availableAgentNotificationWatcherPtyIds.delete(sessionId)
+      }
+    }
+
+    return result
+  } catch (error) {
+    if (method === 'start_agent_watcher' && sessionId !== undefined) {
+      availableAgentNotificationWatcherPtyIds.delete(sessionId)
+    }
+    throw error
+  }
+}
 
 export const renameAgentSession = async (
   ptyId: string,

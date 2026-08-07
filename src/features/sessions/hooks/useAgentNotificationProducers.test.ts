@@ -5,7 +5,7 @@ import type {
   AgentLifecycleEvent,
   AgentNotificationEvent,
 } from '@/bindings'
-import { __resetBackendEventSubscriptions } from '@/lib/backend'
+import { __resetBackendEventSubscriptions, invoke } from '@/lib/backend'
 import { emitTerminalAttention } from '@/features/terminal/notifications'
 import type { Session } from '../types'
 import { useAgentNotificationProducers } from './useAgentNotificationProducers'
@@ -184,6 +184,7 @@ describe('useAgentNotificationProducers', () => {
       expect(listeners.has('agent-lifecycle')).toBe(true)
       expect(listeners.has('agent-notification')).toBe(true)
     })
+    await invoke('start_agent_watcher', { sessionId: 'pty-background' })
     vi.useFakeTimers()
 
     act(() => {
@@ -272,7 +273,10 @@ describe('useAgentNotificationProducers', () => {
   test('publishes only a live running-to-idle transition in a background pane', async () => {
     installBridge()
     const publish = vi.fn()
-    const background = session('background', 'pty-background')
+
+    const background = session('background', 'pty-background', {
+      agentType: 'codex',
+    })
 
     renderHook(() =>
       useAgentNotificationProducers({
@@ -317,7 +321,7 @@ describe('useAgentNotificationProducers', () => {
         sessionId: 'background',
         ptyId: 'pty-background',
         reason: 'turn-complete',
-        title: 'Shell finished',
+        title: 'Codex CLI finished',
       })
     )
   })
@@ -387,7 +391,7 @@ describe('useAgentNotificationProducers', () => {
       useAgentNotificationProducers({
         sessions: [
           session('active', 'pty-active'),
-          session('background', 'pty-background'),
+          session('background', 'pty-background', { agentType: 'codex' }),
         ],
         activeSessionId: 'active',
         publish,
@@ -503,7 +507,8 @@ describe('useAgentNotificationProducers', () => {
     )
   })
 
-  test('ignores terminal fallback attention for hook-covered agents', () => {
+  test('ignores terminal fallback attention when the normalized watcher is available', async () => {
+    installBridge()
     const publish = vi.fn()
 
     renderHook(() =>
@@ -519,11 +524,40 @@ describe('useAgentNotificationProducers', () => {
       })
     )
 
+    await invoke('start_agent_watcher', { sessionId: 'pty-background' })
+
     act(() => {
       emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
     })
 
     expect(publish).not.toHaveBeenCalled()
+  })
+
+  test('keeps terminal fallback attention when normalized watcher startup fails', () => {
+    const publish = vi.fn()
+
+    renderHook(() =>
+      useAgentNotificationProducers({
+        sessions: [
+          session('active', 'pty-active'),
+          session('background', 'pty-background', { agentType: 'codex' }),
+        ],
+        activeSessionId: 'active',
+        publish,
+      })
+    )
+
+    act(() => {
+      emitTerminalAttention({ ptyId: 'pty-background', body: 'approval' })
+    })
+
+    expect(publish).toHaveBeenCalledOnce()
+    expect(publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'terminal-attention',
+        body: 'approval',
+      })
+    )
   })
 
   test('keeps terminal fallback attention for Kimi', () => {
