@@ -259,7 +259,13 @@ export const useAgentNotificationProducers = ({
         }
 
         if (payload.phase === 'running') {
-          latestRunningAt.set(payload.sessionId, Number(payload.occurredAt))
+          latestRunningAt.set(
+            payload.sessionId,
+            Math.max(
+              latestRunningAt.get(payload.sessionId) ?? 0,
+              Number(payload.occurredAt)
+            )
+          )
           cancelTurnComplete(payload.sessionId)
         }
 

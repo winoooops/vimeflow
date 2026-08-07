@@ -451,7 +451,7 @@ describe('useAgentNotificationProducers', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
-  test('rejects a semantic completion older than the latest running lifecycle', async () => {
+  test('attach replay cannot lower the latest running lifecycle watermark', async () => {
     installBridge()
     const publish = vi.fn()
 
@@ -481,6 +481,13 @@ describe('useAgentNotificationProducers', () => {
         agentSessionId: 'agent-background',
         phase: 'running',
         occurredAt: BigInt(42),
+      })
+
+      emit<AgentLifecycleEvent>('agent-lifecycle', {
+        sessionId: 'pty-background',
+        agentSessionId: 'agent-background',
+        phase: 'running',
+        occurredAt: BigInt(0),
       })
 
       emit<AgentNotificationEvent>('agent-notification', {

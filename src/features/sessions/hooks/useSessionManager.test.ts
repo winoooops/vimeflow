@@ -1385,7 +1385,7 @@ describe('useSessionManager', () => {
     expect(result.current.sessions[0].panes[0].agentPhase).toBe('idle')
   })
 
-  test('a delayed Claude Stop cannot settle a newer running turn', async () => {
+  test('attach replay cannot lower the latest running lifecycle watermark', async () => {
     const service = createMockService()
     service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
 
@@ -1404,9 +1404,16 @@ describe('useSessionManager', () => {
         occurredAt: BigInt(20),
       })
 
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'claude-current',
+        phase: 'running',
+        occurredAt: BigInt(0),
+      })
+
       getNotificationCallback()?.({
         ptyId: 'a',
-        agentSessionId: 'claude-old',
+        agentSessionId: 'claude-current',
         reason: 'turn-complete',
         title: 'Claude finished',
         body: null,

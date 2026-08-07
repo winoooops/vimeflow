@@ -1150,7 +1150,7 @@ async fn run_with_handler_drain_timeout<R: AsyncRead + Unpin + Send>(
                 drain_finished_handlers(&mut handlers);
                 if is_shutdown_frame(&body) {
                     wait_for_handlers(&mut handlers, handler_drain_timeout).await;
-                    state.shutdown();
+                    state.shutdown().await;
                     return Ok(());
                 }
 

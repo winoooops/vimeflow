@@ -49,7 +49,8 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
-    emit_agent_turn, emit_lifecycle_on_change, record_lifecycle, record_tool_call, ReplayActivity,
+    emit_agent_turn, emit_lifecycle_on_change, now_millis, record_lifecycle, record_tool_call,
+    ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
 use crate::agent::types::{
@@ -214,7 +215,7 @@ impl OpencodeTranscriptDecoder {
         let occurred_at = dto
             .ts
             .and_then(|timestamp| u64::try_from(timestamp).ok())
-            .unwrap_or(0);
+            .unwrap_or_else(now_millis);
 
         match dto.kind() {
             OpencodeKind::ToolBefore => self.start_tool_call_from_before(&dto, &timestamp),
@@ -757,7 +758,7 @@ impl TranscriptDecoder for OpencodeTranscriptDecoder {
                         agent_session_id,
                         &mut self.last_phase,
                         phase,
-                        0,
+                        now_millis(),
                     );
                 }
             }
@@ -1531,6 +1532,9 @@ mod tests {
             .collect();
         assert_eq!(lifecycle.len(), 1);
         assert_eq!(lifecycle[0]["phase"], "idle");
+        assert!(lifecycle[0]["occurredAt"]
+            .as_u64()
+            .is_some_and(|value| value > 0));
         let summaries: Vec<Value> = sink
             .recorded()
             .into_iter()

@@ -44,7 +44,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | Pattern                                                                                              | Category           | Findings | Refs | Last Updated |
 | ---------------------------------------------------------------------------------------------------- | ------------------ | -------- | ---- | ------------ |
 | [Filesystem Scope](patterns/filesystem-scope.md)                                                     | security           | 29       | 9    | 2026-08-01   |
-| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 22       | 10   | 2026-08-04   |
+| [Native Surface Occlusion](patterns/native-surface-occlusion.md)                                     | correctness        | 23       | 11   | 2026-08-06   |
 | [React Lifecycle](patterns/react-lifecycle.md)                                                       | react-patterns     | 63       | 65   | 2026-08-06   |
 | [Imperative Animation Ownership](patterns/imperative-animation-ownership.md)                         | react-patterns     | 7        | 3    | 2026-06-17   |
 | [Motion Layout Projection](patterns/motion-layout-projection.md)                                     | react-patterns     | 1        | 0    | 2026-06-10   |
@@ -65,7 +65,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 118      | 107  | 2026-08-06   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
-| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 6        | 4    | 2026-08-05   |
+| [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 7        | 5    | 2026-08-06   |
 | [Command Injection](patterns/command-injection.md)                                                   | security           | 8        | 3    | 2026-06-16   |
 | [Policy Judge Hygiene](patterns/policy-judge-hygiene.md)                                             | security           | 15       | 2    | 2026-04-20   |
 | [Fail-Closed Hooks](patterns/fail-closed-hooks.md)                                                   | security           | 7        | 4    | 2026-07-27   |
@@ -109,7 +109,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 19       | 12   | 2026-08-06   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 20       | 13   | 2026-08-06   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 5        | 6    | 2026-08-02   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |

@@ -1166,7 +1166,10 @@ export const useSessionManager = (
               if (payload.phase === 'running') {
                 latestAgentRunningAtRef.current.set(
                   payload.sessionId,
-                  Number(payload.occurredAt)
+                  Math.max(
+                    latestAgentRunningAtRef.current.get(payload.sessionId) ?? 0,
+                    Number(payload.occurredAt)
+                  )
                 )
               }
 

@@ -14,6 +14,7 @@ export interface SessionIslandNotifications {
   readonly onDismiss: (id: string) => void
   readonly onMarkAllRead: () => void
   readonly onClear: () => void
+  readonly onLocalPanelOpenChange?: (open: boolean) => void
 }
 
 export interface SessionIslandProps {
@@ -59,6 +60,7 @@ const SessionIslandShell = ({
       onDismiss={notifications.onDismiss}
       onMarkAllRead={notifications.onMarkAllRead}
       onClear={notifications.onClear}
+      onLocalPanelOpenChange={notifications.onLocalPanelOpenChange}
     >
       {children}
     </NotificationIsland>

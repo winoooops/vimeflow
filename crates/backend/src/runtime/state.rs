@@ -162,15 +162,11 @@ impl BackendState {
         (Arc::new(state), sink)
     }
 
-    pub fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         // Best-effort kill of burner PTYs (reap-on-boot is the authoritative net).
-        let killed = crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty);
-        teardown_agent_sessions(
-            &self.agent_notifications,
-            &self.agents,
-            &self.transcripts,
-            &killed,
-        );
+        if let Err(err) = self.kill_ephemeral_ptys().await {
+            log::warn!("BackendState::shutdown: PTY teardown failed: {err}");
+        }
         if let Err(err) = self.sessions.clear_all() {
             log::warn!("BackendState::shutdown: cache clear failed: {err}");
         }
@@ -1110,6 +1106,7 @@ mod tests {
 
     impl portable_pty::ChildKiller for SlowExitChild {
         fn kill(&mut self) -> std::io::Result<()> {
+            std::thread::sleep(std::time::Duration::from_millis(100));
             Ok(())
         }
 
@@ -1120,7 +1117,6 @@ mod tests {
 
     impl portable_pty::Child for SlowExitChild {
         fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
-            std::thread::sleep(std::time::Duration::from_millis(100));
             Ok(Some(portable_pty::ExitStatus::with_exit_code(0)))
         }
 
@@ -1466,11 +1462,11 @@ mod tests {
         assert!(!state.get_kimi_usage_consent());
     }
 
-    #[test]
-    fn shutdown_clears_session_cache_and_is_idempotent() {
+    #[tokio::test]
+    async fn shutdown_clears_session_cache_and_is_idempotent() {
         let (state, _sink) = BackendState::with_fake_sink();
-        state.shutdown();
-        state.shutdown();
+        state.shutdown().await;
+        state.shutdown().await;
     }
 
     #[tokio::test]
@@ -1494,13 +1490,36 @@ mod tests {
             .await
             .expect("ephemeral spawn");
 
-        state.shutdown();
+        state.shutdown().await;
 
         let write = state.write_pty(crate::terminal::types::WritePtyRequest {
             session_id: "burner-shutdown".to_string(),
             data: "x".to_string(),
         });
         assert!(write.is_err(), "shutdown should have reaped the burner PTY");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn shutdown_keeps_the_async_executor_responsive() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        state.pty.insert(
+            "burner-slow-exit".to_string(),
+            make_capturing_session_with_child(
+                Arc::new(Mutex::new(Vec::new())),
+                None,
+                false,
+                Box::new(SlowExitChild),
+            ),
+        );
+        state.pty.mark_ephemeral("burner-slow-exit".to_string());
+        let mut shutdown = Box::pin(state.shutdown());
+
+        tokio::select! {
+            _ = &mut shutdown => panic!("blocking shutdown completed too early"),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {}
+        }
+
+        shutdown.await;
     }
 
     #[test]

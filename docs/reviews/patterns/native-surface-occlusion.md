@@ -2,8 +2,8 @@
 id: native-surface-occlusion
 category: correctness
 created: 2026-06-15
-last_updated: 2026-08-04
-ref_count: 10
+last_updated: 2026-08-06
+ref_count: 11
 ---
 
 # Native Surface Occlusion
@@ -296,3 +296,12 @@ React overlays that drive Electron native WebContentsView visibility must regist
   ignore blur while their `internalFocusHandoffSurfaceIds` grace window is
   active, then close normally on later owner or overlay blur.
 - **Commit:** same commit as this entry
+
+### 23. Local notification panels must occlude native browser panes
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `src/features/sessions/components/notification/NotificationIsland.tsx`, `src/features/workspace/WorkspaceView.tsx`
+- **Finding:** Notification center panels rendered through Popover's local fallback were not registered with the workspace overlay stack, so BrowserPane WebContentsViews could remain above the panel and intercept its controls.
+- **Fix:** Exposed the local-panel state through SessionIsland to WorkspaceView and registered it as a global native occluder. Added regressions for local fallback, native-overlay takeover, and overlay registration.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)

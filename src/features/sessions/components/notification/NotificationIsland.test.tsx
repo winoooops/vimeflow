@@ -617,6 +617,33 @@ describe('NotificationIsland', () => {
     ).toHaveClass('z-50')
   })
 
+  test('reports when the notification panel is rendered locally', async () => {
+    const onLocalPanelOpenChange = vi.fn()
+
+    render(
+      <NotificationIsland
+        {...props([notification('need')])}
+        onLocalPanelOpenChange={onLocalPanelOpenChange}
+      />
+    )
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Notifications, 1 unread' })
+    )
+
+    await waitFor(() =>
+      expect(onLocalPanelOpenChange).toHaveBeenLastCalledWith(true)
+    )
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Close notification center' })
+    )
+
+    await waitFor(() =>
+      expect(onLocalPanelOpenChange).toHaveBeenLastCalledWith(false)
+    )
+  })
+
   test('moves bell focus into the notification panel when it opens', async () => {
     render(<NotificationIsland {...props([notification('need')])} />)
 
@@ -805,8 +832,14 @@ describe('NotificationIsland', () => {
     setNavigatorPlatform('MacIntel')
     const bridge = installNativeOverlayBridge()
     const handlers = props([notification('need')])
+    const onLocalPanelOpenChange = vi.fn()
 
-    render(<NotificationIsland {...handlers} />)
+    render(
+      <NotificationIsland
+        {...handlers}
+        onLocalPanelOpenChange={onLocalPanelOpenChange}
+      />
+    )
 
     expect(bridge.preload).toHaveBeenCalledOnce()
 
@@ -847,6 +880,7 @@ describe('NotificationIsland', () => {
         screen.getByRole('navigation', { name: 'Open sessions' })
       ).toHaveAttribute('data-native-overlay-active', 'true')
     )
+    expect(onLocalPanelOpenChange).toHaveBeenLastCalledWith(false)
 
     act(() => {
       bridge.emitAction({

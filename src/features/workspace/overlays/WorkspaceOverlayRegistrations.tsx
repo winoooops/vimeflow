@@ -7,6 +7,7 @@ export interface WorkspaceOverlayRegistrationsProps {
   newSessionDialogOpen: boolean
   burnerTerminalOpen: boolean
   sessionSwitcherOpen: boolean
+  notificationPanelOpen: boolean
   paneRenameOpen: boolean
   layoutCreatorOpen?: boolean
   dragOverlayOpen: boolean
@@ -34,6 +35,7 @@ export const WorkspaceOverlayRegistrations = ({
   newSessionDialogOpen,
   burnerTerminalOpen,
   sessionSwitcherOpen,
+  notificationPanelOpen,
   paneRenameOpen,
   layoutCreatorOpen = false,
   dragOverlayOpen,
@@ -72,6 +74,13 @@ export const WorkspaceOverlayRegistrations = ({
     id: 'session-switcher',
     plane: 'palette',
     isOpen: sessionSwitcherOpen,
+    nativeOcclusion: 'global',
+  })
+
+  useOverlayRegistration({
+    id: 'notification-panel',
+    plane: 'popover',
+    isOpen: notificationPanelOpen,
     nativeOcclusion: 'global',
   })
 

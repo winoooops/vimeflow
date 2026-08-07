@@ -22,8 +22,8 @@ use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::adapter::types::ValidateTranscriptError;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
-    emit_agent_turn, emit_lifecycle_on_change, parse_timestamp_millis, record_lifecycle,
-    record_tool_call, ReplayActivity,
+    emit_agent_turn, emit_lifecycle_on_change, now_millis, parse_timestamp_millis,
+    record_lifecycle, record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome};
 use crate::agent::types::{
@@ -849,7 +849,7 @@ impl TranscriptDecoder for CodexTranscriptDecoder {
                         &self.codex_agent_session_id,
                         &mut self.last_phase,
                         phase,
-                        0,
+                        now_millis(),
                     );
                 }
             }
@@ -941,7 +941,7 @@ fn process_line(
             if !codex_agent_session_id.is_empty() {
                 record_lifecycle(
                     phase,
-                    parse_timestamp_millis(dto.timestamp.as_deref()).unwrap_or(0),
+                    parse_timestamp_millis(dto.timestamp.as_deref()).unwrap_or_else(now_millis),
                     session_id,
                     codex_agent_session_id,
                     events,
@@ -1828,6 +1828,13 @@ mod tests {
         );
         decoder.on_caught_up();
         assert_eq!(lifecycle_phases(&sink), vec!["idle"]);
+        let occurred_at = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-lifecycle")
+            .and_then(|(_, payload)| payload["occurredAt"].as_u64())
+            .expect("replay lifecycle timestamp");
+        assert!(occurred_at > 0);
     }
 
     #[test]

@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-06
-ref_count: 12
+ref_count: 13
 ---
 
 # Authoritative Completion Guard
@@ -256,4 +256,13 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Fix:** Restored provider gating: Claude, Codex, Kimi, and OpenCode panes use
   semantic notifications exclusively, while generic terminal panes retain
   immediate BEL/OSC attention. Added a fake-timer recovery regression.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 20. Replay timestamps lowered the stale-completion watermark
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/adapter/{claude_code,codex,opencode}/transcript.rs`, `src/features/sessions/hooks/useAgentNotificationProducers.ts`, `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** Replay-boundary and unparseable lifecycle timestamps used epoch zero, while both frontend consumers replaced their latest-running watermark directly. A watcher reattach could therefore lower the watermark and admit an older queued completion.
+- **Fix:** Use the current epoch time for synthetic or invalid lifecycle timestamps and update both frontend watermarks with a monotonic maximum. Added attach-while-running regressions that reject an older queued completion after a replay edge.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)

@@ -2,8 +2,8 @@
 id: tokio-blocking-on-async
 category: backend
 created: 2026-05-04
-last_updated: 2026-08-05
-ref_count: 4
+last_updated: 2026-08-06
+ref_count: 5
 ---
 
 # Tokio Blocking On Async Worker
@@ -73,4 +73,13 @@ original Tauri command wording.
 - **File:** `crates/backend/src/runtime/state.rs`
 - **Finding:** Async watcher startup directly performed notification-source filesystem calls and waited for a synchronous worker acknowledgement, parking the Tokio worker during slow or queued registration.
 - **Fix:** Run the existing synchronous registration handshake through `tokio::task::spawn_blocking`, await it, and preserve the prior non-fatal warning behavior.
+- **Commit:** uncommitted (the focused fixer task prohibited commits)
+
+### 7. Application shutdown ran watcher teardown on a Tokio worker
+
+- **Source:** github-codex-connector | PR #785 focused fixer | 2026-08-06
+- **Severity:** HIGH
+- **File:** `crates/backend/src/runtime/state.rs`, `crates/backend/src/runtime/ipc.rs`
+- **Finding:** The async IPC shutdown path called synchronous ephemeral-PTY and watcher teardown, which can wait for worker acknowledgements and join watcher threads before the session cache is cleared.
+- **Fix:** Made `BackendState::shutdown` async, delegated PTY and watcher teardown to the existing `spawn_blocking`-backed cleanup path, and awaited shutdown from the IPC loop before clearing the cache. Added a single-thread-runtime responsiveness regression.
 - **Commit:** uncommitted (the focused fixer task prohibited commits)
