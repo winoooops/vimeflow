@@ -862,11 +862,19 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
 
     if envelope.record_type == "response_item"
         && envelope.payload.kind.as_deref() == Some("function_call")
-        && envelope.payload.name.as_deref() == Some("request_user_input")
+        && matches!(
+            envelope.payload.name.as_deref(),
+            Some("request_user_input" | "request_permissions")
+        )
     {
+        let reason = if envelope.payload.name.as_deref() == Some("request_user_input") {
+            AgentNotificationReason::QuestionRequested
+        } else {
+            AgentNotificationReason::ApprovalRequested
+        };
         let key = envelope.payload.call_id;
         return Ok(ClassifiedSignal::Notification {
-            reason: AgentNotificationReason::QuestionRequested,
+            reason,
             occurred_at,
             dedupe_key: key,
             turn_id: None,
@@ -949,6 +957,9 @@ struct ClaudeEnvelope {
     tool_use_id: Option<String>,
     session_id: Option<String>,
     transcript_path: Option<String>,
+    #[serde(default)]
+    error: Value,
+    error_details: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -985,13 +996,24 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             "StopFailure" => (AgentNotificationReason::AgentError, false, true),
             _ => return Ok(ClassifiedSignal::Irrelevant),
         };
+        let body = if matches!(reason, AgentNotificationReason::AgentError) {
+            envelope
+                .error
+                .as_str()
+                .or_else(|| envelope.error.get("message").and_then(Value::as_str))
+                .or(envelope.error_details.as_deref())
+                .filter(|body| !body.is_empty())
+                .map(str::to_string)
+        } else {
+            None
+        };
         return Ok(ClassifiedSignal::Notification {
             reason,
             occurred_at,
             dedupe_key: envelope.tool_use_id,
             turn_id: None,
             agent_session_id: envelope.session_id,
-            body: None,
+            body,
             transcript_path: envelope.transcript_path,
             requires_active_turn,
             ends_turn,
@@ -1043,10 +1065,7 @@ fn claude_hook_body(
     reason: AgentNotificationReason,
     transcript_path: Option<&str>,
 ) -> Option<String> {
-    if !matches!(
-        reason,
-        AgentNotificationReason::TurnComplete | AgentNotificationReason::AgentError
-    ) {
+    if !matches!(reason, AgentNotificationReason::TurnComplete) {
         return None;
     }
 
@@ -1647,6 +1666,10 @@ mod tests {
                 "question-requested",
             ),
             (
+                r#"{"type":"response_item","payload":{"type":"function_call","name":"request_permissions","call_id":"a2"}}"#,
+                "approval-requested",
+            ),
+            (
                 r#"{"type":"event_msg","payload":{"type":"exec_command_end","call_id":"e1","exit_code":1}}"#,
                 "irrelevant",
             ),
@@ -1860,6 +1883,35 @@ mod tests {
                 );
             }
             _ => panic!("expected notification"),
+        }
+    }
+
+    #[test]
+    fn claude_failure_extracts_hook_error_body() {
+        let cases = [
+            (
+                r#"{"hook_event_name":"StopFailure","error":"request failed"}"#,
+                "request failed",
+            ),
+            (
+                r#"{"hook_event_name":"StopFailure","error":{"message":"provider failed"}}"#,
+                "provider failed",
+            ),
+            (
+                r#"{"hook_event_name":"StopFailure","error_details":"details failed"}"#,
+                "details failed",
+            ),
+        ];
+
+        for (line, expected) in cases {
+            match classify_claude(line.as_bytes()).expect("valid Claude failure hook") {
+                ClassifiedSignal::Notification {
+                    reason: AgentNotificationReason::AgentError,
+                    body,
+                    ..
+                } => assert_eq!(body.as_deref(), Some(expected)),
+                _ => panic!("expected Claude failure notification"),
+            }
         }
     }
 
