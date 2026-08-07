@@ -73,7 +73,6 @@ case "$method $endpoint" in
     mkdir "$GH_STATE_DIR/releases/8"
     printf '%s\n' "$tag" > "$GH_STATE_DIR/releases/8/tag"
     printf '%s\n' "$draft" > "$GH_STATE_DIR/releases/8/draft"
-    printf '%s\n' "$sha" > "$GH_STATE_DIR/refs/$tag"
     printf '8\n'
     ;;
   'POST repos/winoooops/vimeflow/git/refs')
@@ -153,6 +152,7 @@ test -f "$success_dir/state/uploads/$candidate_tag"
 test ! -e "$success_dir/state/releases/7"
 test ! -e "$success_dir/state/refs/$candidate_tag"
 test ! -e "$success_dir/state/refs/$previous_tag"
+grep -Eq 'name=nightly-[0-9]{8}' "$success_dir/state/calls"
 
 rollback_dir="$test_dir/rollback"
 setup_case "$rollback_dir"
