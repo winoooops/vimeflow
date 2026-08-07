@@ -201,7 +201,7 @@ jobs:
           path: nightly-assets
 
       - name: Attest installer provenance
-        uses: actions/attest@v4
+        uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: nightly-assets/SHA256SUMS
 
