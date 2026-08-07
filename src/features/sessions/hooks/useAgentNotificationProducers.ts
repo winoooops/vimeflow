@@ -125,25 +125,33 @@ export const useAgentNotificationProducers = ({
     ): void => {
       cancelTurnComplete(ptyId)
 
+      const target = findTarget(sessionsRef.current, ptyId)
+      if (
+        target === undefined ||
+        !isBackgroundTarget(target, activeSessionIdRef.current)
+      ) {
+        return
+      }
+
       const timer = setTimeout(() => {
         completionTimers.delete(ptyId)
         const phase = phasesRef.current.get(ptyId)
-        const target = findTarget(sessionsRef.current, ptyId)
+        const currentTarget = findTarget(sessionsRef.current, ptyId)
 
         if (
           (candidate.requireLifecycle &&
             (phase?.phase !== 'idle' ||
               phase.agentSessionId !== candidate.agentSessionId ||
               erroredPtyIdsRef.current.delete(ptyId))) ||
-          target === undefined ||
-          !isBackgroundTarget(target, activeSessionIdRef.current)
+          currentTarget === undefined ||
+          !isBackgroundTarget(currentTarget, activeSessionIdRef.current)
         ) {
           return
         }
 
         publishRef.current({
-          sessionId: target.session.id,
-          ptyId: target.pane.ptyId,
+          sessionId: currentTarget.session.id,
+          ptyId: currentTarget.pane.ptyId,
           reason: 'turn-complete',
           title: candidate.title,
           ...(candidate.body === undefined ? {} : { body: candidate.body }),

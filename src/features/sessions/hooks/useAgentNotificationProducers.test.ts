@@ -124,6 +124,47 @@ describe('useAgentNotificationProducers', () => {
     })
   })
 
+  test('ignores an active completion after the user switches away', async () => {
+    installBridge()
+    const publish = vi.fn()
+
+    const { rerender } = renderHook(
+      ({ activeSessionId }) =>
+        useAgentNotificationProducers({
+          sessions: [
+            session('active', 'pty-active', { agentType: 'codex' }),
+            session('background', 'pty-background'),
+          ],
+          activeSessionId,
+          publish,
+        }),
+      { initialProps: { activeSessionId: 'active' } }
+    )
+
+    await waitFor(() => expect(listeners.has('agent-notification')).toBe(true))
+    vi.useFakeTimers()
+
+    act(() => {
+      emit<AgentNotificationEvent>('agent-notification', {
+        ptyId: 'pty-active',
+        agentSessionId: 'agent-active',
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(42),
+        dedupeKey: 'turn:42',
+      })
+    })
+
+    rerender({ activeSessionId: 'background' })
+
+    act(() => {
+      vi.advanceTimersByTime(750)
+    })
+
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   test('does not duplicate a normalized completion from the full watcher', async () => {
     installBridge()
     const publish = vi.fn()

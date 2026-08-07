@@ -62,7 +62,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Accessibility](patterns/accessibility.md)                                                           | a11y               | 103      | 91   | 2026-08-02   |
 | [Responsive Control Affordances](patterns/responsive-control-affordances.md)                         | a11y               | 5        | 2    | 2026-07-22   |
 | [Event Identity Guard](patterns/event-identity-guard.md)                                             | backend            | 1        | 0    | 2026-06-11   |
-| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 113      | 99   | 2026-08-05   |
+| [Async Race Conditions](patterns/async-race-conditions.md)                                           | react-patterns     | 114      | 100  | 2026-08-07   |
 | [Canonical Path Dedupe](patterns/canonical-path-dedupe.md)                                           | correctness        | 3        | 2    | 2026-07-18   |
 | [Process Ownership Evidence](patterns/process-ownership-evidence.md)                                 | correctness        | 2        | 1    | 2026-07-21   |
 | [Tokio Blocking On Async](patterns/tokio-blocking-on-async.md)                                       | backend            | 4        | 2    | 2026-06-14   |

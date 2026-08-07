@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-08-05
-ref_count: 99
+last_updated: 2026-08-07
+ref_count: 100
 ---
 
 # Async Race Conditions
@@ -1293,4 +1293,19 @@ prevent showing previous data.
   `TurnStarted` arm, preserving the opportunistic body attachment while
   guaranteeing the completion event is emitted. Added regression coverage for
   the idle-then-busy batch.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 113. Delayed completion reclassified foreground work as background
+
+- **Source:** github-codex-connector | PR #788 | 2026-08-07
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Turn completion checked background eligibility only after its
+  settle timer elapsed. A completion received in the active pane could become
+  an unread background notification if the user switched sessions during the
+  delay.
+- **Fix:** Reject foreground completions before scheduling the settle timer,
+  while retaining the delayed phase, error, and background rechecks for
+  eligible events. Added regression coverage for switching away during the
+  settle window.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
