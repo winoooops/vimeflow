@@ -56,9 +56,11 @@ cleanup() {
   trap - EXIT
   set +e
   delete_previous_ref=$previous_ref_create_attempted
+  delete_candidate_ref=false
   rollback_ref_ready=true
 
   if [ "$status" -eq 0 ]; then
+    delete_candidate_ref=true
     if [ -n "$previous_release_id" ]; then
       if ! gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${previous_release_id}"; then
         status=1
@@ -69,6 +71,8 @@ cleanup() {
     if [ -n "$candidate_release_id" ]; then
       if ! gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${candidate_release_id}"; then
         status=1
+      else
+        delete_candidate_ref=true
       fi
     fi
     if [ "$nightly_ref_change_attempted" = true ]; then
@@ -95,6 +99,9 @@ cleanup() {
 
   if [ "$delete_previous_ref" = true ]; then
     gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${previous_tag}" || status=1
+  fi
+  if [ "$delete_candidate_ref" = true ]; then
+    gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${candidate_tag}" || status=1
   fi
 
   exit "$status"
