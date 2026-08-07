@@ -3,7 +3,7 @@ id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
 last_updated: 2026-08-07
-ref_count: 9
+ref_count: 10
 ---
 
 # Authoritative Completion Guard
@@ -215,4 +215,19 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   as its watcher auto-starts, and make active-hook cleanup defer to that owner
   until manager terminal or unmount cleanup stops it. Added regressions for the
   ownership handoff and active-to-background pane switch.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 15. Exact-ID Kimi restart retained a watcher that never started
+
+- **Source:** github-codex-connector | PR #788 follow-up | 2026-08-07
+- **Severity:** P1 / HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** An exact-ID Kimi restart could commit after its pane moved to the
+  background, mark the replacement PTY watcher as retained, and skip the
+  attachment path because the pane already had an agent identity. No watcher
+  was running to emit the authoritative completion and idle transitions.
+- **Fix:** Route exact-ID Kimi restarts through the existing retrying watcher
+  attachment path, which records retained ownership only after watcher startup
+  succeeds. Added a regression that keeps the pane backgrounded while restart
+  commits and holds watcher startup pending to verify the ownership ordering.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

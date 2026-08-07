@@ -1359,7 +1359,7 @@ export const useSessionManager = (
           !isRestartMounted() ||
           pane === undefined ||
           isTerminalStatus(pane.status) ||
-          pane.agentSessionId !== undefined ||
+          (pane.agentSessionId !== undefined && agentType !== 'kimi') ||
           (pane.agentType !== agentType &&
             (launcher === undefined ||
               pane.agentType !== 'generic' ||
@@ -2724,15 +2724,9 @@ export const useSessionManager = (
         registerPtySession(result.sessionId, result.sessionId, result.cwd)
 
         if (
-          isDesktop() &&
-          replacementAgentSessionId !== undefined &&
-          oldPane.agentType === 'kimi'
+          resumeCommand !== null &&
+          (oldPane.agentSessionId === undefined || oldPane.agentType === 'kimi')
         ) {
-          autoStartedAgentWatcherPtyIds.current.add(result.sessionId)
-          retainAgentWatcher(result.sessionId)
-        }
-
-        if (resumeCommand !== null && oldPane.agentSessionId === undefined) {
           void attachAgentWatcher(result.sessionId, oldPane.agentType)
         }
 

@@ -2559,10 +2559,19 @@ describe('useSessionManager', () => {
     })
 
     let resolveSpawn: ((value: unknown) => void) | undefined
+    let resolveWatcher: ((value: boolean) => void) | undefined
 
     const spawn = new Promise((resolve) => {
       resolveSpawn = resolve
     })
+
+    const watcher = new Promise<boolean>((resolve) => {
+      resolveWatcher = resolve
+    })
+    mockInvoke.mockImplementation(
+      (...args: unknown[]): Promise<boolean> =>
+        args[0] === 'start_agent_watcher' ? watcher : Promise.resolve(false)
+    )
     const service = createMockService()
     service.spawn = vi.fn().mockReturnValue(spawn)
 
@@ -2580,7 +2589,6 @@ describe('useSessionManager', () => {
 
     act(() => {
       result.current.setActiveSessionId('ws-active')
-      result.current.setActiveSessionId('ws-lazy')
     })
     expect(service.spawn).toHaveBeenCalledTimes(1)
 
@@ -2604,8 +2612,17 @@ describe('useSessionManager', () => {
       data: "kimi --session 'kimi-session'\r",
     })
 
-    act(() => result.current.setActiveSessionId('ws-active'))
     expect(result.current.activeSessionId).toBe('ws-active')
+    expect(mockInvoke).toHaveBeenCalledWith('start_agent_watcher', {
+      sessionId: 'pty-lazy-new',
+    })
+    expect(isAgentWatcherRetained('pty-lazy-new')).toBe(false)
+
+    await act(async () => {
+      resolveWatcher?.(true)
+      await watcher
+    })
+
     expect(isAgentWatcherRetained('pty-lazy-new')).toBe(true)
 
     unmount()
