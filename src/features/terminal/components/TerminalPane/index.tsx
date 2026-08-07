@@ -325,17 +325,24 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
 
     const isAwaitingRestart = mode === 'awaiting-restart'
 
-    const progress = usePtyProgress(
-      service,
-      pane.ptyId,
-      isSessionVisible && !isAwaitingRestart
-    )
-
     const lifecycleProgressActive =
       pane.agentSessionId !== undefined &&
       pane.agentType !== 'generic' &&
       pane.agentPhase === 'running' &&
       pane.status === 'running'
+
+    const recordNativeProgress = useCallback((): void => {
+      if (lifecycleProgressActive && pane.agentSessionId !== undefined) {
+        nativeProgressTurnByPty.set(pane.ptyId, pane.agentSessionId)
+      }
+    }, [lifecycleProgressActive, pane.agentSessionId, pane.ptyId])
+
+    const progress = usePtyProgress(
+      service,
+      pane.ptyId,
+      isSessionVisible && !isAwaitingRestart,
+      recordNativeProgress
+    )
 
     const nativeProgressTurn = nativeProgressTurnByPty.get(pane.ptyId)
 

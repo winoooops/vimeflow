@@ -92,6 +92,25 @@ describe('usePtyProgress', () => {
     expect(result.current).toBeUndefined()
   })
 
+  test('reports progress observed before a batched clear', () => {
+    const source = new ProgressSource()
+    let reportCount = 0
+
+    const { result } = renderHook(() =>
+      usePtyProgress(source, 'pty-a', true, () => {
+        reportCount += 1
+      })
+    )
+
+    act(() => {
+      source.publish('pty-a', { state: 'normal', value: 80 })
+      source.publish('pty-a', undefined)
+    })
+
+    expect(result.current).toBeUndefined()
+    expect(reportCount).toBe(1)
+  })
+
   test('re-seeds and unsubscribes when ptyId changes', async () => {
     const source = new ProgressSource()
     source.values.set('pty-a', { state: 'normal', value: 20 })

@@ -3,7 +3,7 @@ id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
 last_updated: 2026-08-07
-ref_count: 100
+ref_count: 101
 ---
 
 # Async Race Conditions
@@ -1309,3 +1309,18 @@ prevent showing previous data.
   eligible events. Added regression coverage for switching away during the
   settle window.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 114. Batched progress clear skipped native turn ownership
+
+- **Source:** github-codex-connector | PR #788 | 2026-08-07
+- **Severity:** P2 / MEDIUM
+- **Files:** `src/features/terminal/hooks/usePtyProgress.ts`,
+  `src/features/terminal/components/TerminalPane/index.tsx`
+- **Finding:** Native progress ownership was recorded only by a passive effect.
+  When one backend read emitted a progress report followed by `remove`, React
+  could batch both state updates and commit only the final cleared value, so
+  lifecycle fallback progress reappeared during the still-running agent turn.
+- **Fix:** Added a synchronous progress-report callback at the hook subscription
+  boundary and record the current turn there before updating React state. Added
+  regression coverage for the report-and-clear batch and retained ownership.
+- **Commit:** pending (uncommitted review-fix cycle)

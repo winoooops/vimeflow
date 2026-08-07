@@ -17,7 +17,14 @@ const bodyPropsSpy = vi.hoisted(() => vi.fn())
 const focusTerminalSpy = vi.hoisted(() => vi.fn())
 
 const usePtyProgressSpy = vi.hoisted(() =>
-  vi.fn<(_: unknown, __: string) => PtyProgress | undefined>(() => undefined)
+  vi.fn<
+    (
+      _: unknown,
+      __: string,
+      ___: boolean,
+      onProgressReport: () => void
+    ) => PtyProgress | undefined
+  >(() => undefined)
 )
 
 const useGitBranchSpy = vi.hoisted(() =>
@@ -373,7 +380,8 @@ describe('TerminalPane index', () => {
     expect(usePtyProgressSpy).toHaveBeenCalledWith(
       baseProps.service,
       'pty-s1',
-      false
+      false,
+      expect.any(Function)
     )
 
     expect(
@@ -440,7 +448,8 @@ describe('TerminalPane index', () => {
     expect(usePtyProgressSpy).toHaveBeenCalledWith(
       baseProps.service,
       'pty-s1',
-      true
+      true,
+      expect.any(Function)
     )
 
     expect(
@@ -480,10 +489,16 @@ describe('TerminalPane index', () => {
     ).toHaveAttribute('aria-valuetext', 'In progress')
   })
 
-  test('native progress owns its turn across remove and remount', () => {
-    let nativeProgress: PtyProgress | undefined
+  test('native progress owns its turn across a batched clear and remount', () => {
+    let reportNativeProgress: (() => void) | undefined
 
-    usePtyProgressSpy.mockImplementation(() => nativeProgress)
+    usePtyProgressSpy.mockImplementation(
+      (_service, _ptyId, _enabled, onProgressReport) => {
+        reportNativeProgress = onProgressReport
+
+        return undefined
+      }
+    )
 
     const runningPane = {
       ...baseProps.pane,
@@ -500,13 +515,8 @@ describe('TerminalPane index', () => {
       screen.getByRole('progressbar', { name: 'Terminal progress' })
     ).toHaveAttribute('aria-valuetext', 'In progress')
 
-    nativeProgress = { state: 'paused', value: 70 }
-    rerender(<TerminalPane {...baseProps} pane={runningPane} />)
-    expect(
-      screen.getByRole('progressbar', { name: 'Terminal progress' })
-    ).toHaveAttribute('aria-valuetext', 'Paused, 70%')
-
-    nativeProgress = undefined
+    expect(reportNativeProgress).toBeDefined()
+    reportNativeProgress?.()
     rerender(<TerminalPane {...baseProps} pane={runningPane} />)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
 
@@ -664,7 +674,8 @@ describe('TerminalPane index', () => {
     expect(usePtyProgressSpy).toHaveBeenCalledWith(
       baseProps.service,
       'pty-s1',
-      true
+      true,
+      expect.any(Function)
     )
 
     expect(screen.getByTestId('terminal-pane-wrapper')).toHaveStyle({
@@ -687,7 +698,8 @@ describe('TerminalPane index', () => {
     expect(usePtyProgressSpy).toHaveBeenCalledWith(
       baseProps.service,
       'pty-s1',
-      false
+      false,
+      expect.any(Function)
     )
   })
 
