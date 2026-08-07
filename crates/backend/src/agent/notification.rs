@@ -24,6 +24,7 @@ const READ_BUFFER_BYTES: usize = 64 * 1024;
 const RECENT_DEDUPE_KEYS: usize = 128;
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(3);
 const MAX_NOTIFICATION_BODY_CHARS: usize = 80;
+const MAX_DEDUPE_KEY_CHARS: usize = 256;
 /// First-lookup scan bound for Claude rollout transcripts, which can run
 /// 20-114MB; the completion body only ever lives near the tail.
 const CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES: u64 = 256 * 1024;
@@ -157,7 +158,7 @@ impl Registration {
             partial_line: Vec::new(),
             dropping_oversize_line: false,
             agent_session_id: None,
-            turn_active: false,
+            turn_active: true,
             turn_id: None,
             notification_body: None,
             claude_transcript_cursors: HashMap::new(),
@@ -706,7 +707,7 @@ fn scan_source(
         registration.cursor = length;
         registration.partial_line.clear();
         registration.dropping_oversize_line = false;
-        registration.turn_active = false;
+        registration.turn_active = true;
         registration.turn_id = None;
         registration.pending_opencode_idle = None;
         registration.claude_transcript_cursors.clear();
@@ -1403,6 +1404,7 @@ fn apply_signal(
                 .or(buffered_body)
                 .or_else(|| notification_action_body(reason).map(str::to_string));
 
+            let dedupe_key = dedupe_key.map(bounded_dedupe_key);
             if dedupe_key
                 .as_deref()
                 .is_some_and(|key| !registration.remember_dedupe_key(key))
@@ -1492,6 +1494,13 @@ pub(crate) fn normalize_notification_body(message: &str) -> Option<String> {
     Some(body)
 }
 
+fn bounded_dedupe_key(mut key: String) -> String {
+    if let Some((end, _)) = key.char_indices().nth(MAX_DEDUPE_KEY_CHARS) {
+        key.truncate(end);
+    }
+    key
+}
+
 /// Kimi completions are emitted by the relocation-following transcript
 /// supervisor rather than a fixed-path wire watcher: a completion written to
 /// a relocated wire before the next watcher tick would otherwise be lost.
@@ -1514,7 +1523,7 @@ pub(crate) fn emit_kimi_completion(
         title: "Kimi finished".to_string(),
         body,
         occurred_at: occurred_at.unwrap_or_else(now_millis),
-        dedupe_key: event_id.map(|id| format!("turn:{id}")),
+        dedupe_key: event_id.map(|id| bounded_dedupe_key(format!("turn:{id}"))),
     };
     if let Err(error) =
         serialize_event(&event).and_then(|payload| events.emit_json("agent-notification", payload))
@@ -2034,43 +2043,116 @@ mod tests {
     }
 
     #[test]
-    fn codex_live_terminal_event_after_mid_turn_registration_is_not_suppressed() {
-        for terminal_type in ["task_complete", "turn_aborted"] {
-            let temp = tempfile::tempdir().expect("tempdir");
-            let source = temp.path().join("rollout.jsonl");
-            std::fs::write(
-                &source,
-                concat!(
-                    "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-a\"}}\n",
-                    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"live\"}}\n",
-                ),
-            )
-            .expect("seed active turn");
-            let cursor = std::fs::metadata(&source).expect("metadata").len();
-            let mut registration = Registration::new(
-                "pty-a".to_string(),
-                1,
+    fn live_terminal_events_after_mid_turn_registration_are_not_suppressed() {
+        let cases = [
+            (
                 NotificationProvider::Codex,
-                source.clone(),
-                cursor,
-            );
+                r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"live"}}"#,
+                r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"live"}}"#,
+                "Codex finished",
+            ),
+            (
+                NotificationProvider::Codex,
+                r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"live"}}"#,
+                r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"live"}}"#,
+                "Codex finished",
+            ),
+            (
+                NotificationProvider::ClaudeCode,
+                r#"{"hook_event_name":"UserPromptSubmit"}"#,
+                r#"{"hook_event_name":"Stop"}"#,
+                "Claude finished",
+            ),
+            (
+                NotificationProvider::OpenCode,
+                r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+                r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+                "OpenCode finished",
+            ),
+        ];
+
+        for (provider, active_turn, terminal_event, expected_title) in cases {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let source = temp.path().join("events.jsonl");
+            std::fs::write(&source, format!("{active_turn}\n")).expect("seed active turn");
+            let cursor = std::fs::metadata(&source).expect("metadata").len();
+            let mut registration =
+                Registration::new("pty-a".to_string(), 1, provider, source.clone(), cursor);
             let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
             let sink = FakeEventSink::new();
             let mut file = std::fs::OpenOptions::new()
                 .append(true)
                 .open(source)
-                .expect("open rollout");
-            writeln!(
-                file,
-                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"{terminal_type}\",\"turn_id\":\"live\"}}}}"
-            )
-            .expect("append terminal event");
-            file.flush().expect("flush rollout");
+                .expect("open events");
+            writeln!(file, "{terminal_event}").expect("append terminal event");
+            file.flush().expect("flush events");
 
             scan_source(&mut registration, &diagnostics, &sink).expect("scan terminal event");
 
-            assert_eq!(sink.count("agent-notification"), 1, "{terminal_type}");
+            assert_eq!(sink.count("agent-notification"), 1, "{provider:?}");
             assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+            assert_eq!(sink.recorded()[0].1["title"], expected_title);
+        }
+    }
+
+    #[test]
+    fn notification_dedupe_keys_are_bounded_before_storage_and_emission() {
+        let mut registration = Registration::new(
+            "pty-a".to_string(),
+            1,
+            NotificationProvider::Codex,
+            PathBuf::new(),
+            0,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let long_id = "界".repeat(MAX_DEDUPE_KEY_CHARS + 1);
+
+        apply_signal(
+            &mut registration,
+            ClassifiedSignal::Notification {
+                reason: AgentNotificationReason::QuestionRequested,
+                occurred_at: 1,
+                dedupe_key: Some(long_id.clone()),
+                turn_id: None,
+                agent_session_id: None,
+                body: None,
+                transcript_path: None,
+                requires_active_turn: false,
+                ends_turn: false,
+            },
+            &diagnostics,
+            &sink,
+        );
+        emit_kimi_completion(
+            &sink,
+            "pty-kimi",
+            "kimi-session",
+            Some(2),
+            Some(&long_id),
+            None,
+        );
+
+        assert_eq!(
+            registration
+                .dedupe_order
+                .front()
+                .expect("stored dedupe key")
+                .chars()
+                .count(),
+            MAX_DEDUPE_KEY_CHARS
+        );
+        let recorded = sink.recorded();
+        assert_eq!(recorded.len(), 2);
+        for (_, event) in recorded {
+            assert_eq!(
+                event["dedupeKey"]
+                    .as_str()
+                    .expect("emitted dedupe key")
+                    .chars()
+                    .count(),
+                MAX_DEDUPE_KEY_CHARS
+            );
         }
     }
 

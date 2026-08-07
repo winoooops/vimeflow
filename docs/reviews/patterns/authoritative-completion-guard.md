@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-08-05
-ref_count: 6
+last_updated: 2026-08-06
+ref_count: 7
 ---
 
 # Authoritative Completion Guard
@@ -172,3 +172,18 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
 - **Finding:** The notification classifier ignored OpenCode `session.status` records with `status.type == "idle"`, even though the bridge treats that as a real idle transition and some streams may not append a separate `session.idle` line.
 - **Fix:** Added a status-idle completion signal that emits when assistant text is already buffered, while preserving the existing later `session.idle` path for streams where idle status arrives before final text.
 - **Commit:** same commit as this entry
+
+### 12. Live completions were rejected when registration occurred mid-turn
+
+- **Source:** github-codex-connector | PR #788 round 1 | 2026-08-06
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Registrations start at EOF with `turn_active` false, so a live
+  Claude Stop or OpenCode idle record was rejected when its start record
+  predated watcher registration. The first background completion notification
+  disappeared even though the terminal record was after the replay boundary.
+- **Fix:** Initialize the completion latch as eligible at registration and
+  truncation boundaries, while retaining the terminal transition back to false
+  so sibling OpenCode idle records cannot double-emit. Added mid-turn coverage
+  for Codex, Claude, and OpenCode.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

@@ -2,8 +2,8 @@
 id: ipc-resource-bounds
 category: security
 created: 2026-07-05
-last_updated: 2026-08-02
-ref_count: 11
+last_updated: 2026-08-06
+ref_count: 12
 ---
 
 # IPC Resource Bounds
@@ -274,4 +274,19 @@ not become repeated unhandled main-process failures.
 - **Fix:** Allowed bounded empty notification item arrays, added `close` to the
   main-process action type and validator, and covered both the empty-update and
   oversized-close-action cases in native overlay tests.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 21. Notification dedupe keys crossed IPC unbounded
+
+- **Source:** github-codex-connector | PR #788 round 1 | 2026-08-06
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Provider-controlled request, turn, and tool IDs were retained
+  twice in each watcher's dedupe cache and then emitted over IPC without a
+  length bound. A stream of maximum-size valid records could retain tens of
+  megabytes per watcher.
+- **Fix:** Truncate dedupe keys to 256 Unicode characters at the shared watcher
+  emission path before caching or event construction, and apply the same helper
+  to the separate Kimi completion emitter. Added regression coverage for both
+  storage and IPC emission.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
