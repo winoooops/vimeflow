@@ -10,35 +10,35 @@ export {}
 // program than the one users run. The backend now scrubs the color-disabling
 // variables and forces the truecolor contract; this pins that.
 
-const readGrid = async (ptyId: string): Promise<string> =>
+const nativeTransport =
+  process.platform === 'darwin' &&
+  process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT === '1'
+
+const readTerminal = async (ptyId: string): Promise<string> =>
   (await browser.execute(
-    async (id: string) =>
-      (await window.__VIMEFLOW_E2E__?.readGhosttyGrid(id)) ?? '',
-    ptyId
+    async (id: string, native: boolean) =>
+      native
+        ? ((await window.__VIMEFLOW_E2E__?.readGhosttyGrid(id)) ?? '')
+        : (window.__VIMEFLOW_E2E__?.getTerminalBufferForSession(id) ?? ''),
+    ptyId,
+    nativeTransport
   )) ?? ''
 
 describe('e2e pane environment', () => {
-  before(function () {
-    if (
-      process.platform !== 'darwin' ||
-      process.env.VITE_GHOSTTY_NATIVE_MACOS_PARENT !== '1'
-    ) {
-      this.skip()
-    }
-  })
-
-  it('hands the PTY a truecolor environment with no color-disabling leaks', async () => {
+  it('scopes terminal identity to native transport and scrubs color-disabling variables', async () => {
     await (
       await $('[data-testid="terminal-pane"]')
     ).waitForDisplayed({ timeout: 20_000 })
 
-    const ptyId = await browser.execute(() =>
-      document
-        .querySelector('[data-testid="native-ghostty-pane"]')
-        ?.getAttribute('data-pty-id')
-    )
+    const ptyId = await browser.execute((native: boolean) => {
+      const selector = native
+        ? '[data-testid="native-ghostty-pane"]'
+        : '[data-testid="split-view-slot"][data-pty-id]'
+
+      return document.querySelector(selector)?.getAttribute('data-pty-id')
+    }, nativeTransport)
     if (!ptyId) {
-      throw new Error('no native pane')
+      throw new Error('no terminal pane')
     }
 
     await browser.execute(
@@ -50,11 +50,11 @@ describe('e2e pane environment', () => {
       ptyId,
       // One marker line the grid read can find whole. `unset` markers make
       // absence assertable — an empty expansion would be invisible.
-      'echo "E2E-ENV CT=${COLORTERM-unset} T=$TERM NC=${NO_COLOR-unset} FC=${FORCE_COLOR-unset}"'
+      'echo "E2E-ENV CT=${COLORTERM-unset} T=$TERM NC=${NO_COLOR-unset} FC=${FORCE_COLOR-unset} TP=${TERM_PROGRAM-unset} TPV=${TERM_PROGRAM_VERSION-unset}"'
     )
 
     await browser.waitUntil(
-      async () => (await readGrid(ptyId)).includes('E2E-ENV CT='),
+      async () => (await readTerminal(ptyId)).includes('E2E-ENV CT='),
       {
         timeout: 10_000,
         interval: 250,
@@ -62,7 +62,7 @@ describe('e2e pane environment', () => {
       }
     )
 
-    const marker = (await readGrid(ptyId))
+    const marker = (await readTerminal(ptyId))
       .split('\n')
       // The echoed command itself also contains the prefix; the result line
       // is the one whose variables have already been expanded.
@@ -73,5 +73,8 @@ describe('e2e pane environment', () => {
     expect(marker).toContain('T=xterm-256color')
     expect(marker).toContain('NC=unset')
     expect(marker).toContain('FC=unset')
+    expect(marker).toContain(
+      nativeTransport ? 'TP=ghostty TPV=1.3.2' : 'TP=unset TPV=unset'
+    )
   })
 })
