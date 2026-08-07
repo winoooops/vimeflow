@@ -587,20 +587,37 @@ export const useSessionManager = (
 
   const releaseAutoStartedAgentWatcher = useCallback(
     (ptyId: string): void => {
-      if (!autoStartedAgentWatcherPtyIds.current.delete(ptyId)) {
+      if (!autoStartedAgentWatcherPtyIds.current.has(ptyId)) {
         return
       }
+
+      const pane = sessionsRef.current
+        .flatMap((session) => session.panes)
+        .find(
+          (candidate) => isShellPane(candidate) && candidate.ptyId === ptyId
+        )
 
       const activePaneOwnsWatcher = sessionsRef.current
         .find((session) => session.id === activeSessionIdRef.current)
         ?.panes.some(
-          (pane) =>
-            isShellPane(pane) &&
-            pane.ptyId === ptyId &&
-            pane.active &&
-            !isTerminalStatus(pane.status)
+          (candidate) =>
+            isShellPane(candidate) &&
+            candidate.ptyId === ptyId &&
+            candidate.active &&
+            !isTerminalStatus(candidate.status)
         )
 
+      // Kimi has no notification-only watcher: its relocation-following full
+      // supervisor is the authoritative completion producer.
+      if (
+        pane?.agentType === 'kimi' &&
+        !activePaneOwnsWatcher &&
+        !isTerminalStatus(pane.status)
+      ) {
+        return
+      }
+
+      autoStartedAgentWatcherPtyIds.current.delete(ptyId)
       if (activePaneOwnsWatcher) {
         return
       }

@@ -2283,6 +2283,82 @@ describe('useSessionManager', () => {
     )
   })
 
+  test('keeps an auto-started Kimi watcher after a background pane captures identity', async () => {
+    vi.mocked(loadWorkspaceForRestore).mockResolvedValueOnce(
+      persistedWorkspace(
+        [
+          persistedShellPane({
+            active: false,
+            ptyId: 'pty-kimi-old',
+            cwd: '/home/will/proj',
+            agentType: 'kimi',
+          }),
+          persistedShellPane({
+            paneId: 'p1',
+            paneIndex: 1,
+            ptyId: 'pty-codex-old',
+            cwd: '/home/will/proj',
+            agentSessionId: 'codex-conversation',
+          }),
+        ],
+        { workingDirectory: '/home/will/proj' }
+      )
+    )
+
+    const service = createMockService()
+    service.spawn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessionId: 'pty-codex-new',
+        pid: 91,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      })
+      .mockResolvedValueOnce({
+        sessionId: 'pty-kimi-new',
+        pid: 92,
+        cwd: '/home/will/proj',
+        shell: '/bin/zsh',
+      })
+
+    const { result, unmount } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 'pty-kimi-new',
+      })
+    )
+    await waitFor(() => expect(statusListener()).toBeDefined())
+
+    act(() => {
+      statusListener()?.(
+        agentStatusEvent({
+          sessionId: 'pty-kimi-new',
+          agentSessionId: 'kimi-conversation',
+        })
+      )
+    })
+
+    await waitFor(() =>
+      expect(result.current.sessions[0].panes[0].agentSessionId).toBe(
+        'kimi-conversation'
+      )
+    )
+
+    expect(mockInvoke).not.toHaveBeenCalledWith('stop_agent_watcher', {
+      sessionId: 'pty-kimi-new',
+    })
+
+    unmount()
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('stop_agent_watcher', {
+        sessionId: 'pty-kimi-new',
+      })
+    )
+  })
+
   test('stops retrying a missing resumed-agent watcher and degrades the pane', async () => {
     vi.useFakeTimers()
     let unmount: (() => void) | undefined

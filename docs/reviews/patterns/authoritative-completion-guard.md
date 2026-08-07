@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-08-06
-ref_count: 7
+last_updated: 2026-08-07
+ref_count: 8
 ---
 
 # Authoritative Completion Guard
@@ -186,4 +186,18 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   truncation boundaries, while retaining the terminal transition back to false
   so sibling OpenCode idle records cannot double-emit. Added mid-turn coverage
   for Codex, Claude, and OpenCode.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 13. Background Kimi watcher teardown removed its completion producer
+
+- **Source:** github-codex-connector | PR #788 follow-up | 2026-08-07
+- **Severity:** P1 / HIGH
+- **File:** `src/features/sessions/hooks/useSessionManager.ts`
+- **Finding:** After a background Kimi pane captured its first agent identity,
+  the auto-start owner stopped the full transcript watcher. Kimi has no
+  notification-only watcher, so this also removed the relocation-following
+  supervisor that emits its authoritative completion and idle events.
+- **Fix:** Retain the auto-start ownership while a live Kimi pane is in the
+  background, and add a regression proving its first status snapshot does not
+  issue `stop_agent_watcher`.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

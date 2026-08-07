@@ -2,8 +2,8 @@
 id: error-surfacing
 category: error-handling
 created: 2026-04-10
-last_updated: 2026-07-30
-ref_count: 55
+last_updated: 2026-08-07
+ref_count: 56
 ---
 
 # Error Surfacing
@@ -568,4 +568,17 @@ failed" must mean the editor shows the original file, not the requested one.
 - **Fix:** Wrapped the notification body in try/catch, logged a warning, and
   added a regression test proving `onSpawned` does not throw when the addon
   notification fails.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 55. OpenCode background errors discarded the provider message
+
+- **Source:** github-codex-connector | PR #788 follow-up | 2026-08-07
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** OpenCode `session.error` records carried an actionable reason at
+  `data.error.message`, but the notification classifier discarded it and
+  emitted only the generic `OpenCode failed` title.
+- **Fix:** Deserialize the nested message into the classified error body so the
+  shared notification normalizer bounds and emits it. Added a live scan
+  regression for the emitted body.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

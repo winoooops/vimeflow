@@ -1246,12 +1246,18 @@ struct OpenCodeData {
     session_id: Option<String>,
     status: Option<OpenCodeStatus>,
     text: Option<String>,
+    error: Option<OpenCodeError>,
 }
 
 #[derive(Deserialize)]
 struct OpenCodeStatus {
     #[serde(rename = "type")]
     kind: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OpenCodeError {
+    message: Option<String>,
 }
 
 fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
@@ -1296,7 +1302,7 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             }),
             turn_id: None,
             agent_session_id,
-            body: None,
+            body: envelope.data.error.and_then(|error| error.message),
             transcript_path: None,
             requires_active_turn: true,
             ends_turn: true,
@@ -2107,6 +2113,7 @@ mod tests {
                 r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"live"}}"#,
                 "turn-complete",
                 "Codex finished",
+                None,
             ),
             (
                 NotificationProvider::Codex,
@@ -2114,6 +2121,7 @@ mod tests {
                 r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"live"}}"#,
                 "agent-error",
                 "Codex failed",
+                None,
             ),
             (
                 NotificationProvider::ClaudeCode,
@@ -2121,6 +2129,7 @@ mod tests {
                 r#"{"hook_event_name":"Stop"}"#,
                 "turn-complete",
                 "Claude finished",
+                None,
             ),
             (
                 NotificationProvider::OpenCode,
@@ -2128,10 +2137,29 @@ mod tests {
                 r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
                 "turn-complete",
                 "OpenCode finished",
+                None,
+            ),
+            (
+                NotificationProvider::OpenCode,
+                r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+                r#"{"v":1,"ts":2,"kind":"event","type":"session.error","data":{"id":"error-1","sessionID":"ses1","error":{"name":"ProviderError","message":"123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"}}}"#,
+                "agent-error",
+                "OpenCode failed",
+                Some(
+                    "1234567890123456789012345678901234567890123456789012345678901234567890123456789…",
+                ),
             ),
         ];
 
-        for (provider, active_turn, terminal_event, expected_reason, expected_title) in cases {
+        for (
+            provider,
+            active_turn,
+            terminal_event,
+            expected_reason,
+            expected_title,
+            expected_body,
+        ) in cases
+        {
             let temp = tempfile::tempdir().expect("tempdir");
             let source = temp.path().join("events.jsonl");
             std::fs::write(&source, format!("{active_turn}\n")).expect("seed active turn");
@@ -2152,6 +2180,7 @@ mod tests {
             assert_eq!(sink.count("agent-notification"), 1, "{provider:?}");
             assert_eq!(sink.recorded()[0].1["reason"], expected_reason);
             assert_eq!(sink.recorded()[0].1["title"], expected_title);
+            assert_eq!(sink.recorded()[0].1["body"].as_str(), expected_body);
         }
     }
 

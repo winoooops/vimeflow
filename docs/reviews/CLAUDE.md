@@ -80,7 +80,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [Git Operations](patterns/git-operations.md)                                                         | correctness        | 30       | 13   | 2026-07-14   |
 | [CodeMirror Integration](patterns/codemirror-integration.md)                                         | editor             | 20       | 5    | 2026-06-17   |
 | [Editor File Existence Probe](patterns/editor-file-existence-probe.md)                               | files              | 3        | 0    | 2026-06-18   |
-| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 54       | 55   | 2026-07-30   |
+| [Error Surfacing](patterns/error-surfacing.md)                                                       | error-handling     | 55       | 56   | 2026-08-07   |
 | [File Tree Paths](patterns/file-tree-paths.md)                                                       | files              | 4        | 0    | 2026-04-10   |
 | [FFI Buffer Alignment](patterns/ffi-buffer-alignment.md)                                             | security           | 2        | 1    | 2026-07-29   |
 | [Scope Boundary](patterns/scope-boundary.md)                                                         | review-process     | 8        | 3    | 2026-06-01   |
@@ -109,7 +109,7 @@ When appending findings to a pattern file, label the source so future readers ca
 | [React Prop Contracts](patterns/react-prop-contracts.md)                                             | react-patterns     | 11       | 6    | 2026-07-09   |
 | [Stale Retained Interactions](patterns/stale-retained-interactions.md)                               | react-patterns     | 12       | 10   | 2026-07-13   |
 | [Retained State Identity](patterns/retained-state-identity.md)                                       | react-patterns     | 5        | 4    | 2026-07-08   |
-| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 12       | 7    | 2026-08-06   |
+| [Authoritative Completion Guard](patterns/authoritative-completion-guard.md)                         | correctness        | 13       | 8    | 2026-08-07   |
 | [Equality Guard Completeness](patterns/equality-guard-completeness.md)                               | correctness        | 2        | 0    | 2026-06-17   |
 | [Resizable Layout Bounds](patterns/resizable-layout-bounds.md)                                       | correctness        | 5        | 6    | 2026-08-02   |
 | [Schema Version Decoupling](patterns/schema-version-decoupling.md)                                   | correctness        | 1        | 0    | 2026-06-19   |
