@@ -1,11 +1,9 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
-import type {
-  NativeOverlayDialogRequest,
-  NativeOverlayNotificationCenterDialogPayload,
-} from '@/components/Popover'
+import type { NativeOverlayDialogRequest } from '@/components/Popover'
 import { renderNativeNotificationCenterOverlay } from './NativeNotificationCenterOverlay'
+import type { NativeOverlayNotificationCenterDialogPayload } from './useNotificationIslandStage'
 
 const payload: NativeOverlayNotificationCenterDialogPayload = {
   kind: 'dialog',

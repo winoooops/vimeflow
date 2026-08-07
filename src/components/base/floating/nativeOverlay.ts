@@ -1,7 +1,6 @@
 // cspell:ignore ghostty
 import { isMacPlatform } from '@/lib/formatShortcut'
 import { createLogger } from '@/lib/log'
-import type { AgentId } from '@/agents/registry'
 import type { NativeOverlayActivityPopoverPayload } from '../../nativeOverlayActivity'
 
 export type {
@@ -108,6 +107,14 @@ export interface NativeOverlayTooltipPayload {
   maxWidth?: number
 }
 
+// Features add their own plain-data fields to this shared transport envelope.
+export interface NativeOverlayDialogPayload {
+  [field: string]: unknown
+  kind: 'dialog'
+  dialog: string
+  ariaLabel: string
+}
+
 export interface NativeOverlayCommandPaletteItem {
   id: string
   label: string
@@ -123,7 +130,7 @@ export interface NativeOverlayCommandPaletteActions {
   setQuery: string
 }
 
-export interface NativeOverlayCommandPaletteDialogPayload {
+export interface NativeOverlayCommandPaletteDialogPayload extends NativeOverlayDialogPayload {
   kind: 'dialog'
   dialog: 'command-palette'
   ariaLabel: string
@@ -169,7 +176,7 @@ export interface NativeOverlayNewSessionActions {
   pickCommandPrefix: string
 }
 
-export interface NativeOverlayNewSessionDialogPayload {
+export interface NativeOverlayNewSessionDialogPayload extends NativeOverlayDialogPayload {
   kind: 'dialog'
   dialog: 'new-session'
   ariaLabel: string
@@ -219,7 +226,7 @@ export interface NativeOverlayLayoutCreatorDefinition {
   readonly addOrder: readonly string[]
 }
 
-export interface NativeOverlayLayoutCreatorDialogPayload {
+export interface NativeOverlayLayoutCreatorDialogPayload extends NativeOverlayDialogPayload {
   kind: 'dialog'
   dialog: 'layout-creator'
   ariaLabel: string
@@ -242,7 +249,7 @@ export interface NativeOverlaySessionSwitcherActions {
   cancel: string
 }
 
-export interface NativeOverlaySessionSwitcherDialogPayload {
+export interface NativeOverlaySessionSwitcherDialogPayload extends NativeOverlayDialogPayload {
   kind: 'dialog'
   dialog: 'session-switcher'
   ariaLabel: string
@@ -250,40 +257,6 @@ export interface NativeOverlaySessionSwitcherDialogPayload {
   items: NativeOverlaySessionSwitcherItem[]
   actions: NativeOverlaySessionSwitcherActions
 }
-
-export interface NativeOverlayNotificationCenterItem {
-  id: string
-  kind: 'need' | 'err'
-  title: string
-  body?: string
-  sessionName: string
-  agentId: AgentId
-  occurredAt: number
-  read: boolean
-  openActionId: string
-  dismissActionId: string
-}
-
-export interface NativeOverlayNotificationCenterActions {
-  markAllRead: string
-  clear: string
-  close: string
-}
-
-export interface NativeOverlayNotificationCenterDialogPayload {
-  kind: 'dialog'
-  dialog: 'notification-center'
-  ariaLabel: string
-  items: NativeOverlayNotificationCenterItem[]
-  actions: NativeOverlayNotificationCenterActions
-}
-
-export type NativeOverlayDialogPayload =
-  | NativeOverlayCommandPaletteDialogPayload
-  | NativeOverlayNewSessionDialogPayload
-  | NativeOverlayLayoutCreatorDialogPayload
-  | NativeOverlaySessionSwitcherDialogPayload
-  | NativeOverlayNotificationCenterDialogPayload
 
 // Native overlay payloads are plain data only. Each rich surface gets a narrow
 // serializable model instead of sending arbitrary React children over IPC.

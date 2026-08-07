@@ -7,10 +7,10 @@ use crate::aliases::{build_alias_lines, AgentAlias};
 
 use sha2::{Digest, Sha256};
 use std::ffi::OsStr;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 const BRIDGE_RUNTIME_DIR: &str = "runtime";
@@ -244,9 +244,17 @@ pub fn generate_bridge_files(
 ) -> Result<BridgeFiles, String> {
     let dir = Path::new(agent_status_dir);
 
-    // Create the session directory
-    fs::create_dir_all(dir)
+    // Hook payloads can include tool requests, questions, and transcript paths.
+    let mut dir_builder = fs::DirBuilder::new();
+    dir_builder.recursive(true);
+    #[cfg(unix)]
+    dir_builder.mode(0o700);
+    dir_builder
+        .create(dir)
         .map_err(|e| format!("failed to create agent status directory: {}", e))?;
+    #[cfg(unix)]
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+        .map_err(|e| format!("failed to secure agent status directory: {}", e))?;
 
     let script_path = dir.join("statusline.sh");
     let attention_script_path = dir.join("attention.sh");
@@ -308,8 +316,18 @@ pub fn generate_bridge_files(
     // Bridge generation starts this session's transport stream empty. Clearing
     // the renderer notification list does not truncate this file; the live
     // watcher already has its cursor at EOF and never replays old records.
-    fs::File::create(&attention_file_path)
+    let mut attention_options = OpenOptions::new();
+    attention_options.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    attention_options.mode(0o600);
+    let attention_file = attention_options
+        .open(&attention_file_path)
         .map_err(|e| format!("failed to create attention event file: {}", e))?;
+    #[cfg(unix)]
+    attention_file
+        .set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("failed to secure attention event file: {}", e))?;
+    drop(attention_file);
 
     fs::create_dir_all(&shim_dir_path)
         .map_err(|e| format!("failed to create claude shim directory: {}", e))?;
@@ -600,6 +618,21 @@ mod tests {
         assert!(files.zsh_rc_path.exists());
         #[cfg(unix)]
         {
+            let dir_mode = fs::metadata(&dir).unwrap().permissions().mode();
+            assert_eq!(
+                dir_mode & 0o777,
+                0o700,
+                "session bridge directory should be private"
+            );
+            let attention_file_mode = fs::metadata(&files.attention_file_path)
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(
+                attention_file_mode & 0o777,
+                0o600,
+                "attention stream should be private"
+            );
             let meta = fs::metadata(&files.script_path).unwrap();
             assert!(
                 meta.permissions().mode() & 0o111 != 0,

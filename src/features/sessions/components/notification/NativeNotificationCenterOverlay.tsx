@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import type { NativeOverlayHostDialogRenderer } from '@/components/NativeOverlayHost'
 import { Popover, type PopoverPlacement } from '@/components/Popover'
 import { NotificationPanel } from './NotificationPanel'
+import type { NativeOverlayNotificationCenterDialogPayload } from './useNotificationIslandStage'
 
 export const renderNativeNotificationCenterOverlay: NativeOverlayHostDialogRenderer =
   ({ request, close, dispatchAction }): ReactElement | null => {
@@ -9,7 +10,8 @@ export const renderNativeNotificationCenterOverlay: NativeOverlayHostDialogRende
       return null
     }
 
-    const payload = request.payload
+    const payload =
+      request.payload as NativeOverlayNotificationCenterDialogPayload
     const itemById = new Map(payload.items.map((item) => [item.id, item]))
 
     return (

@@ -9,8 +9,7 @@ import {
 import type { Agent } from '@/agents/registry'
 import type {
   NativeOverlayActionHandler,
-  NativeOverlayNotificationCenterDialogPayload,
-  NativeOverlayNotificationCenterItem,
+  NativeOverlayDialogPayload,
 } from '@/components/Popover'
 import { preloadNativeOverlay } from '@/components/Popover'
 import { agentForPane } from '@/features/sessions/utils/agentForSession'
@@ -63,6 +62,33 @@ export interface ToastDisplay {
   readonly record: NotificationRecord
   readonly sessionName: string
   readonly agent: Agent
+}
+
+export interface NativeOverlayNotificationCenterItem {
+  id: string
+  kind: 'need' | 'err'
+  title: string
+  body?: string
+  sessionName: string
+  agentId: Agent['id']
+  occurredAt: number
+  read: boolean
+  openActionId: string
+  dismissActionId: string
+}
+
+export interface NativeOverlayNotificationCenterActions {
+  markAllRead: string
+  clear: string
+  close: string
+}
+
+export interface NativeOverlayNotificationCenterDialogPayload extends NativeOverlayDialogPayload {
+  kind: 'dialog'
+  dialog: 'notification-center'
+  ariaLabel: string
+  items: NativeOverlayNotificationCenterItem[]
+  actions: NativeOverlayNotificationCenterActions
 }
 
 export interface UseNotificationIslandStageOptions {

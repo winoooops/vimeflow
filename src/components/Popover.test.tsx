@@ -250,26 +250,8 @@ describe('Popover', () => {
         nativeOverlay
         nativeOverlayPayload={{
           kind: 'dialog',
-          dialog: 'notification-center',
+          dialog: 'test-dialog',
           ariaLabel: 'Notification center',
-          items: [
-            {
-              id: 'notice-1',
-              kind: 'need',
-              title: 'Claude finished',
-              sessionName: 'notifications',
-              agentId: 'claude',
-              occurredAt: 1,
-              read: false,
-              openActionId: 'open:notice-1',
-              dismissActionId: 'dismiss:notice-1',
-            },
-          ],
-          actions: {
-            markAllRead: 'mark-all',
-            clear: 'clear',
-            close: 'close',
-          },
         }}
       >
         <p>Local notification center</p>
@@ -310,14 +292,8 @@ describe('Popover', () => {
         nativeOverlay
         nativeOverlayPayload={{
           kind: 'dialog',
-          dialog: 'notification-center',
+          dialog: 'test-dialog',
           ariaLabel: 'Notification center',
-          items: [],
-          actions: {
-            markAllRead: 'mark-all',
-            clear: 'clear',
-            close: 'close',
-          },
         }}
       >
         <p>Local notification center</p>

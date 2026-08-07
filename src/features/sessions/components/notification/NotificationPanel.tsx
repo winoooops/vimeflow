@@ -3,7 +3,7 @@ import { AGENTS } from '@/agents/registry'
 import { AgentGlyph } from '@/components/AgentGlyph'
 import { Button } from '@/components/Button'
 import { IconButton } from '@/components/IconButton'
-import type { NativeOverlayNotificationCenterItem } from '@/components/Popover'
+import type { NativeOverlayNotificationCenterItem } from './useNotificationIslandStage'
 
 interface NotificationPanelProps {
   readonly items: readonly NativeOverlayNotificationCenterItem[]

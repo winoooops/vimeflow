@@ -26,9 +26,8 @@ import {
 
 export type {
   NativeOverlayActionHandler,
+  NativeOverlayDialogPayload,
   NativeOverlayDialogRequest,
-  NativeOverlayNotificationCenterDialogPayload,
-  NativeOverlayNotificationCenterItem,
   NativeOverlayRequest,
 } from '@/components/base/floating/nativeOverlay'
 

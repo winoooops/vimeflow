@@ -1,13 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test, vi } from 'vitest'
-import type { NativeOverlayNotificationCenterItem } from '@/components/Popover'
 import {
   NOTIFICATION_LIST_MAX_VISIBLE_ROWS,
   NOTIFICATION_ROW_GAP_PX,
   NOTIFICATION_ROW_HEIGHT_PX,
   NotificationPanel,
 } from './NotificationPanel'
+import type { NativeOverlayNotificationCenterItem } from './useNotificationIslandStage'
 
 const items: readonly NativeOverlayNotificationCenterItem[] = [
   {
