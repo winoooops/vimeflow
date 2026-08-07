@@ -47,7 +47,6 @@ if [ -n "$previous_release_id" ] && [ -z "$previous_sha" ]; then
 fi
 
 candidate_release_id=''
-candidate_ref_created=false
 nightly_ref_change_attempted=false
 previous_ref_create_attempted=false
 previous_release_retag_attempted=false
@@ -56,7 +55,6 @@ cleanup() {
   status=$?
   trap - EXIT
   set +e
-  delete_candidate_ref=$candidate_ref_created
   delete_previous_ref=$previous_ref_create_attempted
   rollback_ref_ready=true
 
@@ -71,7 +69,6 @@ cleanup() {
     if [ -n "$candidate_release_id" ]; then
       if ! gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${candidate_release_id}"; then
         status=1
-        delete_candidate_ref=false
       fi
     fi
     if [ "$nightly_ref_change_attempted" = true ]; then
@@ -96,9 +93,6 @@ cleanup() {
     fi
   fi
 
-  if [ "$delete_candidate_ref" = true ]; then
-    gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${candidate_tag}" || status=1
-  fi
   if [ "$delete_previous_ref" = true ]; then
     gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${previous_tag}" || status=1
   fi
@@ -112,12 +106,12 @@ candidate_release_id=$(
     -f tag_name="$candidate_tag" \
     -f target_commitish="$GITHUB_SHA" \
     -f name=nightly \
+    -F draft=true \
     -F prerelease=true \
     -f make_latest=false \
     -F body=@"$RUNNER_TEMP/nightly-release.md" \
     --jq '.id'
 )
-candidate_ref_created=true
 gh release upload "$candidate_tag" nightly-assets/*
 
 if [ -n "$previous_release_id" ]; then
@@ -142,4 +136,5 @@ else
 fi
 
 gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${candidate_release_id}" \
-  -f tag_name=nightly >/dev/null
+  -f tag_name=nightly \
+  -F draft=false >/dev/null
