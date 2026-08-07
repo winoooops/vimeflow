@@ -24,6 +24,9 @@ const READ_BUFFER_BYTES: usize = 64 * 1024;
 const RECENT_DEDUPE_KEYS: usize = 128;
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(3);
 const MAX_NOTIFICATION_BODY_CHARS: usize = 80;
+/// First-lookup scan bound for Claude rollout transcripts, which can run
+/// 20-114MB; the completion body only ever lives near the tail.
+const CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -1064,7 +1067,21 @@ fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Optio
     if length < *cursor {
         *cursor = 0;
     }
+    let should_skip_partial_initial_line =
+        *cursor == 0 && length > CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES;
+    if should_skip_partial_initial_line {
+        *cursor = length.saturating_sub(CLAUDE_TRANSCRIPT_INITIAL_TAIL_BYTES);
+    }
     file.seek(SeekFrom::Start(*cursor)).ok()?;
+    if should_skip_partial_initial_line {
+        let mut byte = [0_u8; 1];
+        while file.read(&mut byte).ok()? == 1 {
+            *cursor += 1;
+            if byte[0] == b'\n' {
+                break;
+            }
+        }
+    }
 
     let mut latest = None;
 
@@ -1854,6 +1871,29 @@ mod tests {
         assert_eq!(
             latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
             Some("latest done")
+        );
+        assert_eq!(
+            cursor,
+            std::fs::metadata(&transcript).expect("metadata").len()
+        );
+    }
+
+    #[test]
+    fn initial_claude_transcript_body_scan_starts_from_bounded_tail() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        let old_line = format!(
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"stop_reason\":\"end_turn\"}}}}\n",
+            "old".repeat(100_000)
+        );
+        let latest_line =
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"tail\"}],\"stop_reason\":\"end_turn\"}}\n";
+        std::fs::write(&transcript, format!("{old_line}{latest_line}")).expect("write transcript");
+        let mut cursor = 0;
+
+        assert_eq!(
+            latest_claude_transcript_body_at_path(&transcript, &mut cursor).as_deref(),
+            Some("tail")
         );
         assert_eq!(
             cursor,
