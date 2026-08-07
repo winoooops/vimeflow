@@ -2,8 +2,8 @@
 id: parser-resilience
 category: code-quality
 created: 2026-05-24
-last_updated: 2026-08-01
-ref_count: 19
+last_updated: 2026-08-05
+ref_count: 21
 ---
 
 # Parser Resilience
@@ -437,3 +437,39 @@ true` and drop the chunk.
 - **Finding:** Kimi's 32 KiB turn-text clamp cut only at a UTF-8 boundary. If it removed prose immediately before an inline protocol marker, that marker moved to byte zero and the standalone-line selector could misclassify the originally invalid block as actionable feedback.
 - **Fix:** Advance every mid-line clamp through the next newline, or clear the fragment when none exists, so truncation cannot create a new line boundary. Added a regression whose old cut promoted an inline reply marker.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 35. Codex interaction function names were not fully classified
+
+- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/codex/transcript.rs`
+- **Finding:** Codex response-item function calls only treated `request_user_input` as an interaction, so the sibling built-in `request_permissions` call produced no approval notification for background panes.
+- **Fix:** Detect `request_permissions` function calls and emit `ApprovalRequested` with the same bounded dedupe-key path as other semantic attention events. Extended the semantic attention regression.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 36. Oversized OSC discard missed BEL after a pending ESC
+
+- **Source:** github-codex-connector | PR #778 round 1 | 2026-08-04
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/terminal/notifications.ts`
+- **Finding:** `TerminalAttentionScanner` entered `discardingOsc` for oversized reserved OSC 9;4 progress frames, but when one chunk ended with `ESC` and the next began with `BEL`, the pending-escape branch treated BEL only as a failed ST terminator. The scanner stayed in discard mode and swallowed later ordinary OSC 9/777 notifications.
+- **Fix:** Treat BEL as a valid discard terminator even while resolving a pending ESC, clearing both discard flags before returning the remaining data. Added a regression that reproduces the split oversized-progress frame and verifies subsequent OSC 9 and OSC 777 notifications are emitted.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 37. Unterminated OSC progress parser did not recover on later escape sequences
+
+- **Source:** github-codex-connector | PR #778 round 2 | 2026-08-04
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/terminal/progress.rs`
+- **Finding:** The Rust OSC 9;4 progress parser treated a bare `ESC` inside an OSC only as a possible ST terminator. If the next byte was not `\`, the parser kept the OSC open in discard mode, so normal CSI/color output such as `ESC [` was consumed as discarded OSC payload and later valid progress reports could be ignored until an incidental BEL or ST arrived.
+- **Fix:** Abort the current OSC when pending `ESC` is followed by a non-ST byte, then reprocess that byte through normal escape-state scanning. Added regressions covering a truncated progress frame followed by CSI output and a later valid progress report, plus immediate recovery into a new OSC introducer.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 38. Claude Stop-hook body parsing relied on undocumented hook fields
+
+- **Source:** github-claude | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** Claude completion notifications read `last_assistant_message` from Stop-hook stdin, but the real hook contract supplies a transcript path rather than the final assistant text. The optional field made the regression silent: realistic Stop payloads parsed successfully but produced no notification body.
+- **Fix:** Read the latest completed assistant text from the validated Claude transcript path using the bounded JSONL reader, and keep transcript assistant-line parsing on the same extraction helper.
+- **Commit:** same commit as this entry

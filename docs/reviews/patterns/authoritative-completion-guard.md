@@ -2,8 +2,8 @@
 id: authoritative-completion-guard
 category: correctness
 created: 2026-06-16
-last_updated: 2026-07-21
-ref_count: 5
+last_updated: 2026-08-05
+ref_count: 6
 ---
 
 # Authoritative Completion Guard
@@ -154,3 +154,21 @@ When a state machine or lifecycle tracks an in-flight operation, multiple events
   `patch_apply_end`. Added a regression test proving the promoted call remains
   pending through generic output and emits failed when `patch_apply_end` fails.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 10. OpenCode session errors left lifecycle running
+
+- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
+- **Severity:** P1 / HIGH
+- **File:** `crates/backend/src/agent/adapter/opencode/transcript.rs`
+- **Finding:** OpenCode `session.error` emitted an alert while leaving `turn_active` true, even though the bridge documents that error-ending turns do not receive a later idle event.
+- **Fix:** Treat `session.error` as a terminal lifecycle edge for the active OpenCode turn by clearing `turn_active` and recording Idle immediately after emitting the error notification.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 11. OpenCode status-idle completions were dropped
+
+- **Source:** github-codex-connector | PR #784 round 1 | 2026-08-05
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** The notification classifier ignored OpenCode `session.status` records with `status.type == "idle"`, even though the bridge treats that as a real idle transition and some streams may not append a separate `session.idle` line.
+- **Fix:** Added a status-idle completion signal that emits when assistant text is already buffered, while preserving the existing later `session.idle` path for streams where idle status arrives before final text.
+- **Commit:** same commit as this entry

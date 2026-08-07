@@ -2,8 +2,8 @@
 id: generated-shell-scripts
 category: backend
 created: 2026-06-02
-last_updated: 2026-06-19
-ref_count: 2
+last_updated: 2026-08-05
+ref_count: 3
 ---
 
 # Generated Shell Scripts
@@ -91,4 +91,13 @@ end to avoid leaking ephemeral artifacts.
 - **File:** `crates/backend/src/terminal/bridge.rs` L178 (original)
 - **Finding:** After moving bridge files under app data, macOS sessions placed the statusline script under `Application Support/.../statusline.sh`. `generate_bridge_files` wrote the raw `script_path` into Claude's `statusLine.command`, which Claude runs in a shell. The unquoted path split on the space, so the statusline script never executed and agent status stayed inactive on macOS.
 - **Fix:** Added a `shell_quote_path` helper that wraps paths containing non-shell-safe characters in single quotes (with embedded single-quote handling) and used it when serializing `statusLine.command` in the generated `settings.json`.
+- **Commit:** same commit as this entry
+
+### 9. Generated Claude attention hook wrote unbounded Stop payloads
+
+- **Source:** github-codex-connector | PR #784 round 1 | 2026-08-05
+- **Severity:** P2 / MEDIUM
+- **File:** `crates/backend/src/agent/adapter/claude_code/bridge.rs`
+- **Finding:** The generated `attention.sh` appended Claude Stop-hook stdin verbatim. Large final assistant messages could push one JSONL record over the notification watcher's per-line cap, causing the whole completion event to be discarded.
+- **Fix:** Bound the generated script output. Normal hook payloads pass through unchanged; oversized payloads are compacted to the hook name plus transcript path so the watcher can still emit completion and recover the body from Claude's transcript.
 - **Commit:** same commit as this entry
