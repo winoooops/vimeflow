@@ -7,6 +7,7 @@ import type { PTYSpawnResult } from '../../terminal/types'
 import type {
   AgentAlias,
   AgentLifecycleEvent,
+  AgentNotificationEvent,
   AgentSessionTitleEvent,
   SessionList,
 } from '../../../bindings'
@@ -162,6 +163,8 @@ const createMockService = (): ITerminalService => ({
   onBurnerForeground: vi.fn(
     (): Promise<() => void> => Promise.resolve((): void => undefined)
   ),
+  getProgress: vi.fn(() => undefined),
+  onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
   getPtyReplay: vi.fn().mockResolvedValue(null),
   listSessions: vi.fn().mockResolvedValue({
     activeSessionId: null,
@@ -1217,6 +1220,13 @@ describe('useSessionManager', () => {
       ([event]) => event === 'agent-lifecycle'
     )?.[1] as ((payload: AgentLifecycleEvent) => void) | undefined
 
+  const getNotificationCallback = ():
+    | ((payload: AgentNotificationEvent) => void)
+    | undefined =>
+    mockListen.mock.calls.find(
+      ([event]) => event === 'agent-notification'
+    )?.[1] as ((payload: AgentNotificationEvent) => void) | undefined
+
   const aliveSession = (id: string): SessionList => ({
     activeSessionId: id,
     sessions: [
@@ -1252,6 +1262,7 @@ describe('useSessionManager', () => {
       })
     })
     expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    expect(result.current.sessions[0].panes[0].agentPhase).toBe('idle')
     expect(result.current.sessions[0].status).toBe('idle')
     expect(result.current.sessions[0].panes[0].agentSessionId).toBe('x')
 
@@ -1264,6 +1275,61 @@ describe('useSessionManager', () => {
       })
     })
     expect(result.current.sessions[0].panes[0].status).toBe('running')
+    expect(result.current.sessions[0].panes[0].agentPhase).toBe('running')
+  })
+
+  test('notification-only completion ends the bound running turn', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue(aliveSession('a'))
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(getLifecycleCallback()).toBeDefined())
+    await waitFor(() => expect(getNotificationCallback()).toBeDefined())
+
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'agent-current',
+        phase: 'running',
+      })
+
+      getNotificationCallback()?.({
+        ptyId: 'a',
+        agentSessionId: null,
+        reason: 'turn-complete',
+        title: 'Codex finished',
+        body: null,
+        occurredAt: BigInt(1),
+        dedupeKey: 'turn-1',
+      })
+    })
+
+    expect(result.current.sessions[0].panes[0].status).toBe('idle')
+    expect(result.current.sessions[0].panes[0].agentPhase).toBe('idle')
+
+    act(() => {
+      getLifecycleCallback()?.({
+        sessionId: 'a',
+        agentSessionId: 'agent-current',
+        phase: 'running',
+      })
+
+      getNotificationCallback()?.({
+        ptyId: 'a',
+        agentSessionId: 'agent-stale',
+        reason: 'turn-complete',
+        title: 'Stale completion',
+        body: null,
+        occurredAt: BigInt(2),
+        dedupeKey: 'turn-old',
+      })
+    })
+
+    expect(result.current.sessions[0].panes[0].status).toBe('running')
+    expect(result.current.sessions[0].panes[0].agentPhase).toBe('running')
   })
 
   test('adding a browser pane keeps an idle shell session idle', async () => {
@@ -5048,6 +5114,16 @@ describe('useSessionManager', () => {
             replay_end_offset: BigInt(0),
           },
         },
+        {
+          id: 's2',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 2,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
       ],
     })
 
@@ -5061,12 +5137,45 @@ describe('useSessionManager', () => {
       expect(result.current.sessions[0].panes[0].agentLauncher).toBe('OLD_CC')
     )
 
-    act(() => result.current.recordPaneAgentLauncher('s1', 'NEW_CC --fast'))
+    act(() => result.current.recordPaneAgentLauncher('s2', 'NEW_CC --fast'))
     await waitFor(() =>
-      expect(result.current.sessions[0].panes[0].agentLauncher).toBe('NEW_CC')
+      expect(result.current.sessions[1].panes[0].agentLauncher).toBe('NEW_CC')
     )
 
     expect(aliasLoad).toHaveBeenCalledTimes(2)
+  })
+
+  test('attaches a watcher as soon as an agent launcher is submitted', async () => {
+    const service = createMockService()
+    service.listSessions = vi.fn().mockResolvedValue({
+      activeSessionId: 's1',
+      sessions: [
+        {
+          id: 's1',
+          cwd: '/tmp',
+          status: {
+            kind: 'Alive',
+            pid: 1,
+            replay_data: '',
+            replay_end_offset: BigInt(0),
+          },
+        },
+      ],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager(service, { autoCreateOnEmpty: false })
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    act(() => result.current.recordPaneAgentLauncher('s1', 'codex'))
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith('start_agent_watcher', {
+        sessionId: 's1',
+      })
+    )
+    expect(result.current.sessions[0].panes[0].agentType).toBe('codex')
   })
 
   test('recordPaneAgentLauncher caches repeated non-agent alias misses', async () => {

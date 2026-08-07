@@ -1,9 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { __resetNativeOverlayForTest } from '@/components/base/floating/nativeOverlay'
 import { Popover } from './Popover'
 
 const trackedAnchors: HTMLElement[] = []
+let restorePlatform: (() => void) | null = null
 
 const makeAnchor = (): HTMLElement => {
   const el = document.createElement('button')
@@ -14,9 +16,33 @@ const makeAnchor = (): HTMLElement => {
   return el
 }
 
+const setNavigatorPlatform = (platform: string): void => {
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  })
+
+  restorePlatform = (): void => {
+    if (original === undefined) {
+      delete (window.navigator as unknown as { platform?: string }).platform
+
+      return
+    }
+
+    Object.defineProperty(window.navigator, 'platform', original)
+  }
+}
+
 afterEach(() => {
+  __resetNativeOverlayForTest()
+  vi.unstubAllEnvs()
   trackedAnchors.forEach((el) => el.remove())
   trackedAnchors.length = 0
+  restorePlatform?.()
+  restorePlatform = null
+  delete window.vimeflow
 })
 
 describe('Popover', () => {
@@ -194,5 +220,117 @@ describe('Popover', () => {
 
     expect(dialog).toHaveStyle({ pointerEvents: 'none' })
     expect(screen.getByText('Details')).toBeInTheDocument()
+  })
+
+  test('keeps the local popover when the native overlay is rejected', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const open = vi.fn(() => Promise.resolve({ accepted: false }))
+    const anchor = makeAnchor()
+
+    window.vimeflow = {
+      invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+      listen: vi.fn(() => Promise.resolve(vi.fn())),
+      nativeOverlay: {
+        open,
+        close: vi.fn(() => Promise.resolve()),
+        actionResult: vi.fn(() => Promise.resolve()),
+        resume: vi.fn(() => Promise.resolve()),
+        onAction: vi.fn(() => vi.fn()),
+        onClose: vi.fn(() => vi.fn()),
+      },
+    }
+
+    render(
+      <Popover
+        anchor={anchor}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Notification center"
+        nativeOverlay
+        nativeOverlayPayload={{
+          kind: 'dialog',
+          dialog: 'notification-center',
+          ariaLabel: 'Notification center',
+          items: [
+            {
+              id: 'notice-1',
+              kind: 'need',
+              title: 'Claude finished',
+              sessionName: 'notifications',
+              agentId: 'claude',
+              occurredAt: 1,
+              read: false,
+              openActionId: 'open:notice-1',
+              dismissActionId: 'dismiss:notice-1',
+            },
+          ],
+          actions: {
+            markAllRead: 'mark-all',
+            clear: 'clear',
+            close: 'close',
+          },
+        }}
+      >
+        <p>Local notification center</p>
+      </Popover>
+    )
+
+    await waitFor(() => expect(open).toHaveBeenCalledOnce())
+    expect(
+      await screen.findByRole('dialog', { name: 'Notification center' })
+    ).toHaveTextContent('Local notification center')
+  })
+
+  test('suppresses the local popover when the native overlay is accepted', async () => {
+    vi.stubEnv('VITE_NATIVE_OVERLAY', '1')
+    setNavigatorPlatform('MacIntel')
+    const open = vi.fn(() => Promise.resolve({ accepted: true }))
+    const anchor = makeAnchor()
+
+    window.vimeflow = {
+      invoke: <T,>(): Promise<T> => Promise.resolve(null as T),
+      listen: vi.fn(() => Promise.resolve(vi.fn())),
+      nativeOverlay: {
+        open,
+        close: vi.fn(() => Promise.resolve()),
+        actionResult: vi.fn(() => Promise.resolve()),
+        resume: vi.fn(() => Promise.resolve()),
+        onAction: vi.fn(() => vi.fn()),
+        onClose: vi.fn(() => vi.fn()),
+      },
+    }
+
+    render(
+      <Popover
+        anchor={anchor}
+        open
+        onOpenChange={vi.fn()}
+        aria-label="Notification center"
+        nativeOverlay
+        nativeOverlayPayload={{
+          kind: 'dialog',
+          dialog: 'notification-center',
+          ariaLabel: 'Notification center',
+          items: [],
+          actions: {
+            markAllRead: 'mark-all',
+            clear: 'clear',
+            close: 'close',
+          },
+        }}
+      >
+        <p>Local notification center</p>
+      </Popover>
+    )
+
+    await waitFor(() => expect(open).toHaveBeenCalledOnce())
+    expect(
+      screen.queryByRole('dialog', { name: 'Notification center' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByText('Local notification center')
+    ).not.toBeInTheDocument()
   })
 })

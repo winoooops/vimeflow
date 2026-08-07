@@ -1,6 +1,7 @@
 // cspell:ignore ghostty
 import { isMacPlatform } from '@/lib/formatShortcut'
 import { createLogger } from '@/lib/log'
+import type { AgentId } from '@/agents/registry'
 import type { NativeOverlayActivityPopoverPayload } from '../../nativeOverlayActivity'
 
 export type {
@@ -250,11 +251,39 @@ export interface NativeOverlaySessionSwitcherDialogPayload {
   actions: NativeOverlaySessionSwitcherActions
 }
 
+export interface NativeOverlayNotificationCenterItem {
+  id: string
+  kind: 'need' | 'err'
+  title: string
+  body?: string
+  sessionName: string
+  agentId: AgentId
+  occurredAt: number
+  read: boolean
+  openActionId: string
+  dismissActionId: string
+}
+
+export interface NativeOverlayNotificationCenterActions {
+  markAllRead: string
+  clear: string
+  close: string
+}
+
+export interface NativeOverlayNotificationCenterDialogPayload {
+  kind: 'dialog'
+  dialog: 'notification-center'
+  ariaLabel: string
+  items: NativeOverlayNotificationCenterItem[]
+  actions: NativeOverlayNotificationCenterActions
+}
+
 export type NativeOverlayDialogPayload =
   | NativeOverlayCommandPaletteDialogPayload
   | NativeOverlayNewSessionDialogPayload
   | NativeOverlayLayoutCreatorDialogPayload
   | NativeOverlaySessionSwitcherDialogPayload
+  | NativeOverlayNotificationCenterDialogPayload
 
 // Native overlay payloads are plain data only. Each rich surface gets a narrow
 // serializable model instead of sending arbitrary React children over IPC.
@@ -355,6 +384,7 @@ export const nativeOverlayThemeSnapshot = (): NativeOverlayThemeSnapshot => {
 interface NativeOverlayBridge {
   open: (request: NativeOverlayRequest) => Promise<NativeOverlayOpenResult>
   close: (request: { surfaceId: string; reason: 'renderer' }) => Promise<void>
+  preload?: () => Promise<unknown>
   actionResult: (request: NativeOverlayActionResultEvent) => Promise<void>
   resume: (request: { surfaceId: string }) => Promise<void>
   onAction: (callback: (event: unknown) => void) => () => void
@@ -459,6 +489,17 @@ export const selectFloatingTransport = (
   bridge()
     ? 'native-overlay'
     : 'local'
+
+// Warms the native overlay layer windows (creation + URL load) ahead of the
+// first real surface, so a first-time open doesn't pay that cost on screen.
+// Fire-and-forget: opens gate on the layer's own ready promise either way.
+export const preloadNativeOverlay = (): void => {
+  if (!isNativeOverlayFeatureEnabled() || !isMacPlatform()) {
+    return
+  }
+
+  void bridge()?.preload?.()
+}
 
 const handleAction = (event: unknown): void => {
   if (!isActionEvent(event)) {

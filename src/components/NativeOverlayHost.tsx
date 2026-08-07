@@ -148,7 +148,9 @@ const isDialogRequest = (value: unknown): value is NativeOverlayDialogRequest =>
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
       'layout-creator' ||
     (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
-      'session-switcher')
+      'session-switcher' ||
+    (value as { payload?: { dialog?: unknown } }).payload?.dialog ===
+      'notification-center')
 
 const isActionResult = (
   value: unknown
