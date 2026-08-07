@@ -100,9 +100,9 @@ VIMEFLOW_NO_SANDBOX=1 npm run electron:dev
 - `.github/workflows/e2e.yml` - Linux WebdriverIO + Electron smoke suites
   for app-affecting changes
 - `.github/workflows/nightly-release.yml` - one read-only package verification
-  when a PR opens, plus scheduled and manual Linux x64/macOS arm64 packaging,
-  checksums, provenance generation, and gated publication to the rolling
-  `nightly` prerelease
+  when a PR opens, opt-in reruns via the `nightly-build` PR label, plus
+  scheduled and manual Linux x64/macOS arm64 packaging, checksums, provenance
+  generation, and gated publication to the rolling `nightly` prerelease
 - `.github/workflows/claude-review.yml` - Claude Code PR review
 - `.github/workflows/codex-review.yml.disabled` - historical Codex workflow,
   disabled because of quota pressure
