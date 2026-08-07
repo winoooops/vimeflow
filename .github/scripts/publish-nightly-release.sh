@@ -101,7 +101,9 @@ cleanup() {
     gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${previous_tag}" || status=1
   fi
   if [ "$delete_candidate_ref" = true ]; then
-    gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${candidate_tag}" || status=1
+    if [ -n "$(lookup_ref_sha "$candidate_tag")" ]; then
+      gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${candidate_tag}" || status=1
+    fi
   fi
 
   exit "$status"
@@ -112,7 +114,7 @@ candidate_release_id=$(
   gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
     -f tag_name="$candidate_tag" \
     -f target_commitish="$GITHUB_SHA" \
-    -f name=nightly \
+    -f name="nightly-$(date -u +%Y%m%d)" \
     -F draft=true \
     -F prerelease=true \
     -f make_latest=false \
