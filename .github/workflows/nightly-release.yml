@@ -222,6 +222,7 @@ jobs:
       - name: Publish rolling prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           if gh release view nightly >/dev/null 2>&1; then
