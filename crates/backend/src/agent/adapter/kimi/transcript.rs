@@ -25,8 +25,8 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::types::{stamp_snapshot, StatusSnapshot, ValidateTranscriptError};
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_review,
-    emit_agent_status, emit_agent_tool_call, emit_agent_turn, record_lifecycle, record_tool_call,
-    ReplayActivity,
+    emit_agent_status, emit_agent_tool_call, emit_agent_turn, now_millis, record_lifecycle,
+    record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, map_agent_reply_outcome, AgentReplyOutcome};
 use crate::agent::review::{extract_agent_review, map_review_outcome, AgentReviewOutcome};
@@ -1060,7 +1060,7 @@ impl KimiTranscriptDecoder {
         }
 
         // A new user prompt moves the agent into the running phase.
-        self.record_phase(AgentPhase::Running, dto.time.unwrap_or(0));
+        self.record_phase(AgentPhase::Running, dto.time.unwrap_or_else(now_millis));
     }
 
     fn process_loop_event(&mut self, dto: &KimiLineDto) {
@@ -1174,7 +1174,7 @@ impl KimiTranscriptDecoder {
                         self.notification_body = None;
                     }
                     self.flush_turn_outputs();
-                    self.record_phase(AgentPhase::Idle, dto.time.unwrap_or(0));
+                    self.record_phase(AgentPhase::Idle, dto.time.unwrap_or_else(now_millis));
                 }
             }
             KimiLoopEventType::Other => {}
@@ -2123,6 +2123,26 @@ mod tests {
         // The wire time is in 2026; today's `now_iso8601` would differ, so a
         // direct equality to the derived stamp proves it is not current-time.
         assert_ne!(calls[0]["timestamp"], now_iso8601());
+    }
+
+    #[test]
+    fn live_lifecycle_without_wire_time_does_not_use_epoch_zero() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut decoder =
+            KimiTranscriptDecoder::new(sink.clone(), "sid".into(), String::new(), String::new());
+        decoder.on_caught_up();
+
+        decoder.decode_line(r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#);
+        decoder.decode_line(END_TURN);
+
+        let lifecycle: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle.len(), 2);
+        assert!(lifecycle.iter().all(|event| event["occurredAt"] != 0));
     }
 
     #[test]

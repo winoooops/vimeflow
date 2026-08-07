@@ -1038,7 +1038,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
         }),
         Some("exec_approval_request")
         | Some("apply_patch_approval_request")
-        | Some("request_user_input") => {
+        | Some("request_permissions") => {
             let key = envelope
                 .payload
                 .approval_id
@@ -1056,8 +1056,8 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 ends_turn: false,
             })
         }
-        Some("elicitation_request") => {
-            let key = envelope.payload.request_id;
+        Some("request_user_input") | Some("elicitation_request") => {
+            let key = envelope.payload.request_id.or(envelope.payload.call_id);
             Ok(ClassifiedSignal::Notification {
                 reason: AgentNotificationReason::QuestionRequested,
                 occurred_at,
@@ -1916,6 +1916,10 @@ mod tests {
                 "approval-requested",
             ),
             (
+                r#"{"type":"event_msg","payload":{"type":"request_permissions","request_id":"p1"}}"#,
+                "approval-requested",
+            ),
+            (
                 r#"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"q1"}}"#,
                 "question-requested",
             ),
@@ -1949,7 +1953,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_classifier_maps_event_user_input_to_approval() {
+    fn codex_classifier_maps_event_user_input_to_question() {
         let signal = classify_codex(
             br#"{"type":"event_msg","payload":{"type":"request_user_input","request_id":"request-1"}}"#,
         )
@@ -1958,7 +1962,7 @@ mod tests {
         assert!(matches!(
             signal,
             ClassifiedSignal::Notification {
-                reason: AgentNotificationReason::ApprovalRequested,
+                reason: AgentNotificationReason::QuestionRequested,
                 dedupe_key: Some(key),
                 ..
             } if key == "request-1"

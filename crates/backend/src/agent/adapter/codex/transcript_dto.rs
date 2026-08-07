@@ -41,6 +41,7 @@ pub(super) enum CodexPayloadType {
     ExecApprovalRequest,
     ApplyPatchApprovalRequest,
     RequestPermissions,
+    RequestUserInput,
     ElicitationRequest,
     Other,
 }
@@ -124,7 +125,8 @@ impl CodexPayloadDto {
             Some("turn_aborted") => CodexPayloadType::TurnAborted,
             Some("exec_approval_request") => CodexPayloadType::ExecApprovalRequest,
             Some("apply_patch_approval_request") => CodexPayloadType::ApplyPatchApprovalRequest,
-            Some("request_user_input") => CodexPayloadType::RequestPermissions,
+            Some("request_permissions") => CodexPayloadType::RequestPermissions,
+            Some("request_user_input") => CodexPayloadType::RequestUserInput,
             Some("elicitation_request") => CodexPayloadType::ElicitationRequest,
             _ => CodexPayloadType::Other,
         }
@@ -211,7 +213,8 @@ mod tests {
                 "apply_patch_approval_request",
                 CodexPayloadType::ApplyPatchApprovalRequest,
             ),
-            ("request_user_input", CodexPayloadType::RequestPermissions),
+            ("request_permissions", CodexPayloadType::RequestPermissions),
+            ("request_user_input", CodexPayloadType::RequestUserInput),
             ("elicitation_request", CodexPayloadType::ElicitationRequest),
         ] {
             let payload: CodexPayloadDto =
