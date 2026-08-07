@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened]
+    types: [opened, labeled]
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   checks:
     name: Release checks
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event.action == 'opened' || github.event.label.name == 'nightly-build'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -47,6 +47,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate TypeScript bindings
+        run: npm run generate:bindings
 
       - name: Run ESLint
         run: npm run lint
