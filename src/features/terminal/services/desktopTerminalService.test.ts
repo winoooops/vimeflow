@@ -577,6 +577,32 @@ describe('DesktopTerminalService', () => {
       expect(order).toEqual(['progress-clear', 'exit'])
     })
 
+    test('clears progress before publishing PTY error', async () => {
+      const order: string[] = []
+      await service.onProgress((_sessionId, progress) => {
+        if (progress === undefined) {
+          order.push('progress-clear')
+        }
+      })
+      await service.onError(() => order.push('error'))
+
+      emitDesktopEvent('pty-progress', {
+        sessionId: 'pty-a',
+        state: 'normal',
+        value: 55,
+      })
+
+      emitDesktopEvent('pty-error', {
+        sessionId: 'pty-a',
+        message: 'read failed',
+      })
+
+      expect(order).toEqual(['progress-clear', 'error'])
+      expect(service.getProgress('pty-a')).toBeUndefined()
+      vi.advanceTimersByTime(15_000)
+      expect(order).toEqual(['progress-clear', 'error'])
+    })
+
     test('unsubscribe, initialization failure, and dispose leave no callbacks or timers', async () => {
       const callback = vi.fn()
       const unsubscribe = await service.onProgress(callback)

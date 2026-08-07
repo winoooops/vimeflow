@@ -159,7 +159,7 @@ describe('List', () => {
     )
   })
 
-  test('maps unread notification reasons to active session flags', () => {
+  test('maps unread notification reasons to active and recent session flags', () => {
     const notificationRecords: readonly NotificationRecord[] = [
       {
         id: 'stale-notice',
@@ -188,6 +188,15 @@ describe('List', () => {
         occurredAt: 2,
         read: false,
       },
+      {
+        id: 'notice-3',
+        sessionId: 'sess-3',
+        ptyId: 'sess-3',
+        reason: 'agent-error',
+        title: 'Completed with error',
+        occurredAt: 4,
+        read: false,
+      },
     ]
 
     render(
@@ -209,6 +218,12 @@ describe('List', () => {
       within(screen.getByText('fix: login bug').closest('li')!).getByLabelText(
         'Agent error'
       )
+    ).toBeInTheDocument()
+
+    expect(
+      within(
+        screen.getByText('refactor: api layer').closest('li')!
+      ).getByLabelText('Agent error')
     ).toBeInTheDocument()
   })
 

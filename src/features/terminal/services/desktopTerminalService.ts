@@ -141,6 +141,7 @@ export class DesktopTerminalService implements ITerminalService {
           'pty-error',
           (payload) => {
             const { sessionId, message } = payload
+            this.clearProgress(sessionId)
             this.errorCallbacks.forEach((cb) => cb(sessionId, message))
           }
         )
