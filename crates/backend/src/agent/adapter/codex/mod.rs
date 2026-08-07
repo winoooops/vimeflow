@@ -145,7 +145,7 @@ impl StateDecoder for CodexAdapter {
 
 impl TranscriptPathValidator for CodexAdapter {
     fn validate(&self, raw: &str) -> Result<PathBuf, ValidateTranscriptError> {
-        transcript::validate_transcript_path(raw)
+        transcript::validate_transcript_path(raw, self.locator.codex_home())
     }
 }
 
@@ -374,6 +374,30 @@ mod adapter_tests {
         assert!(
             <CodexAdapter as AgentAdapter>::validate_transcript(&adapter, "/tmp/t").is_err(),
             "path outside ~/.codex should be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_transcript_uses_locator_home_override() {
+        let codex_home = tempfile::tempdir().expect("tempdir");
+        let rollout = codex_home.path().join("sessions/rollout.jsonl");
+        std::fs::create_dir_all(rollout.parent().expect("rollout parent"))
+            .expect("create sessions");
+        std::fs::write(&rollout, "").expect("write rollout");
+        let adapter = CodexAdapter::with_locator(Arc::new(CompositeLocator::new(
+            codex_home.path().to_path_buf(),
+            12345,
+            SystemTime::UNIX_EPOCH,
+            Some(PathBuf::from("/proc")),
+        )));
+
+        assert_eq!(
+            <CodexAdapter as TranscriptPathValidator>::validate(
+                &adapter,
+                rollout.to_str().expect("utf8 rollout")
+            )
+            .expect("override rollout should validate"),
+            std::fs::canonicalize(rollout).expect("canonical rollout")
         );
     }
 }

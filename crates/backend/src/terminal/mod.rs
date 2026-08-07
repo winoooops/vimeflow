@@ -3,7 +3,6 @@
 //! This module handles PTY (pseudo-terminal) spawning, lifecycle management,
 //! and IPC communication with the frontend.
 
-pub mod bridge;
 pub mod cache;
 pub mod commands;
 pub(crate) mod events;
@@ -12,6 +11,7 @@ pub mod fd_broker;
 #[cfg(unix)]
 pub mod fd_transport;
 pub(crate) mod foreground;
+pub(crate) mod progress;
 pub mod state;
 #[cfg(feature = "e2e-test")]
 pub mod test_commands;

@@ -103,6 +103,37 @@ describe('VimeflowOpencodeBridge', () => {
     }
   })
 
+  test('writes only notification routing fields for permission events', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vimeflow-opencode-bridge-'))
+    process.env.VIMEFLOW_OPENCODE_BRIDGE_DIR = dir
+
+    try {
+      const bridge = await importBridge()
+
+      await bridge.event({
+        event: {
+          type: 'permission.asked',
+          properties: {
+            id: 'permission-1',
+            sessionID: 'session-permission',
+            permission: 'bash',
+            metadata: { secret: 'must-not-cross' },
+          },
+        },
+      })
+
+      const line = readFileSync(join(dir, 'session-permission.jsonl'), 'utf8')
+      const record = JSON.parse(line) as { data: Record<string, unknown> }
+
+      expect(record.data).toEqual({
+        id: 'permission-1',
+        sessionID: 'session-permission',
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('writes coerced directory values to index rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vimeflow-opencode-bridge-'))
     process.env.VIMEFLOW_OPENCODE_BRIDGE_DIR = dir

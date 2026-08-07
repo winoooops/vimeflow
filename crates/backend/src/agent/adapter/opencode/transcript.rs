@@ -23,9 +23,8 @@
 //!   `result.output` + `result.metadata.exit` into the shared
 //!   `claude_code::test_runners` (cwd = the session cwd, NOT a per-command
 //!   workdir). Only submit when `maybe_build_snapshot` returns `Some`.
-//! - `kind=event`, `type=session.idle`/`session.status`/`step-finish` part ⇒
-//!   status/phase refresh (v1 has no lifecycle phase emission for opencode, so
-//!   these are observed but do not emit; reserved for a later milestone).
+//! - `kind=event`, `type=session.status` busy/retry ⇒ lifecycle running;
+//!   `session.idle` or `session.status` idle ⇒ lifecycle idle.
 //! - assistant `data.info.path.cwd` change ⇒ [`AgentCwdEvent`] when it differs
 //!   from `last_cwd`. (The v1 bridge sanitizer drops `info.path`, so this is a
 //!   defensive read that only fires if a future bridge re-adds the field; the
@@ -50,11 +49,13 @@ use crate::agent::adapter::claude_code::test_runners::timestamps::compute_durati
 use crate::agent::adapter::claude_code::test_runners::types::CapturedOutput;
 use crate::agent::events::{
     emit_agent_cwd, emit_agent_replay_summary, emit_agent_reply, emit_agent_tool_call,
-    emit_agent_turn, record_tool_call, ReplayActivity,
+    emit_agent_turn, emit_lifecycle_on_change, record_attention, record_lifecycle,
+    record_tool_call, ReplayActivity,
 };
 use crate::agent::reply::{extract_agent_reply, AgentReplyOutcome};
 use crate::agent::types::{
-    AgentCwdEvent, AgentReplyEvent, AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
+    AgentAttentionEvent, AgentAttentionReason, AgentCwdEvent, AgentPhase, AgentReplyEvent,
+    AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::EventSink;
 
@@ -64,6 +65,8 @@ use super::transcript_dto::{OpencodeEventType, OpencodeKind, OpencodeLineDto};
 /// Cap on the displayed args preview, matching `codex/transcript.rs`'s
 /// `MAX_ARGS_LEN` so the agent-status activity card renders a bounded string.
 const MAX_ARGS_LEN: usize = 1024;
+const MAX_ATTENTION_BODY_LEN: usize = 500;
+const MAX_ATTENTION_DEDUPE_LEN: usize = 256;
 
 /// An in-flight tool call awaiting its terminal `tool.after` (or a
 /// `message.part.updated` `completed`/`error`). Keyed by `callID` (fallback the
@@ -168,6 +171,10 @@ pub(crate) struct OpencodeTranscriptDecoder {
     emitter: TestRunEmitter,
     /// Historical tool calls are folded here until the first clean EOF.
     replay_activity: ReplayActivity,
+    last_phase: Option<AgentPhase>,
+    replay_phase: Option<AgentPhase>,
+    agent_session_id: Option<String>,
+    turn_active: bool,
     /// One-shot guard: false during replay, true after the first on_caught_up.
     replay_done: bool,
 }
@@ -194,6 +201,10 @@ impl OpencodeTranscriptDecoder {
             last_cwd,
             emitter,
             replay_activity: ReplayActivity::default(),
+            last_phase: None,
+            replay_phase: None,
+            agent_session_id: None,
+            turn_active: false,
             replay_done: false,
         }
     }
@@ -221,11 +232,138 @@ impl OpencodeTranscriptDecoder {
             OpencodeEventType::SessionCreated | OpencodeEventType::SessionUpdated => {
                 self.process_session_event(dto);
             }
-            // session.idle / session.status / session.error / session.diff /
-            // todo.updated — observed for status/phase refresh; v1 emits no
-            // lifecycle phase for opencode, so there's nothing to emit here.
+            OpencodeEventType::SessionStatus => self.process_session_status(dto),
+            OpencodeEventType::SessionIdle => self.process_session_idle(dto),
+            OpencodeEventType::SessionError => self.process_session_error(dto),
+            OpencodeEventType::PermissionAsked => self.process_attention(
+                dto,
+                AgentAttentionReason::ApprovalRequested,
+                "OpenCode needs approval",
+            ),
+            OpencodeEventType::QuestionAsked => self.process_attention(
+                dto,
+                AgentAttentionReason::QuestionRequested,
+                "OpenCode has a question",
+            ),
+            // Resolution only clears OpenCode's responder state. Notification
+            // read state remains an explicit renderer action.
             _ => {}
         }
+    }
+
+    fn process_session_status(&mut self, dto: &OpencodeLineDto) {
+        let Some(status) = dto
+            .data
+            .get("status")
+            .and_then(|status| status.get("type"))
+            .and_then(Value::as_str)
+        else {
+            return;
+        };
+        let Some(agent_session_id) = opencode_session_id(dto) else {
+            return;
+        };
+        if self.agent_session_id.as_deref() != Some(agent_session_id) {
+            self.agent_session_id = Some(agent_session_id.to_string());
+            self.last_phase = None;
+        }
+
+        match status {
+            "busy" | "retry" => {
+                self.turn_active = true;
+                self.record_phase(agent_session_id, AgentPhase::Running);
+            }
+            "idle" => self.finish_turn(agent_session_id),
+            _ => {}
+        }
+    }
+
+    fn process_session_idle(&mut self, dto: &OpencodeLineDto) {
+        if let Some(agent_session_id) = opencode_session_id(dto) {
+            self.finish_turn(agent_session_id);
+        }
+    }
+
+    fn finish_turn(&mut self, agent_session_id: &str) {
+        if !self.turn_active {
+            return;
+        }
+        self.turn_active = false;
+        self.record_phase(agent_session_id, AgentPhase::Idle);
+    }
+
+    fn process_session_error(&mut self, dto: &OpencodeLineDto) {
+        if !self.turn_active {
+            return;
+        }
+        let Some(agent_session_id) = opencode_session_id(dto) else {
+            return;
+        };
+        let body = dto
+            .data
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .filter(|message| !message.is_empty())
+            .map(|message| truncate_string(message, MAX_ATTENTION_BODY_LEN));
+
+        self.emit_attention(
+            dto,
+            AgentAttentionReason::AgentError,
+            "OpenCode failed",
+            body,
+        );
+        self.turn_active = false;
+        self.record_phase(agent_session_id, AgentPhase::Idle);
+    }
+
+    fn process_attention(
+        &mut self,
+        dto: &OpencodeLineDto,
+        reason: AgentAttentionReason,
+        title: &str,
+    ) {
+        self.emit_attention(dto, reason, title, None);
+    }
+
+    fn emit_attention(
+        &mut self,
+        dto: &OpencodeLineDto,
+        reason: AgentAttentionReason,
+        title: &str,
+        body: Option<String>,
+    ) {
+        let dedupe_key = dto
+            .data
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .map(|id| truncate_string(id, MAX_ATTENTION_DEDUPE_LEN));
+
+        record_attention(
+            &self.events,
+            AgentAttentionEvent {
+                pty_id: self.session_id.clone(),
+                reason,
+                title: title.to_string(),
+                body,
+                occurred_at: dto.ts.and_then(|ts| u64::try_from(ts).ok()).unwrap_or(0),
+                dedupe_key,
+            },
+            self.replay_done,
+        );
+    }
+
+    fn record_phase(&mut self, agent_session_id: &str, phase: AgentPhase) {
+        record_lifecycle(
+            phase,
+            &self.session_id,
+            agent_session_id,
+            &self.events,
+            &mut self.last_phase,
+            &mut self.replay_phase,
+            self.replay_done,
+        );
     }
 
     /// A bridge-synthesized `assistant.text` record: the assistant's whole
@@ -671,6 +809,17 @@ impl TranscriptDecoder for OpencodeTranscriptDecoder {
     fn on_caught_up(&mut self) {
         if !self.replay_done {
             self.replay_done = true;
+            if let Some(phase) = self.replay_phase.take() {
+                if let Some(agent_session_id) = self.agent_session_id.as_deref() {
+                    emit_lifecycle_on_change(
+                        self.events.as_ref(),
+                        &self.session_id,
+                        agent_session_id,
+                        &mut self.last_phase,
+                        phase,
+                    );
+                }
+            }
             for event in self.replay_activity.take_running() {
                 if let Err(e) = emit_agent_tool_call(self.events.as_ref(), &event) {
                     log::warn!("Failed to emit opencode agent-tool-call event: {}", e);
@@ -689,6 +838,13 @@ impl TranscriptDecoder for OpencodeTranscriptDecoder {
         }
         self.emitter.finish_replay();
     }
+}
+
+fn opencode_session_id(dto: &OpencodeLineDto) -> Option<&str> {
+    dto.data
+        .get("sessionID")
+        .and_then(Value::as_str)
+        .filter(|session_id| !session_id.is_empty())
 }
 
 /// Stable `&'static str` discriminant for a [`ToolCallStatus`], used as the
@@ -845,6 +1001,97 @@ mod tests {
 
     fn decoder(sink: &Arc<FakeEventSink>, cwd: Option<PathBuf>) -> OpencodeTranscriptDecoder {
         OpencodeTranscriptDecoder::new(sink.clone(), "sid".to_string(), cwd)
+    }
+
+    #[test]
+    fn status_busy_to_session_idle_emits_one_live_completion_edge() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.idle","data":{"sessionID":"ses1"}}"#,
+        );
+
+        let lifecycle: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle.len(), 2);
+        assert_eq!(lifecycle[0]["phase"], "running");
+        assert_eq!(lifecycle[1]["phase"], "idle");
+        assert_eq!(lifecycle[1]["agentSessionId"], "ses1");
+    }
+
+    #[test]
+    fn semantic_attention_is_live_only_and_uses_stable_request_ids() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        let permission = r#"{"v":1,"ts":42,"kind":"event","type":"permission.asked","data":{"id":"permission-1","sessionID":"ses1"}}"#;
+
+        dec.decode_line(permission);
+        assert_eq!(sink.count("agent-attention"), 0);
+
+        dec.on_caught_up();
+        dec.decode_line(permission);
+        dec.decode_line(
+            r#"{"v":1,"ts":43,"kind":"event","type":"question.asked","data":{"id":"question-1","sessionID":"ses1"}}"#,
+        );
+
+        let attention: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-attention")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(attention.len(), 2);
+        assert_eq!(attention[0]["reason"], "approval-requested");
+        assert_eq!(attention[0]["dedupeKey"], "permission-1");
+        assert_eq!(attention[1]["reason"], "question-requested");
+    }
+
+    #[test]
+    fn session_error_notifies_and_returns_lifecycle_to_idle() {
+        let sink = Arc::new(FakeEventSink::new());
+        let mut dec = decoder(&sink, None);
+        dec.on_caught_up();
+
+        dec.decode_line(
+            r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":2,"kind":"event","type":"session.error","data":{"sessionID":"ses1","error":{"name":"ProviderError","message":"Model stopped responding"}}}"#,
+        );
+        dec.decode_line(
+            r#"{"v":1,"ts":3,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+        );
+
+        assert_eq!(sink.count("agent-attention"), 1);
+        let lifecycle: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle.len(), 2);
+        assert_eq!(lifecycle[0]["phase"], "running");
+        assert_eq!(lifecycle[1]["phase"], "idle");
+        let attention = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-attention")
+            .expect("error attention")
+            .1;
+        assert_eq!(attention["reason"], "agent-error");
+        assert_eq!(attention["body"], "Model stopped responding");
     }
 
     /// A user `message.updated` ⇒ exactly one `agent-turn`; a duplicate user
@@ -1369,6 +1616,14 @@ mod tests {
 
         assert_eq!(sink.count("agent-turn"), 0);
         assert_eq!(sink.count("agent-tool-call"), 0);
+        let lifecycle: Vec<Value> = sink
+            .recorded()
+            .into_iter()
+            .filter(|(name, _)| name == "agent-lifecycle")
+            .map(|(_, payload)| payload)
+            .collect();
+        assert_eq!(lifecycle.len(), 1);
+        assert_eq!(lifecycle[0]["phase"], "idle");
         let summaries: Vec<Value> = sink
             .recorded()
             .into_iter()

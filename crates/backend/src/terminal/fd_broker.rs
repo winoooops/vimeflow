@@ -366,7 +366,9 @@ impl FdBroker {
                     if let Some(lease) = inner.leases.get(&session_id) {
                         // Serialize re-acquisition: answered on retirement.
                         let generation = lease.generation;
-                        inner.deferred_requests.insert(session_id.clone(), generation);
+                        inner
+                            .deferred_requests
+                            .insert(session_id.clone(), generation);
                         false
                     } else {
                         true

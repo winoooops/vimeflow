@@ -37,6 +37,11 @@ pub(super) enum CodexPayloadType {
     CustomToolCallOutput,
     TaskStarted,
     TaskComplete,
+    TurnAborted,
+    ExecApprovalRequest,
+    ApplyPatchApprovalRequest,
+    RequestPermissions,
+    ElicitationRequest,
     Other,
 }
 
@@ -74,6 +79,10 @@ pub(super) struct CodexPayloadDto {
     pub id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub call_id: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub approval_id: Option<String>,
+    #[serde(default, deserialize_with = "lenient_string")]
+    pub request_id: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "lenient_string")]
@@ -116,6 +125,11 @@ impl CodexPayloadDto {
             Some("custom_tool_call_output") => CodexPayloadType::CustomToolCallOutput,
             Some("task_started") => CodexPayloadType::TaskStarted,
             Some("task_complete") => CodexPayloadType::TaskComplete,
+            Some("turn_aborted") => CodexPayloadType::TurnAborted,
+            Some("exec_approval_request") => CodexPayloadType::ExecApprovalRequest,
+            Some("apply_patch_approval_request") => CodexPayloadType::ApplyPatchApprovalRequest,
+            Some("request_user_input") => CodexPayloadType::RequestPermissions,
+            Some("elicitation_request") => CodexPayloadType::ElicitationRequest,
             _ => CodexPayloadType::Other,
         }
     }
@@ -188,6 +202,26 @@ mod tests {
 
         assert_eq!(payload.name.as_deref(), Some("send_message"));
         assert_eq!(payload.namespace.as_deref(), Some("collaboration"));
+    }
+
+    #[test]
+    fn codex_payload_classifies_semantic_attention_events() {
+        for (type_tag, expected) in [
+            (
+                "exec_approval_request",
+                CodexPayloadType::ExecApprovalRequest,
+            ),
+            (
+                "apply_patch_approval_request",
+                CodexPayloadType::ApplyPatchApprovalRequest,
+            ),
+            ("request_user_input", CodexPayloadType::RequestPermissions),
+            ("elicitation_request", CodexPayloadType::ElicitationRequest),
+        ] {
+            let payload: CodexPayloadDto =
+                serde_json::from_value(serde_json::json!({ "type": type_tag })).unwrap();
+            assert_eq!(payload.payload_type(), expected);
+        }
     }
 
     #[test]
