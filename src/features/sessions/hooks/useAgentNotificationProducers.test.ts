@@ -505,6 +505,76 @@ describe('useAgentNotificationProducers', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
+  test.each([
+    'approval-requested',
+    'question-requested',
+    'agent-error',
+  ] as const)(
+    'drops a stale %s event after a newer running edge without cancelling completion',
+    async (reason) => {
+      installBridge()
+      const publish = vi.fn()
+
+      renderHook(() =>
+        useAgentNotificationProducers({
+          sessions: [
+            session('active', 'pty-active'),
+            session('background', 'pty-background', {
+              agentType: 'opencode',
+            }),
+          ],
+          activeSessionId: 'active',
+          publish,
+          getAgentSessionId: () => undefined,
+        })
+      )
+
+      await waitFor(() => {
+        expect(listeners.has('agent-lifecycle')).toBe(true)
+        expect(listeners.has('agent-notification')).toBe(true)
+      })
+      vi.useFakeTimers()
+
+      act(() => {
+        emit<AgentLifecycleEvent>('agent-lifecycle', {
+          sessionId: 'pty-background',
+          agentSessionId: 'agent-background',
+          phase: 'running',
+          occurredAt: BigInt(42),
+        })
+
+        emit<AgentNotificationEvent>('agent-notification', {
+          ptyId: 'pty-background',
+          agentSessionId: 'agent-background',
+          reason: 'turn-complete',
+          title: 'OpenCode finished',
+          body: null,
+          occurredAt: BigInt(43),
+          dedupeKey: 'turn:43',
+        })
+
+        emit<AgentNotificationEvent>('agent-notification', {
+          ptyId: 'pty-background',
+          agentSessionId: 'agent-background',
+          reason,
+          title: 'Stale semantic event',
+          body: null,
+          occurredAt: BigInt(41),
+          dedupeKey: `stale:${reason}`,
+        })
+        vi.advanceTimersByTime(750)
+      })
+
+      expect(publish).toHaveBeenCalledOnce()
+      expect(publish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'turn-complete',
+          title: 'OpenCode finished',
+        })
+      )
+    }
+  )
+
   test('does not duplicate a normalized completion from the full watcher', async () => {
     installBridge()
     const publish = vi.fn()

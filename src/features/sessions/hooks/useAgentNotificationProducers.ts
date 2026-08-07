@@ -311,12 +311,18 @@ export const useAgentNotificationProducers = ({
           return
         }
 
+        const occurredAt = Number(payload.occurredAt)
+        const runningAt = latestRunningAt.get(payload.ptyId)
+        if (runningAt !== undefined && occurredAt < runningAt) {
+          return
+        }
+
         if (payload.reason === 'turn-complete') {
           scheduleTurnComplete(payload.ptyId, {
             agentSessionId: payload.agentSessionId,
             title: payload.title,
             ...(payload.body === null ? {} : { body: payload.body }),
-            occurredAt: Number(payload.occurredAt),
+            occurredAt,
             ...(payload.dedupeKey === null
               ? {}
               : { dedupeKey: payload.dedupeKey }),
@@ -340,7 +346,7 @@ export const useAgentNotificationProducers = ({
           reason: payload.reason,
           title: payload.title,
           ...(payload.body === null ? {} : { body: payload.body }),
-          occurredAt: Number(payload.occurredAt),
+          occurredAt,
           ...(payload.dedupeKey === null
             ? {}
             : { dedupeKey: payload.dedupeKey }),
