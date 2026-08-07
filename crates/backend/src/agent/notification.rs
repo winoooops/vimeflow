@@ -895,10 +895,14 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: envelope.payload.turn_id,
             agent_session_id: None,
         }),
-        Some("task_complete" | "turn_aborted") => {
+        Some(kind @ ("task_complete" | "turn_aborted")) => {
             let turn_id = envelope.payload.turn_id;
             Ok(ClassifiedSignal::Notification {
-                reason: AgentNotificationReason::TurnComplete,
+                reason: if kind == "task_complete" {
+                    AgentNotificationReason::TurnComplete
+                } else {
+                    AgentNotificationReason::AgentError
+                },
                 occurred_at,
                 dedupe_key: turn_id.as_ref().map(|id| format!("turn:{id}")),
                 turn_id,
@@ -1655,7 +1659,7 @@ mod tests {
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#,
-                "turn-complete",
+                "agent-error",
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"exec_approval_request","approval_id":"a1"}}"#,
@@ -2101,29 +2105,33 @@ mod tests {
                 NotificationProvider::Codex,
                 r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"live"}}"#,
                 r#"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"live"}}"#,
+                "turn-complete",
                 "Codex finished",
             ),
             (
                 NotificationProvider::Codex,
                 r#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"live"}}"#,
                 r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"live"}}"#,
-                "Codex finished",
+                "agent-error",
+                "Codex failed",
             ),
             (
                 NotificationProvider::ClaudeCode,
                 r#"{"hook_event_name":"UserPromptSubmit"}"#,
                 r#"{"hook_event_name":"Stop"}"#,
+                "turn-complete",
                 "Claude finished",
             ),
             (
                 NotificationProvider::OpenCode,
                 r#"{"v":1,"ts":1,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"busy"}}}"#,
                 r#"{"v":1,"ts":2,"kind":"event","type":"session.status","data":{"sessionID":"ses1","status":{"type":"idle"}}}"#,
+                "turn-complete",
                 "OpenCode finished",
             ),
         ];
 
-        for (provider, active_turn, terminal_event, expected_title) in cases {
+        for (provider, active_turn, terminal_event, expected_reason, expected_title) in cases {
             let temp = tempfile::tempdir().expect("tempdir");
             let source = temp.path().join("events.jsonl");
             std::fs::write(&source, format!("{active_turn}\n")).expect("seed active turn");
@@ -2142,7 +2150,7 @@ mod tests {
             scan_source(&mut registration, &diagnostics, &sink).expect("scan terminal event");
 
             assert_eq!(sink.count("agent-notification"), 1, "{provider:?}");
-            assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+            assert_eq!(sink.recorded()[0].1["reason"], expected_reason);
             assert_eq!(sink.recorded()[0].1["title"], expected_title);
         }
     }
