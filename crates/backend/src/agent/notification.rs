@@ -39,7 +39,9 @@ impl NotificationProvider {
         match agent_type {
             AgentType::ClaudeCode => Some(Self::ClaudeCode),
             AgentType::Codex => Some(Self::Codex),
-            AgentType::Kimi => Some(Self::Kimi),
+            // Kimi completions come from the relocation-following transcript
+            // supervisor (`emit_kimi_completion`), not a wire watcher.
+            AgentType::Kimi => None,
             AgentType::Opencode => Some(Self::OpenCode),
             _ => None,
         }
@@ -1439,7 +1441,7 @@ fn flush_pending_opencode_idle(
     }
 }
 
-fn normalize_notification_body(message: &str) -> Option<String> {
+pub(crate) fn normalize_notification_body(message: &str) -> Option<String> {
     let normalized = message
         .lines()
         .map(str::trim)
@@ -1471,6 +1473,37 @@ fn normalize_notification_body(message: &str) -> Option<String> {
     }
 
     Some(body)
+}
+
+/// Kimi completions are emitted by the relocation-following transcript
+/// supervisor rather than a fixed-path wire watcher: a completion written to
+/// a relocated wire before the next watcher tick would otherwise be lost.
+pub(crate) fn emit_kimi_completion(
+    events: &dyn EventSink,
+    pty_id: &str,
+    agent_session_id: &str,
+    occurred_at: Option<u64>,
+    event_id: Option<&str>,
+    body: Option<String>,
+) {
+    if agent_session_id.is_empty() {
+        return;
+    }
+
+    let event = AgentNotificationEvent {
+        pty_id: pty_id.to_string(),
+        agent_session_id: Some(agent_session_id.to_string()),
+        reason: AgentNotificationReason::TurnComplete,
+        title: "Kimi finished".to_string(),
+        body,
+        occurred_at: occurred_at.unwrap_or_else(now_millis),
+        dedupe_key: event_id.map(|id| format!("turn:{id}")),
+    };
+    if let Err(error) =
+        serialize_event(&event).and_then(|payload| events.emit_json("agent-notification", payload))
+    {
+        log::warn!("failed to emit Kimi completion notification: {error}");
+    }
 }
 
 fn notification_action_body(reason: AgentNotificationReason) -> Option<&'static str> {

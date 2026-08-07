@@ -887,6 +887,8 @@ struct KimiTranscriptDecoder {
     /// Main-wire assistant text parts for the CURRENT turn (VIM-293) — whole
     /// blocks, joined at `step.end`/`end_turn` and drained per turn.
     turn_text: String,
+    /// Last non-empty normalized text part; becomes the completion body.
+    notification_body: Option<String>,
     last_phase: Option<AgentPhase>,
     replay_phase: Option<AgentPhase>,
     /// Historical tool calls are folded here until the first clean EOF.
@@ -952,6 +954,7 @@ impl KimiTranscriptDecoder {
             num_turns: 0,
             last_cwd: cwd,
             turn_text: String::new(),
+            notification_body: None,
             last_phase: None,
             replay_phase: None,
             replay_activity: ReplayActivity::default(),
@@ -1043,6 +1046,7 @@ impl KimiTranscriptDecoder {
         // A fresh user turn starts a fresh reply buffer; injection prompts
         // (mid-turn) fall out above and must not clear accumulated text.
         self.turn_text.clear();
+        self.notification_body = None;
 
         self.num_turns = self.num_turns.saturating_add(1);
         if self.replay_done {
@@ -1146,6 +1150,9 @@ impl KimiTranscriptDecoder {
                     self.turn_text.push('\n');
                 }
                 self.turn_text.push_str(text);
+                if let Some(body) = crate::agent::notification::normalize_notification_body(text) {
+                    self.notification_body = Some(body);
+                }
                 // Tail-clamp so a pathological turn stays bounded — the reply
                 // contract puts the sentinel block at the END of the turn.
                 clamp_turn_text(&mut self.turn_text);
@@ -1154,6 +1161,21 @@ impl KimiTranscriptDecoder {
                 // Only the main wire's `end_turn` settles the pane idle; a
                 // sub-agent finishing a step must not, while main runs on.
                 if self.is_main() && event.finish_reason.as_deref() == Some("end_turn") {
+                    // Completion notifications are emitted here, not from a
+                    // fixed-path wire watcher, because the supervisor follows
+                    // Kimi's mid-session wire relocation.
+                    if self.replay_done {
+                        crate::agent::notification::emit_kimi_completion(
+                            self.events.as_ref(),
+                            &self.session_id,
+                            &self.agent_session_id,
+                            dto.time,
+                            event.uuid.as_deref(),
+                            self.notification_body.take(),
+                        );
+                    } else {
+                        self.notification_body = None;
+                    }
                     self.flush_turn_outputs();
                     self.record_phase(AgentPhase::Idle);
                 }
@@ -1317,6 +1339,7 @@ mod tests {
     use crate::agent::adapter::traits::StatusSourceLocator as _;
     use crate::runtime::FakeEventSink;
     use serde_json::{json, Value};
+    use std::io::Write as _;
     use std::time::{Duration, Instant, SystemTime};
 
     fn fixture_path() -> PathBuf {
@@ -1747,6 +1770,46 @@ mod tests {
             wait_for_agent_status_session(&sink, "session_new", Duration::from_secs(5)),
             "status must carry the new kimi session id after supervisor switch",
         );
+        assert_eq!(
+            sink.count("agent-notification"),
+            0,
+            "relocated replay must not notify",
+        );
+
+        let mut relocated_wire = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&new_wire)
+            .expect("open relocated wire");
+        writeln!(
+            relocated_wire,
+            "{}",
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#,
+        )
+        .expect("append relocated prompt");
+        writeln!(
+            relocated_wire,
+            "{}",
+            content_part_line("text", "text", "Relocated task complete"),
+        )
+        .expect("append relocated response");
+        writeln!(
+            relocated_wire,
+            "{}",
+            content_part_line("text", "text", "   "),
+        )
+        .expect("append empty trailing response part");
+        writeln!(
+            relocated_wire,
+            "{}",
+            r#"{"type":"context.append_loop_event","time":1781345366000,"event":{"type":"step.end","uuid":"relocated-turn","finishReason":"end_turn"}}"#,
+        )
+        .expect("append relocated completion");
+        relocated_wire.flush().expect("flush relocated wire");
+
+        assert!(
+            sink.wait_for_count("agent-notification", 1, Duration::from_secs(5)),
+            "live completion on the relocated wire must notify",
+        );
         handle.stop();
 
         let recovery_paths = locator.recovery_paths();
@@ -1768,6 +1831,18 @@ mod tests {
         assert_eq!(calls[0]["toolUseId"], "new-tool");
         assert_eq!(calls[0]["tool"], "Glob");
         assert_eq!(calls[0]["status"], "done");
+        let notification = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-notification")
+            .map(|(_, payload)| payload)
+            .expect("relocated completion notification");
+        assert_eq!(notification["ptyId"], "sid");
+        assert_eq!(notification["agentSessionId"], "session_new");
+        assert_eq!(notification["title"], "Kimi finished");
+        assert_eq!(notification["body"], "Relocated task complete");
+        assert_eq!(notification["occurredAt"], 1_781_345_366_000_u64);
+        assert_eq!(notification["dedupeKey"], "turn:relocated-turn");
     }
 
     /// The supervisor's status refresh merges the locator's fetched plan-usage
