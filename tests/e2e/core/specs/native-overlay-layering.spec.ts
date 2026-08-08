@@ -701,6 +701,24 @@ const waitForEnabledOverlayCheckbox = async (): Promise<void> => {
   )
 }
 
+const ensureOverlayMenuOpen = async (): Promise<void> => {
+  if ((await getOverlayMenuRect()) === null) {
+    const clicked = await browser.execute((selector) => {
+      const button = document.querySelector<HTMLElement>(selector)
+      button?.click()
+
+      return button !== null
+    }, layoutDisplayTriggerSelector)
+    if (!clicked) {
+      throw new Error('layout display trigger unavailable')
+    }
+
+    await waitForOverlayMenu()
+  }
+
+  await waitForEnabledOverlayCheckbox()
+}
+
 describe('NativeOverlay BrowserWindow layering', () => {
   afterEach(async () => {
     await browser.electron.execute(async (electron: ElectronModule) => {
@@ -758,20 +776,12 @@ describe('NativeOverlay BrowserWindow layering', () => {
       }
     )
 
-    const clicked = await browser.execute((selector) => {
-      const button = document.querySelector<HTMLElement>(selector)
-      button?.click()
-
-      return button !== null
-    }, layoutDisplayTriggerSelector)
-    if (!clicked) {
-      throw new Error('layout display trigger unavailable')
-    }
-    await waitForOverlayMenu()
-    await waitForEnabledOverlayCheckbox()
+    await ensureOverlayMenuOpen()
 
     await waitForOverlayPaint(before, paneRect, 'menu')
-    await waitForEnabledOverlayCheckbox()
+    // macOS can dismiss transient menus while `screencapture` runs. The paint
+    // assertion is complete, so reopen the menu before exercising its action.
+    await ensureOverlayMenuOpen()
 
     const checkbox = await clickEnabledOverlayCheckbox(validationMode)
     if (checkbox === null) {
