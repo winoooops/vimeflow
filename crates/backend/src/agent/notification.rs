@@ -948,6 +948,9 @@ struct ClaudeEnvelope {
     tool_use_id: Option<String>,
     session_id: Option<String>,
     transcript_path: Option<String>,
+    #[serde(default)]
+    error: Value,
+    error_details: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -984,13 +987,22 @@ fn classify_claude(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             "StopFailure" => (AgentNotificationReason::AgentError, false, true),
             _ => return Ok(ClassifiedSignal::Irrelevant),
         };
+        let body = match reason {
+            AgentNotificationReason::AgentError => envelope
+                .error
+                .as_str()
+                .or_else(|| envelope.error.get("message").and_then(Value::as_str))
+                .or(envelope.error_details.as_deref())
+                .map(str::to_string),
+            _ => None,
+        };
         return Ok(ClassifiedSignal::Notification {
             reason,
             occurred_at,
             dedupe_key: envelope.tool_use_id,
             turn_id: None,
             agent_session_id: envelope.session_id,
-            body: None,
+            body,
             transcript_path: envelope.transcript_path,
             requires_active_turn,
             ends_turn,
@@ -1112,7 +1124,7 @@ fn latest_claude_transcript_body_at_path(path: &Path, cursor: &mut u64) -> Optio
     .ok()?;
 
     *cursor = length;
-    latest
+    latest.and_then(|body| normalize_notification_body(&body))
 }
 
 fn claude_message_text(content: &Value) -> Option<String> {
@@ -1222,6 +1234,8 @@ struct OpenCodeData {
     session_id: Option<String>,
     status: Option<OpenCodeStatus>,
     text: Option<String>,
+    #[serde(default)]
+    error: Value,
 }
 
 #[derive(Deserialize)]
@@ -1272,7 +1286,12 @@ fn classify_opencode(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             }),
             turn_id: None,
             agent_session_id,
-            body: None,
+            body: envelope
+                .data
+                .error
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             transcript_path: None,
             requires_active_turn: true,
             ends_turn: true,
@@ -1879,6 +1898,52 @@ mod tests {
     }
 
     #[test]
+    fn claude_stop_hook_normalizes_transcript_body() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let transcript = temp.path().join("claude.jsonl");
+        let text = format!("## Finished\u{7} {}", "x".repeat(100));
+        std::fs::write(
+            &transcript,
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "type": "assistant",
+                    "message": {
+                        "content": [{ "type": "text", "text": text }],
+                        "stop_reason": "end_turn",
+                    },
+                })
+            ),
+        )
+        .expect("write transcript");
+        let stop = classify_claude(
+            serde_json::json!({
+                "hook_event_name": "Stop",
+                "transcript_path": transcript,
+            })
+            .to_string()
+            .as_bytes(),
+        )
+        .expect("valid Stop hook");
+        let ClassifiedSignal::Notification {
+            transcript_path: Some(_),
+            ..
+        } = stop
+        else {
+            panic!("expected Stop notification with transcript path");
+        };
+        let mut cursor = 0;
+
+        let body = latest_claude_transcript_body_at_path(&transcript, &mut cursor)
+            .expect("transcript body");
+
+        assert_eq!(body.chars().count(), MAX_NOTIFICATION_BODY_CHARS);
+        assert!(!body.chars().any(char::is_control));
+        assert!(body.starts_with("Finished "));
+        assert!(body.ends_with('…'));
+    }
+
+    #[test]
     fn initial_claude_transcript_body_scan_starts_from_bounded_tail() {
         let temp = tempfile::tempdir().expect("tempdir");
         let transcript = temp.path().join("claude.jsonl");
@@ -1952,6 +2017,50 @@ mod tests {
 
         assert_eq!(body.chars().count(), 80);
         assert_eq!(body, format!("{}…", "界".repeat(79)));
+    }
+
+    #[test]
+    fn provider_error_notifications_use_bridge_messages() {
+        let cases = [
+            (
+                NotificationProvider::ClaudeCode,
+                r#"{"hook_event_name":"StopFailure","error":{"message":"request failed"}}"#,
+                "request failed",
+            ),
+            (
+                NotificationProvider::OpenCode,
+                r#"{"v":1,"ts":2,"kind":"event","type":"session.error","data":{"sessionID":"ses1","error":{"name":"ProviderError","message":"Model stopped responding"}}}"#,
+                "Model stopped responding",
+            ),
+        ];
+
+        for (provider, line, expected) in cases {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let mut registration = Registration::new(
+                "pty-error".to_string(),
+                1,
+                provider,
+                temp.path().join("events.jsonl"),
+                0,
+            );
+            registration.turn_active = true;
+            registration.notification_body = Some("unrelated transcript text".to_string());
+            let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+            let sink = FakeEventSink::new();
+            let signal = match provider {
+                NotificationProvider::ClaudeCode => classify_claude(line.as_bytes()),
+                NotificationProvider::OpenCode => classify_opencode(line.as_bytes()),
+                _ => unreachable!("provider error test only covers Claude and OpenCode"),
+            }
+            .expect("valid provider error record");
+
+            apply_signal(&mut registration, signal, &diagnostics, &sink);
+
+            assert_eq!(sink.count("agent-notification"), 1);
+            let event = &sink.recorded()[0].1;
+            assert_eq!(event["reason"], "agent-error");
+            assert_eq!(event["body"], expected);
+        }
     }
 
     #[test]
