@@ -12,7 +12,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::agent::adapter::base::for_each_bounded_line;
+use crate::agent::adapter::base::{for_each_bounded_line, TranscriptState};
 use crate::agent::types::{AgentNotificationEvent, AgentNotificationReason, AgentType};
 use crate::agent::AgentWatcherState;
 use crate::runtime::{serialize_event, EventSink};
@@ -42,9 +42,7 @@ impl NotificationProvider {
         match agent_type {
             AgentType::ClaudeCode => Some(Self::ClaudeCode),
             AgentType::Codex => Some(Self::Codex),
-            // Kimi completions come from the relocation-following transcript
-            // supervisor (`emit_kimi_completion`), not a wire watcher.
-            AgentType::Kimi => None,
+            AgentType::Kimi => Some(Self::Kimi),
             AgentType::Opencode => Some(Self::OpenCode),
             _ => None,
         }
@@ -190,7 +188,7 @@ enum WorkerCommand {
     },
     Stop {
         pty_id: String,
-        acknowledge: SyncSender<()>,
+        acknowledge: SyncSender<bool>,
     },
     SourceChanged(Vec<PathBuf>),
     #[cfg(feature = "e2e-test")]
@@ -210,6 +208,7 @@ pub(crate) struct NotificationWatcherService {
     diagnostics: Arc<Mutex<MutableDiagnostics>>,
     pty_state: PtyState,
     full_watchers: AgentWatcherState,
+    transcripts: TranscriptState,
     events: Arc<dyn EventSink>,
 }
 
@@ -217,6 +216,7 @@ impl NotificationWatcherService {
     pub(crate) fn new(
         pty_state: PtyState,
         full_watchers: AgentWatcherState,
+        transcripts: TranscriptState,
         events: Arc<dyn EventSink>,
     ) -> Self {
         Self {
@@ -224,6 +224,7 @@ impl NotificationWatcherService {
             diagnostics: Arc::new(Mutex::new(MutableDiagnostics::default())),
             pty_state,
             full_watchers,
+            transcripts,
             events,
         }
     }
@@ -279,19 +280,25 @@ impl NotificationWatcherService {
             .worker
             .lock()
             .expect("notification worker mutex poisoned");
-        let Some(worker) = slot.as_ref() else {
-            return;
-        };
-        let (acknowledge, stopped) = mpsc::sync_channel(1);
-        if worker
-            .sender
-            .send(WorkerCommand::Stop {
-                pty_id: pty_id.to_string(),
-                acknowledge,
-            })
-            .is_ok()
-        {
-            let _ = stopped.recv();
+        let mut stop_transcript = slot.is_none();
+        if let Some(worker) = slot.as_ref() {
+            let (acknowledge, stopped) = mpsc::sync_channel(1);
+            if worker
+                .sender
+                .send(WorkerCommand::Stop {
+                    pty_id: pty_id.to_string(),
+                    acknowledge,
+                })
+                .is_ok()
+            {
+                stop_transcript = stopped.recv().unwrap_or(true);
+            } else {
+                stop_transcript = true;
+            }
+        }
+        drop(slot);
+        if stop_transcript {
+            let _ = self.transcripts.stop(pty_id);
         }
     }
 
@@ -343,6 +350,7 @@ impl NotificationWatcherService {
                 self.diagnostics.clone(),
                 self.pty_state.clone(),
                 self.full_watchers.clone(),
+                self.transcripts.clone(),
                 self.events.clone(),
             )?);
         }
@@ -376,6 +384,7 @@ fn start_worker(
     diagnostics: Arc<Mutex<MutableDiagnostics>>,
     pty_state: PtyState,
     full_watchers: AgentWatcherState,
+    transcripts: TranscriptState,
     events: Arc<dyn EventSink>,
 ) -> Result<WorkerHandle, String> {
     let (sender, receiver) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
@@ -427,6 +436,7 @@ fn start_worker(
                 alive_for_thread.clone(),
                 pty_state,
                 full_watchers,
+                transcripts,
                 events,
             );
             alive_for_thread.store(false, Ordering::Release);
@@ -455,6 +465,7 @@ fn run_worker(
     alive: Arc<AtomicBool>,
     pty_state: PtyState,
     full_watchers: AgentWatcherState,
+    transcripts: TranscriptState,
     events: Arc<dyn EventSink>,
 ) {
     let mut registrations = HashMap::<String, Registration>::new();
@@ -468,6 +479,7 @@ fn run_worker(
                 &diagnostics,
                 &pty_state,
                 &full_watchers,
+                &transcripts,
                 events.as_ref(),
             );
             last_reconcile = Instant::now();
@@ -489,10 +501,19 @@ fn run_worker(
                 registration,
                 acknowledge,
             }) => {
+                let pty_id = registration.pty_id.clone();
                 let result = if pty_state.generation(&registration.pty_id)
                     == Some(registration.pty_generation)
                 {
-                    register_source(watcher, &mut registrations, registration)
+                    if registration.provider == NotificationProvider::Kimi
+                        && !full_watchers.transfer_kimi_transcript(&pty_id)
+                    {
+                        Err(format!(
+                            "Kimi watcher missing during notification ownership transfer: {pty_id}"
+                        ))
+                    } else {
+                        register_source(watcher, &mut registrations, registration)
+                    }
                 } else {
                     Err("PTY changed before notification source registration".to_string())
                 };
@@ -514,7 +535,9 @@ fn run_worker(
                 pty_id,
                 acknowledge,
             }) => {
-                remove_source(watcher, &mut registrations, &pty_id, &diagnostics);
+                let stop_transcript =
+                    remove_source(watcher, &mut registrations, &pty_id, &diagnostics)
+                        == Some(NotificationProvider::Kimi);
                 let empty = registrations.is_empty();
                 if empty {
                     alive.store(false, Ordering::Release);
@@ -523,7 +546,7 @@ fn run_worker(
                         .expect("notification diagnostics mutex poisoned")
                         .worker_alive = false;
                 }
-                let _ = acknowledge.send(());
+                let _ = acknowledge.send(stop_transcript);
                 if empty {
                     break;
                 }
@@ -531,7 +554,10 @@ fn run_worker(
             Some(WorkerCommand::SourceChanged(paths)) => {
                 let ids: Vec<String> = registrations
                     .values()
-                    .filter(|registration| paths.contains(&registration.source_path))
+                    .filter(|registration| {
+                        registration.provider != NotificationProvider::Kimi
+                            && paths.contains(&registration.source_path)
+                    })
                     .map(|registration| registration.pty_id.clone())
                     .collect();
                 scan_ids(&ids, &mut registrations, &diagnostics, events.as_ref());
@@ -544,6 +570,7 @@ fn run_worker(
                     &diagnostics,
                     &pty_state,
                     &full_watchers,
+                    &transcripts,
                     events.as_ref(),
                 );
                 let empty = registrations.is_empty();
@@ -589,10 +616,12 @@ fn register_source(
     let pty_id = registration.pty_id.clone();
     let provider = registration.provider;
 
-    let path_already_watched = registrations
-        .values()
-        .any(|current| current.source_path == registration.source_path);
-    if !path_already_watched {
+    let path_already_watched = registrations.values().any(|current| {
+        current.provider != NotificationProvider::Kimi
+            && current.source_path == registration.source_path
+    });
+    // Kimi's registration owns its relocation follower; never watch one stale wire.
+    if provider != NotificationProvider::Kimi && !path_already_watched {
         watcher
             .watch(&registration.source_path, RecursiveMode::NonRecursive)
             .map_err(|error| format!("watch notification source: {error}"))?;
@@ -600,9 +629,11 @@ fn register_source(
 
     let replaced = registrations.insert(pty_id.clone(), registration);
     if let Some(previous) = replaced.as_ref() {
-        if !registrations
-            .values()
-            .any(|current| current.source_path == previous.source_path)
+        if previous.provider != NotificationProvider::Kimi
+            && !registrations.values().any(|current| {
+                current.provider != NotificationProvider::Kimi
+                    && current.source_path == previous.source_path
+            })
         {
             let _ = watcher.unwatch(&previous.source_path);
         }
@@ -622,13 +653,15 @@ fn remove_source(
     registrations: &mut HashMap<String, Registration>,
     pty_id: &str,
     diagnostics: &Arc<Mutex<MutableDiagnostics>>,
-) {
+) -> Option<NotificationProvider> {
     let Some(removed) = registrations.remove(pty_id) else {
-        return;
+        return None;
     };
-    if !registrations
-        .values()
-        .any(|current| current.source_path == removed.source_path)
+    if removed.provider != NotificationProvider::Kimi
+        && !registrations.values().any(|current| {
+            current.provider != NotificationProvider::Kimi
+                && current.source_path == removed.source_path
+        })
     {
         let _ = watcher.unwatch(&removed.source_path);
     }
@@ -638,6 +671,7 @@ fn remove_source(
         .stopped_total += 1;
     refresh_registration_diagnostics(registrations, diagnostics);
     log::info!("notification watcher stopped pty={pty_id}");
+    Some(removed.provider)
 }
 
 fn refresh_registration_diagnostics(
@@ -661,6 +695,7 @@ fn reconcile_sources(
     diagnostics: &Arc<Mutex<MutableDiagnostics>>,
     pty_state: &PtyState,
     full_watchers: &AgentWatcherState,
+    transcripts: &TranscriptState,
     events: &dyn EventSink,
 ) {
     let missing: Vec<String> = registrations
@@ -671,11 +706,21 @@ fn reconcile_sources(
         .map(|registration| registration.pty_id.clone())
         .collect();
     for pty_id in missing {
-        remove_source(watcher, registrations, &pty_id, diagnostics);
+        if registrations
+            .get(&pty_id)
+            .is_some_and(|registration| registration.provider == NotificationProvider::Kimi)
+        {
+            let _ = transcripts.stop(&pty_id);
+        }
+        let _ = remove_source(watcher, registrations, &pty_id, diagnostics);
         full_watchers.remove(&pty_id);
     }
 
-    let ids: Vec<String> = registrations.keys().cloned().collect();
+    let ids: Vec<String> = registrations
+        .values()
+        .filter(|registration| registration.provider != NotificationProvider::Kimi)
+        .map(|registration| registration.pty_id.clone())
+        .collect();
     scan_ids(&ids, registrations, diagnostics, events);
 }
 
@@ -833,6 +878,7 @@ enum ClassifiedSignal {
         turn_id: Option<String>,
         agent_session_id: Option<String>,
     },
+    TurnEnded,
     Notification {
         reason: AgentNotificationReason,
         occurred_at: u64,
@@ -886,7 +932,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
             turn_id: envelope.payload.turn_id,
             agent_session_id: None,
         }),
-        Some("task_complete" | "turn_aborted") => {
+        Some("task_complete") => {
             let turn_id = envelope.payload.turn_id;
             Ok(ClassifiedSignal::Notification {
                 reason: AgentNotificationReason::TurnComplete,
@@ -902,6 +948,7 @@ fn classify_codex(line: &[u8]) -> Result<ClassifiedSignal, ()> {
                 ends_turn: true,
             })
         }
+        Some("turn_aborted") => Ok(ClassifiedSignal::TurnEnded),
         Some("exec_approval_request")
         | Some("apply_patch_approval_request")
         | Some("request_permissions") => {
@@ -1378,6 +1425,12 @@ fn apply_signal(
             registration.turn_id = turn_id;
             registration.notification_body = None;
         }
+        ClassifiedSignal::TurnEnded => {
+            registration.turn_active = false;
+            registration.turn_id = None;
+            registration.notification_body = None;
+            registration.pending_opencode_idle = None;
+        }
         ClassifiedSignal::Notification {
             reason,
             occurred_at,
@@ -1646,7 +1699,7 @@ mod tests {
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#,
-                "turn-complete",
+                "ended",
             ),
             (
                 r#"{"type":"event_msg","payload":{"type":"exec_approval_request","approval_id":"a1"}}"#,
@@ -1679,6 +1732,7 @@ mod tests {
                 ClassifiedSignal::Session(_) => "session",
                 ClassifiedSignal::AssistantText(_) => "assistant-text",
                 ClassifiedSignal::OpenCodeStatusIdle { .. } => "opencode-status-idle",
+                ClassifiedSignal::TurnEnded => "ended",
             };
             assert_eq!(actual, expected);
         }
@@ -2144,43 +2198,76 @@ mod tests {
 
     #[test]
     fn codex_live_terminal_event_after_mid_turn_registration_is_not_suppressed() {
-        for terminal_type in ["task_complete", "turn_aborted"] {
-            let temp = tempfile::tempdir().expect("tempdir");
-            let source = temp.path().join("rollout.jsonl");
-            std::fs::write(
-                &source,
-                concat!(
-                    "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-a\"}}\n",
-                    "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"live\"}}\n",
-                ),
-            )
-            .expect("seed active turn");
-            let cursor = std::fs::metadata(&source).expect("metadata").len();
-            let mut registration = Registration::new(
-                "pty-a".to_string(),
-                1,
-                NotificationProvider::Codex,
-                source.clone(),
-                cursor,
-            );
-            let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
-            let sink = FakeEventSink::new();
-            let mut file = std::fs::OpenOptions::new()
-                .append(true)
-                .open(source)
-                .expect("open rollout");
-            writeln!(
-                file,
-                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"{terminal_type}\",\"turn_id\":\"live\"}}}}"
-            )
-            .expect("append terminal event");
-            file.flush().expect("flush rollout");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("rollout.jsonl");
+        std::fs::write(
+            &source,
+            concat!(
+                "{\"type\":\"session_meta\",\"payload\":{\"id\":\"agent-a\"}}\n",
+                "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"live\"}}\n",
+            ),
+        )
+        .expect("seed active turn");
+        let cursor = std::fs::metadata(&source).expect("metadata").len();
+        let mut registration = Registration::new(
+            "pty-a".to_string(),
+            1,
+            NotificationProvider::Codex,
+            source.clone(),
+            cursor,
+        );
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(source)
+            .expect("open rollout");
+        writeln!(
+            file,
+            "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_complete\",\"turn_id\":\"live\"}}}}"
+        )
+        .expect("append terminal event");
+        file.flush().expect("flush rollout");
 
-            scan_source(&mut registration, &diagnostics, &sink).expect("scan terminal event");
+        scan_source(&mut registration, &diagnostics, &sink).expect("scan terminal event");
 
-            assert_eq!(sink.count("agent-notification"), 1, "{terminal_type}");
-            assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
-        }
+        assert_eq!(sink.count("agent-notification"), 1);
+        assert_eq!(sink.recorded()[0].1["reason"], "turn-complete");
+    }
+
+    #[test]
+    fn codex_abort_clears_the_turn_without_notifying() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source = temp.path().join("rollout.jsonl");
+        std::fs::write(&source, "").expect("create rollout");
+        let mut registration = Registration::new(
+            "pty-a".to_string(),
+            1,
+            NotificationProvider::Codex,
+            source,
+            0,
+        );
+        registration.turn_active = true;
+        registration.turn_id = Some("live".to_string());
+        registration.notification_body = Some("partial answer".to_string());
+        registration.pending_opencode_idle = Some(PendingOpenCodeIdle {
+            occurred_at: 1,
+            agent_session_id: None,
+        });
+        let diagnostics = Arc::new(Mutex::new(MutableDiagnostics::default()));
+        let sink = FakeEventSink::new();
+
+        let signal = classify_codex(
+            br#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"live","reason":"interrupted"}}"#,
+        )
+        .expect("valid Codex abort");
+        apply_signal(&mut registration, signal, &diagnostics, &sink);
+
+        assert_eq!(sink.count("agent-notification"), 0);
+        assert!(!registration.turn_active);
+        assert_eq!(registration.turn_id, None);
+        assert_eq!(registration.notification_body, None);
+        assert!(registration.pending_opencode_idle.is_none());
     }
 
     #[test]

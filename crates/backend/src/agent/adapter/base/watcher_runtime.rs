@@ -601,6 +601,20 @@ impl AgentWatcherState {
             .map(|handle| handle.status_path.clone())
     }
 
+    /// Transfer Kimi's relocation-following transcript tail to the durable
+    /// notification registration before the foreground watcher is removed.
+    pub(crate) fn transfer_kimi_transcript(&self, session_id: &str) -> bool {
+        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+        let Some(handle) = watchers.get_mut(session_id) else {
+            return false;
+        };
+        if handle.agent_type != AgentType::Kimi {
+            return false;
+        }
+        handle.owns_transcript = false;
+        true
+    }
+
     /// Test-only seam to set a pty's agent type without going through a
     /// real watcher startup. Builds a stub `WatcherHandle::new_for_test`
     /// with a fresh `TranscriptState` (whose `stop` is a no-op for an

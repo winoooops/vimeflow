@@ -96,8 +96,13 @@ impl BackendState {
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
         let pty = PtyState::new();
         let agents = AgentWatcherState::new();
-        let agent_notifications =
-            NotificationWatcherService::new(pty.clone(), agents.clone(), events.clone());
+        let transcripts = TranscriptState::new();
+        let agent_notifications = NotificationWatcherService::new(
+            pty.clone(),
+            agents.clone(),
+            transcripts.clone(),
+            events.clone(),
+        );
         Self {
             app_data_dir: app_data_dir.clone(),
             pty,
@@ -111,7 +116,7 @@ impl BackendState {
             aliases: Arc::new(AliasesCache::new(aliases_path)),
             agents,
             agent_notifications,
-            transcripts: TranscriptState::new(),
+            transcripts,
             git: GitWatcherState::new(),
             events,
             #[cfg(feature = "e2e-test")]
@@ -941,9 +946,10 @@ pub struct E2eAgentBridgeInfo {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::Path;
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
     use crate::agent::events::AGENT_SESSION_TITLE;
     use crate::terminal::state::{ManagedSession, RingBuffer};
@@ -1164,6 +1170,139 @@ mod tests {
         let diagnostics = state.agent_notifications.diagnostics();
         assert!(diagnostics.worker_alive);
         assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[test]
+    fn kimi_completion_survives_foreground_stop_and_wire_relocation() {
+        fn write_session(home: &Path, name: &str, contents: &str) -> (PathBuf, PathBuf) {
+            let session = home.join("sessions").join("wd_test").join(name);
+            let wire = session.join("agents").join("main").join("wire.jsonl");
+            std::fs::create_dir_all(wire.parent().expect("wire parent"))
+                .expect("create Kimi session");
+            std::fs::write(&wire, contents).expect("write Kimi wire");
+            (session, wire)
+        }
+
+        fn write_index(home: &Path, session: &Path, name: &str, work: &Path) {
+            std::fs::write(
+                home.join("session_index.jsonl"),
+                format!(
+                    "{}\n",
+                    serde_json::json!({
+                        "sessionId": name,
+                        "sessionDir": session,
+                        "workDir": work,
+                    })
+                ),
+            )
+            .expect("write Kimi session index");
+        }
+
+        let (state, sink) = BackendState::with_fake_sink();
+        let pty_id = "pty-kimi-background";
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        state
+            .pty
+            .insert(pty_id.to_string(), make_capturing_session(writes));
+        let home = tempfile::tempdir().expect("Kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let (old_session, _old_wire) = write_session(
+            home.path(),
+            "session_old",
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n",
+        );
+        write_index(home.path(), &old_session, "session_old", work.path());
+
+        let locator = Arc::new(crate::agent::adapter::kimi::KimiLocator::new(
+            home.path().to_path_buf(),
+            4242,
+            SystemTime::UNIX_EPOCH,
+            None,
+        ));
+        let adapter = Arc::new(crate::agent::adapter::kimi::KimiAdapter::with_locator(
+            locator,
+        ));
+        let located = crate::agent::adapter::AgentAdapter::located_status_source(
+            adapter.as_ref(),
+            state.app_data_dir.as_path(),
+            work.path(),
+            pty_id,
+        )
+        .expect("locate old Kimi wire");
+        state
+            .transcripts
+            .start_or_replace(
+                adapter,
+                sink.clone(),
+                pty_id.to_string(),
+                located.status_path.clone(),
+                Some(work.path().to_path_buf()),
+                None,
+                None,
+            )
+            .expect("start Kimi transcript supervisor");
+        state.agents.insert_agent_type_for_test(
+            state.transcripts.clone(),
+            pty_id.to_string(),
+            AgentType::Kimi,
+        );
+        let provider = NotificationProvider::from_agent_type(AgentType::Kimi)
+            .expect("Kimi has a durable notification registration");
+        state
+            .agent_notifications
+            .register(pty_id.to_string(), provider, located.status_path)
+            .expect("register Kimi notification owner");
+
+        assert!(state.agents.remove(pty_id), "foreground watcher stops");
+        assert!(
+            state.transcripts.contains(pty_id),
+            "notification owner keeps the relocation follower alive",
+        );
+
+        let (new_session, new_wire) = write_session(
+            home.path(),
+            "session_new",
+            concat!(
+                "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+                "{\"type\":\"context.append_loop_event\",\"event\":{\"type\":\"step.end\",\"finishReason\":\"end_turn\"}}\n",
+            ),
+        );
+        write_index(home.path(), &new_session, "session_new", work.path());
+        assert!(
+            sink.wait_for_count("agent-replay-summary", 2, Duration::from_secs(5)),
+            "relocated wire catches up without notifying",
+        );
+        assert_eq!(sink.count("agent-notification"), 0);
+
+        let mut wire = std::fs::OpenOptions::new()
+            .append(true)
+            .open(new_wire)
+            .expect("open relocated wire");
+        for line in [
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#,
+            r#"{"type":"context.append_loop_event","event":{"type":"content.part","part":{"type":"text","text":"Background relocation finished"}}}"#,
+            r#"{"type":"context.append_loop_event","time":1781345366000,"event":{"type":"step.end","uuid":"relocated-turn","finishReason":"end_turn"}}"#,
+        ] {
+            writeln!(wire, "{line}").expect("append relocated Kimi event");
+        }
+        wire.flush().expect("flush relocated wire");
+
+        assert!(
+            sink.wait_for_count("agent-notification", 1, Duration::from_secs(5)),
+            "background completion after relocation must notify; events={:?}",
+            sink.recorded(),
+        );
+        let notification = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-notification")
+            .expect("Kimi completion event")
+            .1;
+        assert_eq!(notification["agentSessionId"], "session_new");
+        assert_eq!(notification["body"], "Background relocation finished");
+
+        state.agent_notifications.stop(pty_id);
+        assert!(!state.transcripts.contains(pty_id));
     }
 
     /// The consent IPC round-trips through `BackendState`: set persists +
