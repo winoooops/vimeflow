@@ -192,7 +192,7 @@ impl AgentAdapter for ClaudeCodeAdapter {
     fn agent_type(&self) -> AgentType { AgentType::ClaudeCode }
     fn status_source(&self, app_data_dir, cwd, sid) -> Result<StatusSource, String> {
         Ok(StatusSource {
-            path: crate::terminal::bridge::session_status_file(app_data_dir, cwd, sid),
+            path: crate::agent::adapter::claude_code::bridge::session_status_file(app_data_dir, cwd, sid),
             trust_root: app_data_dir.to_path_buf(),
         })
     }
@@ -230,7 +230,7 @@ impl AgentAdapter for NoOpAdapter {
         // Same path Claude uses → watcher's create_dir_all + watch
         // matches today's silent-no-op UX for unsupported agents.
         Ok(StatusSource {
-            path: crate::terminal::bridge::session_status_file(&self.app_data_dir, cwd, sid),
+            path: crate::agent::adapter::claude_code::bridge::session_status_file(&self.app_data_dir, cwd, sid),
             trust_root: self.app_data_dir.clone(),
         })
     }

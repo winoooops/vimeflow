@@ -6,9 +6,20 @@ const SAFE_AGENT_SESSION_ID = /^[A-Za-z0-9_-]{1,256}$/
 const SAFE_AGENT_ALIAS = /^[A-Za-z_][A-Za-z0-9_-]*$/
 const SUBMITTED_LAUNCHER = /^\s*([A-Za-z_][A-Za-z0-9_-]*)(?:\s|$)/
 
-const CANONICAL_AGENT_LAUNCHERS = Object.values(AGENTS)
-  .filter((agent) => agent.resumeCommands !== null)
-  .map((agent) => agent.id)
+const AGENT_TYPE_BY_ID = {
+  claude: 'claude-code',
+  codex: 'codex',
+  kimi: 'kimi',
+  opencode: 'opencode',
+} as const satisfies Record<Exclude<AgentId, 'shell'>, Pane['agentType']>
+
+type CommandAgentId = keyof typeof AGENT_TYPE_BY_ID
+
+export interface AgentCommandIdentity {
+  readonly launcher: string
+  readonly agentId: CommandAgentId
+  readonly agentType: (typeof AGENT_TYPE_BY_ID)[CommandAgentId]
+}
 
 export interface AgentAliasConfig {
   enabled: boolean
@@ -49,25 +60,32 @@ export const submittedLauncherTokenFromCommand = (
   command: string
 ): string | null => SUBMITTED_LAUNCHER.exec(command)?.[1] ?? null
 
-export const agentLauncherFromCommand = (
+const isCommandAgentId = (value: string): value is CommandAgentId =>
+  Object.prototype.hasOwnProperty.call(AGENT_TYPE_BY_ID, value)
+
+export const agentIdentityFromCommand = (
   command: string,
   config: AgentAliasConfig | undefined
-): string | null => {
+): AgentCommandIdentity | null => {
   const launcher = submittedLauncherTokenFromCommand(command)
   if (launcher === null) {
     return null
   }
 
-  if (CANONICAL_AGENT_LAUNCHERS.some((candidate) => candidate === launcher)) {
-    return launcher
-  }
-
-  return effectiveAliases(config).some(
-    (candidate) => candidate.alias === launcher
-  )
+  const agentId = isCommandAgentId(launcher)
     ? launcher
+    : effectiveAliases(config).find((candidate) => candidate.alias === launcher)
+        ?.agent
+
+  return agentId !== undefined && isCommandAgentId(agentId)
+    ? { launcher, agentId, agentType: AGENT_TYPE_BY_ID[agentId] }
     : null
 }
+
+export const agentLauncherFromCommand = (
+  command: string,
+  config: AgentAliasConfig | undefined
+): string | null => agentIdentityFromCommand(command, config)?.launcher ?? null
 
 export const resolveAgentLauncher = (
   agentId: AgentId,

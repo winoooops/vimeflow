@@ -1,8 +1,8 @@
 //! Durable command alias store (`~/.config/vimeflow/aliases.toml`).
 //!
 //! User-defined shell aliases are injected into every spawned pane's shell
-//! via the bridge `init.sh` (see `terminal::bridge`). They are never written
-//! to the user's rc files.
+//! via the bridge `init.sh` (see `agent::adapter::claude_code::bridge`). They
+//! are never written to the user's rc files.
 
 use std::fs;
 use std::io::Write;
@@ -93,7 +93,9 @@ impl AgentAlias {
             ("extra", self.extra.as_str()),
         ] {
             if value.chars().count() > MAX_ALIAS_FIELD_CHARS {
-                return Err(format!("{field} exceeds {MAX_ALIAS_FIELD_CHARS} characters"));
+                return Err(format!(
+                    "{field} exceeds {MAX_ALIAS_FIELD_CHARS} characters"
+                ));
             }
         }
 

@@ -2,7 +2,7 @@
 id: testing-gaps
 category: testing
 created: 2026-04-09
-last_updated: 2026-07-31
+last_updated: 2026-08-02
 ref_count: 46
 ---
 
@@ -543,6 +543,15 @@ filesystem scope restrictions).
 - **File:** `src/features/workspace/components/DockPanel.test.tsx`, `src/features/workspace/WorkspaceView.elastic.test.tsx`
 - **Finding:** Workspace-level tests rendered `DiffPanelContent` through `DockPanel` / `WorkspaceView` but did not mock `@pierre/diffs/react`. The child now calls `useWorkerPool()` unconditionally, so a Pierre release that throws outside `WorkerPoolContextProvider` would break these suites even though the tests are not trying to exercise Pierre itself.
 - **Fix:** Add explicit `@pierre/diffs/react` mocks in each higher-level test that renders through the diff panel, matching the direct `DiffPanelContent.test.tsx` pattern. Code-review heuristic: when a child component gains a mandatory provider hook, update both direct tests and every integration-style test that renders the child transitively.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 95. Native overlay accepted path lacked local suppression coverage
+
+- **Source:** github-claude | PR #772 round 1 | 2026-08-02
+- **Severity:** MEDIUM
+- **File:** `src/components/Popover.test.tsx`
+- **Finding:** Popover tests covered the native-overlay rejection fallback but not the accepted path where the local dialog must be suppressed because a native surface owns the content.
+- **Fix:** Added a native-overlay accepted regression that asserts the local dialog and local content are absent after `open()` resolves accepted.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
 
 ### 55. Event-listener guard branches need a test for both the fire and the suppress path

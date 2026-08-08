@@ -6,11 +6,13 @@ import type {
   PTYResizeParams,
   PTYKillParams,
   PtyReplay,
+  PtyProgress,
 } from '../types'
 import type {
   SpawnPtyRequest,
   PtySession,
   PtyDataEvent,
+  PtyProgressEvent,
   PtyExitEvent,
   PtyErrorEvent,
   BurnerForegroundEvent,
@@ -21,6 +23,8 @@ import type {
   SetWorkspaceSessionsRequest,
 } from '../../../bindings'
 import type { ITerminalService } from './terminalService'
+
+const PROGRESS_TIMEOUT_MS = 15_000
 
 /**
  * Desktop terminal service — bridges ITerminalService to backend IPC commands and events.
@@ -41,6 +45,12 @@ export class DesktopTerminalService implements ITerminalService {
   private burnerForegroundCallbacks: ((
     sessionId: string,
     running: boolean
+  ) => void)[] = []
+  private progressBySession = new Map<string, PtyProgress>()
+  private progressTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private progressCallbacks: ((
+    sessionId: string,
+    progress: PtyProgress | undefined
   ) => void)[] = []
 
   private unlistenFns: UnlistenFn[] = []
@@ -103,10 +113,25 @@ export class DesktopTerminalService implements ITerminalService {
         )
         pendingUnlistenFns.push(unlistenData)
 
+        const unlistenProgress = await listen<PtyProgressEvent>(
+          'pty-progress',
+          ({ sessionId, state, value }) => {
+            if (state === 'remove') {
+              this.clearProgress(sessionId)
+
+              return
+            }
+
+            this.setProgress(sessionId, { state, value })
+          }
+        )
+        pendingUnlistenFns.push(unlistenProgress)
+
         const unlistenExit = await listen<PtyExitEvent>(
           'pty-exit',
           (payload) => {
             const { sessionId, code } = payload
+            this.clearProgress(sessionId)
             this.exitCallbacks.forEach((cb) => cb(sessionId, code))
           }
         )
@@ -158,6 +183,53 @@ export class DesktopTerminalService implements ITerminalService {
     const index = this.exitCallbacks.indexOf(callback)
     if (index > -1) {
       this.exitCallbacks.splice(index, 1)
+    }
+  }
+
+  private removeProgressCallback(
+    callback: (sessionId: string, progress: PtyProgress | undefined) => void
+  ): void {
+    const index = this.progressCallbacks.indexOf(callback)
+    if (index > -1) {
+      this.progressCallbacks.splice(index, 1)
+    }
+  }
+
+  private clearProgress(sessionId: string): void {
+    const timer = this.progressTimers.get(sessionId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.progressTimers.delete(sessionId)
+    }
+    if (this.progressBySession.delete(sessionId)) {
+      this.progressCallbacks.forEach((cb) => cb(sessionId, undefined))
+    }
+  }
+
+  private setProgress(sessionId: string, progress: PtyProgress): void {
+    const previous = this.progressBySession.get(sessionId)
+    const timer = this.progressTimers.get(sessionId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+    }
+
+    this.progressBySession.set(sessionId, progress)
+
+    const nextTimer = setTimeout(() => {
+      if (this.progressTimers.get(sessionId) === nextTimer) {
+        this.progressTimers.delete(sessionId)
+        if (this.progressBySession.delete(sessionId)) {
+          this.progressCallbacks.forEach((cb) => cb(sessionId, undefined))
+        }
+      }
+    }, PROGRESS_TIMEOUT_MS)
+    this.progressTimers.set(sessionId, nextTimer)
+
+    if (
+      previous?.state !== progress.state ||
+      previous.value !== progress.value
+    ) {
+      this.progressCallbacks.forEach((cb) => cb(sessionId, progress))
     }
   }
 
@@ -285,6 +357,27 @@ export class DesktopTerminalService implements ITerminalService {
     }
   }
 
+  getProgress(sessionId: string): PtyProgress | undefined {
+    return this.progressBySession.get(sessionId)
+  }
+
+  async onProgress(
+    callback: (sessionId: string, progress: PtyProgress | undefined) => void
+  ): Promise<() => void> {
+    this.progressCallbacks.push(callback)
+
+    try {
+      await this.ensureListeners()
+    } catch (error) {
+      this.removeProgressCallback(callback)
+      throw error
+    }
+
+    return () => {
+      this.removeProgressCallback(callback)
+    }
+  }
+
   async onError(
     callback: (sessionId: string, message: string) => void
   ): Promise<() => void> {
@@ -330,6 +423,10 @@ export class DesktopTerminalService implements ITerminalService {
     this.exitCallbacks = []
     this.errorCallbacks = []
     this.burnerForegroundCallbacks = []
+    this.progressTimers.forEach((timer) => clearTimeout(timer))
+    this.progressTimers.clear()
+    this.progressBySession.clear()
+    this.progressCallbacks = []
     this.initPromise = null
   }
 

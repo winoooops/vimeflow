@@ -102,6 +102,14 @@ pub struct WatcherHandle {
     /// thread is reaped instead of left detached (matches the existing
     /// `join_handle` pattern for the polling fallback).
     session_index_join: Option<std::thread::JoinHandle<()>>,
+    /// Optional Claude semantic-hook stream, bound to this watcher's lifetime.
+    /// `WatcherHandle::drop` signals this flag when the session watcher is
+    /// removed or replaced, before waiting for the tail thread to exit.
+    attention_stop: Option<Arc<AtomicBool>>,
+    /// Claude attention tail thread paired with `attention_stop`.
+    /// `WatcherHandle::drop` joins it after sending the stop signal so a closed
+    /// or replaced Claude session cannot leave a detached file watcher behind.
+    attention_join: Option<std::thread::JoinHandle<()>>,
     /// True if this handle owns the per-session entry in
     /// `transcript_state` and should tear it down on Drop. Cleared to
     /// `false` by `AgentWatcherState::insert` ONLY when this handle is
@@ -207,12 +215,21 @@ impl Drop for WatcherHandle {
         if let Some(stop) = self.session_index_stop.take() {
             stop.store(true, std::sync::atomic::Ordering::Release);
         }
+        // Claude-only attention tail: session removal/replacement drops this
+        // WatcherHandle, which stops the per-session tail before it is joined.
+        if let Some(stop) = self.attention_stop.take() {
+            stop.store(true, std::sync::atomic::Ordering::Release);
+        }
         // Now join both threads. Order doesn't matter for correctness;
         // total time is bounded by the slower of the two (~500ms).
         if let Some(handle) = self.join_handle.take() {
             let _ = handle.join();
         }
         if let Some(handle) = self.session_index_join.take() {
+            let _ = handle.join();
+        }
+        // Reap the Claude attention tail after the stop signal above.
+        if let Some(handle) = self.attention_join.take() {
             let _ = handle.join();
         }
         // Only tear down the transcript-state entry if THIS handle
@@ -582,6 +599,20 @@ impl AgentWatcherState {
         watchers
             .get(session_id)
             .map(|handle| handle.status_path.clone())
+    }
+
+    /// Transfer Kimi's relocation-following transcript tail to the durable
+    /// notification registration before the foreground watcher is removed.
+    pub(crate) fn transfer_kimi_transcript(&self, session_id: &str) -> bool {
+        let mut watchers = self.watchers.lock().expect("failed to lock watchers");
+        let Some(handle) = watchers.get_mut(session_id) else {
+            return false;
+        };
+        if handle.agent_type != AgentType::Kimi {
+            return false;
+        }
+        handle.owns_transcript = false;
+        true
     }
 
     /// Test-only seam to set a pty's agent type without going through a
@@ -1313,6 +1344,24 @@ pub(crate) fn start_watching(
             (None, None)
         };
 
+    let (attention_stop, attention_join) = if matches!(agent_type, AgentType::ClaudeCode) {
+        let path =
+            crate::agent::adapter::claude_code::bridge::session_attention_file(&status_file_path);
+        match super::super::claude_code::hooks::start_tailing(
+            &path,
+            events.clone(),
+            session_id.clone(),
+        ) {
+            Ok(handles) => (Some(handles.0), Some(handles.1)),
+            Err(error) => {
+                log::warn!("Claude attention hook stream unavailable: {}", error);
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
     log::info!(
         "Started watching statusline for session {}: {}",
         session_id,
@@ -1329,6 +1378,8 @@ pub(crate) fn start_watching(
         agent_type,
         session_index_stop,
         session_index_join,
+        attention_stop,
+        attention_join,
         // Default `true` — this handle owns the transcript-state entry
         // it just established (or inherited) via inline-init or a
         // pre-register notify callback. `AgentWatcherState::insert`
@@ -1369,6 +1420,8 @@ impl WatcherHandle {
             agent_type: AgentType::ClaudeCode,
             session_index_stop: None,
             session_index_join: None,
+            attention_stop: None,
+            attention_join: None,
             owns_transcript: true,
             // Default `false` (no pre-register claim) — matches the
             // "did NOT run start_watching" test seam semantic. Tests

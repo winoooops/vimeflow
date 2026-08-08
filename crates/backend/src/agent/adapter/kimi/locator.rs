@@ -886,10 +886,7 @@ fn session_created_at(session_dir: &str) -> Option<SystemTime> {
 /// Resumed sessions retain their original wire creation timestamp, while Kimi
 /// opens the wire only for each flush, so this log entry is the immediate
 /// ownership signal when proc-fd is empty.
-fn session_resume_at(
-    session_dir: &str,
-    process_start: ProcessStartEvidence,
-) -> Option<SystemTime> {
+fn session_resume_at(session_dir: &str, process_start: ProcessStartEvidence) -> Option<SystemTime> {
     let log = PathBuf::from(session_dir)
         .join("logs")
         .join("kimi-code.log");
@@ -1550,12 +1547,10 @@ mod tests {
         )
         .expect("write session log");
 
-        let estimated_start =
-            SystemTime::UNIX_EPOCH + Duration::from_millis(1_700_000_000_000);
+        let estimated_start = SystemTime::UNIX_EPOCH + Duration::from_millis(1_700_000_000_000);
         let process_start = ProcessStartEvidence::from_second_granularity(estimated_start);
-        let resumed =
-            session_resume_at(session_dir.to_str().expect("session dir"), process_start)
-                .expect("subsecond resume evidence resolves");
+        let resumed = session_resume_at(session_dir.to_str().expect("session dir"), process_start)
+            .expect("subsecond resume evidence resolves");
 
         assert_eq!(
             resumed,

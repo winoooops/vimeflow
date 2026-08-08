@@ -7,6 +7,7 @@ use std::time::SystemTime;
 #[cfg(feature = "e2e-test")]
 use rusqlite::{params, Connection};
 
+use crate::agent::notification::{NotificationProvider, NotificationWatcherService};
 #[cfg(feature = "e2e-test")]
 use crate::agent::types::{AgentStatusEvent, AgentTurnEvent};
 use crate::agent::types::{
@@ -59,9 +60,12 @@ pub struct BackendState {
     app_settings: Arc<AppSettingsCache>,
     aliases: Arc<AliasesCache>,
     agents: AgentWatcherState,
+    agent_notifications: NotificationWatcherService,
     transcripts: TranscriptState,
     git: GitWatcherState,
     events: Arc<dyn EventSink>,
+    #[cfg(feature = "e2e-test")]
+    e2e_provider_home_overrides: Mutex<HashMap<String, PathBuf>>,
     // Durable kimi plan-usage consent file. The in-memory flag is the
     // app-global `agent::kimi_usage_consent`; this is where it persists.
     kimi_usage_consent_path: PathBuf,
@@ -90,9 +94,18 @@ impl BackendState {
         let settings_path = app_data_dir.join("settings.json");
         let review_state_path = app_data_dir.join("review-state.json");
         let kimi_usage_consent_path = app_data_dir.join("kimi-usage-consent.json");
+        let pty = PtyState::new();
+        let agents = AgentWatcherState::new();
+        let transcripts = TranscriptState::new();
+        let agent_notifications = NotificationWatcherService::new(
+            pty.clone(),
+            agents.clone(),
+            transcripts.clone(),
+            events.clone(),
+        );
         Self {
             app_data_dir: app_data_dir.clone(),
-            pty: PtyState::new(),
+            pty,
             sessions: Arc::new(
                 SessionCache::load_or_recover(cache_path).with_app_data_dir(app_data_dir),
             ),
@@ -101,10 +114,13 @@ impl BackendState {
             review_repository_ids: Mutex::new(HashMap::new()),
             app_settings: Arc::new(AppSettingsCache::new(settings_path)),
             aliases: Arc::new(AliasesCache::new(aliases_path)),
-            agents: AgentWatcherState::new(),
-            transcripts: TranscriptState::new(),
+            agents,
+            agent_notifications,
+            transcripts,
             git: GitWatcherState::new(),
             events,
+            #[cfg(feature = "e2e-test")]
+            e2e_provider_home_overrides: Mutex::new(HashMap::new()),
             kimi_usage_consent_path,
             #[cfg(any(test, feature = "e2e-test"))]
             _test_cache_dir: None,
@@ -350,6 +366,8 @@ impl BackendState {
     pub fn kill_pty(&self, request: crate::terminal::types::KillPtyRequest) -> Result<(), String> {
         let session_id = request.session_id.clone();
         crate::terminal::commands::kill_pty_inner(&self.pty, &self.sessions, request)?;
+        self.agent_notifications.stop(&session_id);
+        self.agents.remove(&session_id);
         self.transcripts.forget_recovery_source(&session_id);
         Ok(())
     }
@@ -358,6 +376,8 @@ impl BackendState {
     pub fn kill_ephemeral_ptys(&self) -> Vec<String> {
         let killed = crate::terminal::commands::kill_ephemeral_ptys_inner(&self.pty);
         for session_id in &killed {
+            self.agent_notifications.stop(session_id);
+            self.agents.remove(session_id);
             self.transcripts.forget_recovery_source(session_id);
         }
         killed
@@ -537,16 +557,50 @@ impl BackendState {
         session_id: String,
         provider_home_override: Option<PathBuf>,
     ) -> Result<bool, String> {
-        crate::agent::adapter::start_agent_watcher_inner(
+        #[cfg(feature = "e2e-test")]
+        let provider_home_override = provider_home_override.or_else(|| {
+            self.e2e_provider_home_overrides
+                .lock()
+                .expect("e2e provider-home mutex poisoned")
+                .get(&session_id)
+                .cloned()
+        });
+
+        let changed = crate::agent::adapter::start_agent_watcher_inner(
             self.pty.clone(),
             self.agents.clone(),
             self.transcripts.clone(),
             self.events.clone(),
             self.app_data_dir.clone(),
-            session_id,
+            session_id.clone(),
             provider_home_override,
         )
-        .await
+        .await?;
+
+        let agent_type = self
+            .agents
+            .agent_type_for_pty(&session_id)
+            .ok_or_else(|| format!("agent watcher missing after start: {session_id}"))?;
+        if let (Some(provider), Some(mut source_path)) = (
+            NotificationProvider::from_agent_type(agent_type),
+            self.agents.current_status_path(&session_id),
+        ) {
+            if provider == NotificationProvider::ClaudeCode {
+                source_path = crate::agent::adapter::claude_code::bridge::session_attention_file(
+                    &source_path,
+                );
+            }
+            if let Err(error) =
+                self.agent_notifications
+                    .register(session_id.clone(), provider, source_path)
+            {
+                log::warn!(
+                    "notification watcher registration failed for {session_id} ({provider:?}): {error}"
+                );
+            }
+        }
+
+        Ok(changed)
     }
 
     pub async fn stop_agent_watcher(&self, session_id: String) -> Result<(), String> {
@@ -558,6 +612,12 @@ impl BackendState {
             session_id,
         )
         .await
+    }
+
+    pub(crate) fn get_agent_notification_diagnostics(
+        &self,
+    ) -> crate::agent::notification::NotificationDiagnostics {
+        self.agent_notifications.diagnostics()
     }
 
     pub async fn recover_agent_replies(
@@ -639,6 +699,27 @@ impl BackendState {
         Ok(())
     }
 
+    #[cfg(feature = "e2e-test")]
+    pub(crate) fn e2e_register_agent_notification_source(
+        &self,
+        session_id: String,
+        provider: NotificationProvider,
+        source_path: PathBuf,
+    ) -> Result<(), String> {
+        self.agent_notifications
+            .register(session_id, provider, source_path)
+    }
+
+    #[cfg(feature = "e2e-test")]
+    pub(crate) fn e2e_reconcile_agent_notification_watchers(&self) {
+        self.agent_notifications.reconcile();
+    }
+
+    #[cfg(feature = "e2e-test")]
+    pub(crate) fn e2e_full_agent_watcher_active(&self, session_id: &str) -> bool {
+        self.agents.contains(session_id)
+    }
+
     /// Emit `agent-status` and `agent-turn` events through the backend's
     /// EventSink. Used by E2E tests to exercise the backend serialization
     /// and IPC path for Codex/Kimi without requiring a live agent process or
@@ -696,6 +777,10 @@ impl BackendState {
             .ok_or_else(|| format!("start time not found for session {session_id}"))?;
 
         let codex_home = home_dir.join(".codex");
+        self.e2e_provider_home_overrides
+            .lock()
+            .map_err(|_| "e2e provider-home mutex poisoned".to_string())?
+            .insert(session_id.clone(), codex_home.clone());
         let sessions_dir = codex_home
             .join("sessions")
             .join("2026")
@@ -810,6 +895,11 @@ impl BackendState {
             .join(&session_dir_name);
         let wire_path = session_dir.join("agents").join("main").join("wire.jsonl");
 
+        self.e2e_provider_home_overrides
+            .lock()
+            .map_err(|_| "e2e provider-home mutex poisoned".to_string())?
+            .insert(session_id.clone(), home_dir.clone());
+
         std::fs::create_dir_all(wire_path.parent().expect("wire parent"))
             .map_err(|e| format!("create kimi wire dirs: {e}"))?;
         std::fs::write(
@@ -856,9 +946,10 @@ pub struct E2eAgentBridgeInfo {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::Path;
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
     use crate::agent::events::AGENT_SESSION_TITLE;
     use crate::terminal::state::{ManagedSession, RingBuffer};
@@ -1052,6 +1143,166 @@ mod tests {
         let (state, sink) = BackendState::with_fake_sink();
         assert!(Arc::strong_count(&state) >= 1);
         assert_eq!(sink.recorded().len(), 0);
+    }
+
+    #[test]
+    fn notification_worker_restarts_after_its_last_registration_stops() {
+        let (state, _sink) = BackendState::with_fake_sink();
+        seed_live_agent(&state, AgentType::Codex);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("rollout.jsonl");
+        std::fs::write(&source, "").expect("create notification source");
+
+        state
+            .agent_notifications
+            .register(
+                "pty-1".to_string(),
+                NotificationProvider::Codex,
+                source.clone(),
+            )
+            .expect("initial registration");
+        state.agent_notifications.stop("pty-1");
+        state
+            .agent_notifications
+            .register("pty-1".to_string(), NotificationProvider::Codex, source)
+            .expect("registration after worker stop");
+
+        let diagnostics = state.agent_notifications.diagnostics();
+        assert!(diagnostics.worker_alive);
+        assert_eq!(diagnostics.active_registrations, 1);
+    }
+
+    #[test]
+    fn kimi_completion_survives_foreground_stop_and_wire_relocation() {
+        fn write_session(home: &Path, name: &str, contents: &str) -> (PathBuf, PathBuf) {
+            let session = home.join("sessions").join("wd_test").join(name);
+            let wire = session.join("agents").join("main").join("wire.jsonl");
+            std::fs::create_dir_all(wire.parent().expect("wire parent"))
+                .expect("create Kimi session");
+            std::fs::write(&wire, contents).expect("write Kimi wire");
+            (session, wire)
+        }
+
+        fn write_index(home: &Path, session: &Path, name: &str, work: &Path) {
+            std::fs::write(
+                home.join("session_index.jsonl"),
+                format!(
+                    "{}\n",
+                    serde_json::json!({
+                        "sessionId": name,
+                        "sessionDir": session,
+                        "workDir": work,
+                    })
+                ),
+            )
+            .expect("write Kimi session index");
+        }
+
+        let (state, sink) = BackendState::with_fake_sink();
+        let pty_id = "pty-kimi-background";
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        state
+            .pty
+            .insert(pty_id.to_string(), make_capturing_session(writes));
+        let home = tempfile::tempdir().expect("Kimi home");
+        let work = tempfile::tempdir().expect("work dir");
+        let (old_session, _old_wire) = write_session(
+            home.path(),
+            "session_old",
+            "{\"type\":\"config.update\",\"modelAlias\":\"kimi-code/kimi-for-coding\"}\n",
+        );
+        write_index(home.path(), &old_session, "session_old", work.path());
+
+        let locator = Arc::new(crate::agent::adapter::kimi::KimiLocator::new(
+            home.path().to_path_buf(),
+            4242,
+            SystemTime::UNIX_EPOCH,
+            None,
+        ));
+        let adapter = Arc::new(crate::agent::adapter::kimi::KimiAdapter::with_locator(
+            locator,
+        ));
+        let located = crate::agent::adapter::AgentAdapter::located_status_source(
+            adapter.as_ref(),
+            state.app_data_dir.as_path(),
+            work.path(),
+            pty_id,
+        )
+        .expect("locate old Kimi wire");
+        state
+            .transcripts
+            .start_or_replace(
+                adapter,
+                sink.clone(),
+                pty_id.to_string(),
+                located.status_path.clone(),
+                Some(work.path().to_path_buf()),
+                None,
+                None,
+            )
+            .expect("start Kimi transcript supervisor");
+        state.agents.insert_agent_type_for_test(
+            state.transcripts.clone(),
+            pty_id.to_string(),
+            AgentType::Kimi,
+        );
+        let provider = NotificationProvider::from_agent_type(AgentType::Kimi)
+            .expect("Kimi has a durable notification registration");
+        state
+            .agent_notifications
+            .register(pty_id.to_string(), provider, located.status_path)
+            .expect("register Kimi notification owner");
+
+        assert!(state.agents.remove(pty_id), "foreground watcher stops");
+        assert!(
+            state.transcripts.contains(pty_id),
+            "notification owner keeps the relocation follower alive",
+        );
+
+        let (new_session, new_wire) = write_session(
+            home.path(),
+            "session_new",
+            concat!(
+                "{\"type\":\"turn.prompt\",\"origin\":{\"kind\":\"user\"}}\n",
+                "{\"type\":\"context.append_loop_event\",\"event\":{\"type\":\"step.end\",\"finishReason\":\"end_turn\"}}\n",
+            ),
+        );
+        write_index(home.path(), &new_session, "session_new", work.path());
+        assert!(
+            sink.wait_for_count("agent-replay-summary", 2, Duration::from_secs(5)),
+            "relocated wire catches up without notifying",
+        );
+        assert_eq!(sink.count("agent-notification"), 0);
+
+        let mut wire = std::fs::OpenOptions::new()
+            .append(true)
+            .open(new_wire)
+            .expect("open relocated wire");
+        for line in [
+            r#"{"type":"turn.prompt","origin":{"kind":"user"}}"#,
+            r#"{"type":"context.append_loop_event","event":{"type":"content.part","part":{"type":"text","text":"Background relocation finished"}}}"#,
+            r#"{"type":"context.append_loop_event","time":1781345366000,"event":{"type":"step.end","uuid":"relocated-turn","finishReason":"end_turn"}}"#,
+        ] {
+            writeln!(wire, "{line}").expect("append relocated Kimi event");
+        }
+        wire.flush().expect("flush relocated wire");
+
+        assert!(
+            sink.wait_for_count("agent-notification", 1, Duration::from_secs(5)),
+            "background completion after relocation must notify; events={:?}",
+            sink.recorded(),
+        );
+        let notification = sink
+            .recorded()
+            .into_iter()
+            .find(|(name, _)| name == "agent-notification")
+            .expect("Kimi completion event")
+            .1;
+        assert_eq!(notification["agentSessionId"], "session_new");
+        assert_eq!(notification["body"], "Background relocation finished");
+
+        state.agent_notifications.stop(pty_id);
+        assert!(!state.transcripts.contains(pty_id));
     }
 
     /// The consent IPC round-trips through `BackendState`: set persists +

@@ -45,6 +45,8 @@ const createDefaultMockService = (): ITerminalService =>
     onBurnerForeground: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    getProgress: vi.fn(() => undefined),
+    onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
     getPtyReplay: vi.fn().mockResolvedValue(null),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
@@ -90,6 +92,7 @@ describe('Body', () => {
     dispose: ReturnType<typeof vi.fn>
     focus: ReturnType<typeof vi.fn>
     onResize: ReturnType<typeof vi.fn>
+    onBell: ReturnType<typeof vi.fn>
     parser: { registerOscHandler: ReturnType<typeof vi.fn> }
     refresh: ReturnType<typeof vi.fn>
     cols: number
@@ -117,6 +120,7 @@ describe('Body', () => {
       dispose: vi.fn(),
       focus: vi.fn(),
       onResize: vi.fn(() => ({ dispose: vi.fn() })),
+      onBell: vi.fn(() => ({ dispose: vi.fn() })),
       parser: {
         registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })),
       },
@@ -1825,6 +1829,7 @@ describe('Body', () => {
         cols: 80,
         rows: 24,
         onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        onBell: vi.fn(() => ({ dispose: vi.fn() })),
         parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       }
 
@@ -1870,6 +1875,7 @@ describe('Body', () => {
         cols: 80,
         rows: 24,
         onResize: vi.fn(() => ({ dispose: vi.fn() })),
+        onBell: vi.fn(() => ({ dispose: vi.fn() })),
         parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       }
 
@@ -2237,6 +2243,8 @@ describe('Body', () => {
           Promise.resolve((): void => {})
         ),
         onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
+        getProgress: vi.fn(() => undefined),
+        onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
         getPtyReplay: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
@@ -2300,6 +2308,8 @@ describe('Body', () => {
           Promise.resolve((): void => {})
         ),
         onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
+        getProgress: vi.fn(() => undefined),
+        onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
         getPtyReplay: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,
@@ -2363,6 +2373,8 @@ describe('Body', () => {
           Promise.resolve((): void => {})
         ),
         onBurnerForeground: vi.fn(() => Promise.resolve((): void => undefined)),
+        getProgress: vi.fn(() => undefined),
+        onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
         getPtyReplay: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({
           activeSessionId: null,

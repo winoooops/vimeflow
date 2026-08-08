@@ -5,6 +5,7 @@ import type {
   PTYResizeParams,
   PTYKillParams,
   PtyReplay,
+  PtyProgress,
 } from '../types'
 import type {
   SessionList,
@@ -12,6 +13,8 @@ import type {
 } from '../../../bindings'
 import { isDesktop } from '../../../lib/environment'
 import { DesktopTerminalService } from './desktopTerminalService'
+
+const PROGRESS_TIMEOUT_MS = 15_000
 
 /**
  * Terminal service interface for PTY operations
@@ -69,6 +72,14 @@ export interface ITerminalService {
    */
   onExit(
     callback: (sessionId: string, code: number | null) => void
+  ): Promise<() => void>
+
+  /** Return the latest non-expired progress value for one PTY. */
+  getProgress(sessionId: string): PtyProgress | undefined
+
+  /** Subscribe to PTY-scoped progress changes and clears. */
+  onProgress(
+    callback: (sessionId: string, progress: PtyProgress | undefined) => void
   ): Promise<() => void>
 
   /**
@@ -162,6 +173,12 @@ export class MockTerminalService implements ITerminalService {
   private burnerForegroundCallbacks: ((
     sessionId: string,
     running: boolean
+  ) => void)[] = []
+  private progressBySession = new Map<string, PtyProgress>()
+  private progressTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private progressCallbacks: ((
+    sessionId: string,
+    progress: PtyProgress | undefined
   ) => void)[] = []
 
   spawn(params: PTYSpawnParams): Promise<PTYSpawnResult> {
@@ -327,6 +344,23 @@ export class MockTerminalService implements ITerminalService {
     })
   }
 
+  getProgress(sessionId: string): PtyProgress | undefined {
+    return this.progressBySession.get(sessionId)
+  }
+
+  onProgress(
+    callback: (sessionId: string, progress: PtyProgress | undefined) => void
+  ): Promise<() => void> {
+    this.progressCallbacks.push(callback)
+
+    return Promise.resolve(() => {
+      const index = this.progressCallbacks.indexOf(callback)
+      if (index > -1) {
+        this.progressCallbacks.splice(index, 1)
+      }
+    })
+  }
+
   onError(
     callback: (sessionId: string, message: string) => void
   ): Promise<() => void> {
@@ -379,7 +413,50 @@ export class MockTerminalService implements ITerminalService {
   }
 
   emitExit(sessionId: string, code: number | null): void {
+    this.setProgress(sessionId, undefined)
     this.exitCallbacks.forEach((cb) => cb(sessionId, code))
+  }
+
+  emitProgress(sessionId: string, progress: PtyProgress | undefined): void {
+    this.setProgress(sessionId, progress)
+  }
+
+  private setProgress(
+    sessionId: string,
+    progress: PtyProgress | undefined
+  ): void {
+    const timer = this.progressTimers.get(sessionId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.progressTimers.delete(sessionId)
+    }
+
+    const previous = this.progressBySession.get(sessionId)
+    if (!progress) {
+      if (this.progressBySession.delete(sessionId)) {
+        this.progressCallbacks.forEach((cb) => cb(sessionId, undefined))
+      }
+
+      return
+    }
+
+    this.progressBySession.set(sessionId, progress)
+
+    const nextTimer = setTimeout(() => {
+      if (this.progressTimers.get(sessionId) === nextTimer) {
+        this.progressTimers.delete(sessionId)
+        this.progressBySession.delete(sessionId)
+        this.progressCallbacks.forEach((cb) => cb(sessionId, undefined))
+      }
+    }, PROGRESS_TIMEOUT_MS)
+    this.progressTimers.set(sessionId, nextTimer)
+
+    if (
+      previous?.state !== progress.state ||
+      previous.value !== progress.value
+    ) {
+      this.progressCallbacks.forEach((cb) => cb(sessionId, progress))
+    }
   }
 
   emitBurnerForeground(sessionId: string, running: boolean): void {

@@ -3,7 +3,7 @@ id: e2e-testing
 category: e2e-testing
 created: 2026-04-19
 last_updated: 2026-08-05
-ref_count: 27
+ref_count: 29
 ---
 
 # E2E Testing
@@ -593,4 +593,22 @@ already exists` before the spec could assert agent status rendering.
 - **Fix:** Scope the code-panel toggle, textarea, and scroll-container lookups
   to the Layout Creator overlay root, throw if the toggle or textarea is
   unavailable, and wait for the textarea before sending input.
+- **Commit:** same commit as this entry
+
+### 49. Native overlay E2E helpers selected stale host windows
+
+- **Source:** deterministic CI failure | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke selected the first native overlay host window when reading menu geometry, mapping overlay pixels, or sending Escape. Preloaded or reused hosts can exist without the displayed layout menu, making the test time out even when a later overlay host rendered the target surface.
+- **Fix:** Scan native overlay webContents/windows for the host that actually contains the displayed-layout menu or layout-creator surface before reading rects, mapping coordinates, or closing the menu.
+- **Commit:** same commit as this entry
+
+### 50. Native overlay z-order tests should not gate on transient BrowserWindow flags
+
+- **Source:** deterministic CI failure | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `tests/e2e/core/specs/native-overlay-layering.spec.ts`
+- **Finding:** The macOS Ghostty native-overlay smoke waited for the layout-creator overlay window to report both `isVisible()` and `isAlwaysOnTop()` before running the screenshot proof. CI timed out on that native-state probe even after the dialog DOM rendered in the overlay host, preventing the test from reaching the pixel assertion that actually proves the overlay paints above Ghostty's NSView.
+- **Fix:** Removed the redundant BrowserWindow state gate from the dialog path and kept the screenshot-based overlay paint assertion plus direct layout-creator control checks as the stable behavioral proof.
 - **Commit:** same commit as this entry

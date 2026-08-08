@@ -7,6 +7,7 @@ import { NativeOverlayHost } from './components/NativeOverlayHost'
 import { themeService } from './theme'
 import { initTerminalThemeBridge } from './features/terminal/theme/themeBridge'
 import { renderNativeLayoutCreatorOverlay } from './features/terminal/components/LayoutCreator'
+import { renderNativeNotificationCenterOverlay } from './features/sessions/components/notification/NativeNotificationCenterOverlay'
 import {
   isNativeOverlayHostMode,
   nativeOverlayHostModeFrom,
@@ -38,6 +39,7 @@ createRoot(rootElement).render(
         mode={nativeOverlayHostMode}
         dialogRenderers={{
           'layout-creator': renderNativeLayoutCreatorOverlay,
+          'notification-center': renderNativeNotificationCenterOverlay,
         }}
       />
     ) : (

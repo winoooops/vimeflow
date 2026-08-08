@@ -670,7 +670,11 @@ mod tests {
             .expect("locator infallible for claude");
         assert_eq!(
             located.status_path,
-            crate::terminal::bridge::session_status_file(&ctx.app_data_dir, &cwd, "sess-1"),
+            crate::agent::adapter::claude_code::bridge::session_status_file(
+                &ctx.app_data_dir,
+                &cwd,
+                "sess-1",
+            ),
         );
         assert_eq!(located.trust_root, ctx.app_data_dir);
         assert_eq!(located.static_transcript_hint, None);

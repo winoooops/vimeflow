@@ -10,6 +10,10 @@ import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   type PaneLayoutRegistry,
 } from '../../terminal/layout-registry'
+import {
+  sessionUnreadCategory,
+  type NotificationRecord,
+} from '../hooks/useNotificationCenter'
 
 export interface ListProps {
   sessions: Session[]
@@ -19,6 +23,7 @@ export interface ListProps {
   onRenameSession?: (sessionId: string, name: string) => void
   onReorderSessions?: (sessions: Session[]) => void
   layoutRegistry?: PaneLayoutRegistry
+  notificationRecords?: readonly NotificationRecord[]
 }
 
 export const List = ({
@@ -29,6 +34,7 @@ export const List = ({
   onRenameSession = undefined,
   onReorderSessions = undefined,
   layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
+  notificationRecords = [],
 }: ListProps): ReactElement => {
   // Active = open statuses (running/paused) per the canonical predicate
   // in pickNextVisibleSessionId.ts. Recent = the complement so any
@@ -114,6 +120,10 @@ export const List = ({
               onRemove={cardRemoveSession}
               onRename={onRenameSession}
               layoutRegistry={layoutRegistry}
+              notificationCategory={sessionUnreadCategory(
+                notificationRecords,
+                session
+              )}
             />
           ))}
         </Group>

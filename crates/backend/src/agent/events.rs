@@ -4,9 +4,9 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::agent::types::{
-    AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplaySummaryEvent, AgentReplyEvent,
-    AgentReviewEvent, AgentSessionTitleEvent, AgentStatusEvent, AgentToolCallEvent, AgentTurnEvent,
-    ToolCallStatus,
+    AgentAttentionEvent, AgentCwdEvent, AgentLifecycleEvent, AgentPhase, AgentReplaySummaryEvent,
+    AgentReplyEvent, AgentReviewEvent, AgentSessionTitleEvent, AgentStatusEvent,
+    AgentToolCallEvent, AgentTurnEvent, ToolCallStatus,
 };
 use crate::runtime::{serialize_event, EventSink};
 
@@ -71,6 +71,27 @@ pub(crate) fn emit_agent_lifecycle(
     payload: &AgentLifecycleEvent,
 ) -> Result<(), String> {
     events.emit_json("agent-lifecycle", serialize_event(payload)?)
+}
+
+pub(crate) fn emit_agent_attention(
+    events: &dyn EventSink,
+    payload: &AgentAttentionEvent,
+) -> Result<(), String> {
+    events.emit_json("agent-attention", serialize_event(payload)?)
+}
+
+/// Semantic attention is live-only. Replayed prompts and failures must not
+/// notify again when a transcript watcher attaches or reconnects.
+pub(crate) fn record_attention(
+    events: &Arc<dyn EventSink>,
+    payload: AgentAttentionEvent,
+    replay_done: bool,
+) {
+    if replay_done {
+        if let Err(error) = emit_agent_attention(events.as_ref(), &payload) {
+            log::warn!("Failed to emit agent-attention event: {}", error);
+        }
+    }
 }
 
 #[allow(dead_code)] // wired by the per-adapter lifecycle emit
@@ -226,10 +247,12 @@ pub(crate) fn record_lifecycle(
 mod tests {
     use std::sync::Arc;
 
-    use crate::agent::types::{AgentPhase, AgentToolCallEvent, ToolCallStatus};
+    use crate::agent::types::{
+        AgentAttentionEvent, AgentAttentionReason, AgentPhase, AgentToolCallEvent, ToolCallStatus,
+    };
     use crate::runtime::FakeEventSink;
 
-    use super::{emit_lifecycle_on_change, record_tool_call, ReplayActivity};
+    use super::{emit_lifecycle_on_change, record_attention, record_tool_call, ReplayActivity};
 
     fn tool_call(id: &str, tool: &str, status: ToolCallStatus) -> AgentToolCallEvent {
         AgentToolCallEvent {
@@ -376,5 +399,26 @@ mod tests {
         emit_lifecycle_on_change(&*sink, "sid", "agent-1", &mut last, AgentPhase::Idle);
         assert_eq!(sink.count("agent-lifecycle"), 2); // Running, Idle — the dup is suppressed
         assert_eq!(last, Some(AgentPhase::Idle));
+    }
+
+    #[test]
+    fn agent_attention_is_live_only() {
+        let concrete = Arc::new(FakeEventSink::new());
+        let sink: Arc<dyn crate::runtime::EventSink> = concrete.clone();
+        let event = AgentAttentionEvent {
+            pty_id: "pty-1".into(),
+            reason: AgentAttentionReason::ApprovalRequested,
+            title: "Claude needs approval".into(),
+            body: None,
+            occurred_at: 1,
+            dedupe_key: Some("permission-1".into()),
+        };
+
+        record_attention(&sink, event.clone(), false);
+        assert_eq!(concrete.count("agent-attention"), 0);
+
+        record_attention(&sink, event, true);
+        assert_eq!(concrete.count("agent-attention"), 1);
+        assert_eq!(concrete.recorded()[0].1["reason"], "approval-requested");
     }
 }

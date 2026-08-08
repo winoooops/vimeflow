@@ -2,6 +2,8 @@
  * Terminal feature domain types
  */
 
+import type { PtyProgressState as GeneratedPtyProgressState } from '../../../bindings'
+
 /**
  * Terminal session status
  */
@@ -128,6 +130,16 @@ export interface PTYKillParams {
  * PTY event types — re-exported from generated bindings (Rust is source of truth)
  */
 export type { PtyDataEvent as PTYDataEvent } from '../../../bindings'
+
+export type {
+  PtyProgressEvent as PTYProgressEvent,
+  PtyProgressState as PTYProgressState,
+} from '../../../bindings'
+
+export interface PtyProgress {
+  state: Exclude<GeneratedPtyProgressState, 'remove'>
+  value: number | null
+}
 
 export type { PtyExitEvent as PTYExitEvent } from '../../../bindings'
 

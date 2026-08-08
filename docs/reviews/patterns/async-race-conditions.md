@@ -2,8 +2,8 @@
 id: async-race-conditions
 category: react-patterns
 created: 2026-04-09
-last_updated: 2026-08-02
-ref_count: 97
+last_updated: 2026-08-05
+ref_count: 99
 ---
 
 # Async Race Conditions
@@ -1261,4 +1261,36 @@ prevent showing previous data.
   shader-enabled release commit used by the fork's published
   `shaders-1.3.2-1` artifact, keeping the native parent build on the intended
   custom-shader-capable distribution.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 111. Completion notification could overtake same-turn error attention
+
+- **Source:** github-codex-connector | PR #772 round 1 | 2026-08-02
+- **Severity:** P2 / MEDIUM
+- **File:** `src/features/sessions/hooks/useAgentNotificationProducers.ts`
+- **Finding:** Claude lifecycle and hook-tail attention events are emitted by
+  separate backend threads. A running-to-idle lifecycle edge could reach the
+  renderer before the same failed turn's `StopFailure` attention, causing a
+  background pane to publish both "Claude Code finished" and "Claude failed".
+- **Fix:** Deferred turn-complete notifications behind a short per-PTY
+  cancellable settle timer. A same-PTY `agent-error` cancels the pending
+  completion, and the timer rechecks the latest phase, active pane, and error
+  marker before publishing. Added regression coverage for the idle-then-error
+  ordering.
+- **Commit:** same commit as this entry (see `git blame` / `git log` on this line)
+
+### 112. OpenCode next-turn start dropped pending idle completion
+
+- **Source:** github-claude | PR #784 round 1 | 2026-08-05
+- **Severity:** HIGH
+- **File:** `crates/backend/src/agent/notification.rs`
+- **Finding:** OpenCode `session.status: idle` was buffered so nearby assistant
+  text could provide the notification body, but the following `TurnStarted`
+  path cleared the pending idle before it could flush. A scan batch containing
+  previous-turn idle followed by next-turn busy could therefore drop the
+  previous completion notification entirely.
+- **Fix:** Flush any pending OpenCode idle before replacing turn state in the
+  `TurnStarted` arm, preserving the opportunistic body attachment while
+  guaranteeing the completion event is emitted. Added regression coverage for
+  the idle-then-busy batch.
 - **Commit:** same commit as this entry (see `git blame` / `git log` on this line)

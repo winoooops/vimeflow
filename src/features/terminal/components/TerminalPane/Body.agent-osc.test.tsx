@@ -9,6 +9,7 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { Body, clearTerminalCache } from './Body'
 import type { RestoreData } from '../../hooks/useTerminal'
 import type { ITerminalService } from '../../services/terminalService'
+import { subscribeTerminalAttention } from '../../notifications'
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: vi.fn(),
@@ -58,6 +59,11 @@ class FakeTerminal {
   readonly onResize = vi.fn((): { dispose: () => void } => ({
     dispose: vi.fn(),
   }))
+  readonly onBell = vi.fn((handler: () => void): { dispose: () => void } => {
+    this.bellHandlers.add(handler)
+
+    return { dispose: vi.fn(() => this.bellHandlers.delete(handler)) }
+  })
   readonly onData = vi.fn(
     (handler: (data: string) => void): { dispose: () => void } => {
       this.inputHandlers.add(handler)
@@ -81,6 +87,7 @@ class FakeTerminal {
 
   private readonly oscHandlers = new Map<number, OscHandler>()
   private readonly inputHandlers = new Set<(data: string) => void>()
+  private readonly bellHandlers = new Set<() => void>()
   private oscBuffer = ''
 
   readonly write = vi.fn((data: string, callback?: () => void): void => {
@@ -98,6 +105,10 @@ class FakeTerminal {
     this.inputHandlers.forEach((handler) => {
       handler(data)
     })
+  }
+
+  emitBell(): void {
+    this.bellHandlers.forEach((handler) => handler())
   }
 
   private parseOsc(data: string): void {
@@ -156,6 +167,8 @@ const createService = (): ControlledTerminalService => {
     onBurnerForeground: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    getProgress: vi.fn(() => undefined),
+    onProgress: vi.fn(() => Promise.resolve((): void => undefined)),
     getPtyReplay: vi.fn().mockResolvedValue(null),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: null,
@@ -1442,5 +1455,87 @@ describe('Body agent-emitted OSC 7', () => {
     })
 
     expect(onFirstCwdChange).not.toHaveBeenCalled()
+  })
+
+  test('normalizes xterm bell and OSC attention without treating OSC 7 as attention', async () => {
+    const service = createService()
+    const attention = vi.fn()
+    const unsubscribe = subscribeTerminalAttention(attention)
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={restoreData('pty-agent', '/tmp/worktree')}
+        mode="attach"
+      />
+    )
+
+    await waitFor(() => expect(service.onData).toHaveBeenCalled())
+    act(() => {
+      getLatestTerminal().emitBell()
+      service.emitData('pty-agent', '\x1b]9;build done\x07')
+      service.emitData('pty-agent', '\x1b]9;4;3\x07')
+      service.emitData('pty-agent', '\x1b]7;file:///tmp/next\x07')
+    })
+    unsubscribe()
+
+    expect(attention).toHaveBeenCalledTimes(2)
+    expect(attention).toHaveBeenNthCalledWith(1, { ptyId: 'pty-agent' })
+    expect(attention).toHaveBeenNthCalledWith(2, {
+      ptyId: 'pty-agent',
+      body: 'build done',
+    })
+  })
+
+  test('suppresses restored attention and resumes notifications after replay', async () => {
+    deferWriteCallbacks = true
+    const service = createService()
+    const attention = vi.fn()
+    const unsubscribe = subscribeTerminalAttention(attention)
+    const replayData = '\x1b]9;stale build\x07'
+    const replayEndOffset = new TextEncoder().encode(replayData).length
+
+    render(
+      <Body
+        sessionId="pty-agent"
+        cwd="/tmp/worktree"
+        service={service}
+        restoredFrom={{
+          ...restoreData('pty-agent', '/tmp/worktree'),
+          replayData,
+          replayEndOffset,
+        }}
+        mode="attach"
+      />
+    )
+
+    await waitFor(() => expect(pendingWriteCallbacks).toHaveLength(1))
+
+    act(() => {
+      getLatestTerminal().emitBell()
+    })
+    expect(attention).not.toHaveBeenCalled()
+
+    act(() => {
+      deferWriteCallbacks = false
+      flushPendingWriteCallbacks()
+    })
+
+    await waitFor(() => expect(service.onData).toHaveBeenCalled())
+
+    act(() => {
+      getLatestTerminal().emitBell()
+      service.emitData('pty-agent', '\x1b]9;live build\x07', replayEndOffset)
+    })
+    unsubscribe()
+
+    expect(attention).toHaveBeenCalledTimes(2)
+    expect(attention).toHaveBeenNthCalledWith(1, { ptyId: 'pty-agent' })
+    expect(attention).toHaveBeenNthCalledWith(2, {
+      ptyId: 'pty-agent',
+      body: 'live build',
+    })
   })
 })

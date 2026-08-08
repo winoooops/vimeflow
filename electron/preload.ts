@@ -25,6 +25,7 @@ import {
   NATIVE_OVERLAY_KEYDOWN,
   NATIVE_OVERLAY_MOUSE_PASSTHROUGH,
   NATIVE_OVERLAY_OPEN,
+  NATIVE_OVERLAY_PRELOAD,
   NATIVE_OVERLAY_READY,
   NATIVE_OVERLAY_RENDER,
   NATIVE_OVERLAY_RESUME,
@@ -302,6 +303,7 @@ contextBridge.exposeInMainWorld('vimeflow', {
       ipcRenderer.invoke(NATIVE_OVERLAY_OPEN, request),
     close: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(NATIVE_OVERLAY_CLOSE, request),
+    preload: (): Promise<unknown> => ipcRenderer.invoke(NATIVE_OVERLAY_PRELOAD),
     actionResult: (request: unknown): Promise<unknown> =>
       ipcRenderer.invoke(NATIVE_OVERLAY_ACTION_RESULT, request),
     resume: (request: unknown): Promise<unknown> =>

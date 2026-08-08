@@ -13,6 +13,8 @@ use crate::agent::adapter::AgentAdapter;
 use crate::agent::types::AgentType;
 use crate::runtime::EventSink;
 
+pub(crate) mod bridge;
+pub(crate) mod hooks;
 pub mod statusline;
 pub mod test_runners;
 pub mod transcript;
@@ -34,7 +36,7 @@ pub(super) fn claude_status_path(
     session_id: &str,
 ) -> LocatedStatusSource {
     LocatedStatusSource {
-        status_path: crate::terminal::bridge::session_status_file(app_data_dir, cwd, session_id),
+        status_path: bridge::session_status_file(app_data_dir, cwd, session_id),
         trust_root: app_data_dir.to_path_buf(),
         static_transcript_hint: None,
         // Claude has no attach-time agent-session id surfaced through
@@ -181,7 +183,7 @@ mod tests {
         .expect("claude status source is infallible");
         assert_eq!(
             src.status_path,
-            crate::terminal::bridge::session_status_file(&app_data_dir, &cwd, "sess-1")
+            bridge::session_status_file(&app_data_dir, &cwd, "sess-1")
         );
         assert_eq!(src.trust_root, app_data_dir);
         // Claude always reports `None` for the static hint — Step 0c

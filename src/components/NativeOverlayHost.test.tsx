@@ -895,6 +895,54 @@ describe('NativeOverlayHost', () => {
     })
   })
 
+  test('accepts notification center requests through a registered renderer', async () => {
+    const bridge = installNativeOverlayHostBridge()
+
+    render(
+      <NativeOverlayHost
+        dialogRenderers={{
+          'notification-center': ({ request: overlayRequest }) => (
+            <div role="dialog" aria-label={overlayRequest.payload.ariaLabel} />
+          ),
+        }}
+      />
+    )
+
+    bridge.emitRender({
+      surfaceId: 'dialog-notification-center',
+      kind: 'dialog',
+      anchorRect: { x: 420, y: 8, width: 80, height: 28 },
+      placement: 'bottom',
+      payload: {
+        kind: 'dialog',
+        dialog: 'notification-center',
+        ariaLabel: 'Notification center',
+        items: [
+          {
+            id: 'notice-1',
+            kind: 'need',
+            title: 'Claude needs approval',
+            sessionName: 'notifications',
+            agentId: 'claude',
+            occurredAt: 1,
+            read: false,
+            openActionId: 'notification:open:notice-1',
+            dismissActionId: 'notification:dismiss:notice-1',
+          },
+        ],
+        actions: {
+          markAllRead: 'notification:mark-all-read',
+          clear: 'notification:clear',
+          close: 'notification:close',
+        },
+      },
+    })
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Notification center' })
+    ).toBeInTheDocument()
+  })
+
   test('renders session switcher dialog requests and dispatches the commit action', async () => {
     const user = userEvent.setup()
     const bridge = installNativeOverlayHostBridge()
