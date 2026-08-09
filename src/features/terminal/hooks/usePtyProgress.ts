@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import type { ITerminalService } from '../services/terminalService'
 import type { PtyProgress } from '../types'
 
-type ProgressSource = Pick<ITerminalService, 'getProgress' | 'onProgress'>
+export type ProgressSource = Pick<
+  ITerminalService,
+  'getProgress' | 'onProgress'
+>
 
 export const usePtyProgress = (
   service: ProgressSource,
