@@ -1,269 +1,817 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Session card — agent rows (design pass)</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
-<script src="https://cdn.tailwindcss.com/3.4.17"></script>
-<style>
-/* ── Lens theme palettes. Only rgb triples so Tailwind opacity modifiers work. ── */
-.lens{
---rgb-surface:18 18 33;--rgb-surface-container-lowest:13 13 28;--rgb-surface-container-low:26 26 42;--rgb-surface-container:30 30 46;--rgb-surface-container-high:41 40 57;
---rgb-on-surface:227 224 247;--rgb-on-surface-variant:205 195 209;--rgb-on-surface-muted:138 130 153;
---rgb-primary:226 199 255;--rgb-primary-container:203 166 247;
---rgb-success:80 250 123;--rgb-success-muted:125 239 161;--rgb-tertiary:255 148 165;--rgb-error:255 180 171;--rgb-secondary:168 200 255;
-/* shared state palette — the only names the row uses; themes only override the semantics above */
---rgb-state-running:var(--rgb-secondary);--rgb-state-done:var(--rgb-success-muted);--rgb-state-awaiting:var(--rgb-tertiary);--rgb-state-error:var(--rgb-error);--rgb-state-idle:var(--rgb-on-surface-muted);
---color-wash-faint:rgba(255,255,255,0.05);--color-wash-recess:rgba(0,0,0,0.22);
---rgb-agent-claude:203 166 247;--rgb-agent-codex:125 239 161;--rgb-agent-kimi:116 224 207;--rgb-agent-opencode:247 166 212;--rgb-agent-gemini:168 200 255;--rgb-agent-shell:240 198 116;
---font-display:'Manrope',system-ui;
-}
-.lens-editorial{--rgb-primary:207 224 255;--rgb-primary-container:168 200 255;--font-display:'Fraunces',Georgia,serif}
-.lens-dense{--rgb-primary:166 245 191;--rgb-primary-container:125 239 161}
-.lens-navigator{
---rgb-surface:26 20 8;--rgb-surface-container-lowest:18 13 5;--rgb-surface-container-low:32 24 11;--rgb-surface-container:36 26 12;--rgb-surface-container-high:47 36 16;
---rgb-on-surface:240 230 210;--rgb-on-surface-variant:216 203 176;--rgb-on-surface-muted:168 152 120;
---rgb-primary:233 207 115;--rgb-primary-container:201 165 90;
---rgb-success:155 191 90;--rgb-success-muted:155 191 90;--rgb-tertiary:224 138 90;--rgb-error:224 110 90;--rgb-secondary:216 190 119;
---color-wash-faint:rgba(255,240,210,0.06);--color-wash-recess:rgba(0,0,0,0.24);
-}
-.lens-flexoki{
---rgb-surface:255 252 240;--rgb-surface-container-lowest:247 245 234;--rgb-surface-container-low:247 245 234;--rgb-surface-container:242 240 229;--rgb-surface-container-high:230 228 217;
---rgb-on-surface:16 15 15;--rgb-on-surface-variant:52 51 49;--rgb-on-surface-muted:111 110 105;
---rgb-primary:94 64 157;--rgb-primary-container:110 76 170;
---rgb-success:102 128 11;--rgb-success-muted:102 128 11;--rgb-tertiary:188 82 21;--rgb-error:175 48 41;--rgb-secondary:32 94 166;
---color-wash-faint:rgba(16,15,15,0.05);--color-wash-recess:rgba(16,15,15,0.045);
---rgb-agent-claude:94 64 157;--rgb-agent-codex:102 128 11;--rgb-agent-kimi:36 131 123;--rgb-agent-opencode:160 47 111;--rgb-agent-gemini:32 94 166;--rgb-agent-shell:173 131 1;
-}
-.lens-mist{ /* placeholder for the 6th Lens theme — cool grey/teal, proves nothing is hardcoded */
---rgb-surface:22 26 30;--rgb-surface-container-lowest:16 19 23;--rgb-surface-container-low:28 33 38;--rgb-surface-container:33 39 45;--rgb-surface-container-high:44 52 59;
---rgb-on-surface:224 231 235;--rgb-on-surface-variant:190 201 207;--rgb-on-surface-muted:130 145 153;
---rgb-primary:167 226 220;--rgb-primary-container:116 196 190;
---rgb-success:126 222 166;--rgb-success-muted:126 222 166;--rgb-tertiary:240 170 120;--rgb-error:242 150 150;--rgb-secondary:140 196 214;
---color-wash-faint:rgba(255,255,255,0.055);--color-wash-recess:rgba(0,0,0,0.20);
-}
-@keyframes dotPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}}
-@keyframes dotHalo{0%{opacity:.45;transform:scale(1)}70%,100%{opacity:0;transform:scale(2.6)}}
-@keyframes barSlide{0%{transform:translateX(-105%)}100%{transform:translateX(255%)}}
-.rm .rm-off{animation:none!important}
-body{font-family:'Inter',system-ui}
-h1,h2,h3,.display{font-family:var(--font-display)}
-a{color:rgb(var(--rgb-primary))}a:hover{color:rgb(var(--rgb-primary-container))}
-::selection{background:rgba(var(--rgb-primary-container),.3)}
-</style>
-<script>
-tailwind.config={theme:{extend:{colors:{
-surface:'rgb(var(--rgb-surface) / <alpha-value>)',
-'surface-container-lowest':'rgb(var(--rgb-surface-container-lowest) / <alpha-value>)',
-'surface-container-low':'rgb(var(--rgb-surface-container-low) / <alpha-value>)',
-'surface-container':'rgb(var(--rgb-surface-container) / <alpha-value>)',
-'surface-container-high':'rgb(var(--rgb-surface-container-high) / <alpha-value>)',
-'on-surface':'rgb(var(--rgb-on-surface) / <alpha-value>)',
-'on-surface-variant':'rgb(var(--rgb-on-surface-variant) / <alpha-value>)',
-'on-surface-muted':'rgb(var(--rgb-on-surface-muted) / <alpha-value>)',
-primary:'rgb(var(--rgb-primary) / <alpha-value>)',
-'primary-container':'rgb(var(--rgb-primary-container) / <alpha-value>)',
-success:'rgb(var(--rgb-success) / <alpha-value>)',
-'success-muted':'rgb(var(--rgb-success-muted) / <alpha-value>)',
-tertiary:'rgb(var(--rgb-tertiary) / <alpha-value>)',
-error:'rgb(var(--rgb-error) / <alpha-value>)',
-'state-running':'rgb(var(--rgb-state-running) / <alpha-value>)',
-'state-done':'rgb(var(--rgb-state-done) / <alpha-value>)',
-'state-awaiting':'rgb(var(--rgb-state-awaiting) / <alpha-value>)',
-'state-error':'rgb(var(--rgb-state-error) / <alpha-value>)',
-'state-idle':'rgb(var(--rgb-state-idle) / <alpha-value>)',
-'wash-faint':'var(--color-wash-faint)',
-'wash-recess':'var(--color-wash-recess)',
-'agent-claude-accent':'rgb(var(--rgb-agent-claude) / <alpha-value>)','agent-claude-soft':'rgb(var(--rgb-agent-claude) / 0.14)',
-'agent-codex-accent':'rgb(var(--rgb-agent-codex) / <alpha-value>)','agent-codex-soft':'rgb(var(--rgb-agent-codex) / 0.14)',
-'agent-kimi-accent':'rgb(var(--rgb-agent-kimi) / <alpha-value>)','agent-kimi-soft':'rgb(var(--rgb-agent-kimi) / 0.14)',
-'agent-opencode-accent':'rgb(var(--rgb-agent-opencode) / <alpha-value>)','agent-opencode-soft':'rgb(var(--rgb-agent-opencode) / 0.14)',
-'agent-gemini-accent':'rgb(var(--rgb-agent-gemini) / <alpha-value>)','agent-gemini-soft':'rgb(var(--rgb-agent-gemini) / 0.14)',
-'agent-shell-accent':'rgb(var(--rgb-agent-shell) / <alpha-value>)','agent-shell-soft':'rgb(var(--rgb-agent-shell) / 0.14)'},
-fontFamily:{mono:['JetBrains Mono','ui-monospace'],sans:['Inter','system-ui'],display:['var(--font-display)']},
-animation:{'dot-pulse':'dotPulse 1.8s ease-in-out infinite','dot-halo':'dotHalo 1.8s ease-out infinite','bar-slide':'barSlide 1.6s cubic-bezier(.5,0,.5,1) infinite'}}}}
-</script>
-</head>
-<body class="lens bg-surface text-on-surface antialiased">
-<div class="mx-auto max-w-[1240px] px-8 py-9">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Session card — agent rows (design pass)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <style>
+      /* ── Lens theme palettes. Only rgb triples so Tailwind opacity modifiers work. ── */
+      .lens {
+        --rgb-surface: 18 18 33;
+        --rgb-surface-container-lowest: 13 13 28;
+        --rgb-surface-container-low: 26 26 42;
+        --rgb-surface-container: 30 30 46;
+        --rgb-surface-container-high: 41 40 57;
+        --rgb-on-surface: 227 224 247;
+        --rgb-on-surface-variant: 205 195 209;
+        --rgb-on-surface-muted: 138 130 153;
+        --rgb-primary: 226 199 255;
+        --rgb-primary-container: 203 166 247;
+        --rgb-success: 80 250 123;
+        --rgb-success-muted: 125 239 161;
+        --rgb-tertiary: 255 148 165;
+        --rgb-error: 255 180 171;
+        --rgb-secondary: 168 200 255;
+        /* shared state palette — the only names the row uses; themes only override the semantics above */
+        --rgb-state-running: var(--rgb-secondary);
+        --rgb-state-done: var(--rgb-success-muted);
+        --rgb-state-awaiting: var(--rgb-tertiary);
+        --rgb-state-error: var(--rgb-error);
+        --rgb-state-idle: var(--rgb-on-surface-muted);
+        --color-wash-faint: rgba(255, 255, 255, 0.05);
+        --color-wash-recess: rgba(0, 0, 0, 0.22);
+        --rgb-agent-claude: 203 166 247;
+        --rgb-agent-codex: 125 239 161;
+        --rgb-agent-kimi: 116 224 207;
+        --rgb-agent-opencode: 247 166 212;
+        --rgb-agent-gemini: 168 200 255;
+        --rgb-agent-shell: 240 198 116;
+        --font-display: 'Manrope', system-ui;
+      }
+      .lens-editorial {
+        --rgb-primary: 207 224 255;
+        --rgb-primary-container: 168 200 255;
+        --font-display: 'Fraunces', Georgia, serif;
+      }
+      .lens-dense {
+        --rgb-primary: 166 245 191;
+        --rgb-primary-container: 125 239 161;
+      }
+      .lens-navigator {
+        --rgb-surface: 26 20 8;
+        --rgb-surface-container-lowest: 18 13 5;
+        --rgb-surface-container-low: 32 24 11;
+        --rgb-surface-container: 36 26 12;
+        --rgb-surface-container-high: 47 36 16;
+        --rgb-on-surface: 240 230 210;
+        --rgb-on-surface-variant: 216 203 176;
+        --rgb-on-surface-muted: 168 152 120;
+        --rgb-primary: 233 207 115;
+        --rgb-primary-container: 201 165 90;
+        --rgb-success: 155 191 90;
+        --rgb-success-muted: 155 191 90;
+        --rgb-tertiary: 224 138 90;
+        --rgb-error: 224 110 90;
+        --rgb-secondary: 216 190 119;
+        --color-wash-faint: rgba(255, 240, 210, 0.06);
+        --color-wash-recess: rgba(0, 0, 0, 0.24);
+      }
+      .lens-flexoki {
+        --rgb-surface: 255 252 240;
+        --rgb-surface-container-lowest: 247 245 234;
+        --rgb-surface-container-low: 247 245 234;
+        --rgb-surface-container: 242 240 229;
+        --rgb-surface-container-high: 230 228 217;
+        --rgb-on-surface: 16 15 15;
+        --rgb-on-surface-variant: 52 51 49;
+        --rgb-on-surface-muted: 111 110 105;
+        --rgb-primary: 94 64 157;
+        --rgb-primary-container: 110 76 170;
+        --rgb-success: 102 128 11;
+        --rgb-success-muted: 102 128 11;
+        --rgb-tertiary: 188 82 21;
+        --rgb-error: 175 48 41;
+        --rgb-secondary: 32 94 166;
+        --color-wash-faint: rgba(16, 15, 15, 0.05);
+        --color-wash-recess: rgba(16, 15, 15, 0.045);
+        --rgb-agent-claude: 94 64 157;
+        --rgb-agent-codex: 102 128 11;
+        --rgb-agent-kimi: 36 131 123;
+        --rgb-agent-opencode: 160 47 111;
+        --rgb-agent-gemini: 32 94 166;
+        --rgb-agent-shell: 173 131 1;
+      }
+      .lens-mist {
+        /* placeholder for the 6th Lens theme — cool grey/teal, proves nothing is hardcoded */
+        --rgb-surface: 22 26 30;
+        --rgb-surface-container-lowest: 16 19 23;
+        --rgb-surface-container-low: 28 33 38;
+        --rgb-surface-container: 33 39 45;
+        --rgb-surface-container-high: 44 52 59;
+        --rgb-on-surface: 224 231 235;
+        --rgb-on-surface-variant: 190 201 207;
+        --rgb-on-surface-muted: 130 145 153;
+        --rgb-primary: 167 226 220;
+        --rgb-primary-container: 116 196 190;
+        --rgb-success: 126 222 166;
+        --rgb-success-muted: 126 222 166;
+        --rgb-tertiary: 240 170 120;
+        --rgb-error: 242 150 150;
+        --rgb-secondary: 140 196 214;
+        --color-wash-faint: rgba(255, 255, 255, 0.055);
+        --color-wash-recess: rgba(0, 0, 0, 0.2);
+      }
+      @keyframes dotPulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.35;
+          transform: scale(0.72);
+        }
+      }
+      @keyframes dotHalo {
+        0% {
+          opacity: 0.45;
+          transform: scale(1);
+        }
+        70%,
+        100% {
+          opacity: 0;
+          transform: scale(2.6);
+        }
+      }
+      @keyframes barSlide {
+        0% {
+          transform: translateX(-105%);
+        }
+        100% {
+          transform: translateX(255%);
+        }
+      }
+      .rm .rm-off {
+        animation: none !important;
+      }
+      body {
+        font-family: 'Inter', system-ui;
+      }
+      h1,
+      h2,
+      h3,
+      .display {
+        font-family: var(--font-display);
+      }
+      a {
+        color: rgb(var(--rgb-primary));
+      }
+      a:hover {
+        color: rgb(var(--rgb-primary-container));
+      }
+      ::selection {
+        background: rgba(var(--rgb-primary-container), 0.3);
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              surface: 'rgb(var(--rgb-surface) / <alpha-value>)',
+              'surface-container-lowest':
+                'rgb(var(--rgb-surface-container-lowest) / <alpha-value>)',
+              'surface-container-low':
+                'rgb(var(--rgb-surface-container-low) / <alpha-value>)',
+              'surface-container':
+                'rgb(var(--rgb-surface-container) / <alpha-value>)',
+              'surface-container-high':
+                'rgb(var(--rgb-surface-container-high) / <alpha-value>)',
+              'on-surface': 'rgb(var(--rgb-on-surface) / <alpha-value>)',
+              'on-surface-variant':
+                'rgb(var(--rgb-on-surface-variant) / <alpha-value>)',
+              'on-surface-muted':
+                'rgb(var(--rgb-on-surface-muted) / <alpha-value>)',
+              primary: 'rgb(var(--rgb-primary) / <alpha-value>)',
+              'primary-container':
+                'rgb(var(--rgb-primary-container) / <alpha-value>)',
+              success: 'rgb(var(--rgb-success) / <alpha-value>)',
+              'success-muted': 'rgb(var(--rgb-success-muted) / <alpha-value>)',
+              tertiary: 'rgb(var(--rgb-tertiary) / <alpha-value>)',
+              error: 'rgb(var(--rgb-error) / <alpha-value>)',
+              'state-running': 'rgb(var(--rgb-state-running) / <alpha-value>)',
+              'state-done': 'rgb(var(--rgb-state-done) / <alpha-value>)',
+              'state-awaiting':
+                'rgb(var(--rgb-state-awaiting) / <alpha-value>)',
+              'state-error': 'rgb(var(--rgb-state-error) / <alpha-value>)',
+              'state-idle': 'rgb(var(--rgb-state-idle) / <alpha-value>)',
+              'wash-faint': 'var(--color-wash-faint)',
+              'wash-recess': 'var(--color-wash-recess)',
+              'agent-claude-accent':
+                'rgb(var(--rgb-agent-claude) / <alpha-value>)',
+              'agent-claude-soft': 'rgb(var(--rgb-agent-claude) / 0.14)',
+              'agent-codex-accent':
+                'rgb(var(--rgb-agent-codex) / <alpha-value>)',
+              'agent-codex-soft': 'rgb(var(--rgb-agent-codex) / 0.14)',
+              'agent-kimi-accent': 'rgb(var(--rgb-agent-kimi) / <alpha-value>)',
+              'agent-kimi-soft': 'rgb(var(--rgb-agent-kimi) / 0.14)',
+              'agent-opencode-accent':
+                'rgb(var(--rgb-agent-opencode) / <alpha-value>)',
+              'agent-opencode-soft': 'rgb(var(--rgb-agent-opencode) / 0.14)',
+              'agent-gemini-accent':
+                'rgb(var(--rgb-agent-gemini) / <alpha-value>)',
+              'agent-gemini-soft': 'rgb(var(--rgb-agent-gemini) / 0.14)',
+              'agent-shell-accent':
+                'rgb(var(--rgb-agent-shell) / <alpha-value>)',
+              'agent-shell-soft': 'rgb(var(--rgb-agent-shell) / 0.14)',
+            },
+            fontFamily: {
+              mono: ['JetBrains Mono', 'ui-monospace'],
+              sans: ['Inter', 'system-ui'],
+              display: ['var(--font-display)'],
+            },
+            animation: {
+              'dot-pulse': 'dotPulse 1.8s ease-in-out infinite',
+              'dot-halo': 'dotHalo 1.8s ease-out infinite',
+              'bar-slide': 'barSlide 1.6s cubic-bezier(.5,0,.5,1) infinite',
+            },
+          },
+        },
+      }
+    </script>
+  </head>
+  <body class="lens bg-surface text-on-surface antialiased">
+    <div class="mx-auto max-w-[1240px] px-8 py-9">
+      <header class="mb-7 flex flex-wrap items-end justify-between gap-5">
+        <div>
+          <h1
+            class="text-[24px] font-semibold tracking-[-0.02em] text-on-surface"
+          >
+            Session card — agent rows
+          </h1>
+          <p
+            class="mt-1.5 max-w-[620px] text-[12.5px] leading-relaxed text-on-surface-muted"
+          >
+            Visual pass only; the component contract is fixed. One row per
+            coding-agent pane, always visible, subsidiary to the card. Tonal
+            recess instead of a border, and two columns only — no timestamp, no
+            progress bar — so the latest message gets the full width.
+          </p>
+        </div>
+        <div class="flex items-center gap-4">
+          <div>
+            <div
+              class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted"
+            >
+              Lens theme
+            </div>
+            <div
+              class="flex gap-1 rounded-lg bg-surface-container p-1"
+              id="themes"
+            ></div>
+          </div>
+          <div>
+            <div
+              class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted"
+            >
+              Motion
+            </div>
+            <button
+              id="rmBtn"
+              class="rounded-lg bg-surface-container px-3 py-[7px] font-mono text-[10px] tracking-[0.04em] text-on-surface-variant transition-colors hover:bg-surface-container-high"
+            >
+              motion: full
+            </button>
+          </div>
+        </div>
+      </header>
 
-<header class="mb-7 flex flex-wrap items-end justify-between gap-5">
-<div>
-<h1 class="text-[24px] font-semibold tracking-[-0.02em] text-on-surface">Session card — agent rows</h1>
-<p class="mt-1.5 max-w-[620px] text-[12.5px] leading-relaxed text-on-surface-muted">Visual pass only; the component contract is fixed. One row per coding-agent pane, always visible, subsidiary to the card. Tonal recess instead of a border, and two columns only — no timestamp, no progress bar — so the latest message gets the full width.</p>
-</div>
-<div class="flex items-center gap-4">
-<div>
-<div class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted">Lens theme</div>
-<div class="flex gap-1 rounded-lg bg-surface-container p-1" id="themes"></div>
-</div>
-<div>
-<div class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted">Motion</div>
-<button id="rmBtn" class="rounded-lg bg-surface-container px-3 py-[7px] font-mono text-[10px] tracking-[0.04em] text-on-surface-variant transition-colors hover:bg-surface-container-high">motion: full</button>
-</div>
-</div>
-</header>
+      <div class="grid grid-cols-1 gap-7 lg:grid-cols-[288px_minmax(0,1fr)]">
+        <!-- ══ live sidebar ══ -->
+        <section>
+          <div class="mb-2.5 flex items-baseline justify-between">
+            <h2 class="text-[13px] font-semibold text-on-surface">
+              Sidebar · 288px
+            </h2>
+            <span class="font-mono text-[9.5px] text-on-surface-muted"
+              >Sessions › List</span
+            >
+          </div>
+          <div class="rounded-2xl bg-surface-container-lowest p-2.5">
+            <div class="mb-2 flex items-center justify-between px-1">
+              <span
+                class="font-mono text-[9px] uppercase tracking-[0.12em] text-on-surface-muted"
+                >Active · 4</span
+              ><span class="font-mono text-[9px] text-on-surface-muted"
+                >⌘K</span
+              >
+            </div>
+            <div class="flex flex-col gap-1.5" id="list"></div>
+            <div
+              class="mb-2 mt-4 px-1 font-mono text-[9px] uppercase tracking-[0.12em] text-on-surface-muted"
+            >
+              Recent · untouched
+            </div>
+            <div class="flex flex-col gap-1.5" id="recent"></div>
+          </div>
+          <p
+            class="mt-3 px-1 text-[11px] leading-relaxed text-on-surface-muted"
+          >
+            Heights measured live:
+            <span class="font-mono text-on-surface-variant" id="metrics"
+              >—</span
+            >
+          </p>
+        </section>
 
-<div class="grid grid-cols-1 gap-7 lg:grid-cols-[288px_minmax(0,1fr)]">
+        <!-- ══ annotated specimens ══ -->
+        <section class="flex flex-col gap-6">
+          <div class="rounded-2xl bg-surface-container-low/60 p-5">
+            <h3 class="mb-1 text-[13px] font-semibold text-on-surface">
+              1 · Hierarchy — tonal recess, no border
+            </h3>
+            <p
+              class="mb-4 max-w-[640px] text-[11.5px] leading-relaxed text-on-surface-muted"
+            >
+              Rows sit in one shared recess panel (<span
+                class="font-mono text-[10.5px] text-on-surface-variant"
+                >bg-wash-recess</span
+              >, darker than the card in dark themes, lighter-ink in Flexoki)
+              with 6px of air above it. That reads as "inside the card" without
+              a rule, and it groups 3 rows as one block instead of three
+              floating lines. Type steps strictly down from the card: 13.5 title
+              → 11.5 subtitle →
+              <b class="text-on-surface-variant">11 agent name</b> → 10.5
+              message. State chip is flush-left with the card's text column, so
+              the rows indent optically by their own 22px chip, not by extra
+              padding.
+            </p>
+            <div class="flex flex-wrap gap-6" id="spec-hier"></div>
+          </div>
 
-<!-- ══ live sidebar ══ -->
-<section>
-<div class="mb-2.5 flex items-baseline justify-between"><h2 class="text-[13px] font-semibold text-on-surface">Sidebar · 288px</h2><span class="font-mono text-[9.5px] text-on-surface-muted">Sessions › List</span></div>
-<div class="rounded-2xl bg-surface-container-lowest p-2.5">
-<div class="mb-2 flex items-center justify-between px-1"><span class="font-mono text-[9px] uppercase tracking-[0.12em] text-on-surface-muted">Active · 4</span><span class="font-mono text-[9px] text-on-surface-muted">⌘K</span></div>
-<div class="flex flex-col gap-1.5" id="list"></div>
-<div class="mb-2 mt-4 px-1 font-mono text-[9px] uppercase tracking-[0.12em] text-on-surface-muted">Recent · untouched</div>
-<div class="flex flex-col gap-1.5" id="recent"></div>
-</div>
-<p class="mt-3 px-1 text-[11px] leading-relaxed text-on-surface-muted">Heights measured live: <span class="font-mono text-on-surface-variant" id="metrics">—</span></p>
-</section>
+          <div class="rounded-2xl bg-surface-container-low/60 p-5">
+            <h3 class="mb-1 text-[13px] font-semibold text-on-surface">
+              2 · Five statuses — carried entirely by the chip
+            </h3>
+            <p
+              class="mb-4 max-w-[640px] text-[11.5px] leading-relaxed text-on-surface-muted"
+            >
+              No status word, no separate dot: the chip <i>is</i> the status.
+              Running is a rotating hairline ring (no glyph) in
+              <span class="font-mono text-[10.5px]">state-running</span>;
+              awaiting-you is
+              <span class="font-mono text-[10.5px]">state-awaiting</span>, error
+              <span class="font-mono text-[10.5px]">state-error</span>, done
+              <span class="font-mono text-[10.5px]">state-done</span>, idle
+              <span class="font-mono text-[10.5px]">state-idle</span>. Those
+              five are the only colour names the row references — each aliases a
+              semantic token (<span class="font-mono text-[10.5px]"
+                >secondary / tertiary / error / success-muted /
+                on-surface-muted</span
+              >), so every Lens theme recolours the whole state vocabulary by
+              overriding the semantics, never the row. Fills stay ≤16% so the
+              chips never compete with the card-level notification badge.
+            </p>
+            <div
+              class="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2"
+              id="spec-status"
+            ></div>
+          </div>
 
-<!-- ══ annotated specimens ══ -->
-<section class="flex flex-col gap-6">
+          <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div class="rounded-2xl bg-surface-container-low/60 p-5">
+              <h3 class="mb-1 text-[13px] font-semibold text-on-surface">
+                3 · State chip — universal, agent-agnostic
+              </h3>
+              <p
+                class="mb-4 text-[11.5px] leading-relaxed text-on-surface-muted"
+              >
+                22px square, radius 6 — two-thirds of the 33px row. One
+                vocabulary (↻ running · ! awaiting you · ✕ error · ✓ done · ◦
+                idle) in one tonal system, identical for every agent: the
+                agent's <i>name</i> tells you who, the chip tells you what's
+                happening. Three duplicate Kimi rows now read as three different
+                states rather than three identical marks.
+              </p>
+              <div class="flex items-end gap-5" id="spec-glyph"></div>
+            </div>
+            <div class="rounded-2xl bg-surface-container-low/60 p-5">
+              <h3 class="mb-1 text-[13px] font-semibold text-on-surface">
+                4 · No right slot — the message gets the width
+              </h3>
+              <p
+                class="mb-4 text-[11.5px] leading-relaxed text-on-surface-muted"
+              >
+                A relative timestamp and a mini progress bar were both
+                redundant: the card's meta row already reads "Running · 2m 14s",
+                and the spinning chip already says work is in flight. Cutting
+                them hands the latest message ~44px — roughly 8 more characters
+                at 10.5px, the difference between a readable line and a stub.
+                Two columns only:
+                <span class="font-mono text-[10.5px]"
+                  >grid-cols-[22px_minmax(0,1fr)]</span
+                >, so nothing can shift when state changes.
+              </p>
+              <div class="flex flex-col gap-1" id="spec-right"></div>
+            </div>
+          </div>
 
-<div class="rounded-2xl bg-surface-container-low/60 p-5">
-<h3 class="mb-1 text-[13px] font-semibold text-on-surface">1 · Hierarchy — tonal recess, no border</h3>
-<p class="mb-4 max-w-[640px] text-[11.5px] leading-relaxed text-on-surface-muted">Rows sit in one shared recess panel (<span class="font-mono text-[10.5px] text-on-surface-variant">bg-wash-recess</span>, darker than the card in dark themes, lighter-ink in Flexoki) with 6px of air above it. That reads as "inside the card" without a rule, and it groups 3 rows as one block instead of three floating lines. Type steps strictly down from the card: 13.5 title → 11.5 subtitle → <b class="text-on-surface-variant">11 agent name</b> → 10.5 message. State chip is flush-left with the card's text column, so the rows indent optically by their own 22px chip, not by extra padding.</p>
-<div class="flex flex-wrap gap-6" id="spec-hier"></div>
-</div>
+          <div class="rounded-2xl bg-surface-container-low/60 p-5">
+            <h3 class="mb-1 text-[13px] font-semibold text-on-surface">
+              5 · Density &amp; 6 · reduced motion
+            </h3>
+            <p
+              class="mb-4 max-w-[640px] text-[11.5px] leading-relaxed text-on-surface-muted"
+            >
+              33px rows + 4px panel padding: 1 agent adds ~45px (card ≈ 166px),
+              3 agents add ~111px (card ≈ 200px) — live readout under the rail.
+              Three is the comfortable ceiling in a 288px rail; at 4+ the Active
+              group stops being scannable — recommend capping at 3 rows with a
+              muted "+2 more panes" line in v2 rather than growing the card.
+              Reduced motion stops the ring rotating (it stays a static hairline
+              circle).
+            </p>
+            <div
+              class="flex flex-wrap items-start gap-6"
+              id="spec-density"
+            ></div>
+          </div>
 
-<div class="rounded-2xl bg-surface-container-low/60 p-5">
-<h3 class="mb-1 text-[13px] font-semibold text-on-surface">2 · Five statuses — carried entirely by the chip</h3>
-<p class="mb-4 max-w-[640px] text-[11.5px] leading-relaxed text-on-surface-muted">No status word, no separate dot: the chip <i>is</i> the status. Running is a rotating hairline ring (no glyph) in <span class="font-mono text-[10.5px]">state-running</span>; awaiting-you is <span class="font-mono text-[10.5px]">state-awaiting</span>, error <span class="font-mono text-[10.5px]">state-error</span>, done <span class="font-mono text-[10.5px]">state-done</span>, idle <span class="font-mono text-[10.5px]">state-idle</span>. Those five are the only colour names the row references — each aliases a semantic token (<span class="font-mono text-[10.5px]">secondary / tertiary / error / success-muted / on-surface-muted</span>), so every Lens theme recolours the whole state vocabulary by overriding the semantics, never the row. Fills stay ≤16% so the chips never compete with the card-level notification badge.</p>
-<div class="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2" id="spec-status"></div>
-</div>
+          <div class="rounded-2xl bg-surface-container-low/60 p-5">
+            <h3 class="mb-3 text-[13px] font-semibold text-on-surface">
+              Drop-in classes for AgentRows.tsx
+            </h3>
+            <pre
+              class="overflow-x-auto rounded-xl bg-surface-container-lowest p-4 font-mono text-[10.5px] leading-[1.65] text-on-surface-variant"
+              id="code"
+            ></pre>
+          </div>
+        </section>
+      </div>
+    </div>
 
-<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-<div class="rounded-2xl bg-surface-container-low/60 p-5">
-<h3 class="mb-1 text-[13px] font-semibold text-on-surface">3 · State chip — universal, agent-agnostic</h3>
-<p class="mb-4 text-[11.5px] leading-relaxed text-on-surface-muted">22px square, radius 6 — two-thirds of the 33px row. One vocabulary (↻ running · ! awaiting you · ✕ error · ✓ done · ◦ idle) in one tonal system, identical for every agent: the agent's <i>name</i> tells you who, the chip tells you what's happening. Three duplicate Kimi rows now read as three different states rather than three identical marks.</p>
-<div class="flex items-end gap-5" id="spec-glyph"></div>
-</div>
-<div class="rounded-2xl bg-surface-container-low/60 p-5">
-<h3 class="mb-1 text-[13px] font-semibold text-on-surface">4 · No right slot — the message gets the width</h3>
-<p class="mb-4 text-[11.5px] leading-relaxed text-on-surface-muted">A relative timestamp and a mini progress bar were both redundant: the card's meta row already reads "Running · 2m 14s", and the spinning chip already says work is in flight. Cutting them hands the latest message ~44px — roughly 8 more characters at 10.5px, the difference between a readable line and a stub. Two columns only: <span class="font-mono text-[10.5px]">grid-cols-[22px_minmax(0,1fr)]</span>, so nothing can shift when state changes.</p>
-<div class="flex flex-col gap-1" id="spec-right"></div>
-</div>
-</div>
+    <script>
+      const AGENTS = {
+        claude: { n: 'Claude Code', g: '∴', k: 'claude' },
+        codex: { n: 'Codex CLI', g: '◇', k: 'codex' },
+        kimi: { n: 'Kimi', g: '◐', k: 'kimi' },
+        opencode: { n: 'opencode', g: '◈', k: 'opencode' },
+        gemini: { n: 'Gemini', g: '◇', k: 'gemini' },
+        shell: { n: 'Shell', g: '▶', k: 'shell' },
+      }
+      const SG = {
+        running: '▶',
+        needs: '!',
+        error: '✕',
+        finished: '✓',
+        idle: '◦',
+      }
+      const ST = {
+        running: {
+          w: 'running',
+          tone: 'text-success-muted',
+          dot: 'bg-success',
+        },
+        needs: { w: 'awaiting you', tone: 'text-tertiary', dot: 'bg-tertiary' },
+        error: { w: 'error', tone: 'text-error', dot: 'bg-error' },
+        finished: {
+          w: 'done',
+          tone: 'text-on-surface-muted',
+          dot: 'ring-1 ring-inset ring-on-surface-muted/70',
+        },
+        idle: {
+          w: 'idle',
+          tone: 'text-on-surface-muted/80',
+          dot: 'ring-1 ring-inset ring-on-surface-muted/45',
+        },
+      }
 
-<div class="rounded-2xl bg-surface-container-low/60 p-5">
-<h3 class="mb-1 text-[13px] font-semibold text-on-surface">5 · Density &amp; 6 · reduced motion</h3>
-<p class="mb-4 max-w-[640px] text-[11.5px] leading-relaxed text-on-surface-muted">33px rows + 4px panel padding: 1 agent adds ~45px (card ≈ 166px), 3 agents add ~111px (card ≈ 200px) — live readout under the rail. Three is the comfortable ceiling in a 288px rail; at 4+ the Active group stops being scannable — recommend capping at 3 rows with a muted "+2 more panes" line in v2 rather than growing the card. Reduced motion stops the ring rotating (it stays a static hairline circle).</p>
-<div class="flex flex-wrap items-start gap-6" id="spec-density"></div>
-</div>
-
-<div class="rounded-2xl bg-surface-container-low/60 p-5">
-<h3 class="mb-3 text-[13px] font-semibold text-on-surface">Drop-in classes for AgentRows.tsx</h3>
-<pre class="overflow-x-auto rounded-xl bg-surface-container-lowest p-4 font-mono text-[10.5px] leading-[1.65] text-on-surface-variant" id="code"></pre>
-</div>
-
-</section>
-</div>
-</div>
-
-<script>
-const AGENTS={claude:{n:'Claude Code',g:'∴',k:'claude'},codex:{n:'Codex CLI',g:'◇',k:'codex'},kimi:{n:'Kimi',g:'◐',k:'kimi'},opencode:{n:'opencode',g:'◈',k:'opencode'},gemini:{n:'Gemini',g:'◇',k:'gemini'},shell:{n:'Shell',g:'▶',k:'shell'}};
-const SG={running:'▶',needs:'!',error:'✕',finished:'✓',idle:'◦'};const ST={
-running:{w:'running',tone:'text-success-muted',dot:'bg-success'},
-needs:{w:'awaiting you',tone:'text-tertiary',dot:'bg-tertiary'},
-error:{w:'error',tone:'text-error',dot:'bg-error'},
-finished:{w:'done',tone:'text-on-surface-muted',dot:'ring-1 ring-inset ring-on-surface-muted/70'},
-idle:{w:'idle',tone:'text-on-surface-muted/80',dot:'ring-1 ring-inset ring-on-surface-muted/45'}};
-
-function rightSlot(a){return '';}
-function rightSlotUnused(a){
-  if(a.s==='running'){
-    const inner=a.pct!=null?`<span class="block h-full rounded-full bg-state-running/85" style="width:${a.pct}%"></span>`
-      :`<span class="rm-off block h-full w-[38%] rounded-full bg-state-running/85 animate-bar-slide motion-reduce:animate-none"></span>`;
-    return `<span role="progressbar" aria-label="${AGENTS[a.a].n} progress"${a.pct!=null?` aria-valuenow="${a.pct}" aria-valuemin="0" aria-valuemax="100"`:''} class="block h-[2px] w-9 overflow-hidden rounded-full bg-on-surface/[0.12]">${inner}</span>`;
-  }
-  return a.t?`<span class="font-mono text-[9.5px] tabular-nums leading-none text-on-surface-muted">${a.t}</span>`:'';
-}
-function dot(s){return '';}
-const CHIP={running:'bg-state-running/[0.14] text-state-running',needs:'bg-state-awaiting/[0.16] text-state-awaiting',error:'bg-state-error/[0.16] text-state-error',finished:'bg-state-done/[0.14] text-state-done',idle:'bg-state-idle/[0.10] text-state-idle'};
-const SPINNER='<span class="rm-off block h-3 w-3 rounded-full border-[1.5px] border-state-running/25 border-t-state-running animate-spin motion-reduce:animate-none"></span>';
-function dotUnused(s){
-  const c=ST[s];
-  const halo=s==='running'?`<span class="rm-off absolute inset-0 rounded-full bg-success animate-dot-halo motion-reduce:hidden"></span>`:'';
-  const core=s==='running'?`<span class="rm-off absolute inset-0 rounded-full bg-success animate-dot-pulse motion-reduce:animate-none motion-reduce:ring-1 motion-reduce:ring-offset-1 motion-reduce:ring-success/40"></span>`
-    :`<span class="absolute inset-0 rounded-full ${c.dot}"></span>`;
-  return `<span class="relative block h-1 w-1 shrink-0">${halo}${core}</span>`;
-}
-function row(a){
-  const g=AGENTS[a.a],c=ST[a.s];
-  return `<button type="button" class="group grid w-full grid-cols-[22px_minmax(0,1fr)] items-center gap-2 rounded-md px-1.5 py-[3px] text-left transition-colors hover:bg-wash-faint focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/45${a.hover?' bg-wash-faint':''}">
-<span class="grid h-[22px] w-[22px] place-items-center rounded-[6px] font-mono text-[11px] leading-none ${CHIP[a.s]||CHIP.idle}">${a.s==='running'?SPINNER:`<span class="block">${SG[a.s]||'◦'}</span>`}</span>
+      function rightSlot(a) {
+        return ''
+      }
+      function rightSlotUnused(a) {
+        if (a.s === 'running') {
+          const inner =
+            a.pct != null
+              ? `<span class="block h-full rounded-full bg-state-running/85" style="width:${a.pct}%"></span>`
+              : `<span class="rm-off block h-full w-[38%] rounded-full bg-state-running/85 animate-bar-slide motion-reduce:animate-none"></span>`
+          return `<span role="progressbar" aria-label="${AGENTS[a.a].n} progress"${a.pct != null ? ` aria-valuenow="${a.pct}" aria-valuemin="0" aria-valuemax="100"` : ''} class="block h-[2px] w-9 overflow-hidden rounded-full bg-on-surface/[0.12]">${inner}</span>`
+        }
+        return a.t
+          ? `<span class="font-mono text-[9.5px] tabular-nums leading-none text-on-surface-muted">${a.t}</span>`
+          : ''
+      }
+      function dot(s) {
+        return ''
+      }
+      const CHIP = {
+        running: 'bg-state-running/[0.14] text-state-running',
+        needs: 'bg-state-awaiting/[0.16] text-state-awaiting',
+        error: 'bg-state-error/[0.16] text-state-error',
+        finished: 'bg-state-done/[0.14] text-state-done',
+        idle: 'bg-state-idle/[0.10] text-state-idle',
+      }
+      const SPINNER =
+        '<span class="rm-off block h-3 w-3 rounded-full border-[1.5px] border-state-running/25 border-t-state-running animate-spin motion-reduce:animate-none"></span>'
+      function dotUnused(s) {
+        const c = ST[s]
+        const halo =
+          s === 'running'
+            ? `<span class="rm-off absolute inset-0 rounded-full bg-success animate-dot-halo motion-reduce:hidden"></span>`
+            : ''
+        const core =
+          s === 'running'
+            ? `<span class="rm-off absolute inset-0 rounded-full bg-success animate-dot-pulse motion-reduce:animate-none motion-reduce:ring-1 motion-reduce:ring-offset-1 motion-reduce:ring-success/40"></span>`
+            : `<span class="absolute inset-0 rounded-full ${c.dot}"></span>`
+        return `<span class="relative block h-1 w-1 shrink-0">${halo}${core}</span>`
+      }
+      function row(a) {
+        const g = AGENTS[a.a],
+          c = ST[a.s]
+        return `<button type="button" class="group grid w-full grid-cols-[22px_minmax(0,1fr)] items-center gap-2 rounded-md px-1.5 py-[3px] text-left transition-colors hover:bg-wash-faint focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/45${a.hover ? ' bg-wash-faint' : ''}">
+<span class="grid h-[22px] w-[22px] place-items-center rounded-[6px] font-mono text-[11px] leading-none ${CHIP[a.s] || CHIP.idle}">${a.s === 'running' ? SPINNER : `<span class="block">${SG[a.s] || '◦'}</span>`}</span>
 <span class="block min-w-0">
 <span class="flex items-center gap-1.5">
 <span class="min-w-0 flex-1 truncate text-[11px] font-medium leading-none text-on-surface-variant">${g.n}</span>
 </span>
 <span class="mt-[3px] block truncate text-[10.5px] leading-[1.25] text-on-surface-muted">${a.m}</span>
 </span>
-</button>`;
-}
-function rows(list){return list.length?`<div class="mt-1.5 flex flex-col gap-px rounded-lg bg-wash-recess p-1">${list.map(row).join('')}</div>`:'';}
-function card(s){
-  const activeBg=s.active?'bg-primary-container/[0.15]':'bg-surface-container';
-  const stTone={running:'text-success-muted',needs:'text-tertiary',error:'text-error',finished:'text-on-surface-muted',idle:'text-on-surface-muted'}[s.state];
-  const bell=s.state==='needs'?`<span class="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full bg-tertiary/20 font-mono text-[9px] leading-none text-tertiary">2</span>`:'';
-  return `<div data-card class="${activeBg} rounded-xl px-2.5 py-2.5 transition-colors hover:bg-surface-container-high/70">
+</button>`
+      }
+      function rows(list) {
+        return list.length
+          ? `<div class="mt-1.5 flex flex-col gap-px rounded-lg bg-wash-recess p-1">${list.map(row).join('')}</div>`
+          : ''
+      }
+      function card(s) {
+        const activeBg = s.active
+          ? 'bg-primary-container/[0.15]'
+          : 'bg-surface-container'
+        const stTone = {
+          running: 'text-success-muted',
+          needs: 'text-tertiary',
+          error: 'text-error',
+          finished: 'text-on-surface-muted',
+          idle: 'text-on-surface-muted',
+        }[s.state]
+        const bell =
+          s.state === 'needs'
+            ? `<span class="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full bg-tertiary/20 font-mono text-[9px] leading-none text-tertiary">2</span>`
+            : ''
+        return `<div data-card class="${activeBg} rounded-xl px-2.5 py-2.5 transition-colors hover:bg-surface-container-high/70">
 <div class="flex items-center gap-2">
-<span class="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-[-0.01em] ${s.active?'text-on-surface':'text-on-surface/90'}" style="font-family:var(--font-display)">${s.title}</span>${bell}
+<span class="min-w-0 flex-1 truncate text-[13.5px] font-semibold tracking-[-0.01em] ${s.active ? 'text-on-surface' : 'text-on-surface/90'}" style="font-family:var(--font-display)">${s.title}</span>${bell}
 </div>
 <div class="mt-[5px] truncate text-[11.5px] leading-[1.35] text-on-surface-muted">${s.sub}</div>
 <div class="mt-[7px] flex items-baseline gap-1.5 font-mono text-[10px]"><span class="font-semibold ${stTone}">${s.label}</span><span class="text-on-surface-muted/80">· ${s.ago}</span><span class="flex-1"></span><span class="text-on-surface-muted/70">${s.panes}</span></div>
-${rows(s.agents||[])}
-</div>`;
-}
+${rows(s.agents || [])}
+</div>`
+      }
 
-const SESSIONS=[
-{title:'auth middleware refactor',sub:'Applying jose migration · L14–L42',state:'running',label:'Running',ago:'2m 14s',panes:'3 panes',active:true,
- agents:[{a:'claude',s:'running',m:'Rewriting verifyToken() to jose remoteJWKSet',pct:62},{a:'kimi',s:'needs you'.replace(' you',''),m:'x'}]},
-{title:'harness test stabilization',sub:'Needs your approval to rm legacy fixtures',state:'needs',label:'Needs you',ago:'4h 12m',panes:'3 panes',
- agents:[{a:'kimi',s:'needs',m:'Delete tests/fixtures/legacy/*? (y/n)',t:'now'},{a:'kimi',s:'running',m:'Re-running suite — 41/78 passed'},{a:'kimi',s:'finished',m:'Snapshot baseline written',t:'8m'}]},
-{title:'deploy workflow',sub:'Build failed on step release:tag',state:'error',label:'Error',ago:'22m',panes:'2 panes',
- agents:[{a:'codex',s:'error',m:'pnpm build exited 1 — TS2345 in release.ts',t:'22m'},{a:'shell',s:'idle',m:'zsh · ~/code/vimeflow-core',t:'22m'}]},
-{title:'scratchpad',sub:'No panes running',state:'idle',label:'Idle',ago:'1d',panes:'1 pane',agents:[]}];
-SESSIONS[0].agents=[{a:'claude',s:'running',m:'Rewriting verifyToken() to jose remoteJWKSet',pct:62},{a:'opencode',s:'finished',m:'Wrote 3 files · +128 −41',t:'40s'}];
+      const SESSIONS = [
+        {
+          title: 'auth middleware refactor',
+          sub: 'Applying jose migration · L14–L42',
+          state: 'running',
+          label: 'Running',
+          ago: '2m 14s',
+          panes: '3 panes',
+          active: true,
+          agents: [
+            {
+              a: 'claude',
+              s: 'running',
+              m: 'Rewriting verifyToken() to jose remoteJWKSet',
+              pct: 62,
+            },
+            { a: 'kimi', s: 'needs you'.replace(' you', ''), m: 'x' },
+          ],
+        },
+        {
+          title: 'harness test stabilization',
+          sub: 'Needs your approval to rm legacy fixtures',
+          state: 'needs',
+          label: 'Needs you',
+          ago: '4h 12m',
+          panes: '3 panes',
+          agents: [
+            {
+              a: 'kimi',
+              s: 'needs',
+              m: 'Delete tests/fixtures/legacy/*? (y/n)',
+              t: 'now',
+            },
+            { a: 'kimi', s: 'running', m: 'Re-running suite — 41/78 passed' },
+            {
+              a: 'kimi',
+              s: 'finished',
+              m: 'Snapshot baseline written',
+              t: '8m',
+            },
+          ],
+        },
+        {
+          title: 'deploy workflow',
+          sub: 'Build failed on step release:tag',
+          state: 'error',
+          label: 'Error',
+          ago: '22m',
+          panes: '2 panes',
+          agents: [
+            {
+              a: 'codex',
+              s: 'error',
+              m: 'pnpm build exited 1 — TS2345 in release.ts',
+              t: '22m',
+            },
+            {
+              a: 'shell',
+              s: 'idle',
+              m: 'zsh · ~/code/vimeflow-core',
+              t: '22m',
+            },
+          ],
+        },
+        {
+          title: 'scratchpad',
+          sub: 'No panes running',
+          state: 'idle',
+          label: 'Idle',
+          ago: '1d',
+          panes: '1 pane',
+          agents: [],
+        },
+      ]
+      SESSIONS[0].agents = [
+        {
+          a: 'claude',
+          s: 'running',
+          m: 'Rewriting verifyToken() to jose remoteJWKSet',
+          pct: 62,
+        },
+        {
+          a: 'opencode',
+          s: 'finished',
+          m: 'Wrote 3 files · +128 −41',
+          t: '40s',
+        },
+      ]
 
-const RECENT=[{title:'ui component fix',sub:'Closed · merged into main',state:'finished',label:'Done',ago:'1d',panes:'—'},{title:'docs sweep',sub:'Closed · 6 files touched',state:'finished',label:'Done',ago:'3d',panes:'—'}];
+      const RECENT = [
+        {
+          title: 'ui component fix',
+          sub: 'Closed · merged into main',
+          state: 'finished',
+          label: 'Done',
+          ago: '1d',
+          panes: '—',
+        },
+        {
+          title: 'docs sweep',
+          sub: 'Closed · 6 files touched',
+          state: 'finished',
+          label: 'Done',
+          ago: '3d',
+          panes: '—',
+        },
+      ]
 
-document.getElementById('list').innerHTML=SESSIONS.map(card).join('');
-document.getElementById('recent').innerHTML=RECENT.map(s=>card({...s,agents:[]})).join('');
+      document.getElementById('list').innerHTML = SESSIONS.map(card).join('')
+      document.getElementById('recent').innerHTML = RECENT.map((s) =>
+        card({ ...s, agents: [] })
+      ).join('')
 
-// specimens
-const one={title:'auth middleware refactor',sub:'Applying jose migration · L14–L42',state:'running',label:'Running',ago:'2m 14s',panes:'1 pane',agents:[{a:'claude',s:'running',m:'Rewriting verifyToken() to jose remoteJWKSet',pct:62}]};
-const three={...SESSIONS[1]};
-const wrap=(lbl,html,note)=>`<div class="w-[272px]"><div class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted">${lbl}</div><div class="rounded-2xl bg-surface-container-lowest p-2">${html}</div>${note?`<div class="mt-1.5 text-[10.5px] leading-snug text-on-surface-muted">${note}</div>`:''}</div>`;
-document.getElementById('spec-hier').innerHTML=
- wrap('1 agent',card(one),'Single row still gets the recess panel — consistent block, no special case.')+
- wrap('3 agents · duplicate Kimi',card(three),'Same agent three times — the chips differ (↻ / ! / ✓), so the states separate at a glance.')+
- wrap('active card + hover on row 2',card({...three,active:true,title:'harness test stabilization',agents:three.agents.map((a,i)=>i===1?{...a,hover:true}:a)}),'Row hover = wash-faint over the lavender 15% card wash; still legible because the wash is neutral, not tinted.');
+      // specimens
+      const one = {
+        title: 'auth middleware refactor',
+        sub: 'Applying jose migration · L14–L42',
+        state: 'running',
+        label: 'Running',
+        ago: '2m 14s',
+        panes: '1 pane',
+        agents: [
+          {
+            a: 'claude',
+            s: 'running',
+            m: 'Rewriting verifyToken() to jose remoteJWKSet',
+            pct: 62,
+          },
+        ],
+      }
+      const three = { ...SESSIONS[1] }
+      const wrap = (lbl, html, note) =>
+        `<div class="w-[272px]"><div class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted">${lbl}</div><div class="rounded-2xl bg-surface-container-lowest p-2">${html}</div>${note ? `<div class="mt-1.5 text-[10.5px] leading-snug text-on-surface-muted">${note}</div>` : ''}</div>`
+      document.getElementById('spec-hier').innerHTML =
+        wrap(
+          '1 agent',
+          card(one),
+          'Single row still gets the recess panel — consistent block, no special case.'
+        ) +
+        wrap(
+          '3 agents · duplicate Kimi',
+          card(three),
+          'Same agent three times — the chips differ (↻ / ! / ✓), so the states separate at a glance.'
+        ) +
+        wrap(
+          'active card + hover on row 2',
+          card({
+            ...three,
+            active: true,
+            title: 'harness test stabilization',
+            agents: three.agents.map((a, i) =>
+              i === 1 ? { ...a, hover: true } : a
+            ),
+          }),
+          'Row hover = wash-faint over the lavender 15% card wash; still legible because the wash is neutral, not tinted.'
+        )
 
-const statusSpec=[
- {s:'running',a:'claude',m:'Rewriting verifyToken() to jose remoteJWKSet',d:'Chip is a rotating ring — no bar, no timestamp.'},
- {s:'needs',a:'kimi',m:'Delete tests/fixtures/legacy/*? (y/n)',d:'Awaiting chip — loudest in-row state, fill still ≤16%.'},
- {s:'error',a:'codex',m:'pnpm build exited 1 — TS2345 in release.ts',d:'Error chip; same weight as awaiting, colour carries the difference.'},
- {s:'finished',a:'opencode',m:'Wrote 3 files · +128 −41',d:'Done chip — recedes.'},
- {s:'idle',a:'shell',m:'zsh · ~/code/vimeflow-core',d:'Faintest chip; still a target.'}];
-document.getElementById('spec-status').innerHTML=statusSpec.map(x=>`<div class="flex flex-col justify-between gap-1 py-1.5"><div class="rounded-lg bg-wash-recess p-1">${row(x)}</div><div class="pl-1 text-[10.5px] text-on-surface-muted">${x.d}</div></div>`).join('');
+      const statusSpec = [
+        {
+          s: 'running',
+          a: 'claude',
+          m: 'Rewriting verifyToken() to jose remoteJWKSet',
+          d: 'Chip is a rotating ring — no bar, no timestamp.',
+        },
+        {
+          s: 'needs',
+          a: 'kimi',
+          m: 'Delete tests/fixtures/legacy/*? (y/n)',
+          d: 'Awaiting chip — loudest in-row state, fill still ≤16%.',
+        },
+        {
+          s: 'error',
+          a: 'codex',
+          m: 'pnpm build exited 1 — TS2345 in release.ts',
+          d: 'Error chip; same weight as awaiting, colour carries the difference.',
+        },
+        {
+          s: 'finished',
+          a: 'opencode',
+          m: 'Wrote 3 files · +128 −41',
+          d: 'Done chip — recedes.',
+        },
+        {
+          s: 'idle',
+          a: 'shell',
+          m: 'zsh · ~/code/vimeflow-core',
+          d: 'Faintest chip; still a target.',
+        },
+      ]
+      document.getElementById('spec-status').innerHTML = statusSpec
+        .map(
+          (x) =>
+            `<div class="flex flex-col justify-between gap-1 py-1.5"><div class="rounded-lg bg-wash-recess p-1">${row(x)}</div><div class="pl-1 text-[10.5px] text-on-surface-muted">${x.d}</div></div>`
+        )
+        .join('')
 
-document.getElementById('spec-glyph').innerHTML=`<div class="flex flex-col gap-3">
-<div class="flex items-end gap-4">${Object.entries(SG).map(([s,gl])=>`<div class="text-center"><span class="grid h-[22px] w-[22px] place-items-center rounded-[6px] font-mono text-[11px] leading-none ${CHIP[s]}">${s==='running'?SPINNER:gl}</span><div class="mt-1.5 font-mono text-[8.5px] uppercase tracking-[0.08em] text-on-surface-muted">${ST[s].w}</div></div>`).join('')}</div>
-<div class="text-[10.5px] leading-snug text-on-surface-muted">Five chips, five states — the same five for every agent in the registry.</div></div>`;
+      document.getElementById('spec-glyph').innerHTML =
+        `<div class="flex flex-col gap-3">
+<div class="flex items-end gap-4">${Object.entries(SG)
+          .map(
+            ([s, gl]) =>
+              `<div class="text-center"><span class="grid h-[22px] w-[22px] place-items-center rounded-[6px] font-mono text-[11px] leading-none ${CHIP[s]}">${s === 'running' ? SPINNER : gl}</span><div class="mt-1.5 font-mono text-[8.5px] uppercase tracking-[0.08em] text-on-surface-muted">${ST[s].w}</div></div>`
+          )
+          .join('')}</div>
+<div class="text-[10.5px] leading-snug text-on-surface-muted">Five chips, five states — the same five for every agent in the registry.</div></div>`
 
-document.getElementById('spec-right').innerHTML=[
- {a:'claude',s:'running',m:'Rewriting verifyToken() to jose remoteJWKSet'},{a:'codex',s:'error',m:'pnpm build exited 1 — TS2345 in release.ts'},{a:'kimi',s:'finished',m:'Snapshot baseline written · 12 files'}]
- .map(x=>`<div class="rounded-lg bg-wash-recess p-1">${row(x)}</div>`).join('');
+      document.getElementById('spec-right').innerHTML = [
+        {
+          a: 'claude',
+          s: 'running',
+          m: 'Rewriting verifyToken() to jose remoteJWKSet',
+        },
+        {
+          a: 'codex',
+          s: 'error',
+          m: 'pnpm build exited 1 — TS2345 in release.ts',
+        },
+        { a: 'kimi', s: 'finished', m: 'Snapshot baseline written · 12 files' },
+      ]
+        .map(
+          (x) => `<div class="rounded-lg bg-wash-recess p-1">${row(x)}</div>`
+        )
+        .join('')
 
-document.getElementById('spec-density').innerHTML=
- wrap('3 agents · full motion',card(three))+
- `<div class="w-[272px] rm"><div class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted">3 agents · reduced motion</div><div class="rounded-2xl bg-surface-container-lowest p-2">${card(three)}</div><div class="mt-1.5 text-[10.5px] leading-snug text-on-surface-muted">Static ring. Same footprint.</div></div>`+
- wrap('4 agents — the noise threshold',card({...three,panes:'4 panes',agents:[...three.agents,{a:'gemini',s:'finished',m:'Reviewed diff · no comments',t:'12m'}]}),'≈233px for one card. This is where the Active group stops scanning — cap at 3 + "+N more" in v2.');
+      document.getElementById('spec-density').innerHTML =
+        wrap('3 agents · full motion', card(three)) +
+        `<div class="w-[272px] rm"><div class="mb-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-on-surface-muted">3 agents · reduced motion</div><div class="rounded-2xl bg-surface-container-lowest p-2">${card(three)}</div><div class="mt-1.5 text-[10.5px] leading-snug text-on-surface-muted">Static ring. Same footprint.</div></div>` +
+        wrap(
+          '4 agents — the noise threshold',
+          card({
+            ...three,
+            panes: '4 panes',
+            agents: [
+              ...three.agents,
+              {
+                a: 'gemini',
+                s: 'finished',
+                m: 'Reviewed diff · no comments',
+                t: '12m',
+              },
+            ],
+          }),
+          '≈233px for one card. This is where the Active group stops scanning — cap at 3 + "+N more" in v2.'
+        )
 
-document.getElementById('code').textContent=`/* AgentRows.tsx — container */
+      document.getElementById('code').textContent =
+        `/* AgentRows.tsx — container */
 <div className="mt-1.5 flex flex-col gap-px rounded-lg bg-wash-recess p-1">
 
 /* AgentRow — button (two columns; no time / no progress slot) */
@@ -298,24 +846,53 @@ colors: { 'state-running': 'rgb(var(--rgb-state-running) / <alpha-value>)', /* �
 
 /* tailwind.config.js additions */
 animation: { spin — Tailwind built-in, used as animate-spin (1.1s linear infinite) }
-colors: { 'wash-recess': 'var(--color-wash-recess)' }   /* rgba(0,0,0,.22) dark · rgba(16,15,15,.045) Flexoki */`;
+colors: { 'wash-recess': 'var(--color-wash-recess)' }   /* rgba(0,0,0,.22) dark · rgba(16,15,15,.045) Flexoki */`
 
-// theme switcher
-const THEMES=[['','Obsidian'],['lens-editorial','Editorial'],['lens-dense','Dense'],['lens-navigator','Navigator'],['lens-flexoki','Flexoki'],['lens-mist','Mist*']];
-const tw=document.getElementById('themes');
-tw.innerHTML=THEMES.map(([c,l],i)=>`<button data-t="${c}" class="rounded-md px-2.5 py-[6px] font-mono text-[10px] tracking-[0.03em] transition-colors ${i===0?'bg-surface-container-high text-on-surface':'text-on-surface-muted hover:text-on-surface-variant'}">${l}</button>`).join('');
-tw.addEventListener('click',e=>{const b=e.target.closest('[data-t]');if(!b)return;
- document.body.className=`lens ${b.dataset.t} bg-surface text-on-surface antialiased${document.body.classList.contains('rm')?' rm':''}`;
- [...tw.children].forEach(x=>{x.className=x===b?'rounded-md px-2.5 py-[6px] font-mono text-[10px] tracking-[0.03em] transition-colors bg-surface-container-high text-on-surface':'rounded-md px-2.5 py-[6px] font-mono text-[10px] tracking-[0.03em] transition-colors text-on-surface-muted hover:text-on-surface-variant';});});
+      // theme switcher
+      const THEMES = [
+        ['', 'Obsidian'],
+        ['lens-editorial', 'Editorial'],
+        ['lens-dense', 'Dense'],
+        ['lens-navigator', 'Navigator'],
+        ['lens-flexoki', 'Flexoki'],
+        ['lens-mist', 'Mist*'],
+      ]
+      const tw = document.getElementById('themes')
+      tw.innerHTML = THEMES.map(
+        ([c, l], i) =>
+          `<button data-t="${c}" class="rounded-md px-2.5 py-[6px] font-mono text-[10px] tracking-[0.03em] transition-colors ${i === 0 ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-muted hover:text-on-surface-variant'}">${l}</button>`
+      ).join('')
+      tw.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-t]')
+        if (!b) return
+        document.body.className = `lens ${b.dataset.t} bg-surface text-on-surface antialiased${document.body.classList.contains('rm') ? ' rm' : ''}`
+        ;[...tw.children].forEach((x) => {
+          x.className =
+            x === b
+              ? 'rounded-md px-2.5 py-[6px] font-mono text-[10px] tracking-[0.03em] transition-colors bg-surface-container-high text-on-surface'
+              : 'rounded-md px-2.5 py-[6px] font-mono text-[10px] tracking-[0.03em] transition-colors text-on-surface-muted hover:text-on-surface-variant'
+        })
+      })
 
-const rmBtn=document.getElementById('rmBtn');
-rmBtn.addEventListener('click',()=>{const on=document.body.classList.toggle('rm');rmBtn.textContent=on?'motion: reduced':'motion: full';});
+      const rmBtn = document.getElementById('rmBtn')
+      rmBtn.addEventListener('click', () => {
+        const on = document.body.classList.toggle('rm')
+        rmBtn.textContent = on ? 'motion: reduced' : 'motion: full'
+      })
 
-function measure(){const cards=[...document.querySelectorAll('#list [data-card]')].map(c=>Math.round(c.getBoundingClientRect().height));
- if(!cards.length||!cards[0])return false;
- document.getElementById('metrics').textContent=`1-agent ${cards[0]}px · 3-agent ${cards[1]}px · 2-agent ${cards[2]}px · 0-agent ${cards[3]}px`;return true;}
-window.addEventListener('load',()=>{if(!measure())setTimeout(measure,400);});
-setTimeout(measure,600);
-</script>
-</body>
+      function measure() {
+        const cards = [...document.querySelectorAll('#list [data-card]')].map(
+          (c) => Math.round(c.getBoundingClientRect().height)
+        )
+        if (!cards.length || !cards[0]) return false
+        document.getElementById('metrics').textContent =
+          `1-agent ${cards[0]}px · 3-agent ${cards[1]}px · 2-agent ${cards[2]}px · 0-agent ${cards[3]}px`
+        return true
+      }
+      window.addEventListener('load', () => {
+        if (!measure()) setTimeout(measure, 400)
+      })
+      setTimeout(measure, 600)
+    </script>
+  </body>
 </html>
