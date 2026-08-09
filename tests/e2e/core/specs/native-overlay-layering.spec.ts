@@ -246,6 +246,13 @@ const getOverlayMenuRect = async (): Promise<CssRect | null> =>
         continue
       }
 
+      const overlayWindow = electron.BrowserWindow.getAllWindows().find(
+        (window) => window.webContents.id === overlay.id
+      )
+      if (overlayWindow?.isVisible() !== true) {
+        continue
+      }
+
       const rect = (await overlay.executeJavaScript(`
         (() => {
           const rect = document
