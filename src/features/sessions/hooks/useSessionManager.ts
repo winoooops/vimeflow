@@ -120,6 +120,14 @@ export interface SessionManager {
     placements: readonly PanePlacement[]
   ) => void
   setSessionActivePane: (sessionId: string, paneId: string) => void
+  /**
+   * Coordinated select-session-and-focus-pane (sidebar agent rows,
+   * notification Open). Applies the pane selection and activates the session
+   * with exactly ONE backend set_active_session targeting the clicked pane —
+   * calling setActiveSessionId + setSessionActivePane separately races two
+   * activation IPCs (old active pane vs clicked pane).
+   */
+  activateSessionPane: (sessionId: string, paneId: string) => void
   addPane: (sessionId: string, kind?: PaneKind, slotId?: LayoutSlotId) => void
   removePane: (sessionId: string, paneId: string) => void
   /**
@@ -2073,6 +2081,48 @@ export const useSessionManager = (
     [activeSessionIdRef, service]
   )
 
+  // Coordinated variant of setActiveSessionId + setSessionActivePane. The
+  // pane selection lands on sessionsRef synchronously so the activation
+  // dispatch resolves the clicked pane — one set_active_session instead of
+  // two racing ones.
+  const activateSessionPane = useCallback(
+    (sessionId: string, paneId: string): void => {
+      if (pendingPaneOps.current.has(sessionId)) {
+        log.warn(
+          `activateSessionPane: pane op in flight for ${sessionId}; ignoring`
+        )
+
+        return
+      }
+      const session = sessionsRef.current.find((s) => s.id === sessionId)
+      if (!session) {
+        log.warn(`activateSessionPane: no session ${sessionId}`)
+
+        return
+      }
+      const target = session.panes.find((p) => p.id === paneId)
+      if (!target) {
+        log.warn(
+          `activateSessionPane: no pane ${paneId} in session ${sessionId}`
+        )
+
+        return
+      }
+      if (sessionId === activeSessionIdRef.current && target.active) {
+        return
+      }
+
+      sessionsRef.current = applyActivePane(
+        sessionsRef.current,
+        sessionId,
+        paneId
+      )
+      setSessions((prev) => applyActivePane(prev, sessionId, paneId))
+      setActiveSessionId(sessionId)
+    },
+    [activeSessionIdRef, sessionsRef, setActiveSessionId]
+  )
+
   const addPane = useCallback(
     (
       sessionId: string,
@@ -3258,6 +3308,7 @@ export const useSessionManager = (
     setSessionLayout,
     setSessionPlacements,
     setSessionActivePane,
+    activateSessionPane,
     addPane,
     removePane,
     restartSession,

@@ -6980,6 +6980,38 @@ describe('useSessionManager', () => {
       expect(service.setActiveSession).not.toHaveBeenCalled()
     })
 
+    test('activateSessionPane activates the clicked pane with exactly one backend call', async () => {
+      const service = createSequentialSpawnService([
+        '/workspace-a',
+        '/workspace-a',
+        '/workspace-b',
+      ])
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const firstSessionId = await createInitialSession(result)
+      await addSecondPane(result, firstSessionId)
+
+      act(() => result.current.createSession())
+      await waitFor(() => expect(result.current.sessions).toHaveLength(2))
+      ;(service.setActiveSession as ReturnType<typeof vi.fn>).mockClear()
+
+      act(() => result.current.activateSessionPane(firstSessionId, 'p0'))
+
+      await waitFor(() =>
+        expect(result.current.activeSessionId).toBe(firstSessionId)
+      )
+
+      const firstSession = result.current.sessions.find(
+        (session) => session.id === firstSessionId
+      )
+      expect(firstSession?.panes[0].active).toBe(true)
+      expect(service.setActiveSession).toHaveBeenCalledTimes(1)
+      expect(service.setActiveSession).toHaveBeenCalledWith('pty-0')
+    })
+
     // Round 13, Claude MEDIUM: setSessionActivePane must serialize with
     // in-flight addPane / removePane on the same session. A pending kill
     // for the target pane can race the setActiveSession IPC and leave
