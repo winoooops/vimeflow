@@ -162,6 +162,7 @@ export const deriveTheme = (scheme: ThemeScheme): ThemeDefinition => {
       'wash-faint': alpha(wash, 0.04),
       'wash-subtle': alpha(wash, 0.05),
       'wash-soft': alpha(wash, 0.08),
+      'wash-recess': alpha('#000000', light ? 0.05 : 0.22),
       scrim: '#000000',
     },
     shadows: {

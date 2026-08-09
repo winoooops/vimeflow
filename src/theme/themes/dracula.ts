@@ -87,6 +87,7 @@ export const dracula: ThemeDefinition = {
     'wash-faint': 'rgba(255, 255, 255, 0.04)',
     'wash-subtle': 'rgba(255, 255, 255, 0.05)',
     'wash-soft': 'rgba(255, 255, 255, 0.08)',
+    'wash-recess': 'rgba(0, 0, 0, 0.2)',
     scrim: '#000000',
   },
   shadows: {
