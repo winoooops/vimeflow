@@ -2108,9 +2108,9 @@ export const useSessionManager = (
 
         return
       }
-      if (sessionId === activeSessionIdRef.current && target.active) {
-        return
-      }
+      // No already-active short-circuit (unlike setSessionActivePane): the
+      // activation IPC below is fire-and-forget, so a re-click must be able
+      // to re-dispatch and re-sync the backend after a failed activation.
 
       sessionsRef.current = applyActivePane(
         sessionsRef.current,
@@ -2120,7 +2120,7 @@ export const useSessionManager = (
       setSessions((prev) => applyActivePane(prev, sessionId, paneId))
       setActiveSessionId(sessionId)
     },
-    [activeSessionIdRef, sessionsRef, setActiveSessionId]
+    [sessionsRef, setActiveSessionId]
   )
 
   const addPane = useCallback(

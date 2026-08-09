@@ -7012,6 +7012,32 @@ describe('useSessionManager', () => {
       expect(service.setActiveSession).toHaveBeenCalledWith('pty-0')
     })
 
+    test('activateSessionPane can retry after a failed backend activation', async () => {
+      const service = createSequentialSpawnService()
+
+      const { result } = renderHook(() =>
+        useSessionManager(service, { autoCreateOnEmpty: false })
+      )
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      const sessionId = await createInitialSession(result)
+      await addSecondPane(result, sessionId)
+      await waitFor(() =>
+        expect(result.current.activeSessionId).toBe(sessionId)
+      )
+      const spy = service.setActiveSession as ReturnType<typeof vi.fn>
+      spy.mockClear()
+      spy.mockRejectedValueOnce(new Error('transient'))
+
+      act(() => result.current.activateSessionPane(sessionId, 'p0'))
+
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
+      expect(result.current.sessions[0].panes[0].active).toBe(true)
+
+      act(() => result.current.activateSessionPane(sessionId, 'p0'))
+
+      await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
+    })
+
     // Round 13, Claude MEDIUM: setSessionActivePane must serialize with
     // in-flight addPane / removePane on the same session. A pending kill
     // for the target pane can race the setActiveSession IPC and leave
