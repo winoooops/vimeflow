@@ -1774,6 +1774,16 @@ const WorkspaceViewContent = (): ReactElement => {
     [claimTerminal, setActiveSessionId]
   )
 
+  // Sidebar agent-row click — same activation sequence as handleOpenNotification.
+  const handleFocusSessionPane = useCallback(
+    (sessionId: string, paneId: string): void => {
+      setActiveSessionId(sessionId)
+      setSessionActivePane(sessionId, paneId)
+      claimTerminal()
+    },
+    [claimTerminal, setActiveSessionId, setSessionActivePane]
+  )
+
   const handleOpenNotification = useCallback(
     (id: string): void => {
       const record = notificationCenter.records.find(
@@ -3381,6 +3391,8 @@ const WorkspaceViewContent = (): ReactElement => {
                     onReorderSessions={reorderSessions}
                     layoutRegistry={layoutRegistry}
                     notificationRecords={notificationCenter.records}
+                    progressSource={terminalService}
+                    onFocusPane={handleFocusSessionPane}
                   />
                   <FilesView
                     hidden={activeTab !== 'files'}

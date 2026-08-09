@@ -75,6 +75,10 @@ const workspaceTerminalMock = vi.hoisted(() => {
     onBurnerForeground: vi.fn(
       (): Promise<() => void> => Promise.resolve((): void => undefined)
     ),
+    getProgress: vi.fn((): undefined => undefined),
+    onProgress: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue(defaultSessionList()),
     setActiveSession: vi.fn().mockResolvedValue(undefined),
     reorderSessions: vi.fn().mockResolvedValue(undefined),

@@ -3,6 +3,7 @@ import { List } from '../../sessions/components/List'
 import type { NotificationRecord } from '../../sessions/hooks/useNotificationCenter'
 import type { Session, SessionCloseResult } from '../../sessions/types'
 import type { PaneLayoutRegistry } from '../../terminal/layout-registry'
+import type { ProgressSource } from '../../terminal/hooks/usePtyProgress'
 
 export interface SessionsViewProps {
   hidden?: boolean
@@ -14,6 +15,8 @@ export interface SessionsViewProps {
   onReorderSessions: (reordered: Session[]) => void
   layoutRegistry: PaneLayoutRegistry
   notificationRecords?: readonly NotificationRecord[]
+  progressSource?: ProgressSource
+  onFocusPane?: (sessionId: string, paneId: string) => void
 }
 
 export const SessionsView = ({
@@ -26,6 +29,8 @@ export const SessionsView = ({
   onReorderSessions,
   layoutRegistry,
   notificationRecords = [],
+  progressSource = undefined,
+  onFocusPane = undefined,
 }: SessionsViewProps): ReactElement => (
   // Tailwind v4 puts utilities in a higher cascade layer than `@layer base`
   // (where Preflight's `[hidden] { display: none }` lives), so a hardcoded
@@ -48,6 +53,8 @@ export const SessionsView = ({
       onReorderSessions={onReorderSessions}
       layoutRegistry={layoutRegistry}
       notificationRecords={notificationRecords}
+      progressSource={progressSource}
+      onFocusPane={onFocusPane}
     />
   </div>
 )

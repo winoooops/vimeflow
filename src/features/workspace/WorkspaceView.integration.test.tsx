@@ -81,6 +81,10 @@ vi.mock('../terminal/services/terminalService', () => ({
     onError: vi.fn((): (() => void) => (): void => {}),
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     onBurnerForeground: vi.fn((): (() => void) => (): void => {}),
+    getProgress: vi.fn((): undefined => undefined),
+    onProgress: vi.fn(
+      (): Promise<() => void> => Promise.resolve((): void => undefined)
+    ),
     listSessions: vi.fn().mockResolvedValue({
       activeSessionId: 'sess-1',
       sessions: [
