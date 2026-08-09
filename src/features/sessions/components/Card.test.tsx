@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Reorder } from 'framer-motion'
 import { Card, type CardProps } from './Card'
-import type { Session } from '../types'
+import type { Pane, Session } from '../types'
 
 const session = (overrides: Partial<Session> = {}): Session =>
   ({
@@ -15,6 +15,7 @@ const session = (overrides: Partial<Session> = {}): Session =>
     workingDirectory: '/home/user/projects/Vimeflow',
     agentType: 'claude-code',
     layout: 'single',
+    panes: [],
     terminalPid: 12345,
     createdAt: '2026-04-07T03:45:00Z',
     lastActivityAt: '2026-04-07T03:45:00Z',
@@ -328,5 +329,52 @@ describe('Card — recent variant', () => {
   test('multi-pane recent session shows the layout glyph', () => {
     renderRecentCard(session({ status: 'completed', layout: 'quad' }))
     expect(screen.getByTestId('session-layout-glyph')).toBeInTheDocument()
+  })
+})
+
+describe('agent rows', () => {
+  const agentPane: Pane = {
+    id: 'p1',
+    ptyId: 'pty-1',
+    cwd: '/tmp/project',
+    agentType: 'kimi',
+    status: 'running',
+    agentPhase: 'running',
+    active: true,
+  }
+
+  test('active card renders agent rows and row click focuses the pane without activating the card', async () => {
+    const onClick = vi.fn()
+    const onFocusPane = vi.fn()
+
+    renderActiveCard(session({ panes: [agentPane] }), {
+      onClick,
+      onFocusPane,
+    })
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /kimi.*running/i })
+    )
+
+    expect(onFocusPane).toHaveBeenCalledWith('sess-1', 'p1')
+    expect(onClick).not.toHaveBeenCalled()
+  })
+
+  test('active card without onFocusPane renders no agent rows', () => {
+    renderActiveCard(session({ panes: [agentPane] }))
+
+    expect(
+      screen.queryByRole('list', { name: /agents in/i })
+    ).not.toBeInTheDocument()
+  })
+
+  test('recent card renders no agent rows', () => {
+    renderRecentCard(session({ panes: [agentPane] }), {
+      onFocusPane: vi.fn(),
+    })
+
+    expect(
+      screen.queryByRole('list', { name: /agents in/i })
+    ).not.toBeInTheDocument()
   })
 })

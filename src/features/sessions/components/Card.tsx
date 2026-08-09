@@ -4,6 +4,8 @@ import { IconButton } from '@/components/IconButton'
 import { Tooltip } from '@/components/Tooltip'
 import { TOOLTIP_SUPPRESSED } from '@/lib/constants'
 import type { Session } from '../types'
+import { AgentRows } from './AgentRows'
+import type { ProgressSource } from '../../terminal/hooks/usePtyProgress'
 import { useRenameState } from '../hooks/useRenameState'
 import { formatRelativeTime } from '../../agent-status/utils/relativeTime'
 import { subtitle } from '../utils/subtitle'
@@ -12,7 +14,10 @@ import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   type PaneLayoutRegistry,
 } from '../../terminal/layout-registry'
-import type { NotificationCategory } from '../hooks/useNotificationCenter'
+import type {
+  NotificationCategory,
+  NotificationRecord,
+} from '../hooks/useNotificationCenter'
 
 export interface CardProps {
   session: Session
@@ -25,6 +30,9 @@ export interface CardProps {
   onReorderDragEnd?: () => void
   layoutRegistry?: PaneLayoutRegistry
   notificationCategory?: NotificationCategory | null
+  notificationRecords?: readonly NotificationRecord[]
+  progressSource?: ProgressSource
+  onFocusPane?: (sessionId: string, paneId: string) => void
 }
 
 // Status → flat colored text (no chip pill, no dot), per handoff §3.3.
@@ -75,6 +83,9 @@ const CardComponent = ({
   onReorderDragEnd = undefined,
   layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
   notificationCategory = null,
+  notificationRecords = [],
+  progressSource = undefined,
+  onFocusPane = undefined,
 }: CardProps): ReactElement => {
   const {
     isEditing,
@@ -269,6 +280,17 @@ const CardComponent = ({
           )}
         </div>
       </div>
+
+      {/* Live agent rows — sibling of the activation button (like the kebab)
+                so row buttons stay clickable above the absolute overlay. */}
+      {variant === 'active' && onFocusPane !== undefined && (
+        <AgentRows
+          session={session}
+          records={notificationRecords}
+          service={progressSource}
+          onFocusPane={onFocusPane}
+        />
+      )}
 
       {/* Kebab — sibling of the activation button (not nested), absolutely
           positioned so the row height stays constant; revealed on hover/focus
