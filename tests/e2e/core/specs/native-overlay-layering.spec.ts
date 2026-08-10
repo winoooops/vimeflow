@@ -629,6 +629,10 @@ const waitForOverlayPaint = async (
 
   await browser.waitUntil(
     async () => {
+      if (surface === 'menu') {
+        await ensureOverlayMenuOpen()
+      }
+
       const surfaceRect =
         surface === 'menu'
           ? await getOverlayMenuRect()
