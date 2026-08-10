@@ -18,7 +18,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/winoooops/libghostty-spm-shaders.git", revision: "9f62c0cda0f9df68cd6a10c4150e98d72bf6649f"),
+        .package(url: "https://github.com/winoooops/libghostty-spm-shaders.git", revision: "865cfc923530428ca627237b1ee8a208bf6287c7"),
     ],
     targets: [
         .executableTarget(
