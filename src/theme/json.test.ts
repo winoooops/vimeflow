@@ -1,7 +1,24 @@
 import { expect, test } from 'vitest'
 import { themeToScheme } from './derive'
-import { parseThemeJson, serializeTheme } from './json'
+import { parseStoredThemeScheme, parseThemeJson, serializeTheme } from './json'
 import { obsidianLens } from './themes/obsidian-lens'
+
+test('legacy stored theme without wash-recess still parses (pre-token save)', () => {
+  const full = JSON.parse(JSON.stringify(obsidianLens)) as {
+    effects: Record<string, string>
+  }
+
+  const legacy = {
+    ...full,
+    effects: Object.fromEntries(
+      Object.entries(full.effects).filter(([key]) => key !== 'wash-recess')
+    ),
+  }
+
+  const scheme = parseStoredThemeScheme(legacy)
+
+  expect(scheme.id).toBe(obsidianLens.id)
+})
 
 test('exports only color scheme identity and base palette', () => {
   const exported = JSON.parse(serializeTheme(obsidianLens)) as Record<

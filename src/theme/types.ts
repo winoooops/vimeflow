@@ -70,6 +70,7 @@ export const EFFECT_COLOR_TOKENS = [
   'wash-faint',
   'wash-subtle',
   'wash-soft',
+  'wash-recess',
   'scrim',
 ] as const
 

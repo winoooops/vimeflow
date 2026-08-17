@@ -136,6 +136,18 @@ const parseLegacyThemeDefinition = (value: unknown): ThemeDefinition => {
 
   const identity = readIdentity(value)
 
+  // Legacy saves predate `wash-recess`; default it (by theme kind) so an
+  // upgrade never silently drops a stored custom theme.
+  const effects = isRecord(value.effects)
+    ? {
+        'wash-recess':
+          identity.kind === 'light'
+            ? 'rgba(16, 15, 15, 0.05)'
+            : 'rgba(0, 0, 0, 0.22)',
+        ...value.effects,
+      }
+    : value.effects
+
   const terminal = readCssRecord(
     value.terminal,
     TERMINAL_REQUIRED_KEYS,
@@ -160,7 +172,7 @@ const parseLegacyThemeDefinition = (value: unknown): ThemeDefinition => {
     ...identity,
     ui: readCssRecord(value.ui, UI_TOKENS, 'ui') as ThemeDefinition['ui'],
     effects: readCssRecord(
-      value.effects,
+      effects,
       EFFECT_COLOR_TOKENS,
       'effects'
     ) as ThemeDefinition['effects'],

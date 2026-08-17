@@ -65,6 +65,7 @@ export const gruvboxLight: ThemeDefinition = {
     'wash-faint': 'rgba(16, 15, 15, 0.04)',
     'wash-subtle': 'rgba(16, 15, 15, 0.05)',
     'wash-soft': 'rgba(16, 15, 15, 0.08)',
+    'wash-recess': 'rgba(16, 15, 15, 0.05)',
     scrim: '#000000',
   },
   shadows: {

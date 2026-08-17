@@ -167,6 +167,23 @@ export const sessionUnreadCategory = (
   return unread.length > 0 ? 'need' : null
 }
 
+/**
+ * Newest record for a pane by occurredAt. Order-independent on purpose —
+ * the reducer prepends new records but pruning can reorder survivors.
+ */
+export const latestPaneRecord = (
+  records: readonly NotificationRecord[],
+  ptyId: string
+): NotificationRecord | undefined =>
+  records.reduce<NotificationRecord | undefined>(
+    (latest, candidate) =>
+      candidate.ptyId === ptyId &&
+      (latest === undefined || candidate.occurredAt > latest.occurredAt)
+        ? candidate
+        : latest,
+    undefined
+  )
+
 export const useNotificationCenter = (): NotificationCenter => {
   const [state, dispatch] = useReducer(
     notificationCenterReducer,

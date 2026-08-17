@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import {
   hasUnreadAlert,
+  latestPaneRecord,
   notificationCategory,
   notificationCenterInitialState,
   notificationCenterReducer,
@@ -227,5 +228,38 @@ describe('notification center domain', () => {
       result.current.clear()
     })
     expect(result.current.records).toEqual([])
+  })
+})
+
+describe('latestPaneRecord', () => {
+  const paneRecord = (
+    id: string,
+    ptyId: string,
+    occurredAt: number
+  ): NotificationRecord => ({
+    id,
+    sessionId: 'sess-1',
+    ptyId,
+    reason: 'turn-complete',
+    title: 'Kimi finished',
+    occurredAt,
+    read: false,
+  })
+
+  test('returns undefined when no record matches the pane', () => {
+    expect(
+      latestPaneRecord([paneRecord('a', 'pty-other', 1000)], 'pty-1')
+    ).toBe(undefined)
+  })
+
+  test('returns the newest matching record by occurredAt regardless of order', () => {
+    const records = [
+      paneRecord('a', 'pty-1', 1000),
+      paneRecord('b', 'pty-2', 5000),
+      paneRecord('c', 'pty-1', 3000),
+      paneRecord('d', 'pty-1', 2000),
+    ]
+
+    expect(latestPaneRecord(records, 'pty-1')?.id).toBe('c')
   })
 })

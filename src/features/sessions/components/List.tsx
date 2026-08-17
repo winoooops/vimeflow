@@ -14,6 +14,7 @@ import {
   sessionUnreadCategory,
   type NotificationRecord,
 } from '../hooks/useNotificationCenter'
+import type { ProgressSource } from '../../terminal/hooks/usePtyProgress'
 
 export interface ListProps {
   sessions: Session[]
@@ -24,6 +25,8 @@ export interface ListProps {
   onReorderSessions?: (sessions: Session[]) => void
   layoutRegistry?: PaneLayoutRegistry
   notificationRecords?: readonly NotificationRecord[]
+  progressSource?: ProgressSource
+  onFocusPane?: (sessionId: string, paneId: string) => void
 }
 
 export const List = ({
@@ -35,6 +38,8 @@ export const List = ({
   onReorderSessions = undefined,
   layoutRegistry = BUILTIN_PANE_LAYOUT_REGISTRY,
   notificationRecords = [],
+  progressSource = undefined,
+  onFocusPane = undefined,
 }: ListProps): ReactElement => {
   // Active = open statuses (running/paused) per the canonical predicate
   // in pickNextVisibleSessionId.ts. Recent = the complement so any
@@ -124,6 +129,9 @@ export const List = ({
                 notificationRecords,
                 session
               )}
+              notificationRecords={notificationRecords}
+              progressSource={progressSource}
+              onFocusPane={onFocusPane}
             />
           ))}
         </Group>

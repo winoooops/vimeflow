@@ -1,5 +1,6 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import {
   BUILTIN_PANE_LAYOUT_REGISTRY,
   PaneLayoutRegistry,
@@ -91,5 +92,37 @@ describe('SessionsView', () => {
 
     expect(screen.getByTestId('session-layout-glyph')).toBeInTheDocument()
     expect(screen.getByTestId('session-pane-count')).toHaveTextContent('2')
+  })
+
+  test('threads onFocusPane to active session cards', async () => {
+    const onFocusPane = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <SessionsView
+        {...baseProps}
+        sessions={[
+          {
+            ...mockSessions[0],
+            id: 'sess-1',
+            panes: [
+              {
+                id: 'p1',
+                ptyId: 'pty-1',
+                cwd: '/tmp/project',
+                agentType: 'codex',
+                status: 'running',
+                agentPhase: 'running',
+                active: true,
+              },
+            ],
+          },
+        ]}
+        onFocusPane={onFocusPane}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /codex.*running/i }))
+
+    expect(onFocusPane).toHaveBeenCalledWith('sess-1', 'p1')
   })
 })

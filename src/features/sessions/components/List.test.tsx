@@ -363,6 +363,39 @@ describe('List', () => {
     ).toBeNull()
   })
 
+  test('threads onFocusPane to active session cards', async () => {
+    const onFocusPane = vi.fn()
+    const user = userEvent.setup()
+
+    render(
+      <List
+        sessions={[
+          {
+            ...mockSessions[0],
+            id: 'sess-1',
+            panes: [
+              {
+                id: 'p1',
+                ptyId: 'pty-1',
+                cwd: '/tmp/project',
+                agentType: 'codex',
+                status: 'running',
+                agentPhase: 'running',
+                active: true,
+              },
+            ],
+          },
+        ]}
+        activeSessionId="sess-1"
+        onSessionClick={vi.fn()}
+        onFocusPane={onFocusPane}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /codex.*running/i }))
+
+    expect(onFocusPane).toHaveBeenCalledWith('sess-1', 'p1')
+  })
+
   test('Active and Recent groups share single scroll region', () => {
     render(
       <List

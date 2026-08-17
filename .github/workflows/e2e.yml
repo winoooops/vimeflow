@@ -113,14 +113,6 @@ jobs:
           # by this job.
           shared-key: e2e-test
 
-      - name: Install system dependencies
-        # xvfb is required by xvfb-run for headless Electron runs.
-        # All GTK/webkit2gtk apt deps were dropped in PR-D3 once the
-        # sidecar binary stopped link-pulling the Tauri dependency graph.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-
       - name: Install npm dependencies
         run: npm ci
 

@@ -191,6 +191,7 @@ describe('WorkspaceView – top chrome (main-stage handoff J2–J6)', () => {
       setSessionLayout: vi.fn(),
       setSessionPlacements: vi.fn(),
       setSessionActivePane: vi.fn(),
+      activateSessionPane: vi.fn(),
       addPane: vi.fn(),
       removePane: vi.fn(),
       restartSession: vi.fn(),

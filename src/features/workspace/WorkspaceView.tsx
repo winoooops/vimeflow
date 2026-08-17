@@ -397,6 +397,7 @@ const WorkspaceViewContent = (): ReactElement => {
     invalidatePaneAgentSession,
     updateBrowserPaneUrl,
     setSessionActivePane,
+    activateSessionPane,
     setSessionLayout,
     setSessionPlacements,
     addPane,
@@ -1774,6 +1775,15 @@ const WorkspaceViewContent = (): ReactElement => {
     [claimTerminal, setActiveSessionId]
   )
 
+  // Sidebar agent-row click: one coordinated activation for the clicked pane.
+  const handleFocusSessionPane = useCallback(
+    (sessionId: string, paneId: string): void => {
+      activateSessionPane(sessionId, paneId)
+      claimTerminal()
+    },
+    [activateSessionPane, claimTerminal]
+  )
+
   const handleOpenNotification = useCallback(
     (id: string): void => {
       const record = notificationCenter.records.find(
@@ -1793,17 +1803,10 @@ const WorkspaceViewContent = (): ReactElement => {
       }
 
       notificationCenter.markRead(id)
-      setActiveSessionId(session.id)
-      setSessionActivePane(session.id, pane.id)
+      activateSessionPane(session.id, pane.id)
       claimTerminal()
     },
-    [
-      claimTerminal,
-      notificationCenter,
-      sessions,
-      setActiveSessionId,
-      setSessionActivePane,
-    ]
+    [activateSessionPane, claimTerminal, notificationCenter, sessions]
   )
 
   const handleOpenNewSession = useCallback((): void => {
@@ -3381,6 +3384,8 @@ const WorkspaceViewContent = (): ReactElement => {
                     onReorderSessions={reorderSessions}
                     layoutRegistry={layoutRegistry}
                     notificationRecords={notificationCenter.records}
+                    progressSource={terminalService}
+                    onFocusPane={handleFocusSessionPane}
                   />
                   <FilesView
                     hidden={activeTab !== 'files'}
