@@ -1,5 +1,14 @@
 # Vimeflow
 
+> [!IMPORTANT]
+> **Vimeflow 正在转向基于 herdr 的终端方案。** 活跃开发已迁移至
+> [**vimeflow-terminal**](https://github.com/winoooops/vimeflow-terminal)——我们基于
+> [herdr](https://github.com/herdrdev/herdr) 的下游 fork。Vimeflow 已发布的功能正在逐一迁移过去：
+> 代理身份标识栏（agent rail）与灵动岛（Dynamic Island 标签控制、动效与通知）均已在 fork 中落地。
+> **在迁移完成之前，本仓库将暂停更新**——期间不会有新功能落地；每日构建（nightly）会继续发布未变动的代码。迁移完成后，
+> 基于 herdr 的 fork 预计将接替本仓库，成为 Vimeflow 的主仓库。请前往
+> [winoooops/vimeflow-terminal](https://github.com/winoooops/vimeflow-terminal) 关注进展。
+
 <div align="center">
 
 <img src="build/icon.png" alt="Vimeflow 标志" width="128" />
@@ -8,7 +17,7 @@
 
 代理 CLI 运行在真实的终端窗格中，GUI 围绕终端构建，而不是取而代之。
 
-[English](./README.md) | 简体中文
+[English](./README.md) | 简体中文 | [日本語](./README.ja.md)
 
 <img src="docs/media/hero-workspace.gif" alt="在演示项目中创建会话、在原生 Ghostty 窗格中启动 Claude Code，并观察代理面板实时显示轨迹（traces）" width="900" />
 
@@ -360,6 +369,7 @@ npm run generate:bindings
 
 ## 项目参考
 
+- 后继 fork（活跃开发中）：[vimeflow-terminal](https://github.com/winoooops/vimeflow-terminal) —— 基于 [herdr](https://github.com/herdrdev/herdr) 重建的 Vimeflow 功能
 - 安装与环境细节：[SETUP.md](./SETUP.md)
 - 开发命令与代码风格：[DEVELOPMENT.md](./DEVELOPMENT.md)
 - 架构与 Electron sidecar IPC：[ARCHITECT.md](./ARCHITECT.md)

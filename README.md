@@ -1,5 +1,16 @@
 # Vimeflow
 
+> [!IMPORTANT]
+> **Vimeflow is pivoting onto a herdr-based terminal.** Active development has moved to
+> [**vimeflow-terminal**](https://github.com/winoooops/vimeflow-terminal), our downstream fork of
+> [herdr](https://github.com/herdrdev/herdr), and the features shipped here are being migrated
+> over one by one — the agent identity rail and the Dynamic Island (tab control, motion, and
+> notifications) already live there. **This repository is halted until the migration completes**:
+> no new features will land here in the meantime; the nightly build keeps publishing the
+> unchanged code. Once the migration is done, the herdr-based fork is expected to take over as
+> the main Vimeflow repository. Follow the progress at
+> [winoooops/vimeflow-terminal](https://github.com/winoooops/vimeflow-terminal).
+
 <div align="center">
 
 <img src="build/icon.png" alt="Vimeflow logo" width="128" />
@@ -8,7 +19,7 @@
 
 Your agent CLIs run in real terminal panes, and the GUI is built around them — not on top of them.
 
-English | [简体中文](./README.zh-CN.md)
+English | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md)
 
 <img src="docs/media/hero-workspace.gif" alt="Creating a session in a demo project, launching Claude Code in a native Ghostty pane, and watching the agent panel stream traces" width="900" />
 
@@ -368,6 +379,7 @@ npm run generate:bindings
 
 ## Project References
 
+- Successor fork (active development): [vimeflow-terminal](https://github.com/winoooops/vimeflow-terminal) — Vimeflow's features rebuilt on [herdr](https://github.com/herdrdev/herdr)
 - Setup details: [SETUP.md](./SETUP.md)
 - Development commands and style: [DEVELOPMENT.md](./DEVELOPMENT.md)
 - Architecture and Electron sidecar IPC: [ARCHITECT.md](./ARCHITECT.md)
